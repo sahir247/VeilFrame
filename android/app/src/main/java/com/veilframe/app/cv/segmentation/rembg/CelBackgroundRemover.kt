@@ -49,11 +49,12 @@ class CelBackgroundRemover(
         ensureActive()
         val inferenceBitmap = decodeForInference(imageBytes, model)
 
+        var maskedSmall: Bitmap? = null
         try {
             onProgress(RembgProgress(45, "Running neural segmentation…"))
             ensureActive()
 
-            var maskedSmall = runInference(session, inputName, inferenceBitmap, model, onProgress)
+            maskedSmall = runInference(session, inputName, inferenceBitmap, model, onProgress)
 
             onProgress(RembgProgress(85, "Building full resolution…"))
             ensureActive()
@@ -61,6 +62,7 @@ class CelBackgroundRemover(
             var resultBitmap = mergeToFullResolution(imageBytes, sourceInfo, maskedSmall)
             if (maskedSmall !== resultBitmap) {
                 maskedSmall.recycle()
+                maskedSmall = null
             }
 
             onProgress(RembgProgress(95, "Refining edges…"))
@@ -74,10 +76,13 @@ class CelBackgroundRemover(
                 val retrySession = sessionManager.recreateSession(model)
                 val retryInput = retrySession.inputNames.iterator().next()
                 try {
-                    var maskedSmall = runInference(retrySession, retryInput, inferenceBitmap, model, onProgress)
+                    maskedSmall = runInference(retrySession, retryInput, inferenceBitmap, model, onProgress)
                     onProgress(RembgProgress(85, "Building full resolution…"))
                     var resultBitmap = mergeToFullResolution(imageBytes, sourceInfo, maskedSmall)
-                    if (maskedSmall !== resultBitmap) maskedSmall.recycle()
+                    if (maskedSmall !== resultBitmap) {
+                        maskedSmall.recycle()
+                        maskedSmall = null
+                    }
                     resultBitmap = applyEdgePostProcessing(resultBitmap, tightenEdges, featherEdges, trim)
                     onProgress(RembgProgress(100, "Done"))
                     return@withContext RembgResult(resultBitmap, sourceInfo, model, warnings)
@@ -93,6 +98,7 @@ class CelBackgroundRemover(
                 e,
             )
         } finally {
+            maskedSmall?.recycle()
             inferenceBitmap.recycle()
         }
     }
@@ -191,7 +197,6 @@ class CelBackgroundRemover(
                 }
             }
 
-        sessionManager.closeSession(model)
         onProgress(RembgProgress(75, "Extracting alpha mask…"))
         return MaskPostprocessor.applyMask(bitmap, mask, maskW, maskH, model.needsSigmoidOutput)
     }

@@ -197,11 +197,20 @@ class RembgModelDownloadManager(
 
             val connection = activeConnection ?: throw IllegalStateException("No active connection")
             val isPartial = connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+            if (!isPartial && existingBytes > 0L) {
+                // Server returned HTTP 200 OK instead of honoring Range header (HTTP 206); restart from byte 0
+                existingBytes = 0L
+            }
             val contentLength = connection.contentLengthLong
             val totalBytes = when {
                 isPartial -> existingBytes + contentLength
                 contentLength > 0 -> contentLength
                 else -> model.estimatedSizeBytes
+            }
+            val maxAllowedBytes = if (model.estimatedSizeBytes > 0L) {
+                (model.estimatedSizeBytes * 1.25).toLong().coerceAtLeast(20 * 1024 * 1024L)
+            } else {
+                250 * 1024 * 1024L
             }
 
             _state.value = _state.value.copy(
@@ -219,8 +228,12 @@ class RembgModelDownloadManager(
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         ensureActive()
-                        output.write(buffer, 0, bytesRead)
                         totalDownloaded += bytesRead
+                        if (totalDownloaded > maxAllowedBytes) {
+                            partFile.delete()
+                            throw SecurityException("Model download exceeded streaming safety limit of $maxAllowedBytes bytes")
+                        }
+                        output.write(buffer, 0, bytesRead)
                         bytesSinceLastTime += bytesRead
 
                         val now = System.currentTimeMillis()
@@ -248,6 +261,17 @@ class RembgModelDownloadManager(
                 throw IllegalStateException(err)
             }
 
+            // Cryptographic checksum verification if SHA-256 is declared
+            if (model.sha256.isNotEmpty()) {
+                val isValid = com.veilframe.app.upscale.download.ModelDownloadVerifier.verify(partFile, model.sha256)
+                if (!isValid) {
+                    partFile.delete()
+                    val err = "Model verification failed: SHA-256 checksum mismatch for ${model.displayName}. File discarded for security."
+                    Log.e(TAG, err)
+                    throw SecurityException(err)
+                }
+            }
+
             // Atomic move to destination
             if (!partFile.renameTo(tempFinal)) {
                 partFile.copyTo(tempFinal, overwrite = true)
@@ -270,6 +294,12 @@ class RembgModelDownloadManager(
             listener?.onSuccess(model, destFile)
             Result.success(destFile)
         } catch (e: Exception) {
+            if (partFile.exists()) {
+                partFile.delete()
+            }
+            if (tempFinal.exists()) {
+                tempFinal.delete()
+            }
             _state.value = _state.value.copy(
                 isDownloading = false,
                 error = e.message ?: "Download failed",

@@ -149,4 +149,18 @@ class AppUpdateManagerTest {
             logs.any { it.contains("INVALID") || it.contains("unavailable") || it.contains("fail-closed") || it.contains("exception") }
         )
     }
+
+    @Test
+    fun testCheckManifestSignature_DistinguishesAbsentFromInvalid() {
+        val unsignedJson = JSONObject().apply {
+            put("versionCode", 227)
+        }
+        assertEquals(AppUpdateManager.ManifestSignatureStatus.Absent, AppUpdateManager.checkManifestSignature(unsignedJson))
+
+        val invalidSigJson = JSONObject().apply {
+            put("versionCode", 227)
+            put("signature", "invalid-base64-not-ed25519")
+        }
+        assertEquals(AppUpdateManager.ManifestSignatureStatus.Invalid, AppUpdateManager.checkManifestSignature(invalidSigJson))
+    }
 }

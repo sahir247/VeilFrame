@@ -18,6 +18,7 @@ enum class RembgModel(
     val std: FloatArray,
     val needsSigmoidOutput: Boolean = false,
     val isRecommended: Boolean = false,
+    val sha256: String = "",
 ) {
     BIREFNET_GENERAL_LITE(
         id = "birefnet-general-lite",

@@ -141,8 +141,10 @@ class DocumentSegmentationService(
             }
 
             if (byteBuffer != null) {
+                val processors = Runtime.getRuntime().availableProcessors()
+                val threads = minOf(4, maxOf(2, processors / 2))
                 val options = Interpreter.Options().apply {
-                    numThreads = 2
+                    numThreads = threads
                 }
                 interpreter = Interpreter(byteBuffer, options)
                 isModelAvailable = true

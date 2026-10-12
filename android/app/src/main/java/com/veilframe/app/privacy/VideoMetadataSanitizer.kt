@@ -190,4 +190,49 @@ object VideoMetadataSanitizer {
             false
         }
     }
+
+    suspend fun cleanVideoCancellable(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true
+    ): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        try {
+            val primaryArgs = buildArguments(inputPath, outputPath, noiseLevel, scrubAudio)
+            Log.d(TAG, "Executing video sanitization async with arguments: $primaryArgs")
+
+            val session = FFmpegKit.executeWithArgumentsAsync(primaryArgs.toTypedArray()) { completedSession ->
+                if (cont.isActive) {
+                    val returnCode = completedSession.returnCode
+                    val success = ReturnCode.isSuccess(returnCode)
+                    if (success) {
+                        Log.i(TAG, "Video cleaned successfully with FFmpegKit: $outputPath")
+                        cont.resumeWith(Result.success(true))
+                    } else {
+                        Log.w(TAG, "Transcode pass exited with code $returnCode. Retrying fallback pass...")
+                        val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
+                        val fallbackSession = FFmpegKit.executeWithArgumentsAsync(fallbackArgs.toTypedArray()) { fallbackCompleted ->
+                            if (cont.isActive) {
+                                cont.resumeWith(Result.success(ReturnCode.isSuccess(fallbackCompleted.returnCode)))
+                            }
+                        }
+                        cont.invokeOnCancellation {
+                            try { FFmpegKit.cancel(fallbackSession.sessionId) } catch (_: Throwable) {}
+                        }
+                    }
+                }
+            }
+
+            cont.invokeOnCancellation {
+                try {
+                    FFmpegKit.cancel(session.sessionId)
+                } catch (_: Throwable) {}
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Video processing failed: ${e.message}", e)
+            if (cont.isActive) {
+                cont.resumeWith(Result.success(false))
+            }
+        }
+    }
 }

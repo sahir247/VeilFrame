@@ -169,12 +169,6 @@ class VeilFrameProcessingService : Service() {
             return START_NOT_STICKY
         }
 
-        val current = activeJob
-        if (current != null && current.state == JobState.RUNNING) {
-            // A job is already active; prevent concurrency collisions while satisfying OS FGS contract
-            return START_NOT_STICKY
-        }
-
         val job = ProcessingJob(
             id = jobId,
             type = jobType,
@@ -184,6 +178,11 @@ class VeilFrameProcessingService : Service() {
             startedAt = System.currentTimeMillis()
         )
         synchronized(this) {
+            val current = activeJob
+            if (current != null && current.state == JobState.RUNNING) {
+                // A job is already active; prevent concurrency collisions while satisfying OS FGS contract
+                return START_NOT_STICKY
+            }
             activeJob = job
         }
 
@@ -210,7 +209,7 @@ class VeilFrameProcessingService : Service() {
                 }
 
                 if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
-                    val ok = mediaBackend.cleanVideo(effectiveInPath, effectiveOutPath)
+                    val ok = mediaBackend.cleanVideoCancellable(effectiveInPath, effectiveOutPath)
                     synchronized(this@VeilFrameProcessingService) {
                         if (activeJob?.id == jobId) {
                             activeJob = if (ok) {

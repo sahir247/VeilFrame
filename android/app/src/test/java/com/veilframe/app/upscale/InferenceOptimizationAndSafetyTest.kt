@@ -159,4 +159,33 @@ class InferenceOptimizationAndSafetyTest {
         assertFalse(isRecognizedStrengthInput("embedding_id", "custom_esrgan.onnx"))
         assertFalse(isRecognizedStrengthInput("scale_factor", "custom_esrgan.onnx"))
     }
+
+    @Test
+    fun `computeBudget couples intraOpThreads and parallelWorkers while reserving UI core`() {
+        // 8-core device -> usable = 7, workers = 3, intra = 4
+        val budget8 = com.veilframe.app.upscale.inference.UpscaleInferenceParams.computeBudget(8)
+        assertEquals(4, budget8.intraOpThreads)
+        assertEquals(3, budget8.parallelWorkers)
+
+        // 4-core device -> usable = 3, workers = 3, intra = 3
+        val budget4 = com.veilframe.app.upscale.inference.UpscaleInferenceParams.computeBudget(4)
+        assertEquals(3, budget4.intraOpThreads)
+        assertEquals(3, budget4.parallelWorkers)
+
+        // 2-core device -> usable = 2, workers = 2, intra = 2
+        val budget2 = com.veilframe.app.upscale.inference.UpscaleInferenceParams.computeBudget(2)
+        assertEquals(2, budget2.intraOpThreads)
+        assertEquals(2, budget2.parallelWorkers)
+    }
+
+    @Test
+    fun `graduated thermal response differentiates mild throttle from severe and critical`() {
+        assertEquals(ThermalGovernor.ThermalResponse.NONE, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_NONE))
+        assertEquals(ThermalGovernor.ThermalResponse.NONE, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_LIGHT))
+        assertEquals(ThermalGovernor.ThermalResponse.MILD_THROTTLE, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_MODERATE))
+        assertEquals(ThermalGovernor.ThermalResponse.FULL_THROTTLE, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_SEVERE))
+        assertEquals(ThermalGovernor.ThermalResponse.ABORT, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_CRITICAL))
+        assertEquals(ThermalGovernor.ThermalResponse.ABORT, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_EMERGENCY))
+        assertEquals(ThermalGovernor.ThermalResponse.ABORT, ThermalGovernor.responseForStatus(ThermalGovernor.STATUS_SHUTDOWN))
+    }
 }

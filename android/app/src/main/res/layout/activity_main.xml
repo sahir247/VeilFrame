@@ -309,7 +309,8 @@
                             android:layout_width="20dp"
                             android:layout_height="20dp"
                             android:src="@drawable/ic_arrow_forward"
-                            android:contentDescription="Launch"
+                            android:importantForAccessibility="no"
+                            tools:ignore="ContentDescription"
                             app:tint="?attr/colorPrimary" />
                     </LinearLayout>
                 </LinearLayout>
@@ -348,7 +349,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_trim"
-                        android:contentDescription="Video Studio Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -379,7 +381,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Video Studio"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -408,7 +411,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_crop"
-                        android:contentDescription="Image Studio Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -439,7 +443,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Studio"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -468,7 +473,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_resize"
-                        android:contentDescription="AI Image Upscaler Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -499,7 +505,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Upscaler"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -528,7 +535,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tool_qr"
-                        android:contentDescription="QR Code Studio Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -559,7 +567,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open QR Studio"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -588,7 +597,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_camera"
-                        android:contentDescription="Document Scanner Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -619,7 +629,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Document Scanner"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -657,7 +668,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_video"
-                        android:contentDescription="Video Cleaner Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -688,7 +700,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Video Cleaner"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -717,7 +730,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_image"
-                        android:contentDescription="Image Cleaner Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -748,7 +762,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Cleaner"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -786,7 +801,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_folder"
-                        android:contentDescription="Folder Scanner Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -817,7 +833,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Folder Scanner"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -846,7 +863,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_bundle"
-                        android:contentDescription="AI Bundle Tool"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -877,7 +895,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open AI Bundle"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -906,7 +925,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_text"
-                        android:contentDescription="Markdown Viewer"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -937,7 +957,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Markdown Viewer"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -975,7 +996,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_crop"
-                        android:contentDescription="Background Remover"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1006,7 +1028,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Background Remover"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1035,7 +1058,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_speed"
-                        android:contentDescription="Motion Lab"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1066,7 +1090,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Motion Lab"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1095,7 +1120,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_visibility"
-                        android:contentDescription="Image Quality Forensics"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1126,7 +1152,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Quality Forensics"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1155,7 +1182,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_check_circle"
-                        android:contentDescription="Provenance &amp; Verification"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1186,7 +1214,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Provenance &amp; Verification"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1215,7 +1244,8 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:src="@drawable/ic_settings"
-                        android:contentDescription="System Diagnostics &amp; Console"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1246,7 +1276,8 @@
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open System Diagnostics"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
                         app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

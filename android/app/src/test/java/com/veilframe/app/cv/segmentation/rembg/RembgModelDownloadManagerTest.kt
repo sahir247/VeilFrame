@@ -39,4 +39,25 @@ class RembgModelDownloadManagerTest {
         assertTrue(stateDownloading.progressFraction == 0.5f)
         assertTrue(stateDownloading.progressPercent == 50)
     }
+
+    @Test
+    fun testModelSha256FieldDefaultsToEmpty() {
+        for (model in RembgModel.entries) {
+            org.junit.Assert.assertNotNull(model.sha256)
+        }
+    }
+
+    @Test
+    fun testModelDownloadVerifierIntegrity() {
+        val temp = java.io.File.createTempFile("model_test", ".bin")
+        try {
+            temp.writeBytes("VeilFrame Rembg Neural Model Content".toByteArray(Charsets.UTF_8))
+            val actualHash = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(temp)
+            assertTrue(actualHash.isNotEmpty())
+            assertTrue(com.veilframe.app.upscale.download.ModelDownloadVerifier.verify(temp, actualHash))
+            assertFalse(com.veilframe.app.upscale.download.ModelDownloadVerifier.verify(temp, "0".repeat(64)))
+        } finally {
+            temp.delete()
+        }
+    }
 }

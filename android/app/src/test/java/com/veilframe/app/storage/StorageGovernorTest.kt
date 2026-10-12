@@ -103,4 +103,23 @@ class StorageGovernorTest {
         val freed = StorageGovernor.enforceStorageLimit(context)
         assertEquals(0L, freed)
     }
+
+    @Test
+    fun `getManagedFiles excludes user export directories`() {
+        val exportsDir = File(context.filesDir, "exports").apply { mkdirs() }
+        val cvExportsDir = File(context.filesDir, "cv/exports").apply { mkdirs() }
+        val userExportFile1 = File(exportsDir, "saved_photo.jpg").apply { writeBytes(ByteArray(1024)) }
+        val userExportFile2 = File(cvExportsDir, "saved_doc.pdf").apply { writeBytes(ByteArray(2048)) }
+
+        val cacheFile = File(context.cacheDir, "temp.tmp").apply { writeBytes(ByteArray(512)) }
+
+        val managedFiles = StorageGovernor.getManagedFiles(context)
+        assertFalse("files/exports must not be managed for FIFO deletion", managedFiles.contains(userExportFile1))
+        assertFalse("files/cv/exports must not be managed for FIFO deletion", managedFiles.contains(userExportFile2))
+        assertTrue("cacheDir files should be managed", managedFiles.contains(cacheFile))
+
+        userExportFile1.delete()
+        userExportFile2.delete()
+        cacheFile.delete()
+    }
 }

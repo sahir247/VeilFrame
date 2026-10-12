@@ -560,7 +560,7 @@
                     android:layout_width="38dp"
                     android:layout_height="38dp"
                     android:layout_marginStart="12dp"
-                    app:cardCornerRadius="19dp"
+                    app:cardCornerRadius="16dp"
                     app:strokeColor="@color/vf_surface_stroke"
                     app:strokeWidth="1dp"
                     app:cardElevation="0dp">

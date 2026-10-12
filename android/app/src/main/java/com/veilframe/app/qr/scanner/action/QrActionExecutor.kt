@@ -170,9 +170,17 @@ object QrActionExecutor {
         connectWifiLegacy(context, action, isOpen)
     }
 
+    private var activeWifiCallback: ConnectivityManager.NetworkCallback? = null
+
     private fun connectViaNetworkSpecifierApi29(context: Context, action: QrAction.Wifi, isOpen: Boolean) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         try {
+            activeWifiCallback?.let { oldCb ->
+                runCatching { cm.unregisterNetworkCallback(oldCb) }
+                activeWifiCallback = null
+            }
+
             val specifierBuilder = WifiNetworkSpecifier.Builder()
                 .setSsid(action.ssid)
                 .apply {
@@ -187,13 +195,21 @@ object QrActionExecutor {
                 .setNetworkSpecifier(specifierBuilder.build())
                 .build()
 
-            val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            cm.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
+            val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     // Connected successfully!
                     // Do NOT call cm.bindProcessToNetwork(network) - preserves application-wide networking.
                 }
-            })
+
+                override fun onUnavailable() {
+                    activeWifiCallback?.let { cb ->
+                        runCatching { cm.unregisterNetworkCallback(cb) }
+                    }
+                    activeWifiCallback = null
+                }
+            }
+            activeWifiCallback = callback
+            cm.requestNetwork(request, callback, 30_000)
             Toast.makeText(context, "Requesting connection to ${action.ssid}...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             openWifiSettingsFallback(context, action)

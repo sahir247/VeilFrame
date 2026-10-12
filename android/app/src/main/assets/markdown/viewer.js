@@ -244,7 +244,7 @@
           html = html.split(item.id).join(renderedMath);
         }
 
-        bodyEl.innerHTML = html;
+        bodyEl.innerHTML = sanitizeHtml(html);
 
         // Resolve relative paths in raw HTML <img> tags if baseUri is provided
         if (baseUri) {
@@ -618,6 +618,67 @@
               .replace(/>/g, '&gt;')
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#039;');
+  }
+
+  function sanitizeHtml(rawHtml) {
+    if (!rawHtml) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawHtml, 'text/html');
+
+      const forbiddenTags = new Set([
+        'SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'FORM',
+        'BASE', 'META', 'LINK', 'FRAME', 'FRAMESET', 'APPLET'
+      ]);
+
+      const allElements = Array.from(doc.body.querySelectorAll('*'));
+      for (let i = 0; i < allElements.length; i++) {
+        const el = allElements[i];
+        const tag = el.tagName.toUpperCase();
+
+        if (forbiddenTags.has(tag)) {
+          el.remove();
+          continue;
+        }
+
+        if (tag === 'INPUT') {
+          if (el.getAttribute('type') === 'checkbox') {
+            el.setAttribute('disabled', 'disabled');
+          } else {
+            el.remove();
+            continue;
+          }
+        }
+
+        // Clean attributes
+        const attrs = Array.from(el.attributes);
+        for (let j = 0; j < attrs.length; j++) {
+          const attr = attrs[j];
+          const name = attr.name.toLowerCase();
+          const val = (attr.value || '').trim().toLowerCase();
+
+          // Block all inline event handlers (onclick, onerror, onload, etc.)
+          if (name.startsWith('on')) {
+            el.removeAttribute(attr.name);
+            continue;
+          }
+
+          // Block dangerous URI schemes
+          if (name === 'href' || name === 'src' || name === 'action' || name === 'formaction' || name === 'xlink:href') {
+            if (val.startsWith('javascript:') || val.startsWith('vbscript:')) {
+              el.removeAttribute(attr.name);
+            } else if (val.startsWith('data:') && !val.startsWith('data:image/')) {
+              el.removeAttribute(attr.name);
+            }
+          }
+        }
+      }
+
+      return doc.body.innerHTML;
+    } catch (e) {
+      console.error('[MARKDOWN] Sanitization error, falling back to escaped HTML:', e);
+      return escapeHtml(rawHtml);
+    }
   }
 
   // Signal renderer readiness immediately

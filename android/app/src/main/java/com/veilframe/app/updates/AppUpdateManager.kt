@@ -48,6 +48,12 @@ class AppUpdateManager(
     private val scope: CoroutineScope,
     private val onLog: (String) -> Unit
 ) {
+    sealed class ManifestSignatureStatus {
+        object Absent : ManifestSignatureStatus()
+        object Valid : ManifestSignatureStatus()
+        object Invalid : ManifestSignatureStatus()
+    }
+
     companion object {
         private const val PREFS_NAME = "veilframe_prefs"
         // VeilFrame official production APK release signing certificate fingerprint (SHA-256)
@@ -152,6 +158,19 @@ class AppUpdateManager(
                 java.util.Base64.getDecoder().decode(str.trim())
             } catch (_: Throwable) {
                 android.util.Base64.decode(str.trim(), android.util.Base64.DEFAULT)
+            }
+        }
+
+        fun checkManifestSignature(manifestJson: JSONObject, onLog: ((String) -> Unit)? = null): ManifestSignatureStatus {
+            val signatureBase64 = manifestJson.optString("signature", "").trim()
+            if (signatureBase64.isBlank()) {
+                onLog?.invoke("[SEC] Update manifest has no digital signature; relying on APK signature pinning and SHA-256.")
+                return ManifestSignatureStatus.Absent
+            }
+            return if (verifyManifestSignature(manifestJson, onLog)) {
+                ManifestSignatureStatus.Valid
+            } else {
+                ManifestSignatureStatus.Invalid
             }
         }
 
@@ -386,18 +405,22 @@ class AppUpdateManager(
                         if (manifestConn.responseCode in 200..299) {
                             val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
                             val manifestJson = JSONObject(jsonStr)
-                            val isManifestSigValid = verifyManifestSignature(manifestJson)
-                            if (isManifestSigValid) {
-                                onLog("[SEC] Manifest cryptographic signature verified successfully via Ed25519.")
-                            }
-                            remoteVersionCode = manifestJson.optLong("versionCode", 0L)
-                            remoteVersionName = manifestJson.optString("versionName", "").trim()
-                            remoteTagName = manifestJson.optString("tag", if (remoteVersionName.isNotEmpty()) "v$remoteVersionName" else "").trim()
-                            manifestApkName = manifestJson.optString("apk", "").trim()
-                            apkExpectedSha256 = manifestJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
-                            val changelogArr = manifestJson.optJSONArray("changelog")
-                            if (changelogArr != null) {
-                                releaseChangelog = (0 until changelogArr.length()).joinToString("\n") { "• ${changelogArr.getString(it)}" }
+                            val sigStatus = checkManifestSignature(manifestJson, onLog)
+                            if (sigStatus is ManifestSignatureStatus.Invalid) {
+                                onLog("[SEC] CRITICAL: Manifest signature present but invalid! Rejecting untrusted manifest to prevent tampering.")
+                            } else {
+                                if (sigStatus is ManifestSignatureStatus.Valid) {
+                                    onLog("[SEC] Manifest cryptographic signature verified successfully via Ed25519.")
+                                }
+                                remoteVersionCode = manifestJson.optLong("versionCode", 0L)
+                                remoteVersionName = manifestJson.optString("versionName", "").trim()
+                                remoteTagName = manifestJson.optString("tag", if (remoteVersionName.isNotEmpty()) "v$remoteVersionName" else "").trim()
+                                manifestApkName = manifestJson.optString("apk", "").trim()
+                                apkExpectedSha256 = manifestJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
+                                val changelogArr = manifestJson.optJSONArray("changelog")
+                                if (changelogArr != null) {
+                                    releaseChangelog = (0 until changelogArr.length()).joinToString("\n") { "• ${changelogArr.getString(it)}" }
+                                }
                             }
                         }
                     } catch (e: Exception) {

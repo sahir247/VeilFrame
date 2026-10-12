@@ -34,7 +34,7 @@ class CvEngine(
         priority: CvPriority = CvPriority.INTERACTIVE,
         memoryEstimate: Long = 0L,
         timeoutMs: Long = 0L,
-        block: (CvContext) -> T,
+        block: suspend (CvContext) -> T,
     ): CvJob<T> {
         val reservation = if (memoryEstimate > 0L) {
             when (val decision = memory.reserve(memoryEstimate)) {

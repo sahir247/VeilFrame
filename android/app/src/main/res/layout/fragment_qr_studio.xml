@@ -10,7 +10,6 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
     android:background="?attr/colorSurface">
 
     <!-- Top App Bar -->
@@ -18,13 +17,13 @@
         android:id="@+id/qr_appbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fitsSystemWindows="true"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/qr_toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="48dp"
+            android:minHeight="48dp"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationIconTint="?attr/colorOnSurface"
@@ -71,10 +70,10 @@
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/qr_tabs"
             android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             app:tabMode="fixed"
             app:tabGravity="fill"
-            app:tabIndicatorHeight="2.5dp"
+            app:tabIndicatorHeight="2dp"
             app:tabIndicatorAnimationMode="elastic"
             app:tabIndicatorFullWidth="false" />
     </com.google.android.material.appbar.AppBarLayout>

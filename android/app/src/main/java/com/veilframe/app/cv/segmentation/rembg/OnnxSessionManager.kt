@@ -13,9 +13,15 @@ class OnnxSessionManager(
 ) {
     private val environment = OrtEnvironment.getEnvironment()
     private val sessions = ConcurrentHashMap<String, OrtSession>()
+    @Volatile private var activeModelId: String? = null
 
     @Synchronized
     fun getSession(model: RembgModel): OrtSession {
+        if (activeModelId != null && activeModelId != model.id) {
+            // Evict previous model when switching to keep at most 1 active model resident
+            sessions.remove(activeModelId)?.let { runCatching { it.close() } }
+        }
+        activeModelId = model.id
         return sessions.getOrPut(model.id) {
             createSession(model)
         }
@@ -32,20 +38,26 @@ class OnnxSessionManager(
         require(modelRepository.isModelReady(model)) {
             "Model ${model.displayName} is not downloaded or incomplete"
         }
-        val options = OrtSession.SessionOptions().apply {
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            setMemoryPatternOptimization(true)
-            setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
-            setIntraOpNumThreads(2)
+        val processors = Runtime.getRuntime().availableProcessors()
+        val threads = minOf(4, maxOf(2, processors / 2))
+        return OrtSession.SessionOptions().use { options ->
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            options.setMemoryPatternOptimization(true)
+            options.setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+            options.setIntraOpNumThreads(threads)
+            environment.createSession(modelFile.absolutePath, options)
         }
-        return environment.createSession(modelFile.absolutePath, options)
     }
 
     fun closeSession(model: RembgModel) {
+        if (activeModelId == model.id) {
+            activeModelId = null
+        }
         sessions.remove(model.id)?.close()
     }
 
     fun closeAll() {
+        activeModelId = null
         sessions.values.forEach {
             try { it.close() } catch (_: Exception) {}
         }

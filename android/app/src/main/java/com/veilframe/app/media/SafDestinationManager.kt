@@ -78,17 +78,24 @@ class SafDestinationManager(private val context: Context) {
     }
 
     fun copyFileToDocumentTree(file: File, treeUri: Uri, mimeType: String): Uri? {
+        val treeDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return null
+        val newFileDoc = treeDoc.createFile(mimeType, file.name) ?: return null
         return try {
-            val treeDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-            val newFileDoc = treeDoc.createFile(mimeType, file.name) ?: return null
-            context.contentResolver.openOutputStream(newFileDoc.uri)?.use { outStream ->
+            val outStream = context.contentResolver.openOutputStream(newFileDoc.uri)
+                ?: run {
+                    Log.e(TAG, "Could not open output stream for ${newFileDoc.uri}")
+                    newFileDoc.delete()
+                    return null
+                }
+            outStream.use { target ->
                 FileInputStream(file).use { inStream ->
-                    inStream.copyTo(outStream)
+                    inStream.copyTo(target)
                 }
             }
             newFileDoc.uri
         } catch (e: Exception) {
             Log.e(TAG, "Failed copying output to document tree: ${e.message}", e)
+            runCatching { newFileDoc.delete() }
             null
         }
     }

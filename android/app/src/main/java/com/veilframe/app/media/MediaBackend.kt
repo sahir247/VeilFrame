@@ -46,6 +46,20 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         )
     }
 
+    suspend fun cleanVideoCancellable(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true
+    ): Boolean {
+        return VideoMetadataSanitizer.cleanVideoCancellable(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            noiseLevel = noiseLevel,
+            scrubAudio = scrubAudio
+        )
+    }
+
     override fun cleanImage(
         inputPath: String,
         outputPath: String,

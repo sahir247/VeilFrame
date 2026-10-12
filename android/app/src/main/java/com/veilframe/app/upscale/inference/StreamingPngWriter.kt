@@ -26,16 +26,33 @@ class StreamingPngWriter(
     val height: Int,
 ) : AutoCloseable {
 
+    companion object {
+        const val MAX_DIMENSION = 65_536
+    }
+
+    enum class State { OPEN, FINALIZING, COMPLETED, ABORTED }
+
+    @Volatile
+    var state: State = State.OPEN
+        private set
+
+    init {
+        require(width in 1..MAX_DIMENSION && height in 1..MAX_DIMENSION) {
+            "invalid PNG dimensions ${width}x${height} (allowed: 1..$MAX_DIMENSION)"
+        }
+        val requiredBufSize = 1L + width.toLong() * 4L
+        require(requiredBufSize <= Int.MAX_VALUE) {
+            "scanline buffer overflow for width $width"
+        }
+    }
+
     private val out: OutputStream = FileOutputStream(file).buffered(64 * 1024)
     private val deflater = Deflater(Deflater.DEFAULT_COMPRESSION)
     private val idat: DeflaterOutputStream = DeflaterOutputStream(out, deflater, 64 * 1024)
-    private val rowBuf = ByteArray(1 + width * 4)
-    private val transparentRow = IntArray(width)
+    private val rowBuf = ByteArray((1L + width.toLong() * 4L).toInt())
     private var rowsWritten = 0
-    private var closed = false
 
     init {
-        require(width > 0 && height > 0) { "invalid PNG dimensions ${width}x${height}" }
         out.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
         val ihdr = ByteArray(13)
         putInt(ihdr, 0, width)
@@ -50,9 +67,9 @@ class StreamingPngWriter(
 
     /** Writes one scanline from ARGB_8888 ints (Bitmap.getPixels order). */
     fun writeRow(pixels: IntArray, offset: Int = 0) {
-        check(!closed) { "writer closed" }
+        check(state == State.OPEN) { "writer is in state $state, cannot write row" }
         check(rowsWritten < height) { "all $height rows already written" }
-        check(pixels.size - offset >= width) { "row buffer too small" }
+        check(pixels.size - offset >= width) { "row buffer too small: need $width from offset $offset, but size is ${pixels.size}" }
         rowBuf[0] = 0 // filter: None
         var b = 1
         for (i in 0 until width) {
@@ -71,25 +88,30 @@ class StreamingPngWriter(
     fun progress(): Float = if (height == 0) 1f else rowsWritten.toFloat() / height.toFloat()
 
     override fun close() {
-        if (closed) return
-        closed = true
+        if (state == State.COMPLETED || state == State.ABORTED) return
+        if (rowsWritten < height) {
+            val written = rowsWritten
+            abort()
+            error("Incomplete PNG: wrote $written of $height rows")
+        }
+        state = State.FINALIZING
         try {
-            // Defensive: a valid PNG must contain exactly `height` scanlines.
-            while (rowsWritten < height) {
-                writeRow(transparentRow)
-            }
             idat.finish()
             writeChunk("IEND", ByteArray(0))
             idat.close() // finishes the zlib stream flush and closes `out`
+            state = State.COMPLETED
+        } catch (t: Throwable) {
+            abort()
+            throw t
         } finally {
-            deflater.end()
+            runCatching { deflater.end() }
         }
     }
 
     /** Abandon without producing a valid file (used on failures). */
     fun abort() {
-        if (closed) return
-        closed = true
+        if (state == State.ABORTED) return
+        state = State.ABORTED
         runCatching { idat.close() }
         runCatching { out.close() }
         runCatching { deflater.end() }

@@ -52,7 +52,7 @@ class CvDispatcher(
         reservation: MemoryReservation? = null,
         pool: MatPool = MatPool.default,
         timeoutMs: Long = 0L,
-        block: (CvContext) -> T,
+        block: suspend (CvContext) -> T,
     ): CvJob<T> {
         // A lane configured with 0 slots is DISABLED: submitting to a
         // Semaphore(0) lane would suspend forever, so reject up front.
@@ -121,7 +121,7 @@ class CvDispatcher(
         priority: CvPriority,
         context: CvContext,
         reservation: MemoryReservation?,
-        block: (CvContext) -> T,
+        block: suspend (CvContext) -> T,
     ): Deferred<CvResult<T>> {
         val lane = laneSemaphores.getValue(priority)
         return async {

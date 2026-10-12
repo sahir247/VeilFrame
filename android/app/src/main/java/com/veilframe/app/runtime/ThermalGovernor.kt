@@ -43,8 +43,10 @@ object ThermalGovernor {
     @Synchronized
     fun register(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        registrations++
-        if (listener != null) return
+        if (listener != null) {
+            registrations++
+            return
+        }
         val pm = context.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
         val l = PowerManager.OnThermalStatusChangedListener { newStatus ->
             status = newStatus
@@ -53,6 +55,7 @@ object ThermalGovernor {
             .onSuccess {
                 powerManager = pm
                 listener = l
+                registrations++
                 status = runCatching { pm.currentThermalStatus }.getOrDefault(0)
             }
     }
@@ -73,12 +76,49 @@ object ThermalGovernor {
         listener = null
     }
 
-    /** MODERATE or worse → efficiency mode (workers 1, smaller chunks). */
+    enum class ThermalResponse {
+        NONE,
+        MILD_THROTTLE,
+        FULL_THROTTLE,
+        ABORT
+    }
+
+    const val STATUS_NONE = 0
+    const val STATUS_LIGHT = 1
+    const val STATUS_MODERATE = 2
+    const val STATUS_SEVERE = 3
+    const val STATUS_CRITICAL = 4
+    const val STATUS_EMERGENCY = 5
+    const val STATUS_SHUTDOWN = 6
+
+    fun responseForStatus(statusCode: Int): ThermalResponse {
+        return when {
+            statusCode >= STATUS_CRITICAL -> ThermalResponse.ABORT
+            statusCode >= STATUS_SEVERE -> ThermalResponse.FULL_THROTTLE
+            statusCode >= STATUS_MODERATE -> ThermalResponse.MILD_THROTTLE
+            else -> ThermalResponse.NONE
+        }
+    }
+
+    val response: ThermalResponse
+        get() {
+            if (overrideThrottledForTesting == true) return ThermalResponse.FULL_THROTTLE
+            if (overrideThrottledForTesting == false) return ThermalResponse.NONE
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return ThermalResponse.NONE
+            return responseForStatus(status)
+        }
+
+    /** SEVERE or worse → full efficiency mode (workers 1, smaller chunks). */
     val isThrottled: Boolean
         get() = overrideThrottledForTesting ?: (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            status >= PowerManager.THERMAL_STATUS_MODERATE
+            status >= PowerManager.THERMAL_STATUS_SEVERE
         )
+
+    /** MODERATE or worse → mild reduction. */
+    val isMildlyThrottled: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            status >= PowerManager.THERMAL_STATUS_MODERATE
 
     /** CRITICAL or worse → abort heavy jobs cooperatively (typed ThermalShutdownException). */
     val isCritical: Boolean

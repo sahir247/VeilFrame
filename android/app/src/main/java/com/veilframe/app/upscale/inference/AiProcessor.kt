@@ -429,9 +429,19 @@ class AiProcessor(
         // the fast cores, so the phone stays responsive during upscaling.
         // (Previously tiles ran on the shared Dispatchers.Default pool at
         // default priority, saturating every core.)
+        val isThermalThrottled = try {
+            com.veilframe.app.runtime.ThermalGovernor.isThrottled
+        } catch (_: Throwable) {
+            false
+        }
+        val threadPriority = if (isThermalThrottled) {
+            android.os.Process.THREAD_PRIORITY_BACKGROUND
+        } else {
+            android.os.Process.THREAD_PRIORITY_DEFAULT
+        }
         val executor = java.util.concurrent.Executors.newFixedThreadPool(workers) { runnable ->
             Thread {
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                android.os.Process.setThreadPriority(threadPriority)
                 runnable.run()
             }.apply {
                 name = "vf-ort-tile"

@@ -205,23 +205,22 @@ object OnnxSessionManager {
     }
 
     private fun buildSession(modelFile: File, modelName: String, backend: Backend): OrtSession {
-        val options = OrtSession.SessionOptions()
-        try {
+        return OrtSession.SessionOptions().use { options ->
             val processors = Runtime.getRuntime().availableProcessors()
+            val targetThreads = UpscaleInferenceParams.computeBudget(processors).intraOpThreads
             when (backend) {
                 Backend.NNAPI -> {
                     // Vendor driver picks GPU/DSP/CPU delegation per op support.
                     options.addNnapi()
                 }
                 Backend.XNNPACK -> {
-                    // F8: bounded — XNNPACK manages its own threadpool.
-                    options.addXnnpack(mapOf("intra_op_num_threads" to "2"))
+                    // Coupled compute budget matching parallel tile workers
+                    options.addXnnpack(mapOf("intra_op_num_threads" to targetThreads.toString()))
                 }
                 Backend.CPU -> {
-                    // F8: was (cores*3/4) intra + 4 inter PER WORKER. Now bounded
-                    // and sequential-execution so tiles compose predictably.
+                    // Coupled compute budget matching parallel tile workers
                     try {
-                        options.setIntraOpNumThreads(minOf(4, maxOf(1, (processors * 3) / 4)))
+                        options.setIntraOpNumThreads(targetThreads)
                     } catch (e: OrtException) {
                         Log.w(TAG, "Error setting IntraOpNumThreads: ${e.message}")
                     }
@@ -257,10 +256,7 @@ object OnnxSessionManager {
                 Log.w(TAG, "Error setting OptimizationLevel: ${e.message}")
             }
 
-            return OrtEnvironment.getEnvironment().createSession(modelFile.absolutePath, options)
-        } catch (e: Exception) {
-            runCatching { options.close() }
-            throw e
+            OrtEnvironment.getEnvironment().createSession(modelFile.absolutePath, options)
         }
     }
 }

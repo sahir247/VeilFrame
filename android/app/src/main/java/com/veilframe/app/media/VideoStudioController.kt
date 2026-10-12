@@ -602,8 +602,8 @@ class VideoStudioController(
                 var height = 0
                 var thumbFrame: Bitmap? = null
 
+                val retriever = MediaMetadataRetriever()
                 try {
-                    val retriever = MediaMetadataRetriever()
                     retriever.setDataSource(activity, uri)
                     val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     if (durStr != null) duration = durStr.toLong()
@@ -619,9 +619,12 @@ class VideoStudioController(
                         height = tmp
                     }
                     thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    retriever.release()
                 } catch (e: Exception) {
                     Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
+                } finally {
+                    try {
+                        retriever.release()
+                    } catch (_: Exception) {}
                 }
 
                 if (newItems.isEmpty() && !isAppend && thumbFrame != null && currentToken == loadToken.get()) {

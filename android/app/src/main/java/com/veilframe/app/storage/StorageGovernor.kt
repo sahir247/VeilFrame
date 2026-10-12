@@ -69,12 +69,13 @@ object StorageGovernor {
         bytesFreed
     }
 
-    private fun getManagedFiles(context: Context): List<File> {
+    @androidx.annotation.VisibleForTesting
+    internal fun getManagedFiles(context: Context): List<File> {
+        // Only disposable cache directories are subject to automated quota pruning.
+        // User-facing export folders (files/exports, files/cv/exports) are protected from auto-deletion.
         val dirs = listOfNotNull(
             context.cacheDir,
-            context.externalCacheDir,
-            File(context.filesDir, "exports"),
-            File(context.filesDir, "cv/exports")
+            context.externalCacheDir
         )
 
         val result = mutableListOf<File>()

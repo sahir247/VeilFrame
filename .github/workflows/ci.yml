@@ -185,11 +185,11 @@ jobs:
         working-directory: android
         run: bash scripts/check_cv_governance.sh
 
-      - name: Run Tier 4 Bit-for-Bit Android Test Suite
+      - name: Run Android Unit Test Suite & Tier 4 Bit-for-Bit Parity Tests
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest --tests "com.veilframe.app.qr.Tier4UpstreamMatrixOracleTest"
+          ./gradlew testDebugUnitTest
 
   # ------------------------------------------------------------------ #
   # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #

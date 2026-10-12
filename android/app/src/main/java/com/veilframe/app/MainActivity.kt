@@ -96,7 +96,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var motionLabController: MotionLabController
     private lateinit var imageQualityController: ImageQualityController
     private lateinit var provenanceController: ProvenanceController
-    private var pendingExportFile: File? = null
+    private var pendingImgStudioExportFile: File? = null
+    private var pendingVidStudioExportFile: File? = null
+    private var pendingDocScannerExportFile: File? = null
+    private var pendingBgRemoverExportFile: File? = null
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
@@ -174,7 +177,8 @@ class MainActivity : AppCompatActivity() {
     private val imgStudioExportLauncher = registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingExportFile
+        val file = pendingImgStudioExportFile
+        pendingImgStudioExportFile = null
         if (destUri != null && file != null && file.exists()) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val ok = safStorageManager.copyFileToUri(file, destUri)
@@ -189,7 +193,8 @@ class MainActivity : AppCompatActivity() {
     private val vidStudioExportLauncher = registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingExportFile
+        val file = pendingVidStudioExportFile
+        pendingVidStudioExportFile = null
         if (destUri != null && file != null && file.exists()) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val ok = safStorageManager.copyFileToUri(file, destUri)
@@ -326,7 +331,8 @@ class MainActivity : AppCompatActivity() {
     private val docScannerExportLauncher = registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingExportFile
+        val file = pendingDocScannerExportFile
+        pendingDocScannerExportFile = null
         if (destUri != null && file != null) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val ok = safStorageManager.copyFileToUri(file, destUri)
@@ -339,7 +345,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        pendingExportFile = null
     }
 
     // Dedicated Background Remover Activity Result Launchers
@@ -355,7 +360,8 @@ class MainActivity : AppCompatActivity() {
     private val bgRemoverExportLauncher = registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingExportFile
+        val file = pendingBgRemoverExportFile
+        pendingBgRemoverExportFile = null
         if (destUri != null && file != null) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val ok = safStorageManager.copyFileToUri(file, destUri)
@@ -368,7 +374,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        pendingExportFile = null
     }
 
     // Dedicated Image Quality Activity Result Launcher
@@ -727,7 +732,7 @@ class MainActivity : AppCompatActivity() {
             onAddMoreImageRequest = { imgStudioAddMoreLauncher.launch("image/*") },
             onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
-                pendingExportFile = file
+                pendingImgStudioExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
                 imgStudioExportLauncher.launch(file.name to mime)
             },
@@ -755,7 +760,7 @@ class MainActivity : AppCompatActivity() {
             onAddMoreVideoRequest = { vidStudioAddMoreLauncher.launch("video/*") },
             onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
-                pendingExportFile = file
+                pendingVidStudioExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
                 vidStudioExportLauncher.launch(file.name to mime)
             },
@@ -823,7 +828,7 @@ class MainActivity : AppCompatActivity() {
             onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
             onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
             onExportFileRequest = { file, mime ->
-                pendingExportFile = file
+                pendingDocScannerExportFile = file
                 docScannerExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
@@ -863,7 +868,7 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onPickImageRequest = { bgRemoverPickerLauncher.launch("image/*") },
             onExportPngRequest = { file ->
-                pendingExportFile = file
+                pendingBgRemoverExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
                 bgRemoverExportLauncher.launch(file.name to mime)
             },
@@ -1294,10 +1299,14 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun openTool(toolMode: ToolMode) {
-        if (!canNavigate()) return
+    private fun clearBackTimer() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
+    }
+
+    private fun openTool(toolMode: ToolMode) {
+        if (!canNavigate()) return
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1310,8 +1319,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openImageStudio() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -1324,8 +1332,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openVideoStudio() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.VIDEO_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -1338,8 +1345,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openImageUpscaler() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_UPSCALER)
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -1352,8 +1358,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openQrStudio() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.QR_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -1370,8 +1375,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openMarkdownViewer(uri: Uri, title: String? = null) {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1383,8 +1387,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openMarkdownViewer(file: File, title: String? = null) {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1396,8 +1399,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openDocumentScanner() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.DOCUMENT_SCANNER)
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -1409,8 +1411,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openBackgroundRemover() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1421,8 +1422,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openMotionLab() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1433,8 +1433,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openImageQuality() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1445,8 +1444,7 @@ class MainActivity : AppCompatActivity() {
 
     fun openProvenance() {
         if (!canNavigate()) return
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -1802,8 +1800,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleBackClearWork() {
-        backClearTimerJob?.cancel()
-        backClearTimerJob = null
+        clearBackTimer()
         // If a task is executing in background via foreground service, avoid tearing down active processing
         val isVideoProcessing = ::videoStudioController.isInitialized && videoStudioController.isProcessing
         val isUpscalerProcessing = ::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing

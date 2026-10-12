@@ -99,18 +99,25 @@ data class UpscaleInferenceParams(
                 val maxWorkersByHeap = ((heapBytes * 0.40) / perTilePeakBytes).toInt()
                 val memorySafeWorkers = minOf(maxWorkersByAvailRam, maxWorkersByHeap)
 
-                // Scale up concurrency to 3 or 4 workers when hardware cores and thermal headroom permit
-                val isThrottled = try {
-                    com.veilframe.app.runtime.ThermalGovernor.isThrottled
-                } catch (_: Throwable) {
-                    false
-                }
+                val budget = computeBudget(availableCores)
+                workers = minOf(budget.parallelWorkers, memorySafeWorkers).coerceAtLeast(1)
+            }
 
-                if (!isThrottled && memorySafeWorkers >= 3 && availableCores >= 6) {
-                    workers = minOf(availableCores - 2, memorySafeWorkers, 4).coerceAtLeast(2)
-                } else {
-                    workers = 2
+            val thermal = try {
+                com.veilframe.app.runtime.ThermalGovernor.response
+            } catch (_: Throwable) {
+                com.veilframe.app.runtime.ThermalGovernor.ThermalResponse.NONE
+            }
+
+            when (thermal) {
+                com.veilframe.app.runtime.ThermalGovernor.ThermalResponse.FULL_THROTTLE -> {
+                    chunk = ((chunk * 3 / 4) / 32 * 32).coerceAtLeast(128)
+                    workers = 1
                 }
+                com.veilframe.app.runtime.ThermalGovernor.ThermalResponse.MILD_THROTTLE -> {
+                    workers = maxOf(1, workers - 1)
+                }
+                else -> { /* retain computed budget */ }
             }
 
             return UpscaleInferenceParams(
@@ -118,6 +125,18 @@ data class UpscaleInferenceParams(
                 overlap = minOf(32, chunk / 4),
                 parallelWorkers = workers,
             )
+        }
+
+        data class ComputeBudget(
+            val parallelWorkers: Int,
+            val intraOpThreads: Int
+        )
+
+        fun computeBudget(availableCores: Int): ComputeBudget {
+            val usableCores = (availableCores - 1).coerceAtLeast(2)
+            val workers = usableCores.coerceIn(2, 3)
+            val intraOpThreads = usableCores.coerceIn(2, 4)
+            return ComputeBudget(workers, intraOpThreads)
         }
     }
 }

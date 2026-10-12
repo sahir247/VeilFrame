@@ -254,24 +254,22 @@ class BackgroundRemoverController(
                 CvRuntime.requireAvailable()
                 ctx.ensureActive()
 
-                kotlinx.coroutines.runBlocking {
-                    remover.removeBackground(
-                        imageBytes = bytes,
-                        model = currentModel,
-                        trim = trim,
-                        tightenEdges = tighten,
-                        featherEdges = feather,
-                        onProgress = { progress ->
-                            ctx.ensureActive()
-                            ctx.reportProgress(progress.percent / 100f)
-                            withContext(Dispatchers.Main) {
-                                binding.progressBgInference.progress = progress.percent
-                                binding.tvBgProgressPercent.text = "${progress.percent}%"
-                                binding.tvBgProgressMessage.text = progress.message
-                            }
+                remover.removeBackground(
+                    imageBytes = bytes,
+                    model = currentModel,
+                    trim = trim,
+                    tightenEdges = tighten,
+                    featherEdges = feather,
+                    onProgress = { progress ->
+                        ctx.ensureActive()
+                        ctx.reportProgress(progress.percent / 100f)
+                        withContext(Dispatchers.Main) {
+                            binding.progressBgInference.progress = progress.percent
+                            binding.tvBgProgressPercent.text = "${progress.percent}%"
+                            binding.tvBgProgressMessage.text = progress.message
                         }
-                    )
-                }
+                    }
+                )
             }
 
             val outcome = job.await()
@@ -279,7 +277,11 @@ class BackgroundRemoverController(
                 binding.cardBgProcessingOverlay.visibility = View.GONE
                 outcome.fold(
                     onOk = { result ->
+                        val prev = resultBitmap
                         resultBitmap = result.cutoutBitmap
+                        if (prev !== resultBitmap) {
+                            prev?.recycle()
+                        }
                         lastFailure = null
                         updateUi()
 
