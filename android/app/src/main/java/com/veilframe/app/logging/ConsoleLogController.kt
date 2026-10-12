@@ -99,4 +99,10 @@ class ConsoleLogController(
     }
 
     fun getLogs(): String = tvConsoleLog.text.toString()
+
+    fun clear() {
+        val cleared = "[SYS] Telemetry buffer cleared.\n[SYS] Ready."
+        setLogs(cleared)
+        onLogUpdated?.invoke(cleared)
+    }
 }

@@ -1231,7 +1231,7 @@ class VideoStudioController(
 
             if (editState.isStabilized) {
                 binding.tvVidSummaryStabilization.visibility = View.VISIBLE
-                binding.tvVidSummaryStabilization.text = "• Stabilization: Active (EIS ${editState.stabilizationMarginPercent}% Zoom)"
+                binding.tvVidSummaryStabilization.text = "• Stabilization: Active (FFmpeg Deshake + ${editState.stabilizationMarginPercent}% Zoom)"
             } else {
                 binding.tvVidSummaryStabilization.visibility = View.GONE
             }
@@ -2118,7 +2118,7 @@ class VideoStudioController(
             floatingDockController.onEditApplied()
         }
         val msg = if (editState.isStabilized) {
-            "Electronic Image Stabilization (EIS) enabled (5% auto-zoom border fix)"
+            "Video Stabilization enabled (FFmpeg Deshake + ${editState.stabilizationMarginPercent}% border zoom)"
         } else {
             "Stabilization disabled"
         }
@@ -2128,10 +2128,10 @@ class VideoStudioController(
     private fun updateStabilizeButtonState() {
         if (editState.isStabilized) {
             binding.btnVidStabilize.setIconResource(R.drawable.ic_check_circle)
-            binding.btnVidStabilize.text = "Footage Stabilized (EIS 5% Zoom)"
+            binding.btnVidStabilize.text = "Stabilized (Deshake + ${editState.stabilizationMarginPercent}% Zoom)"
         } else {
             binding.btnVidStabilize.setIconResource(R.drawable.ic_focus_ring)
-            binding.btnVidStabilize.text = "Stabilize Footage (EIS)"
+            binding.btnVidStabilize.text = "Stabilize (Deshake + Zoom)"
         }
     }
 

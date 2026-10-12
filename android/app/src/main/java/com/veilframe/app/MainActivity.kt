@@ -927,7 +927,13 @@ class MainActivity : AppCompatActivity() {
             binding.btnShareResult,
             binding.btnResultSave,
             binding.btnResultShare,
-            binding.btnResultPreview
+            binding.btnResultPreview,
+            binding.cardHomeDocScanner,
+            binding.cardHomeBgRemover,
+            binding.cardHomeMotionLab,
+            binding.cardHomeImageQuality,
+            binding.cardHomeProvenance,
+            binding.cardHomeDiagnostics
         )
         interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
 
@@ -978,6 +984,30 @@ class MainActivity : AppCompatActivity() {
         binding.cardHomeDocScanner.setOnClickListener {
             com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeDocScanner
             openDocumentScanner()
+        }
+
+        binding.cardHomeBgRemover.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeBgRemover
+            openBackgroundRemover()
+        }
+
+        binding.cardHomeMotionLab.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeMotionLab
+            openMotionLab()
+        }
+
+        binding.cardHomeImageQuality.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeImageQuality
+            openImageQuality()
+        }
+
+        binding.cardHomeProvenance.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeProvenance
+            openProvenance()
+        }
+
+        binding.cardHomeDiagnostics.setOnClickListener {
+            showDiagnosticsDialog()
         }
 
         // Tools Catalogue Workspace Card Clicks (All 13 Canonical Workspaces)
@@ -1398,6 +1428,60 @@ class MainActivity : AppCompatActivity() {
         }
         navigationController.showProvenanceScreen()
         consoleLogController.log("[UI] Opened Provenance & Verify workspace.")
+    }
+
+    private fun showDiagnosticsDialog() {
+        val cvStatus = if (com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) "Available (Hardware Accelerated)" else "Fallback (Java/Emulated)"
+        val thermalStatus = com.veilframe.app.runtime.ThermalGovernor.status
+        val storageUsedMb = com.veilframe.app.storage.StorageGovernor.calculateManagedStorageBytes(this) / (1024 * 1024)
+        val storageMaxGb = com.veilframe.app.storage.StorageGovernor.getMaxStorageGb(this)
+        val logLength = consoleLogController.getLogs().length
+
+        val msg = """
+            • OpenCV Engine: $cvStatus
+            • Thermal Status: Level $thermalStatus
+            • Managed Storage: ${storageUsedMb}MB / ${storageMaxGb}GB Limit
+            • Diagnostic Log Buffer: $logLength characters
+            • Security Model: Zero-Network Offline Sandbox
+        """.trimIndent()
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("VeilFrame System Diagnostics")
+            .setMessage(msg)
+            .setIcon(R.drawable.ic_settings)
+            .setPositiveButton("View Live Console") { _, _ ->
+                showFullConsoleLogDialog()
+            }
+            .setNeutralButton("Clear Logs") { _, _ ->
+                consoleLogController.clear()
+                android.widget.Toast.makeText(this, "Diagnostic logs cleared", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showFullConsoleLogDialog() {
+        val currentLogs = consoleLogController.getLogs().ifBlank { "[SYS] No telemetry events logged yet." }
+        val scrollView = android.widget.ScrollView(this)
+        val textView = android.widget.TextView(this).apply {
+            text = currentLogs
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(32, 24, 32, 24)
+            setTextIsSelectable(true)
+        }
+        scrollView.addView(textView)
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Live Technical Console")
+            .setView(scrollView)
+            .setPositiveButton("Copy All") { _, _ ->
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("VeilFrame Logs", currentLogs))
+                android.widget.Toast.makeText(this, "Console logs copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Dismiss", null)
+            .show()
     }
 
     private fun refreshLibrary() {

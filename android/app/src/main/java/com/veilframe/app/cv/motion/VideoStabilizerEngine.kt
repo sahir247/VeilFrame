@@ -19,16 +19,31 @@ import org.opencv.video.Video
 import java.util.Locale
 
 /**
+ * MotionTrackingStatus — Explicit diagnostic state of inter-frame motion estimation.
+ */
+enum class MotionTrackingStatus {
+    TRACKED,
+    INSUFFICIENT_FEATURES,
+    TRACKING_LOST,
+    DEGENERATE_TRANSFORM,
+    FAILED
+}
+
+/**
  * CameraMotion — Inter-frame 2D transformation delta representing physical camera movement.
  *
  * @param dx Horizontal translation in pixels between Frame N-1 and Frame N.
  * @param dy Vertical translation in pixels between Frame N-1 and Frame N.
  * @param da Angular rotation in radians between Frame N-1 and Frame N.
+ * @param confidence Reliability score in [0.0..1.0] based on tracked feature count.
+ * @param status Explicit tracking diagnostic status.
  */
 data class CameraMotion(
     val dx: Double,
     val dy: Double,
-    val da: Double
+    val da: Double,
+    val confidence: Double = 1.0,
+    val status: MotionTrackingStatus = MotionTrackingStatus.TRACKED
 )
 
 /**
@@ -128,7 +143,7 @@ class OpenCvOpticalFlowEstimator(
             // 1. Detect high-contrast Shi-Tomasi corners
             Imgproc.goodFeaturesToTrack(prevGray, corners, maxCorners, qualityLevel, minDistance)
             if (corners.empty() || corners.rows() < 4) {
-                return CameraMotion(0.0, 0.0, 0.0)
+                return CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.INSUFFICIENT_FEATURES)
             }
 
             // Convert corners from MatOfPoint to MatOfPoint2f
@@ -139,7 +154,7 @@ class OpenCvOpticalFlowEstimator(
             // 2. Track points via Lucas-Kanade optical flow
             Video.calcOpticalFlowPyrLK(prevGray, currGray, prevPoints, currPoints, status, err)
             if (status.empty()) {
-                return CameraMotion(0.0, 0.0, 0.0)
+                return CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.TRACKING_LOST)
             }
 
             // 3. Filter successful point tracks
@@ -157,7 +172,7 @@ class OpenCvOpticalFlowEstimator(
             }
 
             if (goodPrev.size < 4) {
-                return CameraMotion(0.0, 0.0, 0.0)
+                return CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.TRACKING_LOST)
             }
 
             // 4. Estimate Partial Affine Transform (Translation + Rotation)
@@ -170,7 +185,8 @@ class OpenCvOpticalFlowEstimator(
                     val dx = transformMat.get(0, 2)[0]
                     val dy = transformMat.get(1, 2)[0]
                     val da = Math.atan2(transformMat.get(1, 0)[0], transformMat.get(0, 0)[0])
-                    return CameraMotion(dx, dy, da)
+                    val confidence = (goodPrev.size.toDouble() / maxCorners.toDouble()).coerceIn(0.1, 1.0)
+                    return CameraMotion(dx, dy, da, confidence = confidence, status = MotionTrackingStatus.TRACKED)
                 }
             } finally {
                 goodPrevMat.release()
@@ -178,10 +194,10 @@ class OpenCvOpticalFlowEstimator(
                 transformMat?.release()
             }
 
-            return CameraMotion(0.0, 0.0, 0.0)
+            return CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.DEGENERATE_TRANSFORM)
         } catch (t: Throwable) {
             Log.w("VideoStabilizerEngine", "Optical flow estimation failed: ${t.message}")
-            return CameraMotion(0.0, 0.0, 0.0)
+            return CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.FAILED)
         } finally {
             corners.release()
             prevPoints.release()
@@ -521,8 +537,85 @@ class VideoStabilizerEngine(
     }
 
     /**
+     * TrajectoryAnalysisReport — Rich diagnostic report of two-pass EIS motion analysis.
+     */
+    data class TrajectoryAnalysisReport(
+        val rawTrajectory: List<CameraTrajectory>,
+        val smoothedTrajectory: List<CameraTrajectory>,
+        val corrections: List<StabilizationCorrection>,
+        val motions: List<CameraMotion>,
+        val meanConfidence: Double,
+        val trackingFailureRate: Double,
+        val totalSampleCount: Int,
+        val trackedFramesCount: Int
+    )
+
+    /**
+     * Pass 1 Diagnostics: Extracts trajectories and computes comprehensive motion metrics and failure rates.
+     */
+    fun analyzeTrajectory(
+        frames: Sequence<Mat>,
+        windowSize: Int = DEFAULT_SMOOTHING_WINDOW,
+        sigma: Double = DEFAULT_GAUSSIAN_SIGMA
+    ): TrajectoryAnalysisReport {
+        val estimator = motionEstimatorProvider()
+        val motions = mutableListOf<CameraMotion>()
+        val raw = mutableListOf<CameraTrajectory>()
+        var prevGray: Mat? = null
+        var sumDx = 0.0
+        var sumDy = 0.0
+        var sumDa = 0.0
+
+        try {
+            for (frame in frames) {
+                val currGray = Mat()
+                if (CvRuntime.isNativeAvailable) {
+                    try {
+                        Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                    } catch (_: Throwable) {}
+                }
+
+                if (prevGray != null) {
+                    val motion = estimator.estimateMotion(prevGray, currGray)
+                    motions.add(motion)
+                    sumDx += motion.dx
+                    sumDy += motion.dy
+                    sumDa += motion.da
+                    raw.add(CameraTrajectory(sumDx, sumDy, sumDa))
+                } else {
+                    raw.add(CameraTrajectory(0.0, 0.0, 0.0))
+                }
+
+                prevGray?.release()
+                prevGray = currGray
+            }
+        } finally {
+            prevGray?.release()
+            estimator.release()
+        }
+
+        val smoothed = smoothTrajectory(raw, windowSize, sigma)
+        val corrections = computeCorrections(raw, smoothed)
+        val trackedCount = motions.count { it.status == MotionTrackingStatus.TRACKED }
+        val failureCount = motions.size - trackedCount
+        val meanConfidence = if (motions.isNotEmpty()) motions.map { it.confidence }.average() else 1.0
+        val failureRate = if (motions.isNotEmpty()) failureCount.toDouble() / motions.size.toDouble() else 0.0
+
+        return TrajectoryAnalysisReport(
+            rawTrajectory = raw,
+            smoothedTrajectory = smoothed,
+            corrections = corrections,
+            motions = motions,
+            meanConfidence = meanConfidence,
+            trackingFailureRate = failureRate,
+            totalSampleCount = raw.size,
+            trackedFramesCount = trackedCount
+        )
+    }
+
+    /**
      * Samples keyframes from a video via [MediaMetadataRetriever] to estimate the physical
-     * camera trajectory across the clip.
+     * camera trajectory across the clip with timestamp-accurate frame retrieval.
      */
     fun estimateTrajectoryFromRetriever(
         retriever: MediaMetadataRetriever,
@@ -531,13 +624,70 @@ class VideoStabilizerEngine(
     ): List<CameraTrajectory> {
         val duration = durationMs.coerceAtLeast(100L)
         val stepMs = sampleIntervalMs.coerceIn(50L, 1000L)
-        val frameCount = ((duration / stepMs).toInt() + 1).coerceAtLeast(2)
-
+        val estimator = motionEstimatorProvider()
         val motions = mutableListOf<CameraMotion>()
-        // In real execution, sample frames and pass to motionEstimator
-        for (i in 1 until frameCount) {
-            motions.add(CameraMotion(0.0, 0.0, 0.0))
+
+        var prevGray: Mat? = null
+        try {
+            var timeMs = 0L
+            while (timeMs <= duration) {
+                val timeUs = timeMs * 1000L
+                val bitmap: Bitmap? = try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                        retriever.getScaledFrameAtTime(
+                            timeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            640,
+                            360
+                        ) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } else {
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    }
+                } catch (_: Throwable) {
+                    null
+                }
+
+                if (bitmap != null) {
+                    val currGray = try {
+                        val mat = com.veilframe.app.cv.core.BitmapBridge.toMat(bitmap)
+                        val gray = Mat()
+                        if (CvRuntime.isNativeAvailable && !mat.empty()) {
+                            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
+                            mat.release()
+                            gray
+                        } else {
+                            mat
+                        }
+                    } catch (_: Throwable) {
+                        Mat()
+                    }
+
+                    if (prevGray != null) {
+                        val motion = if (!currGray.empty() && !prevGray.empty()) {
+                            estimator.estimateMotion(prevGray, currGray)
+                        } else {
+                            CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.TRACKING_LOST)
+                        }
+                        motions.add(motion)
+                    }
+
+                    prevGray?.release()
+                    prevGray = currGray
+                    if (!bitmap.isRecycled) {
+                        bitmap.recycle()
+                    }
+                } else {
+                    if (prevGray != null) {
+                        motions.add(CameraMotion(0.0, 0.0, 0.0, confidence = 0.0, status = MotionTrackingStatus.FAILED))
+                    }
+                }
+                timeMs += stepMs
+            }
+        } finally {
+            prevGray?.release()
+            estimator.release()
         }
+
         return extractTrajectoryFromMotions(motions)
     }
 }

@@ -312,17 +312,8 @@ object VideoProcessor {
 
             if (isStabilized) {
                 val clampedZoom = stabilizationMarginPercent.coerceIn(0, 20)
-                val zoomFactor = 1.0 + (clampedZoom / 100.0)
-                val deshake = "deshake=edge=mirror:rx=32:ry=32:blocksize=32"
-                if (clampedZoom > 0) {
-                    val scaleW = String.format(Locale.US, "trunc(iw*%.3f/2)*2", zoomFactor)
-                    val scaleH = String.format(Locale.US, "trunc(ih*%.3f/2)*2", zoomFactor)
-                    val cropW = String.format(Locale.US, "trunc(iw/%.3f/2)*2", zoomFactor)
-                    val cropH = String.format(Locale.US, "trunc(ih/%.3f/2)*2", zoomFactor)
-                    vfFilters.add("$deshake,scale=$scaleW:$scaleH,crop=$cropW:$cropH")
-                } else {
-                    vfFilters.add(deshake)
-                }
+                val filter = com.veilframe.app.cv.motion.VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedZoom)
+                vfFilters.add(filter)
             }
 
             if (!dynamicCropFilter.isNullOrBlank()) {
