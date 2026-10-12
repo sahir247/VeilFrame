@@ -563,6 +563,24 @@ class VideoStudioController(
         val currentToken = loadToken.incrementAndGet()
         binding.playerBufferingBar.visibility = View.VISIBLE
 
+        if (!isAppend && uris.isNotEmpty()) {
+            val firstUri = uris.first()
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val instantBmp: Bitmap? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        activity.contentResolver.loadThumbnail(firstUri, android.util.Size(640, 480), null)
+                    } else null
+                    if (instantBmp != null && currentToken == loadToken.get()) {
+                        withContext(Dispatchers.Main) {
+                            binding.imgVidThumb.setImageBitmap(instantBmp)
+                            binding.imgVidPreview.setImageBitmap(instantBmp)
+                            binding.imgVidPreview.visibility = View.VISIBLE
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         scope.launch(Dispatchers.IO) {
             val newItems = mutableListOf<StudioVideoItem>()
             for (uri in uris) {
@@ -604,6 +622,15 @@ class VideoStudioController(
                     retriever.release()
                 } catch (e: Exception) {
                     Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
+                }
+
+                if (newItems.isEmpty() && !isAppend && thumbFrame != null && currentToken == loadToken.get()) {
+                    val initialThumb = thumbFrame
+                    withContext(Dispatchers.Main) {
+                        binding.imgVidThumb.setImageBitmap(initialThumb)
+                        binding.imgVidPreview.setImageBitmap(initialThumb)
+                        binding.imgVidPreview.visibility = View.VISIBLE
+                    }
                 }
 
                 // Asynchronously copy URI to cache file for background encoding needs

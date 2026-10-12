@@ -571,7 +571,7 @@ object VideoProcessor {
                         }
                     }
 
-                    if (pixelFormat.equals("yuv420p", ignoreCase = true)) {
+                    if (!pixelFormat.equals("auto", ignoreCase = true)) {
                         cmd.add("-pix_fmt")
                         cmd.add("yuv420p")
                     }

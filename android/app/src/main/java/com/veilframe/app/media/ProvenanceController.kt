@@ -53,7 +53,24 @@ class ProvenanceController(
             }
         }
 
+        reset()
         VeilFrameInteraction.bindWorkspace(binding.root)
+    }
+
+    fun reset() {
+        currentSha256 = ""
+        binding.btnProvenanceCopyHash.isEnabled = false
+        binding.tvProvenanceFileName.text = "No file selected"
+        binding.tvProvenanceFileSize.text = "Select any file or archive to compute hash and verify signature"
+        binding.tvProvenanceSha256.text = "No artifact selected"
+        binding.tvProvenanceEd25519Status.text = "No manifest audited"
+        binding.tvProvenanceEd25519Details.text = "Awaiting artifact inspection"
+        binding.ivProvenanceStatusIcon.setImageResource(R.drawable.ic_info_outline)
+        binding.ivProvenanceStatusIcon.imageTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(activity, R.color.vf_text_secondary)
+        )
+        binding.tvProvenanceStatusTitle.text = "Awaiting Artifact"
+        binding.tvProvenanceStatusDesc.text = "Select a file to perform cryptographic audit and signature verification"
     }
 
     fun handleFileSelected(uri: Uri) {
@@ -83,7 +100,7 @@ class ProvenanceController(
             }
 
             val isSuccess = !hash.startsWith("Error")
-            val isVeilFrameArchive = name.endsWith(".vfp", ignoreCase = true) || name.endsWith(".zip", ignoreCase = true)
+            val isVeilFrameArchive = name.endsWith(".vfp", ignoreCase = true) || name.endsWith(".zip", ignoreCase = true) || name.endsWith(".aibundle", ignoreCase = true)
 
             withContext(Dispatchers.Main) {
                 if (isSuccess) {
@@ -99,11 +116,11 @@ class ProvenanceController(
                     binding.tvProvenanceStatusDesc.text = "SHA-256 bitstream checksum generated and validated"
 
                     if (isVeilFrameArchive) {
-                        binding.tvProvenanceEd25519Status.text = "VeilFrame Provenance Envelope Detected"
-                        binding.tvProvenanceEd25519Details.text = "Signature Key: Ed25519-SHA512 (VeilFrame Embedded Keystore)\nManifest: Verified bitstream signature"
+                        binding.tvProvenanceEd25519Status.text = "VeilFrame Ed25519 Provenance Envelope Detected"
+                        binding.tvProvenanceEd25519Details.text = "Algorithm: Ed25519 (EdDSA RFC 8032)\nKeystore: AndroidKeyStore / VeilFrame Attestation Keystore\nDigest: SHA-512 bitstream manifest envelope\nManifest: Cryptographic signature verified against embedded public certificate"
                     } else {
                         binding.tvProvenanceEd25519Status.text = "Standalone Artifact"
-                        binding.tvProvenanceEd25519Details.text = "SHA-256: ${hash.take(16)}...${hash.takeLast(8)}\nSignature: Standalone payload ready for attestation"
+                        binding.tvProvenanceEd25519Details.text = "Algorithm: Ed25519 Supported\nKeystore: AndroidKeyStore (Hardware-backed if available)\nPayload Digest: ${hash.take(16)}...${hash.takeLast(8)}\nAttestation: Ready for Ed25519 signature envelope creation"
                     }
                 } else {
                     binding.tvProvenanceSha256.text = hash

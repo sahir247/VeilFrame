@@ -704,9 +704,12 @@ class ToolExecutionController(
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newUri(activity.contentResolver, "Share Output Artifact", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            activity.startActivity(Intent.createChooser(intent, "Share Output Artifact"))
+            activity.startActivity(Intent.createChooser(intent, "Share Output Artifact").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
         } catch (e: Exception) {
             Toast.makeText(activity, "Share failed: ${e.message}", Toast.LENGTH_SHORT).show()
         }

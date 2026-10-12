@@ -120,8 +120,8 @@ object AiBundleEngine {
         outputFile.parentFile?.mkdirs()
         val finalDocument = when (config.outputFormat.lowercase(Locale.US)) {
             "json" -> buildJsonBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
-            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections)
-            else -> buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
+            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections, config.maxDepth)
+            else -> buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections, config.maxDepth)
         }
 
         outputFile.writeText(finalDocument, Charsets.UTF_8)
@@ -193,7 +193,8 @@ object AiBundleEngine {
         fileCount: Int,
         totalTokens: Int,
         totalFilesSeen: Int,
-        sections: List<String>
+        sections: List<String>,
+        maxDepth: Int? = null
     ): String {
         val sb = StringBuilder()
         sb.append("@VEILFRAME_BUNDLE\n")
@@ -202,12 +203,17 @@ object AiBundleEngine {
         sb.append("timestamp=$timestamp\n")
         sb.append("total_tokens=$totalTokens\n")
         sb.append("included_files=$fileCount\n")
-        sb.append("excluded_files=${(totalFilesSeen - fileCount).coerceAtLeast(0)}\n\n")
+        sb.append("excluded_files=${(totalFilesSeen - fileCount).coerceAtLeast(0)}\n")
+        sb.append("max_depth=${maxDepth ?: "unlimited"}\n\n")
 
         sb.append("@PROJECT\n")
         sb.append("Name: $rootName\n")
         sb.append("Engine: VeilFrame Mobile Hub Native Kotlin\n")
-        sb.append("Included in Context: $fileCount files (~$totalTokens tokens)\n\n")
+        sb.append("Included in Context: $fileCount files (~$totalTokens tokens)\n")
+        if (maxDepth != null) {
+            sb.append("Recursion Depth Limit: $maxDepth\n")
+        }
+        sb.append("\n")
 
         sb.append("@SUMMARY\n")
         sb.append("Total Files Evaluated: $totalFilesSeen\n")
@@ -226,12 +232,13 @@ object AiBundleEngine {
         return sb.toString()
     }
 
-    private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Int, sections: List<String>): String {
+    private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Int, sections: List<String>, maxDepth: Int? = null): String {
         val sb = StringBuilder()
         sb.append("# VeilFrame AI Context Bundle: $rootName\n\n")
         sb.append("- **Generated:** $timestamp\n")
         sb.append("- **Included Files:** $fileCount\n")
         sb.append("- **Estimated Tokens:** ~$tokens\n")
+        sb.append("- **Max Depth:** ${maxDepth ?: "Full Depth"}\n")
         sb.append("- **Engine:** VeilFrame Native Kotlin\n\n")
         sb.append("---\n\n")
         for (sec in sections) {

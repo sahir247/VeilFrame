@@ -746,7 +746,7 @@ class DocumentScannerController(
     }
 
     private fun updateCameraDoneBadge() {
-        binding.btnDocCamDone.text = "Done (${session.pageCount})"
+        binding.btnDocCamDone.contentDescription = "Done (${session.pageCount})"
     }
 
     // =========================================================================

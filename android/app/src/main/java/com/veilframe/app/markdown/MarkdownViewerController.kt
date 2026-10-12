@@ -727,7 +727,6 @@ class MarkdownViewerController(
         popup.menu.add(0, 2, 0, "Font Size...")
         popup.menu.add(0, 3, 0, if (state.theme == MarkdownTheme.DARK) "Theme: Light" else "Theme: Dark")
         popup.menu.add(0, 4, 0, "Copy Raw Markdown")
-        popup.menu.add(0, 30, 0, "Export as...")
         popup.menu.add(0, 5, 0, "Share Document...")
         popup.menu.add(0, 7, 0, "Open With...")
         popup.menu.add(0, 31, 0, if (networkAccessConsent) "Internet Access: Enabled" else "Internet Access: Offline")
@@ -755,11 +754,7 @@ class MarkdownViewerController(
                     saveCurrentDocument()
                     true
                 }
-                22 -> {
-                    saveAsDocument()
-                    true
-                }
-                30 -> {
+                22, 30 -> {
                     showExportAsDialog()
                     true
                 }
@@ -844,7 +839,7 @@ class MarkdownViewerController(
             "Word Document (.docx)"
         )
         AlertDialog.Builder(activity)
-            .setTitle("Save / Export Document")
+            .setTitle("Save As")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> saveAsDocument()
@@ -921,9 +916,12 @@ class MarkdownViewerController(
                 type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, docxFileName)
+                clipData = android.content.ClipData.newUri(activity.contentResolver, docxFileName, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            activity.startActivity(Intent.createChooser(intent, "Share DOCX Document"))
+            activity.startActivity(Intent.createChooser(intent, "Share DOCX Document").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
             Toast.makeText(activity, "Exported $docxFileName", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Log.e(TAG, "Error exporting DOCX: ${e.message}", e)
@@ -990,9 +988,12 @@ class MarkdownViewerController(
                 type = "text/markdown"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, state.documentTitle)
+                clipData = android.content.ClipData.newUri(activity.contentResolver, state.documentTitle, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            activity.startActivity(Intent.createChooser(intent, "Share Markdown Document"))
+            activity.startActivity(Intent.createChooser(intent, "Share Markdown Document").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
         } catch (e: Exception) {
             Toast.makeText(activity, "Could not share: ${e.message}", Toast.LENGTH_SHORT).show()
         }

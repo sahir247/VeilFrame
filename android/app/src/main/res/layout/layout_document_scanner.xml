@@ -588,11 +588,19 @@
             <!-- Done / Page Counter Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamDone"
-                style="@style/Widget.VeilFrame.Button.Action"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Done (0)"
-                app:icon="@drawable/ic_done" />
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:contentDescription="Done"
+                app:icon="@drawable/ic_done"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="@color/vf_text_primary" />
         </LinearLayout>
     </FrameLayout>
 

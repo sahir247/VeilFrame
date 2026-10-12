@@ -104,8 +104,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            openMarkdownViewer(uri)
+            val name = safStorageManager.getDisplayName(uri)?.lowercase(Locale.ROOT) ?: ""
+            if (name.isNotEmpty() && !name.endsWith(".md") && !name.endsWith(".markdown")) {
+                Toast.makeText(this, "Please select a valid Markdown (.md) file", Toast.LENGTH_SHORT).show()
+            } else {
+                safStorageManager.persistReadPermission(uri)
+                openMarkdownViewer(uri)
+            }
         }
     }
 
@@ -676,7 +681,7 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onOpenMarkdownFileRequest = {
-                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain"))
+                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown"))
             },
             onSaveAsMarkdownRequest = { suggestedName, content ->
                 pendingMarkdownSaveContent = content
@@ -1355,6 +1360,9 @@ class MainActivity : AppCompatActivity() {
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
+        if (::provenanceController.isInitialized) {
+            provenanceController.reset()
+        }
         navigationController.showProvenanceScreen()
         consoleLogController.log("[UI] Opened Provenance & Verify workspace.")
     }
@@ -1787,9 +1795,12 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newUri(contentResolver, "Share Media Artifact", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Share Media Artifact"))
+            startActivity(Intent.createChooser(intent, "Share Media Artifact").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
         } catch (e: Exception) {
             Toast.makeText(this, "Could not share file: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -1830,22 +1841,19 @@ class MainActivity : AppCompatActivity() {
         when (com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)) {
             com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> panelBinding.rbThemeSystem.isChecked = true
             com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> panelBinding.rbThemeLight.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> panelBinding.rbThemeDark.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> panelBinding.rbThemeAmoled.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK,
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> panelBinding.rbThemeDark.isChecked = true
         }
 
         panelBinding.rgThemeMode.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
                 R.id.rbThemeLight -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
                 R.id.rbThemeDark -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
-                R.id.rbThemeAmoled -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
             val currentMode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
             if (mode != currentMode) {
-                com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = true)
-                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
-                recreate()
+                com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = false)
             }
         }
 
@@ -1871,8 +1879,7 @@ class MainActivity : AppCompatActivity() {
             val currentDynamic = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this)
             if (isChecked != currentDynamic) {
                 com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
-                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
-                recreate()
+                updatePaletteChipsEnabled(isChecked)
             }
         }
 
@@ -1899,10 +1906,10 @@ class MainActivity : AppCompatActivity() {
                 if (palette != currentPalette || panelBinding.switchDynamicColor.isChecked) {
                     if (panelBinding.switchDynamicColor.isChecked) {
                         com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, false)
+                        panelBinding.switchDynamicColor.isChecked = false
+                        updatePaletteChipsEnabled(false)
                     }
                     com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
-                    com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
-                    recreate()
                 }
             }
         }
@@ -1923,22 +1930,33 @@ class MainActivity : AppCompatActivity() {
             val currentTypo = com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)
             if (typo != currentTypo) {
                 com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
-                com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
-                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
-                recreate()
             }
         }
 
-        // 5. Hardware diagnostics live telemetry
-        val actManager = getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
-        val memInfo = android.app.ActivityManager.MemoryInfo().also { actManager?.getMemoryInfo(it) }
-        val availMb = memInfo.availMem / (1024 * 1024)
-        val totalMb = memInfo.totalMem / (1024 * 1024)
-        val cpuCores = Runtime.getRuntime().availableProcessors()
-        panelBinding.tvSettingsHardwareCores.text = "CPU Cores: $cpuCores (Active HW Threads)"
-        panelBinding.tvSettingsHardwareMemory.text = "RAM Headroom: ~$availMb MB (Total: $totalMb MB)"
-        panelBinding.tvSettingsHardwareNnapi.text = "Engine: VeilFrame SOTA ONNX"
-        panelBinding.tvSettingsHardwareAcceleration.text = "Acceleration: Multi-Threaded CPU (ONNX Runtime)"
+        // 5. Storage governor selection
+        when (com.veilframe.app.storage.StorageGovernor.getMaxStorageGb(this)) {
+            com.veilframe.app.storage.StorageGovernor.LIMIT_1_GB -> panelBinding.rbStorage1Gb.isChecked = true
+            com.veilframe.app.storage.StorageGovernor.LIMIT_2_GB -> panelBinding.rbStorage2Gb.isChecked = true
+            com.veilframe.app.storage.StorageGovernor.LIMIT_4_GB -> panelBinding.rbStorage4Gb.isChecked = true
+            com.veilframe.app.storage.StorageGovernor.LIMIT_8_GB -> panelBinding.rbStorage8Gb.isChecked = true
+            com.veilframe.app.storage.StorageGovernor.LIMIT_UNLIMITED -> panelBinding.rbStorageUnlimited.isChecked = true
+            else -> panelBinding.rbStorage2Gb.isChecked = true
+        }
+
+        panelBinding.rgStorageLimit.setOnCheckedChangeListener { _, checkedId ->
+            val limitGb = when (checkedId) {
+                R.id.rbStorage1Gb -> com.veilframe.app.storage.StorageGovernor.LIMIT_1_GB
+                R.id.rbStorage2Gb -> com.veilframe.app.storage.StorageGovernor.LIMIT_2_GB
+                R.id.rbStorage4Gb -> com.veilframe.app.storage.StorageGovernor.LIMIT_4_GB
+                R.id.rbStorage8Gb -> com.veilframe.app.storage.StorageGovernor.LIMIT_8_GB
+                R.id.rbStorageUnlimited -> com.veilframe.app.storage.StorageGovernor.LIMIT_UNLIMITED
+                else -> com.veilframe.app.storage.StorageGovernor.DEFAULT_LIMIT_GB
+            }
+            com.veilframe.app.storage.StorageGovernor.setMaxStorageGb(this, limitGb)
+            lifecycleScope.launch(Dispatchers.IO) {
+                com.veilframe.app.storage.StorageGovernor.enforceStorageLimit(this@MainActivity)
+            }
+        }
 
         // 6. Close and dismissal bindings
         panelBinding.btnSettingsClose.setOnClickListener { closeSettingsOverlay() }
@@ -1983,12 +2001,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMarkdownStudioEntryDialog() {
-        val options = arrayOf<CharSequence>("Open Existing Document", "Create Blank Document")
+        val options = arrayOf<CharSequence>("Open Markdown (.md)", "Create Markdown Document")
         MaterialAlertDialogBuilder(this)
             .setTitle("Markdown Studio")
             .setItems(options) { _, which ->
                 if (which == 0) {
-                    markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain"))
+                    markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown"))
                 } else {
                     navigationController.showMarkdownViewerScreen()
                     markdownViewerController.createNewDocument()

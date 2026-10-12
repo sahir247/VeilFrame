@@ -1248,11 +1248,14 @@ class ImageUpscalerController(
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = android.content.ClipData.newUri(activity.contentResolver, "Share Upscaled Image", uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
 
                 withContext(Dispatchers.Main) {
-                    activity.startActivity(Intent.createChooser(intent, "Share Upscaled Image"))
+                    activity.startActivity(Intent.createChooser(intent, "Share Upscaled Image").apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    })
                     onLog("[UPSCALER] Triggered share intent for upscaled image.")
                 }
             } catch (e: Exception) {
