@@ -6,8 +6,8 @@ import android.graphics.Color
 import android.os.SystemClock
 import android.util.Log
 import com.veilframe.app.cv.core.CvRuntime
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Size
@@ -123,7 +123,7 @@ class DocumentSegmentationService(
     }
 
     private var interpreter: Interpreter? = null
-    private val inferenceLock = Mutex()
+    private val inferenceLock = ReentrantLock()
 
     var isModelAvailable: Boolean = false
         private set
@@ -161,9 +161,9 @@ class DocumentSegmentationService(
     }
 
     /**
-     * Executes neural segmentation on an Android [Bitmap].
+     * Executes neural segmentation synchronously on an Android [Bitmap].
      */
-    suspend fun runSegmentation(bitmap: Bitmap): SegmentationResult? {
+    fun runSegmentationDirect(bitmap: Bitmap): SegmentationResult? {
         val interp = interpreter ?: return null
         return inferenceLock.withLock {
             try {
@@ -224,10 +224,15 @@ class DocumentSegmentationService(
     }
 
     /**
-     * Executes neural segmentation directly on an OpenCV [Mat] (BGR, RGBA, or Grayscale).
+     * Suspend wrapper for neural segmentation on an Android [Bitmap].
+     */
+    suspend fun runSegmentation(bitmap: Bitmap): SegmentationResult? = runSegmentationDirect(bitmap)
+
+    /**
+     * Executes neural segmentation directly and synchronously on an OpenCV [Mat] (BGR, RGBA, or Grayscale).
      * Avoids intermediate Android Bitmap creation for camera analysis frames.
      */
-    suspend fun runSegmentation(mat: Mat): SegmentationResult? {
+    fun runSegmentationDirect(mat: Mat): SegmentationResult? {
         val interp = interpreter ?: return null
         if (!CvRuntime.isNativeAvailable || mat.nativeObj == 0L || mat.empty()) return null
 
@@ -287,6 +292,11 @@ class DocumentSegmentationService(
             }
         }
     }
+
+    /**
+     * Suspend wrapper for neural segmentation on an OpenCV [Mat].
+     */
+    suspend fun runSegmentation(mat: Mat): SegmentationResult? = runSegmentationDirect(mat)
 
     fun close() {
         interpreter?.close()

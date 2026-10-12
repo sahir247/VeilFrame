@@ -126,9 +126,32 @@ class VeilFrameProcessingService : Service() {
             JobType.VIDEO_COMPRESSION
         }
 
+        val notification = buildForegroundNotification("Processing media with VeilFrame...")
+
+        // Android 15 (API 35+) mediaProcessing FGS type compliance
+        try {
+            if (Build.VERSION.SDK_INT >= 35) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+                )
+            } else if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("VeilFrameProcessing", "startForeground failed: ${e.message}")
+        }
+
         val current = activeJob
         if (current != null && current.state == JobState.RUNNING) {
-            // A job is already active; prevent concurrency collisions
+            // A job is already active; prevent concurrency collisions while satisfying OS FGS contract
             return START_NOT_STICKY
         }
 
@@ -141,25 +164,6 @@ class VeilFrameProcessingService : Service() {
             startedAt = System.currentTimeMillis()
         )
         activeJob = job
-
-        val notification = buildForegroundNotification("Processing media with VeilFrame...")
-
-        // Android 15 (API 35+) mediaProcessing FGS type compliance
-        if (Build.VERSION.SDK_INT >= 35) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
-            )
-        } else if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
 
         serviceScope.launch {
             try {

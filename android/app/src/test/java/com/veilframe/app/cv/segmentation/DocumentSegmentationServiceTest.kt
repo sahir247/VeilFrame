@@ -40,6 +40,8 @@ class DocumentSegmentationServiceTest {
             val dummyMat = Mat()
             val result = service.runSegmentation(dummyMat)
             assertNull("Inference must return null when model is unavailable", result)
+            val directResult = service.runSegmentationDirect(dummyMat)
+            assertNull("Direct inference must return null when model is unavailable", directResult)
         }
 
         assertEquals("fairscan-segmentation-model.tflite", DocumentSegmentationService.MODEL_ASSET_NAME)

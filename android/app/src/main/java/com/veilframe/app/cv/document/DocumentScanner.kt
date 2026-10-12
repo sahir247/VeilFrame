@@ -193,12 +193,10 @@ object DocumentScanner {
         context: com.veilframe.app.cv.core.CvContext? = null,
     ): List<org.opencv.core.Point> {
         if (segmentationService != null && segmentationService.isModelAvailable) {
-            val segResult = kotlinx.coroutines.runBlocking {
-                try {
-                    segmentationService.runSegmentation(source)
-                } catch (_: Throwable) {
-                    null
-                }
+            val segResult = try {
+                segmentationService.runSegmentationDirect(source)
+            } catch (_: Throwable) {
+                null
             }
             if (segResult != null) {
                 val neuralCorners = com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(

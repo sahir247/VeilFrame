@@ -570,7 +570,7 @@ class MainActivity : AppCompatActivity() {
         workspaceHost.onDestroy()
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
-            docScannerController.closeCameraViewfinder()
+            docScannerController.release()
         }
         if (::motionLabController.isInitialized) {
             motionLabController.cancel()
@@ -1711,7 +1711,7 @@ class MainActivity : AppCompatActivity() {
             imageUpscalerController.release()
         }
         if (::docScannerController.isInitialized && !isDocScannerProcessing) {
-            docScannerController.closeCameraViewfinder()
+            docScannerController.release()
         }
         if (::backgroundRemoverController.isInitialized && !isBgRemoverProcessing) {
             backgroundRemoverController.cleanup()
@@ -2294,10 +2294,13 @@ class MainActivity : AppCompatActivity() {
 
     fun hasActiveProcessing(): Boolean {
         if (::videoStudioController.isInitialized && videoStudioController.isProcessing) return true
+        if (::imageStudioController.isInitialized && imageStudioController.isProcessing) return true
         if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) return true
         if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) return true
+        if (::motionLabController.isInitialized && motionLabController.isProcessing) return true
         if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) return true
         if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) return true
+        if (VeilFrameProcessingService.activeJob?.state == com.veilframe.app.media.JobState.RUNNING) return true
         return false
     }
 
@@ -2305,11 +2308,17 @@ class MainActivity : AppCompatActivity() {
         if (::videoStudioController.isInitialized && videoStudioController.isProcessing) {
             videoStudioController.cancelProcessing()
         }
+        if (::imageStudioController.isInitialized && imageStudioController.isProcessing) {
+            imageStudioController.cancelProcessing()
+        }
         if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) {
             imageUpscalerController.cancelProcessing()
         }
         if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) {
             backgroundRemoverController.cancelProcessing()
+        }
+        if (::motionLabController.isInitialized && motionLabController.isProcessing) {
+            motionLabController.cancel()
         }
         if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) {
             docScannerController.cancelProcessing()

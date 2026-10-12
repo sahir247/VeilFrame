@@ -55,20 +55,46 @@ class ConsoleLogController(
         }
     }
 
+    private val maxLogLength = 65536 // 64 KB memory cap
+
     fun log(message: String) {
-        val current = tvConsoleLog.text.toString()
-        val newLog = if (current.isEmpty()) message else "$current\n$message"
-        tvConsoleLog.text = newLog
-        onLogUpdated?.invoke(newLog)
-        scrollConsole.post {
-            scrollConsole.fullScroll(View.FOCUS_DOWN)
+        val action = Runnable {
+            val current = tvConsoleLog.text.toString()
+            val combined = if (current.isEmpty()) message else "$current\n$message"
+            val bounded = if (combined.length > maxLogLength) {
+                combined.takeLast(maxLogLength).substringAfter('\n', "")
+            } else {
+                combined
+            }
+            tvConsoleLog.text = bounded
+            onLogUpdated?.invoke(bounded)
+            scrollConsole.post {
+                scrollConsole.fullScroll(View.FOCUS_DOWN)
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            action.run()
+        } else {
+            tvConsoleLog.post(action)
         }
     }
 
     fun setLogs(logs: String) {
-        tvConsoleLog.text = logs
-        scrollConsole.post {
-            scrollConsole.fullScroll(View.FOCUS_DOWN)
+        val action = Runnable {
+            val bounded = if (logs.length > maxLogLength) {
+                logs.takeLast(maxLogLength).substringAfter('\n', "")
+            } else {
+                logs
+            }
+            tvConsoleLog.text = bounded
+            scrollConsole.post {
+                scrollConsole.fullScroll(View.FOCUS_DOWN)
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            action.run()
+        } else {
+            tvConsoleLog.post(action)
         }
     }
 

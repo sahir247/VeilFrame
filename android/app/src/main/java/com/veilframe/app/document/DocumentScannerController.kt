@@ -342,6 +342,12 @@ class DocumentScannerController(
         updateUi()
     }
 
+    fun release() {
+        closeCameraViewfinder()
+        com.veilframe.app.runtime.ThermalGovernor.unregister()
+    }
+
+    @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
     private fun bindCameraUseCases() {
         val provider = cameraProvider ?: return
         provider.unbindAll()
@@ -441,6 +447,7 @@ class DocumentScannerController(
         }
     }
 
+    @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
     private fun updateCameraCharacteristics(cameraInfo: Camera2CameraInfo) {
         val focalLengths = cameraInfo.getCameraCharacteristic(
             CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS

@@ -1099,4 +1099,12 @@ class ImageStudioController(
             )
         }
     }
+
+    val isProcessing: Boolean
+        get() = compressionJob?.isActive == true
+
+    fun cancelProcessing() {
+        compressionJob?.cancel()
+        compressionJob = null
+    }
 }

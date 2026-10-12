@@ -79,6 +79,9 @@ class MotionLabController(
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
 
+    val isProcessing: Boolean
+        get() = job?.isActive == true
+
     fun cancel() {
         cancelRequested = true
         job?.cancel()
