@@ -47,6 +47,9 @@ object NavigationMotionController {
         val context = toolView.context
         val origin = nextOriginView
         nextOriginView = null
+        if (origin != null) {
+            VfSprings.cancel(origin)
+        }
 
         if (ExpressiveMotion.isReducedMotion(context)) {
             homeView.isVisible = false

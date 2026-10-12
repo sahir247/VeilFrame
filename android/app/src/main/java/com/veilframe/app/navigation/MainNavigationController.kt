@@ -60,6 +60,24 @@ class MainNavigationController(
             }
 
             private fun performBackNavigation() {
+                val mainAct = activity as? MainActivity
+                val isBusy = mainAct?.hasActiveProcessing() == true
+                if (isBusy && currentScreen != ScreenState.HOME && currentScreen != ScreenState.TOOLS && currentScreen != ScreenState.LIBRARY) {
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Leave Workspace?")
+                        .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
+                        .setPositiveButton("Cancel & Leave") { _, _ ->
+                            mainAct?.cancelAllActiveProcessing()
+                            doActualBackNavigation()
+                        }
+                        .setNegativeButton("Stay", null)
+                        .show()
+                    return
+                }
+                doActualBackNavigation()
+            }
+
+            private fun doActualBackNavigation() {
                 if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
                     if (onMarkdownBackPressed()) {
                         return
@@ -264,6 +282,7 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.HOME
 
+        binding.appBarLayout.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
@@ -286,6 +305,7 @@ class MainNavigationController(
                 bottomNav = navView
             ) {
                 hideAllToolViewsExcept(null)
+                binding.appBarLayout.visibility = View.VISIBLE
                 binding.toolbarHome.visibility = View.VISIBLE
                 binding.toolbarHome.alpha = 1f
                 setAdaptiveNavigationVisibility(true)
@@ -297,6 +317,7 @@ class MainNavigationController(
                 }
             }
         } else {
+            binding.appBarLayout.visibility = View.VISIBLE
             binding.toolbarHome.visibility = View.VISIBLE
             setAdaptiveNavigationVisibility(true)
             binding.scrollHome.visibility = View.VISIBLE
@@ -322,6 +343,7 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.TOOLS
 
+        binding.appBarLayout.visibility = View.VISIBLE
         binding.toolbarHome.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -344,6 +366,7 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.LIBRARY
 
+        binding.appBarLayout.visibility = View.VISIBLE
         binding.toolbarHome.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -365,6 +388,7 @@ class MainNavigationController(
         wasHome: Boolean,
         onPrepare: () -> Unit = {}
     ) {
+        val isStandardTool = (targetView == binding.scrollTool)
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE && !isRestoringState) {
             hideAllToolViewsExcept(targetView)
             onPrepare()
@@ -380,8 +404,10 @@ class MainNavigationController(
                 bottomNav = navView
             ) {
                 setAdaptiveNavigationVisibility(false)
+                binding.appBarLayout.visibility = if (isStandardTool) View.VISIBLE else View.GONE
             }
         } else {
+            binding.appBarLayout.visibility = if (isStandardTool) View.VISIBLE else View.GONE
             binding.toolbarHome.visibility = View.GONE
             setAdaptiveNavigationVisibility(false)
             binding.scrollHome.visibility = View.GONE
