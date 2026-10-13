@@ -217,4 +217,55 @@ class WorkspaceCatalogueContractTest {
             content.contains("ScreenState.LIBRARY -> showLibraryScreen()")
         )
     }
+
+    @Test
+    fun `background remover layout guarantees export button visibility on mobile viewports`() {
+        val layoutFile = File("src/main/res/layout/layout_background_remover.xml")
+        val altLayoutFile = File("android/app/src/main/res/layout/layout_background_remover.xml")
+        val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
+        assertTrue("layout_background_remover.xml must exist", targetFile.exists())
+
+        val xmlContent = targetFile.readText()
+
+        // Toolbar quick export button exists
+        assertTrue(
+            "Toolbar must declare btnBgToolbarExport",
+            xmlContent.contains("@+id/btnBgToolbarExport")
+        )
+
+        // Action dock is match_parent width so buttons fill the bottom row without clipping off-screen
+        val dockIndex = xmlContent.indexOf("id=\"@+id/cardBgActionDock\"")
+        assertTrue("cardBgActionDock must be present", dockIndex != -1)
+        val dockTag = xmlContent.substring(dockIndex, xmlContent.indexOf(">", dockIndex))
+        assertTrue("cardBgActionDock must be match_parent width", dockTag.contains("android:layout_width=\"match_parent\""))
+
+        // Save PNG button exists and has weighted width to stay visible alongside change and remove buttons
+        val saveIndex = xmlContent.indexOf("id=\"@+id/btnBgSavePng\"")
+        assertTrue("btnBgSavePng must be present", saveIndex != -1)
+        val saveTag = xmlContent.substring(saveIndex, xmlContent.indexOf(">", saveIndex))
+        assertTrue("btnBgSavePng must use 0dp width", saveTag.contains("android:layout_width=\"0dp\""))
+        assertTrue("btnBgSavePng must have weight", saveTag.contains("android:layout_weight="))
+    }
+
+    @Test
+    fun `main navigation preserves transactional back stack and workspace origin across subscreen transitions`() {
+        val navFile = File("src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val altNavFile = File("android/app/src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val targetFile = if (navFile.exists()) navFile else altNavFile
+        assertTrue("MainNavigationController.kt must exist", targetFile.exists())
+
+        val content = targetFile.readText()
+        assertTrue(
+            "MainNavigationController must declare workspaceOriginScreen",
+            content.contains("var workspaceOriginScreen: ScreenState")
+        )
+        assertTrue(
+            "MainNavigationController must declare screenBackStack",
+            content.contains("screenBackStack")
+        )
+        assertTrue(
+            "MainNavigationController must define recordNavigationTo",
+            content.contains("private fun recordNavigationTo(newScreen: ScreenState)")
+        )
+    }
 }

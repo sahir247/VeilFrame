@@ -28,6 +28,40 @@ class MainNavigationController(
     var previousScreen: ScreenState = ScreenState.HOME
         private set
 
+    /** Authoritative originating tab/root screen for currently open workspace */
+    var workspaceOriginScreen: ScreenState = ScreenState.HOME
+        private set
+
+    /** Transactional back stack preserving intermediate transitions */
+    private val screenBackStack = java.util.ArrayDeque<ScreenState>()
+
+    private var isNavigatingBack = false
+
+    fun isRootScreen(screen: ScreenState): Boolean {
+        return screen == ScreenState.HOME ||
+               screen == ScreenState.TOOLS ||
+               screen == ScreenState.LIBRARY ||
+               screen == ScreenState.TOOL
+    }
+
+    private fun recordNavigationTo(newScreen: ScreenState) {
+        if (isNavigatingBack) {
+            previousScreen = currentScreen
+            currentScreen = newScreen
+            return
+        }
+        if (currentScreen != newScreen) {
+            if (isRootScreen(currentScreen)) {
+                workspaceOriginScreen = currentScreen
+            }
+            screenBackStack.addLast(currentScreen)
+            previousScreen = currentScreen
+            currentScreen = newScreen
+        }
+    }
+
+    internal fun getBackStackForTesting(): List<ScreenState> = screenBackStack.toList()
+
     private var isSyncingBottomNav = false
     var isRestoringState: Boolean = false
 
@@ -131,11 +165,35 @@ class MainNavigationController(
      */
     fun navigateBackFromWorkspace() {
         performBackNavigation {
-            when (previousScreen) {
-                ScreenState.TOOLS -> showToolsScreen()
-                ScreenState.LIBRARY -> showLibraryScreen()
-                ScreenState.TOOL -> showToolScreen()
-                else -> showHomeScreen()
+            val destination = if (screenBackStack.isNotEmpty()) {
+                screenBackStack.removeLast()
+            } else {
+                workspaceOriginScreen
+            }
+            isNavigatingBack = true
+            try {
+                previousScreen = currentScreen
+                when (destination) {
+                    ScreenState.TOOLS -> showToolsScreen()
+                    ScreenState.LIBRARY -> showLibraryScreen()
+                    ScreenState.TOOL -> showToolScreen()
+                    ScreenState.IMAGE_UPSCALER -> showImageUpscalerScreen()
+                    ScreenState.IMAGE_STUDIO -> showImageStudioScreen()
+                    ScreenState.VIDEO_STUDIO -> showVideoStudioScreen()
+                    ScreenState.QR_STUDIO -> showQrStudioScreen()
+                    ScreenState.BACKGROUND_REMOVER -> showBackgroundRemoverScreen()
+                    ScreenState.DOCUMENT_SCANNER_ENTRY,
+                    ScreenState.DOCUMENT_SCANNER_CAMERA,
+                    ScreenState.DOCUMENT_SCANNER_PAGES,
+                    ScreenState.DOCUMENT_SCANNER_EDITOR,
+                    ScreenState.DOCUMENT_SCANNER_EXPORT -> showDocumentScannerScreen(destination)
+                    ScreenState.MOTION_LAB -> showMotionLabScreen()
+                    ScreenState.IMAGE_QUALITY -> showImageQualityScreen()
+                    ScreenState.PROVENANCE -> showProvenanceScreen()
+                    else -> showHomeScreen()
+                }
+            } finally {
+                isNavigatingBack = false
             }
         }
     }
@@ -145,21 +203,11 @@ class MainNavigationController(
             if (onMarkdownBackPressed()) {
                 return
             }
-            if (previousScreen == ScreenState.TOOL) {
-                showToolScreen()
-            } else {
-                showHomeScreen()
-            }
+            navigateBackFromWorkspace()
         } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
             showHomeScreen()
         } else if (currentScreen != ScreenState.HOME) {
-            if (previousScreen == ScreenState.TOOLS) {
-                showToolsScreen()
-            } else if (previousScreen == ScreenState.LIBRARY) {
-                showLibraryScreen()
-            } else {
-                showHomeScreen()
-            }
+            navigateBackFromWorkspace()
         } else {
             activity.finish()
         }
@@ -282,6 +330,10 @@ class MainNavigationController(
             ScreenState.PROVENANCE -> workspaceHost.provenanceRoot
             ScreenState.HOME -> null
         }
+        if (!isNavigatingBack) {
+            screenBackStack.clear()
+            workspaceOriginScreen = ScreenState.HOME
+        }
         previousScreen = currentScreen
         currentScreen = ScreenState.HOME
 
@@ -343,6 +395,10 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
+        if (!isNavigatingBack) {
+            screenBackStack.clear()
+            workspaceOriginScreen = ScreenState.TOOLS
+        }
         previousScreen = currentScreen
         currentScreen = ScreenState.TOOLS
 
@@ -365,6 +421,10 @@ class MainNavigationController(
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
+        }
+        if (!isNavigatingBack) {
+            screenBackStack.clear()
+            workspaceOriginScreen = ScreenState.LIBRARY
         }
         previousScreen = currentScreen
         currentScreen = ScreenState.LIBRARY
@@ -433,8 +493,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.TOOL
+        recordNavigationTo(ScreenState.TOOL)
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.VISIBLE
@@ -450,8 +509,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.IMAGE_STUDIO
+        recordNavigationTo(ScreenState.IMAGE_STUDIO)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -468,8 +526,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.VIDEO_STUDIO
+        recordNavigationTo(ScreenState.VIDEO_STUDIO)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -485,11 +542,8 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        if (currentScreen != ScreenState.MARKDOWN_VIEWER) {
-            previousScreen = currentScreen
-        }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        currentScreen = ScreenState.MARKDOWN_VIEWER
+        recordNavigationTo(ScreenState.MARKDOWN_VIEWER)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -504,8 +558,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.IMAGE_UPSCALER
+        recordNavigationTo(ScreenState.IMAGE_UPSCALER)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -521,8 +574,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.QR_STUDIO
+        recordNavigationTo(ScreenState.QR_STUDIO)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -537,8 +589,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = state
+        recordNavigationTo(state)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -554,8 +605,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.BACKGROUND_REMOVER
+        recordNavigationTo(ScreenState.BACKGROUND_REMOVER)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -571,8 +621,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.MOTION_LAB
+        recordNavigationTo(ScreenState.MOTION_LAB)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -588,8 +637,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.IMAGE_QUALITY
+        recordNavigationTo(ScreenState.IMAGE_QUALITY)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
@@ -604,8 +652,7 @@ class MainNavigationController(
             onSaveActiveToolState()
         }
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
-        previousScreen = currentScreen
-        currentScreen = ScreenState.PROVENANCE
+        recordNavigationTo(ScreenState.PROVENANCE)
 
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE

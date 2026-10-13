@@ -109,17 +109,14 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
         val cameraDisabledReason = args?.getString(ARG_CAMERA_DISABLED_REASON)
 
         if (!isCameraEnabled) {
+            binding.btnSourceCamera.isEnabled = false
             binding.btnSourceCamera.alpha = 0.38f
-            binding.btnSourceCamera.contentDescription = "Camera (Unavailable: ${cameraDisabledReason ?: "Not supported"})"
-            binding.btnSourceCamera.setOnClickListener {
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    cameraDisabledReason ?: "Camera capture is not supported for this workspace",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-            }
+            binding.btnSourceCamera.contentDescription = "Camera, disabled. ${cameraDisabledReason ?: "Camera capture is not supported for this workspace"}"
+            binding.btnSourceCamera.setOnClickListener(null)
         } else {
+            binding.btnSourceCamera.isEnabled = true
             binding.btnSourceCamera.alpha = 1.0f
+            binding.btnSourceCamera.contentDescription = null
             binding.btnSourceCamera.setOnClickListener {
                 notifySelection(requestKey, SourceType.CAMERA)
             }

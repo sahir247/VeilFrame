@@ -112,6 +112,10 @@ class BackgroundRemoverController(
             exportImage()
         }
 
+        binding.btnBgToolbarExport.setOnClickListener {
+            exportImage()
+        }
+
         binding.chipGroupBgBackdrop.setOnCheckedStateChangeListener { _, checkedIds ->
             val mode = when {
                 checkedIds.contains(binding.chipBackdropWhite.id) ->
@@ -649,13 +653,17 @@ class BackgroundRemoverController(
             binding.cardBgActionDock.visibility = View.GONE
             binding.containerBgControls.visibility = View.GONE
             binding.btnBgResetCompare.visibility = View.GONE
+            binding.btnBgToolbarExport.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
+            binding.btnBgToolbarExport.isEnabled = false
         } else {
             binding.containerBgEmptyState.visibility = View.GONE
             binding.splitViewBgCompare.visibility = View.VISIBLE
             binding.cardBgActionDock.visibility = View.VISIBLE
             binding.containerBgControls.visibility = View.VISIBLE
             binding.btnBgResetCompare.visibility = if (resultBitmap != null) View.VISIBLE else View.GONE
+            binding.btnBgToolbarExport.visibility = View.VISIBLE
+            binding.btnBgToolbarExport.isEnabled = (resultBitmap != null)
             binding.btnBgSavePng.isEnabled = (resultBitmap != null)
 
             val displayCutout = resultBitmap ?: sourceBitmap

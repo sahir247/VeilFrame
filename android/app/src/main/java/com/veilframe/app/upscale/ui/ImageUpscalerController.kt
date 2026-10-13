@@ -93,11 +93,26 @@ class ImageUpscalerController(
     private var activePreset: UpscalePreset = UpscalePresetRegistry.PHOTO
     private var targetScale: Int = 2
     private var explicitModel: UpscaleModel? = null
-
     private var inferenceJob: Job? = null
     private var downloadJob: Job? = null
+    private var currentLoadJob: Job? = null
+    private var imageLoadGeneration: Long = 0L
+    private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
+
     var onImportCustomModelRequested: (() -> Unit)? = null
     var inferenceParams: UpscaleInferenceParams = UpscaleInferenceParams()
+
+    private fun safelyDeleteResultFile(file: File?) {
+        if (file == null) return
+        scope.launch(Dispatchers.IO) {
+            var retries = 0
+            while (activeExportCount.get() > 0 && retries < 50) {
+                delay(100)
+                retries++
+            }
+            runCatching { file.delete() }
+        }
+    }
 
     fun init() {
         // F11: thermal awareness for the whole workspace session.
@@ -200,22 +215,41 @@ class ImageUpscalerController(
     }
 
     fun handleImageSelected(uri: Uri) {
+        // Cancel active inference or background download if running
+        if (isProcessing) {
+            cancelActiveOperations()
+        }
+        currentLoadJob?.cancel()
+        val generation = ++imageLoadGeneration
+
         selectedUri = uri
         resultOutput = null
-        resultFile?.let { runCatching { it.delete() } }
+        val oldResultFile = resultFile
         resultFile = null
-        scope.launch(Dispatchers.IO) {
+        safelyDeleteResultFile(oldResultFile)
+
+        // Visually reset results and indicate loading immediately
+        upscalerBinding.layoutUpscalerResults.visibility = View.GONE
+        upscalerBinding.tvUpscalerBadge.text = "LOADING..."
+        upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_blue))
+        updateUIState()
+
+        currentLoadJob = scope.launch(Dispatchers.IO) {
             try {
                 val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 activity.contentResolver.openInputStream(uri)?.use { s ->
                     BitmapFactory.decodeStream(s, null, boundsOptions)
                 }
 
+                if (generation != imageLoadGeneration || !isActive) return@launch
+
                 val origW = boundsOptions.outWidth
                 val origH = boundsOptions.outHeight
                 if (origW <= 0 || origH <= 0) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, "Could not decode selected image dimensions", Toast.LENGTH_SHORT).show()
+                        if (generation == imageLoadGeneration) {
+                            Toast.makeText(activity, "Could not decode selected image dimensions", Toast.LENGTH_SHORT).show()
+                        }
                     }
                     return@launch
                 }
@@ -229,9 +263,11 @@ class ImageUpscalerController(
                 // pipeline streams tiles from the Uri (UriRegionSource) and the
                 // 192 MB-class source bitmap never exists.
                 val preview = decodeSampledPreview(uri, 2048)
-                if (preview == null) {
+                if (preview == null || generation != imageLoadGeneration || !isActive) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                        if (generation == imageLoadGeneration) {
+                            Toast.makeText(activity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                        }
                     }
                     return@launch
                 }
@@ -247,19 +283,29 @@ class ImageUpscalerController(
                         null
                     }
                 }
+                if (generation != imageLoadGeneration || !isActive) {
+                    return@launch
+                }
+
                 val access: SourceAccess = if (fullBitmap != null) {
                     BitmapSource(fullBitmap)
                 } else {
                     UriRegionSource(activity, uri, origW, origH)
                 }
 
-                sourceBitmap = fullBitmap
+                // Safely close prior sourceAccess if present
+                val oldAccess = sourceAccess
                 sourceAccess = access
+                oldAccess?.close()
+
+                sourceBitmap = fullBitmap
                 previewBitmap = preview
                 sourceW = origW
                 sourceH = origH
 
                 withContext(Dispatchers.Main) {
+                    if (generation != imageLoadGeneration) return@withContext
+
                     upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
                     upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
                     upscalerBinding.layoutUpscalerResults.visibility = View.GONE
@@ -280,9 +326,12 @@ class ImageUpscalerController(
                     onLog("[UPSCALER] Loaded source image ${origW}×${origH} (in-memory=${fullBitmap != null})")
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) return@launch
                 Log.e(TAG, "Error loading image: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Error loading image: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (generation == imageLoadGeneration) {
+                        Toast.makeText(activity, "Error loading image: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -361,6 +410,9 @@ class ImageUpscalerController(
                 else -> UpscalePresetRegistry.PHOTO
             }
             activePreset = preset
+            if (preset != UpscalePresetRegistry.CUSTOM) {
+                explicitModel = null
+            }
             upscalerBinding.tvUpscalerPresetDesc.text = preset.description
 
             // Adjust default scale for preset if needed
@@ -481,9 +533,9 @@ class ImageUpscalerController(
     private fun updateModelDisplay() {
         val model = getResolvedModel()
         upscalerBinding.tvUpscalerModelName.text = if (explicitModel != null) {
-            "${model.name} (Custom Override)"
+            "${model.name} (Manual Override)"
         } else {
-            "${model.name} (Auto)"
+            "${model.name} (Auto - ${activePreset.name})"
         }
 
         val isInstalled = repository.isModelInstalled(model)
@@ -799,7 +851,7 @@ class ImageUpscalerController(
                 result.fold(
                     onSuccess = { output ->
                         (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
-                            runCatching { prev.file.delete() }
+                            safelyDeleteResultFile(prev.file)
                         }
                         resultOutput = output
                         resultFile = (output as? UpscaleOutput.Streamed)?.file
@@ -1168,6 +1220,7 @@ class ImageUpscalerController(
 
     private fun saveUpscaledImage() {
         val output = resultOutput ?: return
+        activeExportCount.incrementAndGet()
         scope.launch(Dispatchers.IO) {
             try {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -1225,6 +1278,8 @@ class ImageUpscalerController(
                     upscalerBinding.tvUpscalerResultDetails.text = "Save error: ${e.message}. Tap Save to retry."
                     Toast.makeText(activity, "Save error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } finally {
+                activeExportCount.decrementAndGet()
             }
         }
     }
@@ -1257,6 +1312,7 @@ class ImageUpscalerController(
 
     private fun shareUpscaledImage() {
         val output = resultOutput ?: return
+        activeExportCount.incrementAndGet()
         scope.launch(Dispatchers.IO) {
             try {
                 val cacheDir = File(activity.cacheDir, "shared_upscaled")
@@ -1285,18 +1341,21 @@ class ImageUpscalerController(
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Share error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } finally {
+                activeExportCount.decrementAndGet()
             }
         }
     }
 
     fun release() {
+        currentLoadJob?.cancel()
         inferenceJob?.cancel()
         downloadJob?.cancel()
         scope.cancel()
         sourceAccess?.close()
         com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
-        resultFile?.let { runCatching { it.delete() } }
+        safelyDeleteResultFile(resultFile)
         resultFile = null
         com.veilframe.app.runtime.ThermalGovernor.unregister()
     }
