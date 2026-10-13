@@ -696,13 +696,7 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = binding.layoutMarkdownViewer,
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOL) {
-                        navigationController.showToolScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             },
             onOpenMarkdownFileRequest = {
                 markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown"))
@@ -740,9 +734,7 @@ class MainActivity : AppCompatActivity() {
                 shareStudioFile(file, mime)
             },
             onNavigateHome = {
-                navigationController.performBackNavigation {
-                    navigationController.showHomeScreen()
-                }
+                navigationController.navigateBackFromWorkspace()
             },
             onOpenModelManager = {
                 workspaceHost.getOrInflateImageUpscaler()
@@ -768,9 +760,7 @@ class MainActivity : AppCompatActivity() {
                 shareStudioFile(file, mime)
             },
             onNavigateHome = {
-                navigationController.performBackNavigation {
-                    navigationController.showHomeScreen()
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         )
 
@@ -791,13 +781,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent.createChooser(sendIntent, "Share Quality Report"))
             },
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOLS) {
-                        navigationController.showToolsScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         ).apply { init() }
     }
@@ -807,9 +791,7 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             upscalerBinding = upscalerBinding,
             onBackRequested = {
-                navigationController.performBackNavigation {
-                    navigationController.showHomeScreen()
-                }
+                navigationController.navigateBackFromWorkspace()
             },
             onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
             onLog = { msg -> consoleLogController.log(msg) }
@@ -832,13 +814,7 @@ class MainActivity : AppCompatActivity() {
                 docScannerExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOLS) {
-                        navigationController.showToolsScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         ).apply { init() }
     }
@@ -850,13 +826,7 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOLS) {
-                        navigationController.showToolsScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         )
     }
@@ -873,13 +843,7 @@ class MainActivity : AppCompatActivity() {
                 bgRemoverExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOLS) {
-                        navigationController.showToolsScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         ).apply { init() }
     }
@@ -892,13 +856,7 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onPickFileRequest = { provenancePickerLauncher.launch(arrayOf("*/*")) },
             onNavigateBack = {
-                navigationController.performBackNavigation {
-                    if (navigationController.previousScreen == ScreenState.TOOLS) {
-                        navigationController.showToolsScreen()
-                    } else {
-                        navigationController.showHomeScreen()
-                    }
-                }
+                navigationController.navigateBackFromWorkspace()
             }
         ).apply { init() }
     }
@@ -1141,6 +1099,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupToolsCatalogueFiltering() {
+        binding.layoutToolsCatalogue.tvToolsSubtitle.text =
+            "${WorkspaceRoute.values().size} offline engines for privacy, media, documents, and forensics"
+
         val cards = listOf(
             WorkspaceRoute.IMAGE_STUDIO to binding.layoutToolsCatalogue.cardToolImageStudio,
             WorkspaceRoute.VIDEO_STUDIO to binding.layoutToolsCatalogue.cardToolVideoStudio,
@@ -1157,6 +1118,11 @@ class MainActivity : AppCompatActivity() {
             WorkspaceRoute.MARKDOWN_STUDIO to binding.layoutToolsCatalogue.cardToolMarkdownStudio,
             WorkspaceRoute.PROVENANCE to binding.layoutToolsCatalogue.cardToolProvenance
         )
+
+        // Ensure accessibility: assign authoritative TalkBack label to each card from WorkspaceRoute
+        cards.forEach { (route, card) ->
+            card.contentDescription = "${route.title}, ${route.status.label}. ${route.description}"
+        }
 
         fun applyFilter() {
             val query = binding.layoutToolsCatalogue.etToolSearch.text?.toString().orEmpty().trim()
@@ -1205,15 +1171,18 @@ class MainActivity : AppCompatActivity() {
     private fun showDocumentSourcePicker() {
         SharedSourcePickerSheet.newInstance(
             title = "Document Scanner Source",
-            mediaType = SharedSourcePickerSheet.MediaType.DOCUMENT_ONLY
+            mediaType = SharedSourcePickerSheet.MediaType.DOCUMENT_ONLY,
+            isCameraEnabled = true
         ) { source ->
             when (source) {
                 SharedSourcePickerSheet.SourceType.CAMERA -> {
-                    Toast.makeText(this, "Document Scanner Camera (Beta)", Toast.LENGTH_SHORT).show()
+                    openDocumentScanner()
+                    docScannerController.openCameraViewfinder()
                 }
                 SharedSourcePickerSheet.SourceType.FILES,
                 SharedSourcePickerSheet.SourceType.PHOTOS -> {
-                    imgStudioPickerLauncher.launch("image/*")
+                    openDocumentScanner()
+                    docScannerPhotosLauncher.launch("image/*")
                 }
             }
         }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
@@ -1222,15 +1191,18 @@ class MainActivity : AppCompatActivity() {
     private fun showBackgroundRemoverSourcePicker() {
         SharedSourcePickerSheet.newInstance(
             title = "Background Remover Source",
-            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY
+            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY,
+            isCameraEnabled = false,
+            cameraDisabledReason = "Background Remover operates on gallery photos and image files"
         ) { source ->
             when (source) {
                 SharedSourcePickerSheet.SourceType.CAMERA -> {
-                    Toast.makeText(this, "Camera capture for background removal (Alpha)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Camera capture is not supported for background removal", Toast.LENGTH_SHORT).show()
                 }
                 SharedSourcePickerSheet.SourceType.PHOTOS,
                 SharedSourcePickerSheet.SourceType.FILES -> {
-                    imgStudioPickerLauncher.launch("image/*")
+                    openBackgroundRemover()
+                    bgRemoverPickerLauncher.launch("image/*")
                 }
             }
         }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
@@ -1239,9 +1211,12 @@ class MainActivity : AppCompatActivity() {
     private fun showImageQualitySourcePicker() {
         SharedSourcePickerSheet.newInstance(
             title = "Quality Inspector Source",
-            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY
+            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY,
+            isCameraEnabled = false,
+            cameraDisabledReason = "Select an existing image from Photos or Files to inspect quality"
         ) { _ ->
-            imgStudioPickerLauncher.launch("image/*")
+            openImageQuality()
+            qualityPickerLauncher.launch("image/*")
         }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
     }
 

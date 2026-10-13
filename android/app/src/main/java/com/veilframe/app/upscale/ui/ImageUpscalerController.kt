@@ -126,13 +126,22 @@ class ImageUpscalerController(
             upscalerBinding.btnUpscalerExecute,
             upscalerBinding.btnUpscalerCancel,
             upscalerBinding.btnUpscalerSave,
-            upscalerBinding.btnUpscalerShare
+            upscalerBinding.btnUpscalerShare,
+            upscalerBinding.layoutAdvancedHeader
         )
         interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
 
         // Navigation back
         upscalerBinding.btnUpscalerBack.setOnClickListener {
             onBackRequested()
+        }
+
+        // Advanced Settings expand/collapse toggle
+        var isAdvancedExpanded = false
+        upscalerBinding.layoutAdvancedHeader.setOnClickListener {
+            isAdvancedExpanded = !isAdvancedExpanded
+            upscalerBinding.layoutAdvancedContent.visibility = if (isAdvancedExpanded) View.VISIBLE else View.GONE
+            upscalerBinding.imgAdvancedChevron.animate().rotation(if (isAdvancedExpanded) 180f else 0f).setDuration(160L).start()
         }
 
         // Model Manager Dialog button (morphs from button)
@@ -809,6 +818,16 @@ class ImageUpscalerController(
 
                         val mp = (output.width.toLong() * output.height) / 1_000_000.0
                         val throughput = if (elapsedSec > 0.0) mp / elapsedSec else 0.0
+                        val formatText = if (output is UpscaleOutput.Streamed) "Streaming PNG" else "Lossless PNG"
+                        upscalerBinding.tvUpscalerResultDetails.text = String.format(
+                            Locale.US,
+                            "Upscaled %d×%d (~%.1f MP) • %s • %.1fs elapsed • Ready to save or share",
+                            output.width,
+                            output.height,
+                            mp,
+                            formatText,
+                            elapsedSec
+                        )
                         upscalerBinding.tvDiagThroughput.text = String.format(
                             Locale.US,
                             "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)%s",
@@ -1192,15 +1211,18 @@ class ImageUpscalerController(
 
                 withContext(Dispatchers.Main) {
                     if (savedUri != null) {
+                        upscalerBinding.tvUpscalerResultDetails.text = "Saved to Pictures/VeilFrame ($filename)"
                         Toast.makeText(activity, "Saved to Pictures/VeilFrame: $filename", Toast.LENGTH_LONG).show()
                         onLog("[UPSCALER] Saved upscaled image: $filename")
                     } else {
+                        upscalerBinding.tvUpscalerResultDetails.text = "Failed to save upscaled image. Tap Save to retry."
                         Toast.makeText(activity, "Failed to save upscaled image", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving upscaled image: ${e.message}", e)
                 withContext(Dispatchers.Main) {
+                    upscalerBinding.tvUpscalerResultDetails.text = "Save error: ${e.message}. Tap Save to retry."
                     Toast.makeText(activity, "Save error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }

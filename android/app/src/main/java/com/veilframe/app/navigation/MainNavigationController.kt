@@ -124,6 +124,22 @@ class MainNavigationController(
         onProceed()
     }
 
+    /**
+     * Unified back-navigation contract for all dedicated media studios and secondary workspaces.
+     * Routes back to the true originating screen (Tools, Library, or Home), prompting if active
+     * processing is underway.
+     */
+    fun navigateBackFromWorkspace() {
+        performBackNavigation {
+            when (previousScreen) {
+                ScreenState.TOOLS -> showToolsScreen()
+                ScreenState.LIBRARY -> showLibraryScreen()
+                ScreenState.TOOL -> showToolScreen()
+                else -> showHomeScreen()
+            }
+        }
+    }
+
     private fun doActualBackNavigation() {
         if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
             if (onMarkdownBackPressed()) {

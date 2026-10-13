@@ -228,171 +228,9 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Preset Selection -->
+            <!-- Scaling Factor (Primary Quick Setting) -->
             <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="PRESET"
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.06"
-                        android:layout_marginBottom="6dp" />
-
-                    <HorizontalScrollView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:scrollbars="none"
-                        android:requiresFadingEdge="horizontal"
-                        android:fadingEdgeLength="24dp"
-                        android:layout_marginBottom="8dp">
-
-                        <com.google.android.material.chip.ChipGroup
-                            android:id="@+id/chipGroupUpscalerPresets"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            app:singleSelection="true">
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetPhoto"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Photo"
-                                android:checked="true" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetPhotoQuality"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Photo (HQ)" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetAnime"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Anime" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetIllustration"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Illustration" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetFast"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Fast" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetStandard"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Standard (Lanczos)" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPresetCustom"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Custom" />
-                        </com.google.android.material.chip.ChipGroup>
-                    </HorizontalScrollView>
-
-                    <TextView
-                        android:id="@+id/tvUpscalerPresetDesc"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Balanced natural photographic upscaling preserving real textures."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Resolved Model Card -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="6dp">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="AI MODEL"
-                            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnUpscalerChangeModel"
-                            style="@style/Widget.VeilFrame.Button.Quiet"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Change Model"
-                            android:textColor="@color/vf_primary" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/tvUpscalerModelName"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Real-ESRGAN General 2×"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:layout_marginBottom="4dp" />
-
-                    <TextView
-                        android:id="@+id/tvUpscalerModelStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="• Installed"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Scaling Factor Chips -->
-            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardUpscalerScale"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -462,6 +300,16 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Main Execute Action Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnUpscalerExecute"
+                style="@style/Widget.VeilFrame.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="UPSCALE"
+                app:icon="@drawable/ic_resize"
+                android:layout_marginBottom="16dp" />
+
             <!-- Progress Overlay (visible during download or inference) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/layoutUpscalerProgress"
@@ -513,34 +361,50 @@
                 android:id="@+id/layoutUpscalerResults"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
+                android:orientation="vertical"
                 android:layout_marginBottom="16dp"
                 android:visibility="gone">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnUpscalerSave"
-                    style="@style/Widget.VeilFrame.Button.Primary"
-                    android:layout_width="0dp"
+                <TextView
+                    android:id="@+id/tvUpscalerResultDetails"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="Save"
-                    app:icon="@drawable/ic_action_save" />
+                    android:text="Upscale complete • Lossless PNG"
+                    android:textColor="@color/vf_accent_green"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnUpscalerShare"
-                    style="@style/Widget.VeilFrame.Button.Action"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Share"
-                    app:icon="@drawable/ic_action_share"
-                    app:iconTint="@color/vf_text_primary" />
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpscalerSave"
+                        style="@style/Widget.VeilFrame.Button.Primary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="Save"
+                        app:icon="@drawable/ic_action_save" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpscalerShare"
+                        style="@style/Widget.VeilFrame.Button.Action"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Share"
+                        app:icon="@drawable/ic_action_share"
+                        app:iconTint="@color/vf_text_primary" />
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- Performance Diagnostics Panel (Hardware & Telemetry) -->
+            <!-- Advanced Settings & Models (Expandable) -->
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardUpscalerDiagnostics"
+                android:id="@+id/cardUpscalerAdvanced"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -556,7 +420,7 @@
                     android:padding="16dp">
 
                     <LinearLayout
-                        android:id="@+id/layoutDiagnosticsHeader"
+                        android:id="@+id/layoutAdvancedHeader"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
@@ -564,93 +428,280 @@
                         android:clickable="true"
                         android:focusable="true">
 
-                        <TextView
+                        <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="PERFORMANCE DIAGNOSTICS"
-                            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="ADVANCED SETTINGS &amp; MODEL"
+                                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Presets, custom AI models, and diagnostics"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
 
                         <ImageView
-                            android:id="@+id/imgDiagnosticsChevron"
+                            android:id="@+id/imgAdvancedChevron"
                             android:layout_width="20dp"
                             android:layout_height="20dp"
                             android:src="@drawable/ic_expand_more"
                             app:tint="@color/vf_secondary"
-                            android:contentDescription="Expand Diagnostics" />
+                            android:contentDescription="Expand Advanced Settings" />
                     </LinearLayout>
 
                     <LinearLayout
-                        android:id="@+id/layoutDiagnosticsContent"
+                        android:id="@+id/layoutAdvancedContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:layout_marginTop="10dp"
+                        android:layout_marginTop="14dp"
                         android:visibility="gone">
 
+                        <!-- Preset Selection -->
                         <TextView
-                            android:id="@+id/tvDiagHardware"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Hardware: Probing..."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace"
-                            android:layout_marginBottom="3dp" />
-
-                        <TextView
-                            android:id="@+id/tvDiagBackend"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Active Backend: Auto"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace"
-                            android:layout_marginBottom="3dp" />
-
-                        <TextView
-                            android:id="@+id/tvDiagExecutionProfile"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Profile: 1 worker • 384px tiles"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace"
-                            android:layout_marginBottom="3dp" />
-
-                        <TextView
-                            android:id="@+id/tvDiagThroughput"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Throughput: Measuring..."
-                            android:textColor="@color/vf_accent_blue"
-                            android:textSize="11sp"
-                            android:fontFamily="monospace"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="10dp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnRunUpscaleBenchmark"
-                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Run Calibration Benchmark"
-                            android:textColor="@color/vf_primary"
-                            app:strokeColor="@color/vf_surface_stroke" />
+                            android:text="PRESET"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06"
+                            android:layout_marginBottom="6dp" />
+
+                        <HorizontalScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:scrollbars="none"
+                            android:requiresFadingEdge="horizontal"
+                            android:fadingEdgeLength="24dp"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.chip.ChipGroup
+                                android:id="@+id/chipGroupUpscalerPresets"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:singleSelection="true">
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetPhoto"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Photo"
+                                    android:checked="true" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetPhotoQuality"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Photo (HQ)" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetAnime"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Anime" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetIllustration"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Illustration" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetFast"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Fast" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetStandard"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Standard (Lanczos)" />
+
+                                <com.google.android.material.chip.Chip
+                                    android:id="@+id/chipPresetCustom"
+                                    style="@style/Widget.Material3.Chip.Filter"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Custom" />
+                            </com.google.android.material.chip.ChipGroup>
+                        </HorizontalScrollView>
+
+                        <TextView
+                            android:id="@+id/tvUpscalerPresetDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Balanced natural photographic upscaling preserving real textures."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginBottom="16dp" />
+
+                        <!-- Resolved Model Section -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="6dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="AI MODEL"
+                                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnUpscalerChangeModel"
+                                style="@style/Widget.VeilFrame.Button.Quiet"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Change Model"
+                                android:textColor="@color/vf_primary" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvUpscalerModelName"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Real-ESRGAN General 2×"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="4dp" />
+
+                        <TextView
+                            android:id="@+id/tvUpscalerModelStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="• Installed"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="16dp" />
+
+                        <!-- Performance Diagnostics Sub-Card -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/cardUpscalerDiagnostics"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:cardBackgroundColor="?attr/colorSurface"
+                            app:cardCornerRadius="12dp"
+                            app:strokeColor="@color/vf_surface_stroke"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="12dp">
+
+                                <LinearLayout
+                                    android:id="@+id/layoutDiagnosticsHeader"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical"
+                                    android:clickable="true"
+                                    android:focusable="true">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:text="PERFORMANCE DIAGNOSTICS"
+                                        android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                                    <ImageView
+                                        android:id="@+id/imgDiagnosticsChevron"
+                                        android:layout_width="20dp"
+                                        android:layout_height="20dp"
+                                        android:src="@drawable/ic_expand_more"
+                                        app:tint="@color/vf_secondary"
+                                        android:contentDescription="Expand Diagnostics" />
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:id="@+id/layoutDiagnosticsContent"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical"
+                                    android:layout_marginTop="10dp"
+                                    android:visibility="gone">
+
+                                    <TextView
+                                        android:id="@+id/tvDiagHardware"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="Hardware: Probing..."
+                                        android:textColor="@color/vf_text_secondary"
+                                        android:textSize="11sp"
+                                        android:fontFamily="monospace"
+                                        android:layout_marginBottom="3dp" />
+
+                                    <TextView
+                                        android:id="@+id/tvDiagBackend"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="Active Backend: Auto"
+                                        android:textColor="@color/vf_text_secondary"
+                                        android:textSize="11sp"
+                                        android:fontFamily="monospace"
+                                        android:layout_marginBottom="3dp" />
+
+                                    <TextView
+                                        android:id="@+id/tvDiagExecutionProfile"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="Profile: 1 worker • 384px tiles"
+                                        android:textColor="@color/vf_text_secondary"
+                                        android:textSize="11sp"
+                                        android:fontFamily="monospace"
+                                        android:layout_marginBottom="3dp" />
+
+                                    <TextView
+                                        android:id="@+id/tvDiagThroughput"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="Throughput: Measuring..."
+                                        android:textColor="@color/vf_accent_blue"
+                                        android:textSize="11sp"
+                                        android:fontFamily="monospace"
+                                        android:textStyle="bold"
+                                        android:layout_marginBottom="10dp" />
+
+                                    <com.google.android.material.button.MaterialButton
+                                        android:id="@+id/btnRunUpscaleBenchmark"
+                                        style="@style/Widget.VeilFrame.Button.Utility"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="Run Calibration Benchmark"
+                                        android:textColor="@color/vf_primary"
+                                        app:strokeColor="@color/vf_surface_stroke" />
+                                </LinearLayout>
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- Main Execute Action Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnUpscalerExecute"
-                style="@style/Widget.VeilFrame.Button.Primary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="UPSCALE"
-                app:icon="@drawable/ic_resize"
-                android:layout_marginBottom="8dp" />
 
             <!-- Offline Privacy Guarantee -->
             <TextView

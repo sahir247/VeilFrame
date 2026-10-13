@@ -34,7 +34,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="13 offline engines for privacy, media, documents, and forensics"
+            android:text="14 offline engines for privacy, media, documents, and forensics"
             android:textColor="@color/vf_text_secondary"
             android:textSize="12sp" />
 

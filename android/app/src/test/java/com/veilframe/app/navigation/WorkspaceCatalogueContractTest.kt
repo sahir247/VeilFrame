@@ -163,4 +163,58 @@ class WorkspaceCatalogueContractTest {
             content.contains("closeSettingsOverlay()")
         )
     }
+
+    @Test
+    fun `layout_tools_catalogue declares 14 offline engines in subtitle`() {
+        val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
+        val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
+        val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
+        assertTrue("layout_tools_catalogue.xml must exist", targetFile.exists())
+
+        val xmlContent = targetFile.readText()
+        assertTrue(
+            "Catalogue subtitle must declare 14 offline engines (was stale 13)",
+            xmlContent.contains("14 offline engines for privacy, media, documents, and forensics")
+        )
+        assertFalse(
+            "Catalogue subtitle must not declare 13 engines",
+            xmlContent.contains("13 offline engines")
+        )
+    }
+
+    @Test
+    fun `activity binds accessible contentDescription combining title, status, and description for cards`() {
+        val actFile = File("src/main/java/com/veilframe/app/MainActivity.kt")
+        val altActFile = File("android/app/src/main/java/com/veilframe/app/MainActivity.kt")
+        val targetFile = if (actFile.exists()) actFile else altActFile
+        assertTrue("MainActivity.kt must exist", targetFile.exists())
+
+        val actContent = targetFile.readText()
+        assertTrue(
+            "MainActivity.kt must bind dynamic TalkBack contentDescription for catalogue cards",
+            actContent.contains("contentDescription = \"\${route.title}, \${route.status.label}. \${route.description}\"")
+        )
+    }
+
+    @Test
+    fun `main navigation provides unified navigateBackFromWorkspace contract routing to originating screen`() {
+        val navFile = File("src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val altNavFile = File("android/app/src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val targetFile = if (navFile.exists()) navFile else altNavFile
+        assertTrue("MainNavigationController.kt must exist", targetFile.exists())
+
+        val content = targetFile.readText()
+        assertTrue(
+            "MainNavigationController must define navigateBackFromWorkspace()",
+            content.contains("fun navigateBackFromWorkspace()")
+        )
+        assertTrue(
+            "navigateBackFromWorkspace must handle returning to TOOLS screen",
+            content.contains("ScreenState.TOOLS -> showToolsScreen()")
+        )
+        assertTrue(
+            "navigateBackFromWorkspace must handle returning to LIBRARY screen",
+            content.contains("ScreenState.LIBRARY -> showLibraryScreen()")
+        )
+    }
 }

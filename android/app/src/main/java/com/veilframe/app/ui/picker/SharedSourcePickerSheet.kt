@@ -105,8 +105,24 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
             }
         }
 
-        binding.btnSourceCamera.setOnClickListener {
-            notifySelection(requestKey, SourceType.CAMERA)
+        val isCameraEnabled = args?.getBoolean(ARG_CAMERA_ENABLED, true) ?: true
+        val cameraDisabledReason = args?.getString(ARG_CAMERA_DISABLED_REASON)
+
+        if (!isCameraEnabled) {
+            binding.btnSourceCamera.alpha = 0.38f
+            binding.btnSourceCamera.contentDescription = "Camera (Unavailable: ${cameraDisabledReason ?: "Not supported"})"
+            binding.btnSourceCamera.setOnClickListener {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    cameraDisabledReason ?: "Camera capture is not supported for this workspace",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            binding.btnSourceCamera.alpha = 1.0f
+            binding.btnSourceCamera.setOnClickListener {
+                notifySelection(requestKey, SourceType.CAMERA)
+            }
         }
 
         binding.btnSourcePhotos.setOnClickListener {
@@ -143,6 +159,8 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
         const val ARG_REQUEST_KEY = "arg_request_key"
         const val ARG_TITLE = "arg_title"
         const val ARG_MODE = "arg_mode"
+        const val ARG_CAMERA_ENABLED = "arg_camera_enabled"
+        const val ARG_CAMERA_DISABLED_REASON = "arg_camera_disabled_reason"
 
         /**
          * Lifecycle-safe factory accepting a requestKey for [setFragmentResult].
@@ -150,13 +168,17 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
         fun newInstance(
             requestKey: String = DEFAULT_REQUEST_KEY,
             title: String? = null,
-            mode: Mode = Mode.MEDIA
+            mode: Mode = Mode.MEDIA,
+            isCameraEnabled: Boolean = true,
+            cameraDisabledReason: String? = null
         ): SharedSourcePickerSheet {
             return SharedSourcePickerSheet().apply {
                 arguments = bundleOf(
                     ARG_REQUEST_KEY to requestKey,
                     ARG_TITLE to title,
-                    ARG_MODE to mode.name
+                    ARG_MODE to mode.name,
+                    ARG_CAMERA_ENABLED to isCameraEnabled,
+                    ARG_CAMERA_DISABLED_REASON to cameraDisabledReason
                 )
             }
         }
@@ -168,9 +190,11 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
             requestKey: String = DEFAULT_REQUEST_KEY,
             title: String? = null,
             mode: Mode = Mode.MEDIA,
+            isCameraEnabled: Boolean = true,
+            cameraDisabledReason: String? = null,
             onSelected: (SourceType) -> Unit
         ): SharedSourcePickerSheet {
-            return newInstance(requestKey, title, mode).apply {
+            return newInstance(requestKey, title, mode, isCameraEnabled, cameraDisabledReason).apply {
                 this.onSourceSelected = onSelected
             }
         }
@@ -181,6 +205,8 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
         fun newInstance(
             title: String = "Choose Media Source",
             mediaType: MediaType = MediaType.IMAGE_AND_VIDEO,
+            isCameraEnabled: Boolean = true,
+            cameraDisabledReason: String? = null,
             onSelected: (SourceType) -> Unit
         ): SharedSourcePickerSheet {
             val mode = when (mediaType) {
@@ -193,6 +219,8 @@ class SharedSourcePickerSheet : BottomSheetDialogFragment() {
                 requestKey = DEFAULT_REQUEST_KEY,
                 title = title,
                 mode = mode,
+                isCameraEnabled = isCameraEnabled,
+                cameraDisabledReason = cameraDisabledReason,
                 onSelected = onSelected
             )
         }
