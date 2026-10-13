@@ -57,13 +57,17 @@ object OnnxSessionManager {
      */
     private val defaultOrder: List<Backend> = listOf(Backend.XNNPACK, Backend.NNAPI, Backend.CPU)
 
+    // Lock for serializing qualification per model to prevent concurrent native-memory spikes
+    private val qualificationLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
     /**
      * Computes a cryptographic SHA-256 digest of the model file contents.
      * Prevents cache collisions where a model is replaced with different weights
      * but identical filename, size, and lastModified timestamp.
+     * Returns null if digest calculation fails; does NOT substitute weak non-cryptographic hashes.
      */
-    fun computeContentDigest(file: File): String {
-        if (!file.exists() || !file.isFile) return "0"
+    fun computeContentDigest(file: File): String? {
+        if (!file.exists() || !file.isFile) return null
         return try {
             val digest = MessageDigest.getInstance("SHA-256")
             file.inputStream().buffered(65536).use { input ->
@@ -74,8 +78,9 @@ object OnnxSessionManager {
                 }
             }
             digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (_: Throwable) {
-            "${file.length()}_${file.lastModified()}".hashCode().toUInt().toString(16)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to compute SHA-256 digest for ${file.name}: ${t.message}")
+            null
         }
     }
 
@@ -84,10 +89,11 @@ object OnnxSessionManager {
      * 1. Model filename
      * 2. Cryptographic SHA-256 content digest (first 16 hex chars)
      * 3. Hardware, OS, and build identity (to invalidate across driver/OS updates)
+     * Returns null if content digest is unavailable (remains uncached).
      */
-    fun getCacheKey(modelFile: File): String {
+    fun getCacheKey(modelFile: File): String? {
         val modelName = modelFile.name
-        val contentDigest = computeContentDigest(modelFile)
+        val contentDigest = computeContentDigest(modelFile) ?: return null
         val deviceFingerprint = "${Build.HARDWARE}_${Build.VERSION.SDK_INT}_${Build.FINGERPRINT}"
         val devHash = deviceFingerprint.hashCode().toUInt().toString(16)
         return "$KEY_BACKEND_PREFIX${modelName}_${contentDigest.take(16)}_$devHash"
@@ -96,10 +102,10 @@ object OnnxSessionManager {
     fun createSession(modelFile: File, context: Context? = null): OrtSession {
         val modelName = modelFile.name
         val cacheKey = getCacheKey(modelFile)
-        val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val cached = prefs?.getString(cacheKey, null)?.let { name ->
+        val prefs = if (cacheKey != null) context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) else null
+        val cached = if (cacheKey != null) prefs?.getString(cacheKey, null)?.let { name ->
             runCatching { Backend.valueOf(name) }.getOrNull()
-        }
+        } else null
 
         if (cached != null && isUsable(cached)) {
             try {
@@ -109,45 +115,80 @@ object OnnxSessionManager {
                 return session
             } catch (e: Exception) {
                 Log.w(TAG, "Cached backend $cached failed for $modelName; re-selecting", e)
-                prefs?.edit()?.remove(cacheKey)?.apply()
+                if (cacheKey != null) prefs?.edit()?.remove(cacheKey)?.apply()
             }
         }
 
-        // First run for this model: build every viable candidate and MEASURE.
-        // Audit fix: "session creation succeeded" does NOT mean "fast" — NNAPI
-        // happily creates sessions whose ops mostly fall back to CPU with
-        // partitioning overhead. Two warm-up passes and a median-of-3 timed runs
-        // decide; the choice is cached per model-version and device.
-        val built = LinkedHashMap<Backend, OrtSession>()
-        val timings = LinkedHashMap<Backend, Double>()
-        var lastError: Exception? = null
-        for (backend in defaultOrder) {
-            if (!isUsable(backend)) continue
-            try {
-                val session = buildSession(modelFile, modelName, backend)
-                built[backend] = session
-                benchmark(session, modelName)?.let { timings[backend] = it }
-            } catch (e: Exception) {
-                Log.w(TAG, "$backend backend unavailable for $modelName: ${e.message}")
-                lastError = e
+        // Serialize qualification for this model so concurrent calls don't duplicate candidate creation
+        val lock = qualificationLocks.computeIfAbsent(modelName) { Any() }
+        synchronized(lock) {
+            // Re-check cache inside lock in case another thread just qualified it
+            val recheckedCached = if (cacheKey != null) prefs?.getString(cacheKey, null)?.let { name ->
+                runCatching { Backend.valueOf(name) }.getOrNull()
+            } else null
+            if (recheckedCached != null && isUsable(recheckedCached)) {
+                try {
+                    val session = buildSession(modelFile, modelName, recheckedCached)
+                    lastBackend = recheckedCached
+                    return session
+                } catch (_: Exception) {
+                    if (cacheKey != null) prefs?.edit()?.remove(cacheKey)?.apply()
+                }
             }
-        }
-        if (built.isEmpty()) {
-            throw lastError ?: IllegalStateException("No usable ONNX backend for $modelName")
-        }
 
-        val winner = timings.minByOrNull { it.value }?.key ?: built.keys.first()
-        built.forEach { (backend, session) ->
-            if (backend != winner) runCatching { session.close() }
+            var bestSession: OrtSession? = null
+            var bestBackend: Backend? = null
+            var bestTiming: Double = Double.MAX_VALUE
+            val timingLog = mutableListOf<String>()
+            var lastError: Exception? = null
+
+            for (backend in defaultOrder) {
+                if (!isUsable(backend)) continue
+                var candidateSession: OrtSession? = null
+                try {
+                    candidateSession = buildSession(modelFile, modelName, backend)
+                    val timing = benchmark(candidateSession, modelName)
+                    if (timing != null) {
+                        timingLog.add("$backend=${"%,.0f".format(timing)}ms")
+                        if (timing < bestTiming) {
+                            // Close previously retained candidate session immediately to release native memory
+                            bestSession?.let { runCatching { it.close() } }
+                            bestSession = candidateSession
+                            bestBackend = backend
+                            bestTiming = timing
+                            candidateSession = null // Ownership transferred to bestSession
+                        }
+                    } else {
+                        timingLog.add("$backend=unranked")
+                        if (bestSession == null) {
+                            // Unranked fallback candidate: keep as conservative fallback until a ranked candidate appears
+                            bestSession = candidateSession
+                            bestBackend = backend
+                            bestTiming = Double.MAX_VALUE
+                            candidateSession = null
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "$backend backend unavailable for $modelName: ${e.message}")
+                    lastError = e
+                } finally {
+                    // Close candidateSession immediately if not chosen/retained
+                    candidateSession?.let { runCatching { it.close() } }
+                }
+            }
+
+            val winnerSession = bestSession ?: throw (lastError ?: IllegalStateException("No usable ONNX backend for $modelName"))
+            val winnerBackend = bestBackend ?: Backend.CPU
+            lastBackend = winnerBackend
+            if (cacheKey != null) {
+                prefs?.edit()?.putString(cacheKey, winnerBackend.name)?.apply()
+            }
+            Log.i(
+                TAG,
+                "Backend selection for $modelName: $winnerBackend (timings: ${timingLog.joinToString()})"
+            )
+            return winnerSession
         }
-        lastBackend = winner
-        prefs?.edit()?.putString(cacheKey, winner.name)?.apply()
-        Log.i(
-            TAG,
-            "Backend selection for $modelName: $winner " +
-                "(timings: ${timings.entries.joinToString { "${it.key}=${"%,.0f".format(it.value)}ms" }})"
-        )
-        return built.getValue(winner)
     }
 
     private fun isUsable(backend: Backend): Boolean = when (backend) {

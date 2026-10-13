@@ -48,6 +48,18 @@ class StreamingPngWriterTest {
         assertEquals(0x0A.toByte(), bytes[5])
         assertEquals(0x1A.toByte(), bytes[6])
         assertEquals(0x0A.toByte(), bytes[7])
+
+        // Independent decoder validation
+        val decoded = decodePng(file)
+        assertEquals("Decoded image width must match", width, decoded.width)
+        assertEquals("Decoded image height must match", height, decoded.height)
+
+        for (y in 0 until height) {
+            assertEquals("Pixel (0, $y) Blue channel match", 0xFF0000FF.toInt(), decoded.getPixel(0, y))
+            assertEquals("Pixel (1, $y) Green channel match", 0xFF00FF00.toInt(), decoded.getPixel(1, y))
+            assertEquals("Pixel (2, $y) Red channel match", 0xFFFF0000.toInt(), decoded.getPixel(2, y))
+            assertEquals("Pixel (3, $y) White channel match", 0xFFFFFFFF.toInt(), decoded.getPixel(3, y))
+        }
     }
 
     @Test
@@ -187,5 +199,251 @@ class StreamingPngWriterTest {
         }
 
         assertFalse("No file should be created on invalid dimensions", dummy.exists())
+    }
+
+    @Test
+    fun testMultiChunkStreamingOutputDecodesSuccessfully() {
+        val file = tempFolder.newFile("test_multichunk.png")
+        // 256x256 image with pseudo-random high-entropy noise to exceed 32KB chunk buffer multiple times
+        val width = 256
+        val height = 256
+        val rng = java.util.Random(42)
+        val pixels = IntArray(width * height) { rng.nextInt() }
+
+        StreamingPngWriter(file, width, height).use { writer ->
+            val row = IntArray(width)
+            for (y in 0 until height) {
+                System.arraycopy(pixels, y * width, row, 0, width)
+                writer.writeRow(row)
+            }
+            assertEquals(StreamingPngWriter.State.OPEN, writer.state)
+        }
+
+        assertTrue(file.exists())
+        assertTrue("Multi-chunk file should exceed 32KB to prove chunk boundaries", file.length() > 32 * 1024)
+
+        // Decode independently with reference PNG decoder
+        val decoded = decodePng(file)
+        assertTrue("Must emit multiple IDAT chunks for streaming", decoded.idatChunkCount > 1)
+        assertEquals(width, decoded.width)
+        assertEquals(height, decoded.height)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val expected = pixels[y * width + x]
+                val actual = decoded.getPixel(x, y)
+                assertEquals("Pixel ($x, $y) mismatch", expected, actual)
+            }
+        }
+    }
+
+    @Test
+    fun testPngChunkFramingAndCrcIntegrity() {
+        val file = tempFolder.newFile("test_framing.png")
+        val width = 16
+        val height = 8
+        StreamingPngWriter(file, width, height).use { writer ->
+            val row = IntArray(width) { 0xFF123456.toInt() }
+            for (y in 0 until height) {
+                writer.writeRow(row)
+            }
+        }
+
+        val bytes = file.readBytes()
+        // Signature check
+        val expectedSig = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        for (i in 0 until 8) {
+            assertEquals(expectedSig[i], bytes[i])
+        }
+
+        var offset = 8
+        val chunkTypes = mutableListOf<String>()
+        val crcCalculator = java.util.zip.CRC32()
+
+        while (offset < bytes.size) {
+            assertTrue("Must have at least 12 bytes for chunk header/trailer", offset + 12 <= bytes.size)
+            val len = ((bytes[offset].toInt() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                (bytes[offset + 3].toInt() and 0xFF)
+            offset += 4
+
+            val typeBytes = bytes.copyOfRange(offset, offset + 4)
+            val type = String(typeBytes, Charsets.US_ASCII)
+            chunkTypes.add(type)
+            offset += 4
+
+            val dataBytes = bytes.copyOfRange(offset, offset + len)
+            offset += len
+
+            val storedCrc = ((bytes[offset].toLong() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toLong() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toLong() and 0xFF) shl 8) or
+                (bytes[offset + 3].toLong() and 0xFF)
+            offset += 4
+
+            crcCalculator.reset()
+            crcCalculator.update(typeBytes)
+            crcCalculator.update(dataBytes)
+            assertEquals("CRC mismatch for chunk $type", crcCalculator.value, storedCrc)
+        }
+
+        assertEquals("All bytes in PNG file must belong to valid chunks", bytes.size, offset)
+        assertEquals("First chunk must be IHDR", "IHDR", chunkTypes.first())
+        assertEquals("Last chunk must be IEND", "IEND", chunkTypes.last())
+        assertTrue("Must contain at least one IDAT chunk", chunkTypes.contains("IDAT"))
+    }
+
+    /**
+     * Independent reference PNG decoder to validate that written files adhere strictly
+     * to the PNG 1.2 specification and can be decoded by any standard PNG decoder.
+     */
+    data class DecodedPng(val width: Int, val height: Int, val pixels: IntArray, val idatChunkCount: Int) {
+        fun getPixel(x: Int, y: Int): Int = pixels[y * width + x]
+    }
+
+    private fun decodePng(file: File): DecodedPng {
+        val bytes = file.readBytes()
+        require(bytes.size >= 8) { "File too small for PNG signature" }
+        val expectedSig = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        for (i in 0 until 8) {
+            assertEquals("Invalid PNG signature byte $i", expectedSig[i], bytes[i])
+        }
+
+        var offset = 8
+        var width = 0
+        var height = 0
+        var bitDepth = 0
+        var colorType = 0
+        val idatStreams = mutableListOf<ByteArray>()
+        val crc = java.util.zip.CRC32()
+        var seenIhdr = false
+        var seenIend = false
+
+        while (offset < bytes.size) {
+            assertTrue("Unexpected EOF reading chunk header", offset + 8 <= bytes.size)
+            val len = ((bytes[offset].toInt() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                (bytes[offset + 3].toInt() and 0xFF)
+            offset += 4
+
+            val typeBytes = bytes.copyOfRange(offset, offset + 4)
+            val type = String(typeBytes, Charsets.US_ASCII)
+            offset += 4
+
+            assertTrue("Chunk data out of bounds for chunk $type", offset + len + 4 <= bytes.size)
+            val data = bytes.copyOfRange(offset, offset + len)
+            offset += len
+
+            val storedCrc = ((bytes[offset].toLong() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toLong() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toLong() and 0xFF) shl 8) or
+                (bytes[offset + 3].toLong() and 0xFF)
+            offset += 4
+
+            crc.reset()
+            crc.update(typeBytes)
+            crc.update(data)
+            assertEquals("CRC mismatch in chunk $type", storedCrc, crc.value)
+
+            when (type) {
+                "IHDR" -> {
+                    check(!seenIhdr) { "Duplicate IHDR" }
+                    seenIhdr = true
+                    assertEquals("IHDR length must be 13", 13, len)
+                    width = ((data[0].toInt() and 0xFF) shl 24) or
+                        ((data[1].toInt() and 0xFF) shl 16) or
+                        ((data[2].toInt() and 0xFF) shl 8) or
+                        (data[3].toInt() and 0xFF)
+                    height = ((data[4].toInt() and 0xFF) shl 24) or
+                        ((data[5].toInt() and 0xFF) shl 16) or
+                        ((data[6].toInt() and 0xFF) shl 8) or
+                        (data[7].toInt() and 0xFF)
+                    bitDepth = data[8].toInt() and 0xFF
+                    colorType = data[9].toInt() and 0xFF
+                }
+                "IDAT" -> {
+                    check(seenIhdr) { "IDAT before IHDR" }
+                    check(!seenIend) { "IDAT after IEND" }
+                    idatStreams.add(data)
+                }
+                "IEND" -> {
+                    check(seenIhdr) { "IEND before IHDR" }
+                    assertEquals("IEND length must be 0", 0, len)
+                    seenIend = true
+                }
+            }
+        }
+
+        assertTrue("IHDR missing", seenIhdr)
+        assertTrue("IEND missing", seenIend)
+        assertTrue("IDAT missing", idatStreams.isNotEmpty())
+        assertEquals("Offset must match file size (no trailing bytes)", bytes.size, offset)
+        assertEquals("Bit depth must be 8", 8, bitDepth)
+        assertEquals("Color type must be 6 (RGBA)", 6, colorType)
+
+        // Concatenate all IDAT payloads
+        val totalCompressed = idatStreams.sumOf { it.size }
+        val compressed = ByteArray(totalCompressed)
+        var pos = 0
+        for (chunk in idatStreams) {
+            System.arraycopy(chunk, 0, compressed, pos, chunk.size)
+            pos += chunk.size
+        }
+
+        // Decompress with Inflater
+        val scanlineBytes = 1 + width * 4
+        val uncompressed = ByteArray(scanlineBytes * height)
+        val inflater = java.util.zip.Inflater()
+        inflater.setInput(compressed)
+        val inflatedBytes = inflater.inflate(uncompressed)
+        assertEquals("Inflated byte count must match scanline buffer size", uncompressed.size, inflatedBytes)
+        assertTrue("Inflater must have reached end of zlib stream", inflater.finished())
+        inflater.end()
+
+        // Unfilter scanlines and build ARGB pixel array
+        val pixels = IntArray(width * height)
+        val prevRow = ByteArray(width * 4)
+        val curRow = ByteArray(width * 4)
+
+        for (y in 0 until height) {
+            val rowOffset = y * scanlineBytes
+            val filter = uncompressed[rowOffset].toInt() and 0xFF
+            for (x in 0 until width * 4) {
+                val rawByte = uncompressed[rowOffset + 1 + x].toInt() and 0xFF
+                val left = if (x >= 4) curRow[x - 4].toInt() and 0xFF else 0
+                val up = prevRow[x].toInt() and 0xFF
+                val upLeft = if (x >= 4) prevRow[x - 4].toInt() and 0xFF else 0
+
+                val uncur = when (filter) {
+                    0 -> rawByte // None
+                    1 -> (rawByte + left) and 0xFF // Sub
+                    2 -> (rawByte + up) and 0xFF // Up
+                    3 -> (rawByte + (left + up) / 2) and 0xFF // Average
+                    4 -> { // Paeth
+                        val p = left + up - upLeft
+                        val pa = kotlin.math.abs(p - left)
+                        val pb = kotlin.math.abs(p - up)
+                        val pc = kotlin.math.abs(p - upLeft)
+                        val pr = if (pa <= pb && pa <= pc) left else if (pb <= pc) up else upLeft
+                        (rawByte + pr) and 0xFF
+                    }
+                    else -> error("Unknown filter type: $filter")
+                }
+                curRow[x] = uncur.toByte()
+            }
+
+            for (x in 0 until width) {
+                val r = curRow[x * 4].toInt() and 0xFF
+                val g = curRow[x * 4 + 1].toInt() and 0xFF
+                val b = curRow[x * 4 + 2].toInt() and 0xFF
+                val a = curRow[x * 4 + 3].toInt() and 0xFF
+                pixels[y * width + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            System.arraycopy(curRow, 0, prevRow, 0, curRow.size)
+        }
+
+        return DecodedPng(width, height, pixels, idatStreams.size)
     }
 }

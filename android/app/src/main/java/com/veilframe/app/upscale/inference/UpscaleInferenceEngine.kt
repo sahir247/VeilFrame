@@ -197,7 +197,7 @@ class UpscaleInferenceEngine(
                         // F4: bounded OOM retry with halved tiles, then typed failure.
                         var attemptParams = params
                         var aiOutput: UpscaleOutput? = null
-                        var lastOom: OutOfMemoryError? = null
+                        var lastOom: Throwable? = null
                         var attempt = 0
                         while (attempt < 2 && aiOutput == null) {
                             try {
@@ -216,17 +216,21 @@ class UpscaleInferenceEngine(
                                         listener?.onStatus(msg)
                                     }
                                 )
-                            } catch (oom: OutOfMemoryError) {
-                                lastOom = oom
-                                attempt++
-                                if (attemptParams.chunkSize <= 128) break
-                                attemptParams = attemptParams.copy(
-                                    chunkSize = (attemptParams.chunkSize / 2).coerceAtLeast(128),
-                                    parallelWorkers = 1
-                                )
-                                Log.w(TAG, "Inference OOM; retrying with chunk=${attemptParams.chunkSize}")
-                                listener?.onStatus("Memory pressure — retrying with ${attemptParams.chunkSize}px tiles")
-                                listener?.onStage("Neural Inference (reduced tiles)", 0, 1)
+                            } catch (e: Throwable) {
+                                if (e is OutOfMemoryError || e is UpscaleMemoryException) {
+                                    lastOom = e
+                                    attempt++
+                                    if (attemptParams.chunkSize <= 128) break
+                                    attemptParams = attemptParams.copy(
+                                        chunkSize = (attemptParams.chunkSize / 2).coerceAtLeast(128),
+                                        parallelWorkers = 1
+                                    )
+                                    Log.w(TAG, "Inference memory pressure (${e.message}); retrying with chunk=${attemptParams.chunkSize}")
+                                    listener?.onStatus("Memory pressure — retrying with ${attemptParams.chunkSize}px tiles")
+                                    listener?.onStage("Neural Inference (reduced tiles)", 0, 1)
+                                } else {
+                                    throw e
+                                }
                             }
                         }
                         if (aiOutput == null) {

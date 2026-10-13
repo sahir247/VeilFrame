@@ -39,6 +39,7 @@ class VeilFrameProcessingService : Service() {
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_PROCESS_VIDEO = "com.veilframe.action.PROCESS_VIDEO"
+        const val ACTION_CANCEL_JOB = "com.veilframe.action.CANCEL_JOB"
         const val EXTRA_INPUT_PATH = "extra_input_path"
         const val EXTRA_OUTPUT_PATH = "extra_output_path"
         const val EXTRA_INPUT_URI = "extra_input_uri"
@@ -48,7 +49,15 @@ class VeilFrameProcessingService : Service() {
 
         @Volatile
         var activeJob: ProcessingJob? = null
-            private set
+            internal set
+
+        fun cancelProcessing(context: Context, jobId: UUID? = null) {
+            val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
+                action = ACTION_CANCEL_JOB
+                if (jobId != null) putExtra(EXTRA_JOB_ID, jobId.toString())
+            }
+            context.startService(intent)
+        }
 
         fun startVideoCleaning(context: Context, inputPath: String, outputPath: String, jobId: UUID = UUID.randomUUID()) {
             val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
@@ -83,6 +92,30 @@ class VeilFrameProcessingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL_JOB) {
+            val targetJobIdStr = intent.getStringExtra(EXTRA_JOB_ID)
+            synchronized(this) {
+                if (targetJobIdStr == null || activeJob?.id.toString() == targetJobIdStr) {
+                    if (activeJob?.state == JobState.RUNNING) {
+                        activeJob = activeJob?.copy(state = JobState.CANCELLED)
+                    }
+                    currentExecutionJob?.cancel()
+                }
+            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // Concurrency guard: if another job is already running, reject duplicate start without mutating active state
+        synchronized(this) {
+            val current = activeJob
+            if (current != null && current.state == JobState.RUNNING) {
+                android.util.Log.w("VeilFrameProcessing", "Refusing duplicate start: job ${current.id} is already RUNNING")
+                return START_NOT_STICKY
+            }
+        }
+
         val inputPath = intent?.getStringExtra(EXTRA_INPUT_PATH) ?: ""
         val outputPath = intent?.getStringExtra(EXTRA_OUTPUT_PATH) ?: ""
 

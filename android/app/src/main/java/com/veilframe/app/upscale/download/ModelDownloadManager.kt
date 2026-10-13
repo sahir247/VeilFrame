@@ -231,21 +231,65 @@ class ModelDownloadManager(
                 return@withContext Result.failure(SecurityException(err))
             }
 
-            // Safe atomic replacement using temp file
+            // Safe atomic replacement using temp file with rollback capability
             if (!partFile.renameTo(tempFinal)) {
                 partFile.copyTo(tempFinal, overwrite = true)
                 partFile.delete()
             }
-            if (finalFile.exists()) {
-                finalFile.delete()
-            }
-            if (!tempFinal.renameTo(finalFile)) {
-                tempFinal.copyTo(finalFile, overwrite = true)
-                tempFinal.delete()
-            }
 
-            listener.onSuccess(model, finalFile)
-            Result.success(finalFile)
+            val backupFile = File(finalFile.parentFile, "${finalFile.name}.backup_${System.currentTimeMillis()}")
+            var backupCreated = false
+
+            try {
+                // Preserve existing model in backup before modifying destination
+                if (finalFile.exists()) {
+                    if (!finalFile.renameTo(backupFile)) {
+                        finalFile.copyTo(backupFile, overwrite = true)
+                        finalFile.delete()
+                    }
+                    backupCreated = true
+                }
+
+                var activated = tempFinal.renameTo(finalFile)
+                if (!activated) {
+                    try {
+                        tempFinal.copyTo(finalFile, overwrite = true)
+                        tempFinal.delete()
+                        activated = true
+                    } catch (copyEx: Exception) {
+                        Log.e(TAG, "Fallback copy failed during model activation: ${copyEx.message}", copyEx)
+                        if (finalFile.exists()) {
+                            finalFile.delete()
+                        }
+                        throw copyEx
+                    }
+                }
+
+                if (!finalFile.exists() || finalFile.length() == 0L) {
+                    throw IllegalStateException("Activated model file is missing or empty")
+                }
+
+                // Activation succeeded; remove backup
+                if (backupCreated && backupFile.exists()) {
+                    backupFile.delete()
+                }
+
+                listener.onSuccess(model, finalFile)
+                Result.success(finalFile)
+            } catch (t: Throwable) {
+                // Rollback: restore known-good model from backup if replacement failed
+                if (backupCreated && backupFile.exists()) {
+                    Log.w(TAG, "Restoring previous model from backup after activation failure: ${model.name}")
+                    if (finalFile.exists()) {
+                        finalFile.delete()
+                    }
+                    if (!backupFile.renameTo(finalFile)) {
+                        runCatching { backupFile.copyTo(finalFile, overwrite = true) }
+                        backupFile.delete()
+                    }
+                }
+                throw t
+            }
         } catch (e: Exception) {
             if (partFile.exists()) {
                 partFile.delete()

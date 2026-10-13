@@ -8,6 +8,7 @@ import com.veilframe.app.upscale.inference.isRecognizedStrengthInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -26,7 +27,8 @@ class InferenceOptimizationAndSafetyTest {
         modelFile1.setLastModified(1000000L)
 
         val key1 = OnnxSessionManager.getCacheKey(modelFile1)
-        assertTrue("Key must contain model name", key1.contains("real_esrgan_x4.onnx"))
+        assertNotNull("Cache key must not be null for valid model file", key1)
+        assertTrue("Key must contain model name", key1!!.contains("real_esrgan_x4.onnx"))
 
         // Modify file contents
         val modelFile2 = File(tempFolder.root, "real_esrgan_x4.onnx")
@@ -34,6 +36,7 @@ class InferenceOptimizationAndSafetyTest {
         modelFile2.setLastModified(2000000L)
 
         val key2 = OnnxSessionManager.getCacheKey(modelFile2)
+        assertNotNull("Cache key must not be null for modified model file", key2)
 
         // Keys must not collide when model file content / length / timestamp changes
         assertNotEquals("Cache key must invalidate when model contents change", key1, key2)
@@ -47,6 +50,7 @@ class InferenceOptimizationAndSafetyTest {
         modelFile.setLastModified(fixedTimestamp)
 
         val key1 = OnnxSessionManager.getCacheKey(modelFile)
+        assertNotNull("Cache key must not be null for valid model file", key1)
 
         // Overwrite file with different bytes but exactly identical length
         modelFile.writeText("weights_beta__02") // exactly 16 bytes
@@ -56,6 +60,7 @@ class InferenceOptimizationAndSafetyTest {
         assertEquals("File last modified must be identical", fixedTimestamp, modelFile.lastModified())
 
         val key2 = OnnxSessionManager.getCacheKey(modelFile)
+        assertNotNull("Cache key must not be null for overwritten model file", key2)
 
         assertNotEquals(
             "Cryptographic SHA-256 digest must prevent cache key collision when weights change despite same length and timestamp",
@@ -107,7 +112,21 @@ class InferenceOptimizationAndSafetyTest {
             scaleFactor = scale,
             memProbe = constrainedRamProbe
         )
-        assertEquals("Worker count must clamp to 1 when per-tile peak memory exceeds 25% of available RAM", 1, clampedWorkers)
+        assertEquals("Worker count must return 0 (fail closed) when single-tile peak memory exceeds available RAM budget", 0, clampedWorkers)
+
+        // 1b. Moderate available RAM probe (e.g. 1 MB available, 25% = 256 KB == 256 KB per-tile peak for 128px@1x)
+        val moderateRamProbe = object : com.veilframe.app.cv.core.MemoryProbe {
+            override fun totalMemoryBytes(): Long = 4L * 1024L * 1024L * 1024L
+            override fun availableMemoryBytes(): Long = 1024L * 1024L
+        }
+        val singleWorker = AiProcessor.resolveParallelWorkers(
+            requestedWorkers = highWorkers,
+            tileCount = tileCount,
+            chunkSize = 128,
+            scaleFactor = 1,
+            memProbe = moderateRamProbe
+        )
+        assertEquals("Worker count must clamp to 1 when budget accommodates exactly 1 tile", 1, singleWorker)
 
         // 2. Thermal throttling clamp
         try {

@@ -2435,5 +2435,8 @@ class MainActivity : AppCompatActivity() {
         if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) {
             toolExecutionController.cancelExecution()
         }
+        if (VeilFrameProcessingService.activeJob?.state == com.veilframe.app.media.JobState.RUNNING) {
+            VeilFrameProcessingService.cancelProcessing(this)
+        }
     }
 }

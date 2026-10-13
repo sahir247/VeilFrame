@@ -28,6 +28,14 @@ class StreamingPngWriter(
 
     companion object {
         const val MAX_DIMENSION = 65_536
+        const val IDAT_CHUNK_BUFFER_SIZE = 32 * 1024
+
+        internal fun putInt(dst: ByteArray, offset: Int, value: Int) {
+            dst[offset] = ((value ushr 24) and 0xFF).toByte()
+            dst[offset + 1] = ((value ushr 16) and 0xFF).toByte()
+            dst[offset + 2] = ((value ushr 8) and 0xFF).toByte()
+            dst[offset + 3] = (value and 0xFF).toByte()
+        }
     }
 
     enum class State { OPEN, FINALIZING, COMPLETED, ABORTED }
@@ -47,8 +55,9 @@ class StreamingPngWriter(
     }
 
     private val out: OutputStream = FileOutputStream(file).buffered(64 * 1024)
+    private val idatChunkStream: IdatChunkOutputStream
     private val deflater = Deflater(Deflater.DEFAULT_COMPRESSION)
-    private val idat: DeflaterOutputStream = DeflaterOutputStream(out, deflater, 64 * 1024)
+    private val idat: DeflaterOutputStream
     private val rowBuf = ByteArray((1L + width.toLong() * 4L).toInt())
     private var rowsWritten = 0
 
@@ -63,6 +72,10 @@ class StreamingPngWriter(
         ihdr[11] = 0  // filter
         ihdr[12] = 0  // interlace
         writeChunk("IHDR", ihdr)
+        out.flush()
+
+        idatChunkStream = IdatChunkOutputStream(out, IDAT_CHUNK_BUFFER_SIZE)
+        idat = DeflaterOutputStream(idatChunkStream, deflater, IDAT_CHUNK_BUFFER_SIZE)
     }
 
     /** Writes one scanline from ARGB_8888 ints (Bitmap.getPixels order). */
@@ -97,8 +110,11 @@ class StreamingPngWriter(
         state = State.FINALIZING
         try {
             idat.finish()
+            idatChunkStream.finish()
             writeChunk("IEND", ByteArray(0))
-            idat.close() // finishes the zlib stream flush and closes `out`
+            out.flush()
+            idat.close()
+            out.close()
             state = State.COMPLETED
         } catch (t: Throwable) {
             abort()
@@ -113,6 +129,7 @@ class StreamingPngWriter(
         if (state == State.ABORTED) return
         state = State.ABORTED
         runCatching { idat.close() }
+        runCatching { idatChunkStream.close() }
         runCatching { out.close() }
         runCatching { deflater.end() }
         runCatching { file.delete() }
@@ -133,10 +150,83 @@ class StreamingPngWriter(
         out.write(crcBytes)
     }
 
-    private fun putInt(dst: ByteArray, offset: Int, value: Int) {
-        dst[offset] = ((value ushr 24) and 0xFF).toByte()
-        dst[offset + 1] = ((value ushr 16) and 0xFF).toByte()
-        dst[offset + 2] = ((value ushr 8) and 0xFF).toByte()
-        dst[offset + 3] = (value and 0xFF).toByte()
+    /**
+     * Bounded IDAT chunk framer: packages deflated zlib bytes into proper PNG IDAT chunks.
+     * Prevents unbounded in-memory buffering while ensuring strictly valid PNG framing.
+     */
+    private class IdatChunkOutputStream(
+        private val target: OutputStream,
+        private val maxChunkSize: Int
+    ) : OutputStream() {
+        private val chunkBuffer = ByteArray(maxChunkSize)
+        private var bufferLen = 0
+        private val crc = CRC32()
+        private val lenBytes = ByteArray(4)
+        private val crcBytes = ByteArray(4)
+        private val idatType = "IDAT".toByteArray(Charsets.US_ASCII)
+        private var isFinished = false
+        private var isClosed = false
+
+        override fun write(b: Int) {
+            check(!isClosed) { "Stream closed" }
+            chunkBuffer[bufferLen++] = b.toByte()
+            if (bufferLen == maxChunkSize) {
+                flushChunk()
+            }
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            check(!isClosed) { "Stream closed" }
+            var currentOff = off
+            var remaining = len
+            while (remaining > 0) {
+                val available = maxChunkSize - bufferLen
+                val toCopy = minOf(remaining, available)
+                System.arraycopy(b, currentOff, chunkBuffer, bufferLen, toCopy)
+                bufferLen += toCopy
+                currentOff += toCopy
+                remaining -= toCopy
+                if (bufferLen == maxChunkSize) {
+                    flushChunk()
+                }
+            }
+        }
+
+        private fun flushChunk() {
+            if (bufferLen == 0) return
+            putInt(lenBytes, 0, bufferLen)
+            target.write(lenBytes)
+            target.write(idatType)
+            target.write(chunkBuffer, 0, bufferLen)
+
+            crc.reset()
+            crc.update(idatType)
+            crc.update(chunkBuffer, 0, bufferLen)
+            putInt(crcBytes, 0, (crc.value and 0xFFFFFFFFL).toInt())
+            target.write(crcBytes)
+
+            bufferLen = 0
+        }
+
+        fun finish() {
+            if (isFinished || isClosed) return
+            flushChunk()
+            target.flush()
+            isFinished = true
+        }
+
+        override fun flush() {
+            target.flush()
+        }
+
+        override fun close() {
+            if (!isClosed) {
+                if (!isFinished) {
+                    finish()
+                }
+                isClosed = true
+                target.close()
+            }
+        }
     }
 }

@@ -94,16 +94,16 @@ class AiProcessor(
             }
 
             if (availBytes > 0L) {
-                val maxByRam = (availBytes * 0.25 / perTilePeakBytes).toInt().coerceAtLeast(1)
+                val maxByRam = (availBytes * 0.25 / perTilePeakBytes).toInt()
                 clamped = minOf(clamped, maxByRam)
             }
 
             if (heapBytes > 0L) {
-                val maxByHeap = ((heapBytes * 0.35) / perTilePeakBytes).toInt().coerceAtLeast(1)
+                val maxByHeap = ((heapBytes * 0.35) / perTilePeakBytes).toInt()
                 clamped = minOf(clamped, maxByHeap)
             }
 
-            return clamped.coerceAtLeast(1)
+            return clamped.coerceAtLeast(0)
         }
     }
 
@@ -371,6 +371,13 @@ class AiProcessor(
             chunkSize = info.tileLimit,
             scaleFactor = info.scaleFactor
         )
+        if (workers <= 0) {
+            val perTilePeakBytes = UpscaleInferenceParams.estimatePeakTileMemory(info.tileLimit, info.scaleFactor)
+            throw UpscaleMemoryException(
+                "Memory admission rejected: single tile (${info.tileLimit}px at ${info.scaleFactor}x, " +
+                    "~${perTilePeakBytes / (1024 * 1024)} MB) exceeds memory allowance. Reduce tile dimensions or scale."
+            )
+        }
 
         Log.d(TAG, "Processing ${tiles.size} tile(s), workers=$workers, requested=$requestedWorkers, inMemory=${inMemoryTiles != null}")
 
