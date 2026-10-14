@@ -1051,6 +1051,28 @@ class ImageUpscalerController(
                 else -> null // Auto
             }
             explicitModel = selectedModel
+            val modelForScale = selectedModel ?: runCatching { getResolvedModel() }.getOrNull()
+            if (modelForScale?.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN &&
+                targetScale !in modelForScale.supportedOutputScales
+            ) {
+                val correctedScale = modelForScale.supportedOutputScales.minByOrNull {
+                    kotlin.math.abs(it - targetScale)
+                }
+                if (correctedScale != null) {
+                    targetScale = correctedScale
+                    val correctedButton = when (correctedScale) {
+                        4 -> R.id.btnScale4x
+                        8 -> R.id.btnScale8x
+                        else -> R.id.btnScale2x
+                    }
+                    upscalerBinding.toggleGroupUpscalerScale.check(correctedButton)
+                    Toast.makeText(
+                        activity,
+                        "Selected NCNN model supports ${modelForScale.supportedOutputScales.joinToString(", ") { scale -> "${scale}×" }} only. Output scale set to ${correctedScale}×.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
             updateModelDisplay()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             onLog("[UPSCALER] Model explicitly selected: ${selectedModel?.name ?: "Auto"}")
