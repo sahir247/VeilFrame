@@ -54,9 +54,9 @@ class NcnnUpscaleEngine(
          * 6. Validates without loading uncompressed full-size pixel arrays into RAM.
          */
         internal fun validatePngFile(file: File, expectedW: Int, expectedH: Int) {
-            if (!file.exists() || file.length() < 33) {
+            if (!file.isFile || expectedW <= 0 || expectedH <= 0 || file.length() < 57L) {
                 throw ImageValidationException(
-                    "Output PNG file is missing or truncated (${if (file.exists()) file.length() else 0} bytes)"
+                    "Output PNG is missing, truncated, or has invalid expected dimensions (${expectedW}x${expectedH})"
                 )
             }
 
@@ -64,170 +64,238 @@ class NcnnUpscaleEngine(
                 0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(),
                 0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte()
             )
+            val crc = java.util.zip.CRC32()
+            val inflater = java.util.zip.Inflater(false)
+            val compressedBuffer = ByteArray(8192)
+            val decodedBuffer = ByteArray(8192)
+            val fileLength = file.length()
+            var decodedBytes = 0L
+            var scanlineLength = 0L
+            var expectedDecodedBytes = 0L
+            var idatPayloadBytes = 0L
+            var idatClosed = false
+            var hasIhdr = false
+            var hasIdat = false
+            var hasIend = false
+            var chunksSeen = 0
+            var channels = 0
 
-            file.inputStream().buffered(65536).use { stream ->
-                // 1. Signature check
-                val sig = ByteArray(8)
-                val sigRead = stream.read(sig)
-                if (sigRead != 8 || !sig.contentEquals(expectedSig)) {
-                    throw ImageValidationException("Invalid PNG signature")
+            fun readInt(input: java.io.DataInputStream): Int {
+                val bytes = ByteArray(4)
+                input.readFully(bytes)
+                return ((bytes[0].toInt() and 0xFF) shl 24) or
+                    ((bytes[1].toInt() and 0xFF) shl 16) or
+                    ((bytes[2].toInt() and 0xFF) shl 8) or
+                    (bytes[3].toInt() and 0xFF)
+            }
+
+            fun acceptDecoded(count: Int) {
+                if (count <= 0) return
+                decodedBytes = Math.addExact(decodedBytes, count.toLong())
+                if (decodedBytes > expectedDecodedBytes) {
+                    throw ImageValidationException("PNG zlib stream expands beyond the expected pixel data size")
                 }
-
-                val buffer4 = ByteArray(4)
-                fun readInt(): Int {
-                    val r = stream.read(buffer4)
-                    if (r != 4) throw ImageValidationException("Unexpected EOF while reading PNG chunk header")
-                    return ((buffer4[0].toInt() and 0xFF) shl 24) or
-                        ((buffer4[1].toInt() and 0xFF) shl 16) or
-                        ((buffer4[2].toInt() and 0xFF) shl 8) or
-                        (buffer4[3].toInt() and 0xFF)
+                for (i in 0 until count) {
+                    val rowOffset = (decodedBytes - count + i) % scanlineLength
+                    if (rowOffset == 0L && decodedBuffer[i].toInt() != 0) {
+                        throw ImageValidationException("Unsupported PNG scanline filter; expected filter type 0")
+                    }
                 }
+            }
 
-                var hasIhdr = false
-                var hasIdat = false
-                var hasIend = false
-                val crc = java.util.zip.CRC32()
-                val chunkSkipBuf = ByteArray(8192)
-
+            fun inflateCompressed(bytesRead: Int) {
+                if (bytesRead <= 0) return
+                if (inflater.finished()) {
+                    throw ImageValidationException("Unexpected compressed bytes after the PNG zlib stream ended")
+                }
+                inflater.setInput(compressedBuffer, 0, bytesRead)
                 while (true) {
-                    val lengthBytesRead = stream.read(buffer4)
-                    if (lengthBytesRead == -1) {
-                        break // End of stream
+                    val produced = try {
+                        inflater.inflate(decodedBuffer)
+                    } catch (e: java.util.zip.DataFormatException) {
+                        throw ImageValidationException("Invalid PNG zlib/DEFLATE stream: ${e.message}")
                     }
-                    if (lengthBytesRead != 4) {
-                        throw ImageValidationException("Truncated PNG: incomplete chunk length")
+                    if (produced > 0) {
+                        acceptDecoded(produced)
+                        continue
                     }
-                    val length = ((buffer4[0].toInt() and 0xFF) shl 24) or
-                        ((buffer4[1].toInt() and 0xFF) shl 16) or
-                        ((buffer4[2].toInt() and 0xFF) shl 8) or
-                        (buffer4[3].toInt() and 0xFF)
-                    if (length < 0) {
-                        throw ImageValidationException("Invalid negative PNG chunk length: $length")
+                    if (inflater.finished()) break
+                    if (inflater.needsDictionary()) {
+                        throw ImageValidationException("PNG zlib stream unexpectedly requires a preset dictionary")
                     }
+                    if (inflater.needsInput()) break
+                    throw ImageValidationException("PNG zlib decoder made no progress")
+                }
+                if (inflater.finished() && inflater.remaining != 0) {
+                    throw ImageValidationException("Trailing compressed bytes found after PNG zlib stream")
+                }
+            }
 
-                    val typeBytes = ByteArray(4)
-                    if (stream.read(typeBytes) != 4) {
-                        throw ImageValidationException("Truncated PNG: incomplete chunk type")
+            try {
+                java.io.DataInputStream(file.inputStream().buffered(65536)).use { input ->
+                    val signature = ByteArray(8)
+                    input.readFully(signature)
+                    if (!signature.contentEquals(expectedSig)) {
+                        throw ImageValidationException("Invalid PNG signature")
                     }
-                    val typeStr = String(typeBytes, Charsets.US_ASCII)
+                    var consumed = 8L
 
-                    crc.reset()
-                    crc.update(typeBytes)
-
-                    if (typeStr == "IHDR") {
-                        if (hasIhdr) throw ImageValidationException("Duplicate IHDR chunk found")
-                        if (length != 13) throw ImageValidationException("Invalid IHDR chunk length: $length")
-                        val ihdrData = ByteArray(13)
-                        if (stream.read(ihdrData) != 13) throw ImageValidationException("Truncated IHDR data")
-                        crc.update(ihdrData)
-
-                        val actualW = ((ihdrData[0].toInt() and 0xFF) shl 24) or
-                            ((ihdrData[1].toInt() and 0xFF) shl 16) or
-                            ((ihdrData[2].toInt() and 0xFF) shl 8) or
-                            (ihdrData[3].toInt() and 0xFF)
-                        val actualH = ((ihdrData[4].toInt() and 0xFF) shl 24) or
-                            ((ihdrData[5].toInt() and 0xFF) shl 16) or
-                            ((ihdrData[6].toInt() and 0xFF) shl 8) or
-                            (ihdrData[7].toInt() and 0xFF)
-
-                        if (actualW != expectedW || actualH != expectedH) {
-                            throw ImageValidationException(
-                                "PNG IHDR dimension mismatch: expected ${expectedW}x${expectedH}, found ${actualW}x${actualH}"
-                            )
+                    while (!hasIend) {
+                        if (consumed + 12L > fileLength) {
+                            throw ImageValidationException("Truncated PNG: missing complete chunk header or CRC")
                         }
-                        hasIhdr = true
-                    } else {
-                        if (!hasIhdr) {
-                            throw ImageValidationException("First chunk in PNG must be IHDR, found $typeStr")
+                        val length = readInt(input)
+                        val typeBytes = ByteArray(4)
+                        input.readFully(typeBytes)
+                        consumed += 8L
+                        if (length < 0) throw ImageValidationException("Invalid PNG chunk length: $length")
+                        if (length.toLong() + 4L > fileLength - consumed) {
+                            throw ImageValidationException("Truncated PNG chunk payload")
                         }
-                        if (typeStr == "IDAT") {
-                            hasIdat = true
-                        } else if (typeStr == "IEND") {
-                            hasIend = true
+                        val type = String(typeBytes, Charsets.US_ASCII)
+                        crc.reset()
+                        crc.update(typeBytes)
+                        chunksSeen++
+
+                        when (type) {
+                            "IHDR" -> {
+                                if (chunksSeen != 1 || hasIhdr || length != 13) {
+                                    throw ImageValidationException("PNG must begin with exactly one 13-byte IHDR chunk")
+                                }
+                                val ihdr = ByteArray(13)
+                                input.readFully(ihdr)
+                                consumed += 13L
+                                crc.update(ihdr)
+                                val actualW = readBeInt(ihdr, 0)
+                                val actualH = readBeInt(ihdr, 4)
+                                if (actualW != expectedW || actualH != expectedH) {
+                                    throw ImageValidationException(
+                                        "PNG dimensions mismatch: expected ${expectedW}x${expectedH}, found ${actualW}x${actualH}"
+                                    )
+                                }
+                                if ((ihdr[8].toInt() and 0xFF) != 8) {
+                                    throw ImageValidationException("Only 8-bit PNG output is supported")
+                                }
+                                channels = when (ihdr[9].toInt() and 0xFF) {
+                                    2 -> 3
+                                    6 -> 4
+                                    else -> throw ImageValidationException("Only RGB/RGBA PNG output is supported")
+                                }
+                                if (ihdr[10].toInt() != 0 || ihdr[11].toInt() != 0 || ihdr[12].toInt() != 0) {
+                                    throw ImageValidationException("Unsupported PNG compression, filter, or interlace method")
+                                }
+                                scanlineLength = Math.addExact(Math.multiplyExact(expectedW.toLong(), channels.toLong()), 1L)
+                                expectedDecodedBytes = Math.multiplyExact(scanlineLength, expectedH.toLong())
+                                hasIhdr = true
+                            }
+                            "IDAT" -> {
+                                if (!hasIhdr || idatClosed || inflater.finished()) {
+                                    throw ImageValidationException("PNG IDAT chunks must be contiguous and follow IHDR")
+                                }
+                                hasIdat = true
+                                var remaining = length
+                                while (remaining > 0) {
+                                    val n = minOf(remaining, compressedBuffer.size)
+                                    input.readFully(compressedBuffer, 0, n)
+                                    consumed += n.toLong()
+                                    crc.update(compressedBuffer, 0, n)
+                                    idatPayloadBytes = Math.addExact(idatPayloadBytes, n.toLong())
+                                    inflateCompressed(n)
+                                    remaining -= n
+                                }
+                            }
+                            "IEND" -> {
+                                if (!hasIhdr || !hasIdat || length != 0) {
+                                    throw ImageValidationException("Invalid PNG IEND placement or length")
+                                }
+                                if (!inflater.finished() || decodedBytes != expectedDecodedBytes) {
+                                    throw ImageValidationException(
+                                        "PNG zlib stream is incomplete: decoded $decodedBytes of $expectedDecodedBytes expected bytes"
+                                    )
+                                }
+                                hasIend = true
+                            }
+                            else -> throw ImageValidationException("Unexpected PNG chunk '$type'; only IHDR, contiguous IDAT, and IEND are supported")
                         }
-                        // Read chunk data and feed to CRC
-                        var remaining = length
-                        while (remaining > 0) {
-                            val toRead = minOf(remaining, chunkSkipBuf.size)
-                            val read = stream.read(chunkSkipBuf, 0, toRead)
-                            if (read == -1) throw ImageValidationException("Truncated data in chunk $typeStr")
-                            crc.update(chunkSkipBuf, 0, read)
-                            remaining -= read
+
+                        val actualCrc = crc.value
+                        val expectedCrc = readInt(input).toLong() and 0xFFFFFFFFL
+                        consumed += 4L
+                        if (actualCrc != expectedCrc) {
+                            throw ImageValidationException("PNG CRC mismatch in $type chunk")
+                        }
+
+                        if (type == "IEND") {
+                            if (input.read() != -1) {
+                                throw ImageValidationException("Extraneous trailing bytes found after PNG IEND")
+                            }
+                            if (consumed != fileLength) {
+                                throw ImageValidationException("PNG length accounting mismatch")
+                            }
+                        } else if (type != "IDAT" && hasIdat) {
+                            idatClosed = true
                         }
                     }
 
-                    // Read 4-byte CRC
-                    val expectedCrc = readInt().toLong() and 0xFFFFFFFFL
-                    val actualCrc = crc.value
-                    if (actualCrc != expectedCrc) {
-                        throw ImageValidationException("PNG CRC mismatch in chunk $typeStr: expected $expectedCrc, got $actualCrc")
-                    }
-
-                    if (typeStr == "IEND") {
-                        // After IEND, no trailing data is allowed
-                        val trailing = stream.read()
-                        if (trailing != -1) {
-                            throw ImageValidationException("Extraneous trailing bytes found after PNG IEND chunk")
-                        }
-                        break
+                    if (!hasIhdr || !hasIdat || !hasIend || idatPayloadBytes == 0L) {
+                        throw ImageValidationException("PNG is missing required image chunks")
                     }
                 }
-
-                if (!hasIhdr) throw ImageValidationException("PNG missing IHDR chunk")
-                if (!hasIdat) throw ImageValidationException("PNG missing IDAT image data chunks")
-                if (!hasIend) throw ImageValidationException("PNG missing IEND termination chunk")
+            } catch (e: ImageValidationException) {
+                throw e
+            } catch (e: ArithmeticException) {
+                throw ImageValidationException("PNG dimensions overflow the validation bounds")
+            } catch (e: java.io.EOFException) {
+                throw ImageValidationException("Unexpected EOF while validating PNG")
+            } finally {
+                inflater.end()
             }
         }
+
+        private fun readBeInt(bytes: ByteArray, offset: Int): Int =
+            ((bytes[offset].toInt() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                (bytes[offset + 3].toInt() and 0xFF)
 
         /**
          * Atomically publishes [tempFile] to [finalFile] using a same-directory staging swap.
          * Ensures [finalFile] is never visible in a partial or corrupt state.
          */
         internal fun publishFileAtomically(tempFile: File, finalFile: File) {
-            val parentDir = finalFile.parentFile ?: tempFile.parentFile ?: File(".")
-            val stagingFile = File(parentDir, "${finalFile.name}.staging_${UUID.randomUUID()}")
+            val parent = finalFile.parentFile
+                ?: throw ImageValidationException("Final PNG has no parent directory")
+            if (!parent.isDirectory || !parent.canWrite()) {
+                throw ImageValidationException("Output directory is missing or not writable: ${parent.absolutePath}")
+            }
+            if (tempFile.parentFile?.canonicalFile != parent.canonicalFile) {
+                throw ImageValidationException("Atomic publication requires source and destination in the same directory")
+            }
+            if (!tempFile.isFile || tempFile.length() <= 0L) {
+                throw ImageValidationException("Validated temporary PNG is missing or empty")
+            }
+            if (finalFile.exists()) {
+                throw ImageValidationException("Refusing to replace an existing output file: ${finalFile.absolutePath}")
+            }
 
             try {
-                // First attempt direct atomic move
-                val movedDirect = try {
-                    java.nio.file.Files.move(
-                        tempFile.toPath(),
-                        finalFile.toPath(),
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                    )
-                    true
-                } catch (e: Exception) {
-                    false
-                }
+                // Do not silently downgrade to copy/rename: those paths can expose partial output.
+                java.nio.file.Files.move(
+                    tempFile.toPath(),
+                    finalFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                throw ImageValidationException("Filesystem does not support atomic PNG publication")
+            } catch (e: java.io.IOException) {
+                throw ImageValidationException("Atomic PNG publication failed: ${e.message}")
+            }
 
-                if (!movedDirect) {
-                    // Staging fallback: copy to stagingFile first, then atomic rename
-                    if (!tempFile.renameTo(stagingFile)) {
-                        tempFile.copyTo(stagingFile, overwrite = true)
-                        tempFile.delete()
-                    }
-                    if (!stagingFile.renameTo(finalFile)) {
-                        java.nio.file.Files.move(
-                            stagingFile.toPath(),
-                            finalFile.toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
-                        )
-                    }
-                }
-
-                if (!finalFile.exists() || finalFile.length() == 0L) {
-                    throw ImageValidationException("Failed to atomically publish validated PNG to ${finalFile.absolutePath}")
-                }
-            } finally {
-                if (stagingFile.exists()) {
-                    stagingFile.delete()
-                }
-                if (tempFile.exists()) {
-                    tempFile.delete()
-                }
+            if (!finalFile.isFile || finalFile.length() <= 0L || tempFile.exists()) {
+                throw ImageValidationException("Atomic PNG publication postcondition failed")
             }
         }
+
     }
 
     suspend fun upscale(
