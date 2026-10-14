@@ -3,6 +3,7 @@ package com.veilframe.app.upscale.inference
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
 import com.veilframe.app.media.MediaDecoder
 import com.veilframe.app.upscale.model.ModelType
@@ -402,8 +403,16 @@ class NcnnUpscaleEngine(
             writer = StreamingPngWriter(tempFile, outW, outH, colorType = colorType)
 
             val gpuCount = NcnnNative.getGpuCount()
-            val preferredGpuid = if (gpuCount > 0) 0 else -1
-            val numThreads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+            val isEmulator = Build.HARDWARE == "ranchu" ||
+                Build.HARDWARE == "goldfish" ||
+                Build.BOARD.contains("goldfish", ignoreCase = true) ||
+                Build.MODEL.contains("google_apis", ignoreCase = true)
+            // On physical devices, Vulkan executes all models. On QEMU emulators, GFXStream has
+            // an unhandled driver limitation when translating deep 23-block RRDBNet shaders;
+            // routing x4plus to CPU on emulators ensures seamless stability across all test matrices.
+            val preferredGpuid = if (gpuCount > 0 && !(isEmulator && model.id.contains("x4plus"))) 0 else -1
+            // Restrict threads to 2 on emulator/CPU to prevent OpenMP per-thread workspaces from exceeding 1024MB LMK limit
+            val numThreads = if (isEmulator || preferredGpuid < 0) 2 else Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
             val backendAttempts = if (preferredGpuid >= 0) listOf(preferredGpuid, -1) else listOf(-1)
             var inferenceSucceeded = false
             var lastGpuFailure: DeviceInferenceException? = null

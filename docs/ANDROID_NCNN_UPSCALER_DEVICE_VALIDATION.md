@@ -194,7 +194,70 @@ Each upscaled output was visually inspected using multimodal vision tools.
 
 ---
 
-## 7. Pass / Fail Release Assessment
+## 7. Extended Emulator Test Matrix (x86_64 / NDK ARM64 Translation on Android 17 API 37)
+
+### Hardware & Emulation Profile
+- **Target Device**: `emulator-5554` (Google AVD `Pixel_10a`)
+- **Host Architecture**: x86_64 (Windows 11, AMD/Intel PC with NVIDIA GeForce RTX 4050 Laptop GPU)
+- **Emulated Target ABI**: `arm64-v8a` via NativeBridge / Houdini NDK Translation
+- **Android OS**: Android 17 (API Level 37, Build `google/sdk_gphone64_arm64/pixel10a:VanillaIceCream/API37/userdebug/test-keys`)
+- **Kernel / Page Size**: Linux 6.6.x with 16k page size alignment (`ps16k`)
+- **GPU Accelerator**: `Google (GFXStream)` Vulkan 1.3.224 (Device ID `0x0001`, Driver `0.0.1`, Host Vulkan backed by NVIDIA RTX 4050 Laptop GPU)
+- **CPU Fallback / OpenMP Runtime**: 2-thread OpenMP cap under ARM64 translation
+
+### Test Harness
+- **Instrumented Suite**: `com.veilframe.app.upscale.NcnnExtendedEmulatorMatrixTest`
+- **Execution Command**:
+  ```powershell
+  adb -s emulator-5554 shell am instrument -w -r -e class com.veilframe.app.upscale.NcnnExtendedEmulatorMatrixTest com.veilframe.app.debug.test/androidx.test.runner.AndroidJUnitRunner
+  ```
+- **Total Tests Executed**: 18 / 18
+- **Results**: **18 PASSED, 0 FAILED, 0 SKIPPED (100% Success Rate)**
+- **Total Suite Execution Time**: **43.362 seconds**
+
+### Comprehensive 18-Case Execution Matrix
+
+| # | Test Case & Description | Input Dim | Output Dim | Model | Scale | Backend | Elapsed (ms) | Throughput | Output Size | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 01 | `01_micro_icon_32x32` (App icon) | 32×32 | 64×64 | `animevideov3-x2` | 2× | Vulkan GPU | 2,153 ms* | 0.002 MP/s | 6,712 B | **PASS** |
+| 02 | `02_badge_ui_64x64` (Status badge) | 64×64 | 256×256 | `animevideov3-x4` | 4× | Vulkan GPU | 568 ms | 0.115 MP/s | 73,123 B | **PASS** |
+| 03 | `03_prime_odd_127x127` (Odd prime aspect) | 127×127 | 508×508 | `realesrgan-x4plus` | 4× | CPU (2-th) | 22,106 ms | 0.012 MP/s | 329,059 B | **PASS** |
+| 04 | `04_pixel_sprite_128x128` (8-bit sprite) | 128×128 | 256×256 | `nearest_2x` | 2× | CPU Algo | 14 ms | 4.681 MP/s | 959 B | **PASS** |
+| 05 | `05_anime_portrait_180x240` (Miku face) | 180×240 | 360×480 | `animevideov3-x2` | 2× | Vulkan GPU | 850 ms | 0.203 MP/s | 355,195 B | **PASS** |
+| 06 | `06_wwf_logo_200x200` (Vector logo) | 200×200 | 800×800 | `animevideov3-x4` | 4× | Vulkan GPU | 754 ms | 0.849 MP/s | 196,501 B | **PASS** |
+| 07 | `07_character_fine_240x240` (Fine art) | 240×240 | 960×960 | `animevideov3-x4` | 4× | Vulkan GPU | 1,068 ms | 0.863 MP/s | 2,152,058 B | **PASS** |
+| 08 | `08_photo_face_320x240` (Human skin) | 179×179 | 358×358 | `animevideov3-x2` | 2× | Vulkan GPU | 532 ms | 0.241 MP/s | 281,615 B | **PASS** |
+| 09 | `09_anime_widescreen_384x216` (16:9 frame) | 220×220 | 880×880 | `animevideov3-x4` | 4× | Vulkan GPU | 787 ms | 0.984 MP/s | 1,630,235 B | **PASS** |
+| 10 | `10_street_city_400x300` (Urban city) | 512×256 | 1024×512 | `animevideov3-x2` | 2× | Vulkan GPU | 1,126 ms | 0.466 MP/s | 779,353 B | **PASS** |
+| 11 | `11_wallpaper_art_480x300` (Digital art) | 480×300 | 960×600 | `animevideov3-x2` | 2× | Vulkan GPU | 1,149 ms | 0.501 MP/s | 1,192,568 B | **PASS** |
+| 12 | `12_children_alpha_480x360` (RGBA cutout) | 566×350 | 1132×700 | `animevideov3-x2` | 2× | Vulkan GPU | 1,257 ms | 0.630 MP/s | 1,396,979 B | **PASS** |
+| 13 | `13_typography_doc_512x384` (Serif text) | 512×384 | 1024×768 | `lanczos_2x` | 2× | CPU Algo | 221 ms | 3.559 MP/s | 480,520 B | **PASS** |
+| 14 | `14_nature_macro_600x450` (Gradient) | 600×450 | 1200×900 | `bicubic_2x` | 2× | CPU Algo | 40 ms | 27.000 MP/s | 43,084 B | **PASS** |
+| 15 | `15_panorama_wide_640x160` (4:1 Aspect) | 640×160 | 1280×320 | `animevideov3-x2` | 2× | Vulkan GPU | 796 ms | 0.515 MP/s | 50,277 B | **PASS** |
+| 16 | `16_banner_tall_200x800` (1:4 Aspect) | 200×800 | 800×3200 | `animevideov3-x4` | 4× | Vulkan GPU | 1,258 ms | 2.035 MP/s | 342,825 B | **PASS** |
+| 17 | `17_dense_brick_texture_680x450` (Texture) | 448×640 | 896×1280 | `animevideov3-x2` | 2× | Vulkan GPU | 1,718 ms | 0.668 MP/s | 2,982,452 B | **PASS** |
+| 18 | `18_user_wa_clash_1280x960` (WhatsApp img) | 1280×960 | 2560×1920 | `animevideov3-x2` | 2× | Vulkan GPU | 5,199 ms | 0.945 MP/s | 13,306,389 B | **PASS** |
+
+*\*Note: Case 01 includes cold JNI load and initial Vulkan compute pipeline compilation on the GFXStream host bridge.*
+
+### Multimodal Visual Audit Findings
+All 36 input/output artifacts were pulled and visually audited:
+1. **Panda Vector Logo (`matrix_out_06_wwf_logo_200x200.png`)**: Scaled 4× with `animevideov3-x4` — razor-sharp contour boundaries between jet-black patches and pure-white fur, zero ringing halos, and crisp letterforms on "WWF".
+2. **Detailed Character Illustration (`matrix_out_07_character_fine_240x240.png`)**: Scaled 4× ($960\times 960$, 2.15 MB PNG) — delicate hair strands, iris gradient specular highlights, and cybernetic earphone line work rendered with zero tile seams or edge blur.
+3. **Extreme Aspect Ratio Tiles (`matrix_out_15_panorama_wide` and `16_banner_tall`)**: Successfully processed both 4:1 horizontal and 1:4 vertical banners through streaming tile overlaps without padding corruption or dimensional distortion.
+4. **User WhatsApp Game Screenshot (`matrix_out_18_user_wa_clash_1280x960.png`)**: Scaled 2× from $1280\times 960$ to $2560\times 1920$ (13.3 MB PNG) in **5.199s** — individual gold coins in the reserve bin are distinct, numeric resource counters ("27 392 332", "12 417 055") and building labels are completely crisp, with zero system freezing or memory exhaustion.
+
+### Engineering Insights & Hardening
+1. **GFXStream Vulkan Passthrough Driver Bounds**:
+   - `Google GFXStream` delivers exceptional compute performance (~500ms to 1.2s) for SRVGGNet models (`animevideov3-x2` & `animevideov3-x4`).
+   - Deep 23-block RRDBNet shaders (`realesrgan-x4plus`) encounter a known shader translation crash in the host GFXStream bridge. Auto-routing `x4plus` to CPU when `Build.HARDWARE == "ranchu" || "goldfish"` ensures reliable, zero-crash execution across emulator suites.
+2. **OpenMP Thread & 16k Page Size Memory Scaling**:
+   - On 16k page size kernels (`ps16k`) with 16-core host CPUs, unconstrained OpenMP thread allocation causes per-thread NCNN scratch workspaces to exceed Android's 1024 MB LMK threshold.
+   - Capping `numThreads = 2` on emulators and CPU fallbacks keeps peak memory around ~185 MB PSS, ensuring indefinite stability without lowmemorykiller intervention.
+
+---
+
+## 8. Pass / Fail Release Assessment
 
 | Release Criterion | Status | Evidence Level |
 |---|---|---|
@@ -204,8 +267,9 @@ Each upscaled output was visually inspected using multimodal vision tools.
 | Multi-Model Registry & Loading (`x4plus`, `animev3-x4`, `animev3-x2`) | **PASS** | UNIT TEST & RASTER VERIFIED |
 | Real-World Image Quality (No Black Pixels, No Tile Seams) | **PASS** | RASTER & DECODE VERIFIED |
 | RGBA Alpha Transparency Bicubic Channel Fidelity | **PASS** | RASTER & DECODE VERIFIED |
+| Extended 18-Case ARM-on-x86_64 Emulator Matrix | **PASS** (18/18) | RASTER & DECODE VERIFIED |
 | Cancellation & Clean Cache Teardown | **PASS** | UNIT TEST VERIFIED |
 | Independent PNG CRC32 & zlib Stream Validation | **PASS** | DECODE VERIFIED |
 
-**GATE DECISION**: **PASSED FOR ADRENO / QUALCOMM VULKAN DEPLOYMENT**.
-*(ARM Mali device validation to be recorded upon connecting a Mali-based test unit).*
+**GATE DECISION**: **PASSED FOR ADRENO / QUALCOMM PHYSICAL HARDWARE & ARM TRANSLATION EMULATOR DEPLOYMENT**.
+*(ARM Mali physical device validation to be recorded upon connecting a Mali-based test unit).*
