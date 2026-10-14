@@ -27,6 +27,21 @@ object UpscaleResourceEstimator {
     const val DEFAULT_TILE_SIZE = 160
     const val DEFAULT_PREPADDING = 10
 
+    /**
+     * Runtime admission heuristic: cap estimated native+host work to 25% of currently
+     * available memory, or 1/6 while Android reports low memory. This is intentionally
+     * below availMem because the OS and unrelated processes still need headroom.
+     */
+    fun totalBudgetForAvailableMemory(
+        availableMemoryBytes: Long,
+        lowMemory: Boolean,
+        maxBudgetBytes: Long = MAX_TOTAL_WORKING_BYTES
+    ): Long {
+        if (availableMemoryBytes <= 0L || maxBudgetBytes <= 0L) return 0L
+        val pressureBudget = availableMemoryBytes / if (lowMemory) 6L else 4L
+        return minOf(maxBudgetBytes, pressureBudget)
+    }
+
     data class ResourcePlan(
         val srcW: Int,
         val srcH: Int,
