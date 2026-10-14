@@ -434,11 +434,36 @@ class ImageUpscalerController(
     private fun setupScales() {
         upscalerBinding.toggleGroupUpscalerScale.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
-            targetScale = when (checkedId) {
+            val requestedScale = when (checkedId) {
                 R.id.btnScale4x -> 4
                 R.id.btnScale8x -> 8
                 else -> 2
             }
+            val model = runCatching { getResolvedModel() }.getOrNull()
+            if (model?.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN &&
+                requestedScale !in model.supportedOutputScales
+            ) {
+                val correctedScale = model.supportedOutputScales.minByOrNull {
+                    kotlin.math.abs(it - requestedScale)
+                } ?: run {
+                    Toast.makeText(activity, "${model.name} has no supported output scales.", Toast.LENGTH_LONG).show()
+                    return@addOnButtonCheckedListener
+                }
+                targetScale = correctedScale
+                Toast.makeText(
+                    activity,
+                    "${model.name} supports ${model.supportedOutputScales.joinToString("×, ")}× output. Set to ${correctedScale}×.",
+                    Toast.LENGTH_LONG
+                ).show()
+                val correctedButton = when (correctedScale) {
+                    4 -> R.id.btnScale4x
+                    8 -> R.id.btnScale8x
+                    else -> R.id.btnScale2x
+                }
+                upscalerBinding.toggleGroupUpscalerScale.check(correctedButton)
+                return@addOnButtonCheckedListener
+            }
+            targetScale = requestedScale
             updateTargetDimensions()
             updateModelDisplay()
             onLog("[UPSCALER] Target scale set to ${targetScale}×")
