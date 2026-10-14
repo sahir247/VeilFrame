@@ -23,7 +23,7 @@ static jclass g_strip_callback_class = nullptr;
 static jmethodID g_on_strip_method = nullptr;
 
 static bool valid_image_dimensions(jint width, jint height, jint channels) {
-    if (width <= 0 || height <= 0 || width > 32768 || height > 32768 ||
+    if (width <= 0 || height <= 0 || width > 16384 || height > 16384 ||
         (channels != 3 && channels != 4)) {
         return false;
     }
@@ -36,6 +36,14 @@ static bool valid_image_dimensions(jint width, jint height, jint channels) {
 static uint64_t expected_image_bytes(jint width, jint height, jint channels) {
     return static_cast<uint64_t>(width) * static_cast<uint64_t>(height) *
            static_cast<uint64_t>(channels);
+}
+
+static bool valid_output_dimensions(jint width, jint height, int scale) {
+    if (scale != 2 && scale != 3 && scale != 4) return false;
+    const uint64_t out_width = static_cast<uint64_t>(width) * static_cast<uint64_t>(scale);
+    const uint64_t out_height = static_cast<uint64_t>(height) * static_cast<uint64_t>(scale);
+    if (out_width > 32768ULL || out_height > 32768ULL) return false;
+    return out_width * out_height <= 100000000ULL;
 }
 
 struct CallbackUserData {
@@ -531,7 +539,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
-    if (!inputDirectBuffer || !valid_image_dimensions(width, height, channels)) {
+    if (!inputDirectBuffer || !valid_image_dimensions(width, height, channels) ||
+        !valid_output_dimensions(width, height, lease.instance->engine->scale)) {
         LOGE("nativeProcessStreaming: invalid direct buffer or dimensions");
         return -3;
     }
@@ -592,6 +601,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
     if (!valid_image_dimensions(width, height, channels) ||
+        !valid_output_dimensions(width, height, lease.instance->engine->scale) ||
         !stripCallback || !rowCallback || !g_on_strip_method || !g_on_row_method) {
         LOGE("nativeProcessStripStreaming: invalid dimensions or callbacks");
         return -3;
