@@ -110,15 +110,8 @@ class UpscaleInferenceEngine(
 
             val resultOutput = when (model.type) {
                 ModelType.AI_NCNN -> {
-                    // Fail closed until the native JNI engine and build integration land.
-                    // This branch may be built/tested, but must not be shipped as a working
-                    // NCNN upscaler before this placeholder is replaced by NcnnUpscaleEngine.
-                    return@withContext Result.failure(
-                        IllegalStateException(
-                            "Native NCNN inference is not integrated in this build yet. " +
-                                "Do not release this migration branch as a working upscaler."
-                        )
-                    )
+                    val ncnnEngine = NcnnUpscaleEngine(context, repository)
+                    ncnnEngine.upscale(source, model, targetScale, params, listener)
                 }
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
@@ -285,11 +278,17 @@ class UpscaleInferenceEngine(
                 }
             }
 
+            val currentBackend = when (model.type) {
+                ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
+                ModelType.ALGORITHMIC -> "ALGORITHMIC"
+                ModelType.AI_ONNX -> OnnxSessionManager.lastBackend.name
+            }
+
             com.veilframe.app.cv.core.CvTelemetry.record(
                 linkedMapOf(
                     "ts" to System.currentTimeMillis(), "job" to "upscale",
                     "model" to model.id, "scale" to targetScale,
-                    "backend" to OnnxSessionManager.lastBackend.name,
+                    "backend" to currentBackend,
                     "chunk" to params.chunkSize, "workers" to params.parallelWorkers,
                     "srcW" to srcW, "srcH" to srcH,
                     "ms" to (System.currentTimeMillis() - t0), "outcome" to "ok",
@@ -299,11 +298,16 @@ class UpscaleInferenceEngine(
             Result.success(resultOutput)
         } catch (e: Exception) {
             Log.e(TAG, "Upscale failed: ${e.message}", e)
+            val currentBackend = when (model.type) {
+                ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
+                ModelType.ALGORITHMIC -> "ALGORITHMIC"
+                ModelType.AI_ONNX -> OnnxSessionManager.lastBackend.name
+            }
             com.veilframe.app.cv.core.CvTelemetry.record(
                 linkedMapOf(
                     "ts" to System.currentTimeMillis(), "job" to "upscale",
                     "model" to model.id, "scale" to targetScale,
-                    "backend" to OnnxSessionManager.lastBackend.name,
+                    "backend" to currentBackend,
                     "chunk" to params.chunkSize, "workers" to params.parallelWorkers,
                     "srcW" to srcW, "srcH" to srcH,
                     "ms" to (System.currentTimeMillis() - t0), "outcome" to "err",

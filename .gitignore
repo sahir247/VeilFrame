@@ -100,6 +100,7 @@ resource_videos
 .gradle/
 **/android/.gradle/
 **/android/**/build/
+**/.cxx/
 **/.kotlin/
 **/jdk-*/
 android/jdk*/

@@ -22,6 +22,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        externalNativeBuild {
+            cmake {
+                arguments("-DANDROID_STL=c++_static")
+            }
+        }
+
         ndk {
             if (customAbis != null) {
                 abiFilters += customAbis
@@ -120,6 +126,15 @@ android {
 
     androidResources {
         noCompress += "tflite"
+    }
+
+    ndkVersion = "26.1.10909125"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
