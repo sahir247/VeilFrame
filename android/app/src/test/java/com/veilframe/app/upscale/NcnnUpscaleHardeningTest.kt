@@ -195,6 +195,34 @@ class NcnnUpscaleHardeningTest {
     }
 
     @Test
+    fun testValidatePngFile_NonEmptyIendIsRejected() {
+        val file = tempFolder.newFile("invalid_iend.png")
+        val width = 5
+        val height = 3
+        StreamingPngWriter(file, width, height, colorType = StreamingPngWriter.ColorType.RGB).use { writer ->
+            val row = ByteArray(width * 3) { (it and 0xFF).toByte() }
+            repeat(height) { writer.writeRow(row) }
+        }
+
+        val bytes = file.readBytes()
+        // A valid IEND is the final 12-byte chunk with a zero length field.
+        val iendOffset = bytes.size - 12
+        assertEquals("IEND", String(bytes, iendOffset + 4, 4, Charsets.US_ASCII))
+        bytes[iendOffset + 3] = 1
+        file.writeBytes(bytes)
+
+        try {
+            NcnnUpscaleEngine.validatePngFile(file, width, height)
+            fail("PNG IEND must have zero data length")
+        } catch (e: ImageValidationException) {
+            assertTrue(
+                e.message?.contains("Truncated PNG chunk payload") == true ||
+                    e.message?.contains("IEND") == true
+            )
+        }
+    }
+
+    @Test
     fun testValidatePngFile_CorruptZlibWithRecomputedIdatCrcIsRejected() {
         val file = tempFolder.newFile("corrupt_zlib.png")
         val width = 19
