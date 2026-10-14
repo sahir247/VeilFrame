@@ -170,7 +170,7 @@ class NcnnUpscaleEngine(
                                 val actualH = readBeInt(ihdr, 4)
                                 if (actualW != expectedW || actualH != expectedH) {
                                     throw ImageValidationException(
-                                        "PNG dimensions mismatch: expected ${expectedW}x${expectedH}, found ${actualW}x${actualH}"
+                                        "PNG dimension mismatch: expected ${expectedW}x${expectedH}, found ${actualW}x${actualH}"
                                     )
                                 }
                                 if ((ihdr[8].toInt() and 0xFF) != 8) {
