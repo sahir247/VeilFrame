@@ -13,9 +13,6 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
-// Internal-only callback code. Do not share numeric values with NCNN/Vulkan results.
-static constexpr int kNativeCallbackCancelled = -9001;
-
 static jclass g_row_callback_class = nullptr;
 static jmethodID g_on_row_method = nullptr;
 
@@ -57,6 +54,7 @@ struct CallbackUserData {
     int w;
     int channels;
     bool has_exception;
+    bool cancelled;
 };
 
 static int jni_strip_callback(unsigned char* strip_data, int y0, int height, void* user_data) {
@@ -91,7 +89,11 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
         return -1; // Abort without clearing exception
     }
 
-    return ret == 1 ? kNativeCallbackCancelled : ret;
+    if (ret == 1) {
+        cb->cancelled = true;
+        return -1; // Keep callback cancellation out of NCNN's status namespace.
+    }
+    return ret;
 }
 
 static int jni_row_callback(const unsigned char* row_data, int row_index, int row_width, int channels, void* user_data) {
@@ -126,7 +128,11 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
         return -1; // Abort on Java exception WITHOUT clearing it
     }
 
-    return ret == 1 ? kNativeCallbackCancelled : ret;
+    if (ret == 1) {
+        cb->cancelled = true;
+        return -1; // Keep callback cancellation out of NCNN's status namespace.
+    }
+    return ret;
 }
 
 static int jni_progress_callback(int current_tile, int total_tiles, int percent, void* user_data) {
@@ -604,7 +610,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
             &udata
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
-        if (ret == kNativeCallbackCancelled) return -10;
+        if (udata.cancelled) return -10;
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
         return 0;
@@ -658,7 +664,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
             &udata
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
-        if (ret == kNativeCallbackCancelled) return -10;
+        if (udata.cancelled) return -10;
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
         return 0;
