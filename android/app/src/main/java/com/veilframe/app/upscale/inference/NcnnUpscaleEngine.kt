@@ -263,7 +263,14 @@ class NcnnUpscaleEngine(
          * Atomically publishes [tempFile] to [finalFile] using a same-directory staging swap.
          * Ensures [finalFile] is never visible in a partial or corrupt state.
          */
-        internal fun publishFileAtomically(tempFile: File, finalFile: File) {
+        internal fun publishFileAtomically(
+            tempFile: File,
+            finalFile: File,
+            atomicMover: (java.nio.file.Path, java.nio.file.Path) -> Unit = { source, target ->
+                java.nio.file.Files.move(source, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                Unit
+            }
+        ) {
             val parent = finalFile.parentFile
                 ?: throw ImageValidationException("Final PNG has no parent directory")
             if (!parent.isDirectory || !parent.canWrite()) {
@@ -281,11 +288,7 @@ class NcnnUpscaleEngine(
 
             try {
                 // Do not silently downgrade to copy/rename: those paths can expose partial output.
-                java.nio.file.Files.move(
-                    tempFile.toPath(),
-                    finalFile.toPath(),
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
-                )
+                atomicMover(tempFile.toPath(), finalFile.toPath())
             } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
                 throw ImageValidationException("Filesystem does not support atomic PNG publication")
             } catch (e: java.io.IOException) {
@@ -560,6 +563,12 @@ class NcnnUpscaleEngine(
                                 )
                             }
                             attemptWriter.close()
+                            // close() performs synchronous zlib/PNG finalization; cancellation
+                            // can arrive while it runs, so do not treat the writer's completion
+                            // as authorization to publish.
+                            if (!coroutineContext.isActive) {
+                                throw UpscaleCancellationException("Upscaling cancelled during PNG finalization")
+                            }
                         } finally {
                             NcnnNative.destroyInstance(handle)
                         }
@@ -581,8 +590,15 @@ class NcnnUpscaleEngine(
                 throw lastGpuFailure ?: DeviceInferenceException(-4, "NCNN inference did not complete on any backend", "CPU")
             }
 
-            // Transactional validation & atomic publication (P0.4)
+            // Validation itself streams the complete compressed image; cancellation may
+            // arrive during that synchronous work, so check both before and after it.
+            if (!coroutineContext.isActive) {
+                throw UpscaleCancellationException("Upscaling cancelled before output validation")
+            }
             validatePngFile(tempFile, outW, outH)
+            if (!coroutineContext.isActive) {
+                throw UpscaleCancellationException("Upscaling cancelled before output publication")
+            }
             publishFileAtomically(tempFile, finalFile)
             isPublished = true
 
