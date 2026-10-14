@@ -90,6 +90,12 @@ static int jni_progress_callback(int current_tile, int total_tiles, int percent,
     return 0;
 }
 
+#include <atomic>
+
+static std::atomic<int> g_active_instances{0};
+static std::atomic<bool> g_is_initialized{false};
+static ncnn::Mutex g_lifecycle_lock;
+
 static void release_cached_global_refs(JNIEnv* env) {
     if (g_row_callback_class) {
         env->DeleteGlobalRef(g_row_callback_class);
@@ -109,13 +115,21 @@ static void release_cached_global_refs(JNIEnv* env) {
     }
     g_on_strip_method = nullptr;
 
-    ncnn::destroy_gpu_instance();
+    if (g_active_instances.load() == 0) {
+        ncnn::destroy_gpu_instance();
+    }
+    g_is_initialized.store(false);
 }
 
 extern "C" {
 
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env, jclass clazz) {
+    ncnn::MutexLockGuard guard(g_lifecycle_lock);
+    if (g_is_initialized.load() && g_row_callback_class && g_progress_callback_class && g_strip_callback_class) {
+        return 0; // Already initialized, idempotent
+    }
+
     ncnn::create_gpu_instance();
 
     jclass row_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnRowCallback");
@@ -175,12 +189,18 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
         return -9;
     }
 
+    g_is_initialized.store(true);
     LOGI("NCNN global initialized, GPU count: %d", ncnn::get_gpu_count());
     return 0;
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
+    ncnn::MutexLockGuard guard(g_lifecycle_lock);
+    if (g_active_instances.load() > 0) {
+        LOGE("Cannot destroy NCNN global instance while %d instances are still active", g_active_instances.load());
+        return;
+    }
     release_cached_global_refs(env);
     LOGI("NCNN global destroyed");
 }
@@ -204,6 +224,7 @@ JNIEXPORT jlong JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     JNIEnv* env, jclass clazz, jint gpuid, jboolean ttaMode, jint numThreads
 ) {
+    g_active_instances.fetch_add(1);
     RealSR* realsr = new RealSR(gpuid, ttaMode, numThreads);
     return reinterpret_cast<jlong>(realsr);
 }
@@ -214,6 +235,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
 ) {
     RealSR* realsr = reinterpret_cast<RealSR*>(handle);
     delete realsr;
+    g_active_instances.fetch_sub(1);
 }
 
 JNIEXPORT jint JNICALL

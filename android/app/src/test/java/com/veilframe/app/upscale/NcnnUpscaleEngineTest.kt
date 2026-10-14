@@ -188,6 +188,80 @@ class NcnnUpscaleEngineTest {
         )
     }
 
+    @Test
+    fun testRgbaByteLayoutExtraction_DeterministicChannelOrder() {
+        // Deterministic fixture: Opaque Red, Green, Blue, Transparent, Semi-transparent
+        val colors = intArrayOf(
+            0xFFFF0000.toInt(), // Opaque Red
+            0xFF00FF00.toInt(), // Opaque Green
+            0xFF0000FF.toInt(), // Opaque Blue
+            0x00000000.toInt(), // Transparent Black
+            0x80FF0000.toInt(), // 50% Semi-transparent Red
+            0x4000FF00.toInt(), // 25% Semi-transparent Green
+            0xFFFFFFFF.toInt(), // Opaque White
+        )
+        val bitmap = Bitmap.createBitmap(colors, colors.size, 1, Bitmap.Config.ARGB_8888)
+
+        val srcW = colors.size
+        val pixelRow = IntArray(srcW)
+        bitmap.getPixels(pixelRow, 0, srcW, 0, 0, srcW, 1)
+
+        val stripRowBytes = ByteArray(srcW * 4)
+        var ri = 0
+        for (x in 0 until srcW) {
+            val p = pixelRow[x]
+            stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte() // R
+            stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()  // G
+            stripRowBytes[ri++] = (p and 0xFF).toByte()          // B
+            stripRowBytes[ri++] = ((p ushr 24) and 0xFF).toByte() // A
+        }
+
+        // Verify Opaque Red (R=255, G=0, B=0, A=255)
+        assertEquals(255, stripRowBytes[0].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[1].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[2].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[3].toInt() and 0xFF)
+
+        // Verify Opaque Green (R=0, G=255, B=0, A=255)
+        assertEquals(0, stripRowBytes[4].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[5].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[6].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[7].toInt() and 0xFF)
+
+        // Verify Opaque Blue (R=0, G=0, B=255, A=255)
+        assertEquals(0, stripRowBytes[8].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[9].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[10].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[11].toInt() and 0xFF)
+
+        // Verify Fully Transparent (R=0, G=0, B=0, A=0)
+        assertEquals(0, stripRowBytes[12].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[13].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[14].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[15].toInt() and 0xFF)
+
+        // Verify 50% Semi-transparent Red (R=255, G=0, B=0, A=128)
+        assertEquals(255, stripRowBytes[16].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[17].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[18].toInt() and 0xFF)
+        assertEquals(128, stripRowBytes[19].toInt() and 0xFF)
+
+        // Verify 25% Semi-transparent Green (R=0, G=255, B=0, A=64)
+        assertEquals(0, stripRowBytes[20].toInt() and 0xFF)
+        assertEquals(255, stripRowBytes[21].toInt() and 0xFF)
+        assertEquals(0, stripRowBytes[22].toInt() and 0xFF)
+        assertEquals(64, stripRowBytes[23].toInt() and 0xFF)
+
+        bitmap.recycle()
+    }
+
+    @Test
+    fun testNcnnNative_GlobalDestroySafeWhenUnavailable() {
+        // Must never throw or crash even if native library was not loaded
+        NcnnNative.globalDestroy()
+        assertFalse(NcnnNative.isAvailable)
+    }
+
     private fun installTestNcnnModel(model: com.veilframe.app.upscale.model.UpscaleModel) {
         val paramFile = repository.getNcnnParamFile(model.id)
         val binFile = repository.getNcnnBinFile(model.id)

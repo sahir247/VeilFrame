@@ -24,6 +24,16 @@ object NcnnNative {
         get() = libraryLoaded
 
     /**
+     * Explicit process-level teardown of native NCNN global state and GPU instance.
+     * Safe to call multiple times or during application shutdown.
+     */
+    fun globalDestroy() {
+        if (isAvailable) {
+            nativeGlobalDestroy()
+        }
+    }
+
+    /**
      * Number of available Vulkan-capable GPUs detected by NCNN.
      */
     fun getGpuCount(): Int {

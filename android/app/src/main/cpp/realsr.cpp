@@ -253,9 +253,14 @@ int RealSR::process_streaming(
         ncnn::VkCompute cmd(vkdev);
         ncnn::VkMat in_gpu;
         cmd.record_clone(in, in_gpu, opt);
+        if (in_gpu.empty()) {
+            return -101;
+        }
         if (xtiles > 1) {
-            cmd.submit_and_wait();
-            cmd.reset();
+            int submit_ret = cmd.submit_and_wait();
+            if (submit_ret != 0) return submit_ret;
+            int reset_ret = cmd.reset();
+            if (reset_ret != 0) return reset_ret;
         }
 
         const int out_tile_y0 = std::max(yi * TILE_SIZE_Y, 0);
@@ -268,6 +273,9 @@ int RealSR::process_streaming(
             out_gpu.create(out_band_w, out_band_h, (size_t)channels, 1, blob_vkallocator);
         } else {
             out_gpu.create(out_band_w, out_band_h, channels, (size_t)4u, 1, blob_vkallocator);
+        }
+        if (out_gpu.empty()) {
+            return -100;
         }
 
         for (int xi = 0; xi < xtiles; xi++) {
@@ -283,8 +291,10 @@ int RealSR::process_streaming(
             int tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h) + prepadding;
 
             in_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
+            if (in_tile_gpu.empty()) return -101;
             if (channels == 4) {
                 in_alpha_tile_gpu.create(tile_w_nopad, tile_h_nopad, 1, in_out_tile_elemsize, 1, blob_vkallocator);
+                if (in_alpha_tile_gpu.empty()) return -102;
             }
 
             std::vector<ncnn::VkMat> preproc_bindings(3);
@@ -329,13 +339,15 @@ int RealSR::process_streaming(
 
             ncnn::VkMat out_alpha_tile_gpu;
             if (channels == 4) {
+                int fret = 0;
                 if (scale == 2) {
-                    bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 } else if (scale == 3) {
-                    bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 } else {
-                    bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 }
+                if (fret != 0) return fret;
             }
 
             // Postprocess tile into band out_gpu
@@ -369,7 +381,8 @@ int RealSR::process_streaming(
             if (xtiles > 1) {
                 int sret = cmd.submit_and_wait();
                 if (sret != 0) return sret;
-                cmd.reset();
+                int rret = cmd.reset();
+                if (rret != 0) return rret;
             }
 
             if (prog_cb) {
@@ -591,6 +604,9 @@ int RealSR::process_strip_streaming(
         } else {
             out_gpu.create(out_band_w, out_band_h, channels, (size_t)4u, 1, blob_vkallocator);
         }
+        if (out_gpu.empty()) {
+            return -100;
+        }
 
         ncnn::VkCompute cmd(vkdev);
 
@@ -611,9 +627,11 @@ int RealSR::process_strip_streaming(
             ncnn::VkMat in_alpha_tile_gpu;
             {
                 cmd.record_clone(in_tile, in_tile_gpu, opt);
+                if (in_tile_gpu.empty()) return -101;
 
                 if (channels == 4) {
                     in_alpha_tile_gpu.create(in_tile.w, in_tile.h, 1, (size_t)4u, 1, blob_vkallocator);
+                    if (in_alpha_tile_gpu.empty()) return -102;
                     std::vector<ncnn::VkMat> preproc_bindings(2);
                     preproc_bindings[0] = in_tile_gpu;
                     preproc_bindings[1] = in_alpha_tile_gpu;
@@ -648,13 +666,15 @@ int RealSR::process_strip_streaming(
 
             ncnn::VkMat out_alpha_tile_gpu;
             if (channels == 4) {
+                int fret = 0;
                 if (scale == 2) {
-                    bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 } else if (scale == 3) {
-                    bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 } else {
-                    bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                    fret = bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
                 }
+                if (fret != 0) return fret;
             }
 
             // Postprocess tile into band out_gpu
@@ -690,7 +710,10 @@ int RealSR::process_strip_streaming(
                 if (submit_ret != 0) {
                     return submit_ret;
                 }
-                cmd.reset();
+                int reset_ret = cmd.reset();
+                if (reset_ret != 0) {
+                    return reset_ret;
+                }
             }
 
             if (prog_cb) {

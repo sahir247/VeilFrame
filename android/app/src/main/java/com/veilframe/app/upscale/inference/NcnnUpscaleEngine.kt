@@ -144,14 +144,10 @@ class NcnnUpscaleEngine(
                 listener?.onStatus("Running ${model.name} via NCNN (${if (gpuid >= 0) "Vulkan GPU" else "CPU"})...")
                 listener?.onStage("Neural Inference (NCNN)", 0, 1)
 
-                // Bounded-memory input: allocate buffer for ONLY ONE horizontal strip
-                // Maximum height is (tileSize + 2 * prepadding)
-                // For 4K (3840x2160), strip buffer is only ~2.7 MB instead of 32 MB!
-                // For 8K (7680x4320), strip buffer is only ~5.5 MB instead of 126 MB!
-                val maxStripHeight = tileSize + 2 * prepadding
-                val stripDirectBuffer = ByteBuffer.allocateDirect(srcW * maxStripHeight * channels).order(ByteOrder.nativeOrder())
+                // Bounded-memory input: each strip fetched on demand via callback.
+                // Reusable row buffers allocated once outside the strip streaming loop.
                 val pixelRow = IntArray(srcW)
-                val rgbRow = if (channels == 3) ByteArray(srcW * 3) else null
+                val stripRowBytes = ByteArray(srcW * channels)
 
                 val execRet = NcnnNative.processStripStreaming(
                     handle = handle,
@@ -165,20 +161,26 @@ class NcnnUpscaleEngine(
                         buffer.clear()
                         val stripBitmap = source.region(0, y0, srcW, stripH)
                         try {
-                            if (channels == 3) {
-                                for (y in 0 until stripH) {
-                                    stripBitmap.getPixels(pixelRow, 0, srcW, 0, y, srcW, 1)
-                                    var ri = 0
+                            for (y in 0 until stripH) {
+                                stripBitmap.getPixels(pixelRow, 0, srcW, 0, y, srcW, 1)
+                                var ri = 0
+                                if (channels == 3) {
                                     for (x in 0 until srcW) {
                                         val p = pixelRow[x]
-                                        rgbRow!![ri++] = ((p shr 16) and 0xFF).toByte()
-                                        rgbRow[ri++] = ((p shr 8) and 0xFF).toByte()
-                                        rgbRow[ri++] = (p and 0xFF).toByte()
+                                        stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
+                                        stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
+                                        stripRowBytes[ri++] = (p and 0xFF).toByte()
                                     }
-                                    buffer.put(rgbRow!!)
+                                } else {
+                                    for (x in 0 until srcW) {
+                                        val p = pixelRow[x]
+                                        stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
+                                        stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
+                                        stripRowBytes[ri++] = (p and 0xFF).toByte()
+                                        stripRowBytes[ri++] = ((p ushr 24) and 0xFF).toByte()
+                                    }
                                 }
-                            } else {
-                                stripBitmap.copyPixelsToBuffer(buffer)
+                                buffer.put(stripRowBytes)
                             }
                             buffer.position(0)
                             0
