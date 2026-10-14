@@ -494,7 +494,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
 
     if (!paramPath || !binPath ||
         (scale != 2 && scale != 3 && scale != 4) ||
-        tilesize < 1 || tilesize > 4096 ||
+        tilesize < 64 || tilesize > 384 ||
         prepadding < 0 || prepadding > 256) {
         return -3;
     }
