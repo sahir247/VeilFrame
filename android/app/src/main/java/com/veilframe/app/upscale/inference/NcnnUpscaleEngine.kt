@@ -497,17 +497,20 @@ class NcnnUpscaleEngine(
 
                             when (execRet) {
                                 0 -> Unit
-                                -10 -> throw UpscaleCancellationException("NCNN super-resolution was cancelled")
-                                -11 -> throw ResourceLimitExceededException("NCNN native/device tensor allocation failed")
-                                -12 -> throw DeviceInferenceException(-12, "JNI callback exception during NCNN processing")
-                                -2 -> throw DeviceInferenceException(
-                                    -2,
+                                NcnnNative.STATUS_CANCELLED -> throw UpscaleCancellationException("NCNN super-resolution was cancelled")
+                                NcnnNative.STATUS_OUT_OF_MEMORY -> throw ResourceLimitExceededException("NCNN native/device tensor allocation failed")
+                                NcnnNative.STATUS_CALLBACK_EXCEPTION -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_CALLBACK_EXCEPTION,
+                                    "JNI callback exception during NCNN processing"
+                                )
+                                NcnnNative.STATUS_VULKAN_FAILURE -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_VULKAN_FAILURE,
                                     "NCNN Vulkan execution failed; a clean CPU retry may succeed",
                                     "Vulkan"
                                 )
-                                -3 -> throw IllegalArgumentException("Invalid arguments provided to NCNN native processing")
-                                -4 -> throw DeviceInferenceException(
-                                    -4,
+                                NcnnNative.STATUS_INVALID_ARGUMENT -> throw IllegalArgumentException("Invalid arguments provided to NCNN native processing")
+                                NcnnNative.STATUS_CPU_FAILURE -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_CPU_FAILURE,
                                     "NCNN CPU inference failed",
                                     "CPU"
                                 )
@@ -538,7 +541,7 @@ class NcnnUpscaleEngine(
                     break
                 } catch (e: DeviceInferenceException) {
                     val mayRetryOnCpu = attemptGpuid >= 0 &&
-                        (e.code == -1 || e.code == -2) &&
+                        (e.code == NcnnNative.STATUS_UNKNOWN_FAILURE || e.code == NcnnNative.STATUS_VULKAN_FAILURE) &&
                         e.backend == "Vulkan" &&
                         coroutineContext.isActive
                     if (!mayRetryOnCpu) throw e
