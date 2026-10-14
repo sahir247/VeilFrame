@@ -46,9 +46,62 @@ data class UpscaleModel(
     val variantOf: String? = null,
     /** Approximate peak working-set bytes at the reference tile size (0 = unknown). */
     val memoryClassBytes: Long = 0L,
-    /** Pipeline-measured backend hint ("xnnpack"/"nnapi"/"cpu"); null = benchmark auto. */
-    val recommendedBackend: String? = null
+    /** Pipeline-measured backend hint (legacy ONNX only); null = benchmark auto. */
+    val recommendedBackend: String? = null,
+    /** NCNN runtime family. Required for [ModelType.AI_NCNN]. */
+    val engineKind: NcnnEngineKind? = null,
+    /** NCNN model graph URL and its pinned SHA-256 digest. */
+    val paramDownloadUrl: String? = null,
+    val paramSha256: String? = null,
+    val paramSizeBytes: Long = 0L,
+    /** NCNN weights URL and its pinned SHA-256 digest. */
+    val binDownloadUrl: String? = null,
+    val binSha256: String? = null,
+    val binSizeBytes: Long = 0L,
+    /** Input/output blob names in the NCNN graph. */
+    val inputBlobName: String = "data",
+    val outputBlobName: String = "output",
+    /** Border replicated around each inference tile before model execution. */
+    val prePadding: Int = 10
 ) {
+    /**
+     * Validates the complete NCNN artifact contract before registering/downloading
+     * a neural NCNN model. Checksums are mandatory; empty placeholders are rejected.
+     */
+    fun validateNcnnArtifactContract() {
+        require(type == ModelType.AI_NCNN) { "Model $id is not an NCNN model." }
+        require(engineKind != null) { "NCNN model $id must declare an engineKind." }
+        require(nativeScale > 0) { "NCNN model $id must declare a positive native scale." }
+        require(prePadding >= 0) { "NCNN model $id has invalid prePadding=$prePadding." }
+        require(inputBlobName.isNotBlank() && outputBlobName.isNotBlank()) {
+            "NCNN model $id must declare non-empty input/output blob names."
+        }
+        val paramUrl = requireNotNull(paramDownloadUrl) { "NCNN model $id has no .param URL." }
+        val binUrl = requireNotNull(binDownloadUrl) { "NCNN model $id has no .bin URL." }
+        require(paramUrl.startsWith("https://", ignoreCase = true) &&
+            paramUrl.substringBefore('?').endsWith(".param", ignoreCase = true)) {
+            "NCNN model $id must use an HTTPS .param URL."
+        }
+        require(binUrl.startsWith("https://", ignoreCase = true) &&
+            binUrl.substringBefore('?').endsWith(".bin", ignoreCase = true)) {
+            "NCNN model $id must use an HTTPS .bin URL."
+        }
+        val sha256Regex = Regex("^[A-Fa-f0-9]{64}$")
+        require(paramSha256?.matches(sha256Regex) == true) {
+            "NCNN model $id must declare a valid .param SHA-256."
+        }
+        require(binSha256?.matches(sha256Regex) == true) {
+            "NCNN model $id must declare a valid .bin SHA-256."
+        }
+        require(paramSizeBytes > 0L && binSizeBytes > 0L) {
+            "NCNN model $id must declare positive .param/.bin byte sizes."
+        }
+        require(sizeBytes == paramSizeBytes + binSizeBytes) {
+            "NCNN model $id total size ($sizeBytes) must equal .param + .bin sizes " +
+                "($paramSizeBytes + $binSizeBytes)."
+        }
+    }
+
     /**
      * Backward-compatibility accessor for existing tests and call sites.
      */
@@ -99,7 +152,16 @@ data class UpscaleModel(
 
 enum class ModelType {
     ALGORITHMIC,
+    /** Native NCNN inference. The remaining AI_ONNX entries are migration-only and will be retired in a later phase. */
+    AI_NCNN,
     AI_ONNX
+}
+
+/** Native NCNN implementation family, kept separate from model identity and file format. */
+enum class NcnnEngineKind {
+    REALSR_ESRGAN,
+    REALCUGAN,
+    WAIFU2X
 }
 
 /** F15: weight precision of a published model artifact. */
