@@ -413,10 +413,329 @@ int RealSR::process_streaming_cpu(
             in_tile.substract_mean_normalize(0, norm_vals);
 
             ncnn::Extractor ex = net.create_extractor();
-            ex.input(net_input_name.c_str(), in_tile);
+            int in_ret = ex.input(net_input_name.c_str(), in_tile);
+            if (in_ret != 0) {
+                return in_ret;
+            }
 
             ncnn::Mat out_tile;
-            ex.extract(net_output_name.c_str(), out_tile);
+            int ex_ret = ex.extract(net_output_name.c_str(), out_tile);
+            if (ex_ret != 0) {
+                return ex_ret;
+            }
+
+            // Denormalize
+            const float denorm_vals[3] = {255.f, 255.f, 255.f};
+            out_tile.substract_mean_normalize(0, denorm_vals);
+
+            // Crop prepadding borders
+            const int crop_x0 = (xi * TILE_SIZE_X - in_tile_x0) * scale;
+            const int crop_y0 = (yi * TILE_SIZE_Y - in_tile_y0) * scale;
+            const int crop_w = (std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X) * scale;
+            const int crop_h = (std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y) * scale;
+
+            ncnn::Mat cropped;
+            ncnn::copy_cut_border(out_tile, cropped, crop_y0, out_tile.h - crop_y0 - crop_h, crop_x0, out_tile.w - crop_x0 - crop_w);
+
+            // Convert and paste into band_buf
+            std::vector<unsigned char> tile_pixels((size_t)crop_w * crop_h * 3);
+            cropped.to_pixels(tile_pixels.data(), ncnn::Mat::PIXEL_RGB);
+
+            const int dst_x_offset = xi * TILE_SIZE_X * scale;
+            for (int r = 0; r < crop_h; r++) {
+                unsigned char* dst_row = band_buf.data() + ((size_t)r * out_band_w + dst_x_offset) * channels;
+                const unsigned char* src_row = tile_pixels.data() + (size_t)r * crop_w * 3;
+                if (channels == 3) {
+                    memcpy(dst_row, src_row, (size_t)crop_w * 3);
+                } else {
+                    for (int c = 0; c < crop_w; c++) {
+                        dst_row[c * 4] = src_row[c * 3];
+                        dst_row[c * 4 + 1] = src_row[c * 3 + 1];
+                        dst_row[c * 4 + 2] = src_row[c * 3 + 2];
+                        dst_row[c * 4 + 3] = 255;
+                    }
+                }
+            }
+
+            if (prog_cb) {
+                int current_tile = yi * xtiles + xi + 1;
+                int percent = (current_tile * 100) / total_tiles;
+                prog_cb(current_tile, total_tiles, percent, user_data);
+            }
+        }
+
+        // Deliver band rows
+        for (int r = 0; r < out_band_h; r++) {
+            int abs_row = out_tile_y0 * scale + r;
+            const unsigned char* row_ptr = band_buf.data() + (size_t)r * out_band_w * channels;
+            int cb_ret = row_cb(row_ptr, abs_row, out_band_w, channels, user_data);
+            if (cb_ret != 0) {
+                return cb_ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int RealSR::process_strip_streaming(
+    int w, int h, int channels,
+    StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+) const
+{
+    if (!vkdev) {
+        return process_strip_streaming_cpu(w, h, channels, strip_cb, row_cb, prog_cb, user_data);
+    }
+
+    const int TILE_SIZE_X = tilesize;
+    const int TILE_SIZE_Y = tilesize;
+
+    ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
+    ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
+
+    ncnn::Option opt = net.opt;
+    opt.blob_vkallocator = blob_vkallocator;
+    opt.staging_vkallocator = staging_vkallocator;
+
+    const int xtiles = (w + TILE_SIZE_X - 1) / TILE_SIZE_X;
+    const int ytiles = (h + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
+    const int total_tiles = xtiles * ytiles;
+
+    const int max_in_band_h = TILE_SIZE_Y + 2 * prepadding;
+    std::vector<unsigned char> strip_buf((size_t)w * max_in_band_h * channels);
+
+    for (int yi = 0; yi < ytiles; yi++) {
+        const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
+        const int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
+        const int in_band_h = in_tile_y1 - in_tile_y0;
+        const int out_tile_y0 = std::max(yi * TILE_SIZE_Y, 0);
+        const int out_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
+        const int out_band_h = (out_tile_y1 - out_tile_y0) * scale;
+        const int out_band_w = w * scale;
+
+        // Fetch input strip [0, in_tile_y0, w, in_band_h] from consumer
+        int sret = strip_cb(strip_buf.data(), in_tile_y0, in_band_h, user_data);
+        if (sret != 0) {
+            vkdev->reclaim_blob_allocator(blob_vkallocator);
+            vkdev->reclaim_staging_allocator(staging_vkallocator);
+            return sret;
+        }
+
+        ncnn::VkMat out_gpu;
+        if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
+            out_gpu.create(out_band_w, out_band_h, (size_t)channels, 1, blob_vkallocator);
+        } else {
+            out_gpu.create(out_band_w, out_band_h, channels, (size_t)4u, 1, blob_vkallocator);
+        }
+
+        ncnn::VkCompute cmd(vkdev);
+
+        for (int xi = 0; xi < xtiles; xi++) {
+            const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
+            const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
+            const int in_tile_w = in_tile_x1 - in_tile_x0;
+
+            ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
+                strip_buf.data(),
+                channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB,
+                w, in_band_h,
+                in_tile_x0, 0,
+                in_tile_w, in_band_h
+            );
+
+            ncnn::VkMat in_tile_gpu;
+            ncnn::VkMat in_alpha_tile_gpu;
+            {
+                cmd.record_clone(in_tile, in_tile_gpu, opt);
+
+                if (channels == 4) {
+                    in_alpha_tile_gpu.create(in_tile.w, in_tile.h, 1, (size_t)4u, 1, blob_vkallocator);
+                    std::vector<ncnn::VkMat> preproc_bindings(2);
+                    preproc_bindings[0] = in_tile_gpu;
+                    preproc_bindings[1] = in_alpha_tile_gpu;
+
+                    std::vector<ncnn::vk_constant_type> preproc_constants(5);
+                    preproc_constants[0].i = in_tile_gpu.w;
+                    preproc_constants[1].i = in_tile_gpu.h;
+                    preproc_constants[2].i = in_tile_gpu.cstep;
+                    preproc_constants[3].i = in_alpha_tile_gpu.w;
+                    preproc_constants[4].i = in_alpha_tile_gpu.h;
+
+                    ncnn::VkMat preproc_dispatcher;
+                    preproc_dispatcher.w = in_alpha_tile_gpu.w;
+                    preproc_dispatcher.h = in_alpha_tile_gpu.h;
+                    preproc_dispatcher.c = 1;
+
+                    cmd.record_pipeline(realsr_preproc, preproc_bindings, preproc_constants, preproc_dispatcher);
+                }
+            }
+
+            ncnn::VkMat out_tile_gpu;
+            {
+                ncnn::Extractor ex = net.create_extractor();
+                ex.set_blob_vkallocator(blob_vkallocator);
+                ex.set_workspace_vkallocator(blob_vkallocator);
+                ex.set_staging_vkallocator(staging_vkallocator);
+                ex.input(net_input_name.c_str(), in_tile_gpu);
+                ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
+            }
+
+            ncnn::VkMat out_alpha_tile_gpu;
+            if (channels == 4) {
+                if (scale == 2) {
+                    bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                } else if (scale == 3) {
+                    bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                } else {
+                    bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                }
+            }
+
+            // Postprocess tile into band out_gpu
+            std::vector<ncnn::VkMat> postproc_bindings(3);
+            postproc_bindings[0] = out_tile_gpu;
+            postproc_bindings[1] = out_alpha_tile_gpu;
+            postproc_bindings[2] = out_gpu;
+
+            std::vector<ncnn::vk_constant_type> postproc_constants(13);
+            postproc_constants[0].i = out_tile_gpu.w;
+            postproc_constants[1].i = out_tile_gpu.h;
+            postproc_constants[2].i = out_tile_gpu.cstep;
+            postproc_constants[3].i = out_gpu.w;
+            postproc_constants[4].i = out_gpu.h;
+            postproc_constants[5].i = out_gpu.cstep;
+            postproc_constants[6].i = xi * TILE_SIZE_X * scale;
+            postproc_constants[7].i = std::min(TILE_SIZE_X * scale, out_gpu.w - xi * TILE_SIZE_X * scale);
+            postproc_constants[8].i = prepadding * scale;
+            postproc_constants[9].i = prepadding * scale;
+            postproc_constants[10].i = channels;
+            postproc_constants[11].i = out_alpha_tile_gpu.w;
+            postproc_constants[12].i = out_alpha_tile_gpu.h;
+
+            ncnn::VkMat postproc_dispatcher;
+            postproc_dispatcher.w = std::min(TILE_SIZE_X * scale, out_gpu.w - xi * TILE_SIZE_X * scale);
+            postproc_dispatcher.h = out_gpu.h;
+            postproc_dispatcher.c = channels;
+
+            cmd.record_pipeline(realsr_postproc, postproc_bindings, postproc_constants, postproc_dispatcher);
+
+            if (xtiles > 1) {
+                int submit_ret = cmd.submit_and_wait();
+                if (submit_ret != 0) {
+                    vkdev->reclaim_blob_allocator(blob_vkallocator);
+                    vkdev->reclaim_staging_allocator(staging_vkallocator);
+                    return submit_ret;
+                }
+                cmd.reset();
+            }
+
+            if (prog_cb) {
+                int current_tile = yi * xtiles + xi + 1;
+                int percent = (current_tile * 100) / total_tiles;
+                prog_cb(current_tile, total_tiles, percent, user_data);
+            }
+        }
+
+        // Download completed horizontal band and stream row-by-row
+        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
+        ncnn::Mat out;
+        if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
+            out = ncnn::Mat(out_gpu.w, out_gpu.h, band_buf.data(), (size_t)channels, 1, opt.blob_allocator);
+            cmd.record_clone(out_gpu, out, opt);
+            int submit_ret = cmd.submit_and_wait();
+            if (submit_ret != 0) {
+                vkdev->reclaim_blob_allocator(blob_vkallocator);
+                vkdev->reclaim_staging_allocator(staging_vkallocator);
+                return submit_ret;
+            }
+        } else {
+            cmd.record_clone(out_gpu, out, opt);
+            int submit_ret = cmd.submit_and_wait();
+            if (submit_ret != 0) {
+                vkdev->reclaim_blob_allocator(blob_vkallocator);
+                vkdev->reclaim_staging_allocator(staging_vkallocator);
+                return submit_ret;
+            }
+            out.to_pixels(band_buf.data(), channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB);
+        }
+
+        for (int r = 0; r < out_band_h; r++) {
+            int abs_row = out_tile_y0 * scale + r;
+            const unsigned char* row_ptr = band_buf.data() + (size_t)r * out_band_w * channels;
+            int cb_ret = row_cb(row_ptr, abs_row, out_band_w, channels, user_data);
+            if (cb_ret != 0) {
+                vkdev->reclaim_blob_allocator(blob_vkallocator);
+                vkdev->reclaim_staging_allocator(staging_vkallocator);
+                return cb_ret;
+            }
+        }
+    }
+
+    vkdev->reclaim_blob_allocator(blob_vkallocator);
+    vkdev->reclaim_staging_allocator(staging_vkallocator);
+
+    return 0;
+}
+
+int RealSR::process_strip_streaming_cpu(
+    int w, int h, int channels,
+    StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+) const
+{
+    const int TILE_SIZE_X = tilesize;
+    const int TILE_SIZE_Y = tilesize;
+
+    const int xtiles = (w + TILE_SIZE_X - 1) / TILE_SIZE_X;
+    const int ytiles = (h + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
+    const int total_tiles = xtiles * ytiles;
+
+    const int max_in_band_h = TILE_SIZE_Y + 2 * prepadding;
+    std::vector<unsigned char> strip_buf((size_t)w * max_in_band_h * channels);
+
+    for (int yi = 0; yi < ytiles; yi++) {
+        const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
+        const int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
+        const int in_band_h = in_tile_y1 - in_tile_y0;
+        const int out_tile_y0 = std::max(yi * TILE_SIZE_Y, 0);
+        const int out_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
+        const int out_band_h = (out_tile_y1 - out_tile_y0) * scale;
+        const int out_band_w = w * scale;
+
+        int sret = strip_cb(strip_buf.data(), in_tile_y0, in_band_h, user_data);
+        if (sret != 0) {
+            return sret;
+        }
+
+        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
+
+        for (int xi = 0; xi < xtiles; xi++) {
+            const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
+            const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
+            const int in_tile_w = in_tile_x1 - in_tile_x0;
+
+            ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
+                strip_buf.data(),
+                channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
+                w, in_band_h,
+                in_tile_x0, 0,
+                in_tile_w, in_band_h
+            );
+
+            // Scale to [0, 1]
+            const float norm_vals[3] = {1 / 255.f, 1 / 255.f, 1 / 255.f};
+            in_tile.substract_mean_normalize(0, norm_vals);
+
+            ncnn::Extractor ex = net.create_extractor();
+            int in_ret = ex.input(net_input_name.c_str(), in_tile);
+            if (in_ret != 0) {
+                return in_ret;
+            }
+
+            ncnn::Mat out_tile;
+            int ex_ret = ex.extract(net_output_name.c_str(), out_tile);
+            if (ex_ret != 0) {
+                return ex_ret;
+            }
 
             // Denormalize
             const float denorm_vals[3] = {255.f, 255.f, 255.f};

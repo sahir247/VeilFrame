@@ -97,6 +97,26 @@ object NcnnNative {
         return nativeProcessStreaming(handle, inputDirectBuffer, width, height, channels, rowCallback, progressCallback)
     }
 
+    /**
+     * Execute tiled super-resolution with dual-ended bounded memory streaming:
+     * fetches horizontal input strips on demand via [stripCallback] and delivers
+     * output scanlines directly via [rowCallback].
+     *
+     * @return 0 on completion, non-zero if cancelled or failed.
+     */
+    fun processStripStreaming(
+        handle: Long,
+        width: Int,
+        height: Int,
+        channels: Int,
+        stripCallback: NcnnStripCallback,
+        rowCallback: NcnnRowCallback,
+        progressCallback: NcnnProgressCallback? = null
+    ): Int {
+        check(isAvailable) { "NCNN native library is not available" }
+        return nativeProcessStripStreaming(handle, width, height, channels, stripCallback, rowCallback, progressCallback)
+    }
+
     // Native method signatures
     @JvmStatic private external fun nativeGlobalInit(): Int
     @JvmStatic private external fun nativeGlobalDestroy()
@@ -110,5 +130,9 @@ object NcnnNative {
     @JvmStatic private external fun nativeProcessStreaming(
         handle: Long, inputDirectBuffer: ByteBuffer, width: Int, height: Int, channels: Int,
         rowCallback: NcnnRowCallback, progressCallback: NcnnProgressCallback?
+    ): Int
+    @JvmStatic private external fun nativeProcessStripStreaming(
+        handle: Long, width: Int, height: Int, channels: Int,
+        stripCallback: NcnnStripCallback, rowCallback: NcnnRowCallback, progressCallback: NcnnProgressCallback?
     ): Int
 }

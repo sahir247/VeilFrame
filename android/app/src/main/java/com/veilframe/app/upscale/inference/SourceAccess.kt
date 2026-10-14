@@ -27,6 +27,7 @@ import android.os.Build
 interface SourceAccess {
     val width: Int
     val height: Int
+    val hasAlpha: Boolean get() = true
 
     /** Full source. Caller must NOT recycle the result. */
     fun full(): Bitmap
@@ -41,6 +42,7 @@ interface SourceAccess {
 class BitmapSource(private val bitmap: Bitmap) : SourceAccess {
     override val width: Int get() = bitmap.width
     override val height: Int get() = bitmap.height
+    override val hasAlpha: Boolean get() = bitmap.hasAlpha()
 
     override fun full(): Bitmap = bitmap
 
@@ -64,6 +66,17 @@ class UriRegionSource(
     override val width: Int,
     override val height: Int,
 ) : SourceAccess {
+
+    override val hasAlpha: Boolean by lazy {
+        try {
+            val probe = region(0, 0, 1.coerceAtMost(width), 1.coerceAtMost(height))
+            val alpha = probe.hasAlpha()
+            probe.recycle()
+            alpha
+        } catch (_: Throwable) {
+            true
+        }
+    }
 
     override fun region(x: Int, y: Int, width: Int, height: Int): Bitmap {
         val stream = context.contentResolver.openInputStream(uri)

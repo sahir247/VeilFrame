@@ -5,8 +5,8 @@ import android.graphics.Bitmap
 import com.veilframe.app.upscale.inference.BitmapSource
 import com.veilframe.app.upscale.inference.NcnnNative
 import com.veilframe.app.upscale.inference.NcnnUpscaleEngine
+import com.veilframe.app.upscale.inference.SourceAccess
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
-import com.veilframe.app.upscale.inference.UpscaleInferenceParams
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import com.veilframe.app.upscale.model.UpscaleModelRepository
@@ -69,6 +69,20 @@ class NcnnUpscaleEngineTest {
     }
 
     @Test
+    fun testNcnnEngine_RejectsNonNcnnModelType() = runBlocking {
+        val nonNcnnModel = UpscaleModelRegistry.LANCZOS
+        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        val source = BitmapSource(bitmap)
+
+        try {
+            engine.upscale(source, nonNcnnModel, targetScale = 2)
+            fail("Expected IllegalArgumentException for non-AI_NCNN model")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("only processes AI_NCNN models") == true)
+        }
+    }
+
+    @Test
     fun testNcnnEngine_RejectsUninstalledModel() = runBlocking {
         val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
         val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
@@ -83,20 +97,70 @@ class NcnnUpscaleEngineTest {
     }
 
     @Test
+    fun testNcnnEngine_RejectsScaleMismatch() = runBlocking {
+        val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        val source = BitmapSource(bitmap)
+
+        // Install model state to pass installation check
+        installTestNcnnModel(model)
+
+        try {
+            engine.upscale(source, model, targetScale = 2)
+            fail("Expected IllegalArgumentException for scale mismatch")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("natively outputs 4x") == true)
+        }
+    }
+
+    @Test
+    fun testNcnnEngine_RejectsExcessiveSourceDimension() = runBlocking {
+        val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+        installTestNcnnModel(model)
+
+        val oversizedSource = object : SourceAccess {
+            override val width: Int = 20_000
+            override val height: Int = 500
+            override fun full(): Bitmap = throw UnsupportedOperationException()
+            override fun region(x: Int, y: Int, width: Int, height: Int): Bitmap = throw UnsupportedOperationException()
+        }
+
+        try {
+            engine.upscale(oversizedSource, model, targetScale = 4)
+            fail("Expected IllegalArgumentException for oversized source dimension")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("maximum supported dimension") == true)
+        }
+    }
+
+    @Test
+    fun testNcnnEngine_RejectsExcessiveTotalPixels() = runBlocking {
+        val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+        installTestNcnnModel(model)
+
+        // 6000x6000 -> 24000x24000 = 576 Megapixels (exceeds 100 MP limit)
+        val excessivePixelSource = object : SourceAccess {
+            override val width: Int = 6000
+            override val height: Int = 6000
+            override fun full(): Bitmap = throw UnsupportedOperationException()
+            override fun region(x: Int, y: Int, width: Int, height: Int): Bitmap = throw UnsupportedOperationException()
+        }
+
+        try {
+            engine.upscale(excessivePixelSource, model, targetScale = 4)
+            fail("Expected IllegalArgumentException for exceeding max safe pixels")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("exceeds maximum safe pixel budget") == true)
+        }
+    }
+
+    @Test
     fun testNcnnEngine_FailsClosedWhenNativeLibraryNotLoaded() = runBlocking {
         val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
         val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
         val source = BitmapSource(bitmap)
 
-        // Fabricate valid install state
-        val paramFile = repository.getNcnnParamFile(model.id)
-        val binFile = repository.getNcnnBinFile(model.id)
-        val markerFile = repository.getNcnnInstallMarkerFile(model.id)
-        paramFile.parentFile?.mkdirs()
-        paramFile.writeBytes(ByteArray(model.paramSizeBytes.toInt()))
-        binFile.writeBytes(ByteArray(model.binSizeBytes.toInt()))
-        markerFile.writeText("${model.paramSha256}\n${model.binSha256}\n")
-
+        installTestNcnnModel(model)
         assertTrue(repository.isModelInstalled(model))
 
         try {
@@ -122,5 +186,15 @@ class NcnnUpscaleEngineTest {
             ex?.message?.contains("not installed") == true ||
                 ex?.message?.contains("not available") == true
         )
+    }
+
+    private fun installTestNcnnModel(model: com.veilframe.app.upscale.model.UpscaleModel) {
+        val paramFile = repository.getNcnnParamFile(model.id)
+        val binFile = repository.getNcnnBinFile(model.id)
+        val markerFile = repository.getNcnnInstallMarkerFile(model.id)
+        paramFile.parentFile?.mkdirs()
+        paramFile.writeBytes(ByteArray(model.paramSizeBytes.toInt()))
+        binFile.writeBytes(ByteArray(model.binSizeBytes.toInt()))
+        markerFile.writeText("${model.paramSha256}\n${model.binSha256}\n")
     }
 }

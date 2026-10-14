@@ -16,6 +16,11 @@
 #include "ncnn/gpu.h"
 #include "ncnn/layer.h"
 
+// Callback type for requesting a horizontal input strip:
+// (strip_buffer, y0, height, user_data)
+// Return 0 to continue, non-zero to cancel/abort.
+typedef int (*StripCallback)(unsigned char* strip_buffer, int y0, int height, void* user_data);
+
 // Callback type for streaming row delivery:
 // (row_data, row_index, row_width, channels, user_data)
 // Return 0 to continue, non-zero to cancel/abort.
@@ -33,12 +38,13 @@ public:
 
     int load(const std::string& parampath, const std::string& modelpath);
 
+    bool has_gpu() const { return vkdev != nullptr; }
+
     // Standard in-memory processing (allocates output image in host RAM)
     int process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const;
     int process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const;
 
-    // True dual-ended streaming processing: outputs each horizontal row to callback
-    // as bands complete, completely eliminating full-image host allocations.
+    // Output streaming processing from full input pixel buffer
     int process_streaming(
         const unsigned char* pixeldata, int w, int h, int channels,
         RowCallback row_cb, ProgressCallback prog_cb, void* user_data
@@ -47,6 +53,18 @@ public:
     int process_streaming_cpu(
         const unsigned char* pixeldata, int w, int h, int channels,
         RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+    // True dual-ended bounded-memory streaming: requests input strips on demand
+    // and streams output scanlines directly into row callback.
+    int process_strip_streaming(
+        int w, int h, int channels,
+        StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+    int process_strip_streaming_cpu(
+        int w, int h, int channels,
+        StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
     ) const;
 
 public:

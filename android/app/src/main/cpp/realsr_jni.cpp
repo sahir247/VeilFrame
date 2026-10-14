@@ -16,11 +16,42 @@ static jmethodID g_on_row_method = nullptr;
 static jclass g_progress_callback_class = nullptr;
 static jmethodID g_on_progress_method = nullptr;
 
+static jclass g_strip_callback_class = nullptr;
+static jmethodID g_on_strip_method = nullptr;
+
 struct CallbackUserData {
     JNIEnv* env;
+    jobject strip_callback;
     jobject row_callback;
     jobject progress_callback;
+    int w;
+    int channels;
+    bool has_exception;
 };
+
+static int jni_strip_callback(unsigned char* strip_data, int y0, int height, void* user_data) {
+    CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
+    if (!cb || !cb->env || !cb->strip_callback) {
+        return 0;
+    }
+
+    jlong capacity = (jlong)height * cb->w * cb->channels;
+    jobject direct_buf = cb->env->NewDirectByteBuffer(strip_data, capacity);
+    if (!direct_buf) {
+        LOGE("Failed to allocate DirectByteBuffer for input strip y0=%d h=%d", y0, height);
+        return -1;
+    }
+
+    jint ret = cb->env->CallIntMethod(cb->strip_callback, g_on_strip_method, direct_buf, y0, height);
+    cb->env->DeleteLocalRef(direct_buf);
+
+    if (cb->env->ExceptionCheck()) {
+        cb->has_exception = true;
+        return -1; // Abort without clearing exception
+    }
+
+    return ret;
+}
 
 static int jni_row_callback(const unsigned char* row_data, int row_index, int row_width, int channels, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
@@ -38,8 +69,8 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
     cb->env->DeleteLocalRef(direct_buf);
 
     if (cb->env->ExceptionCheck()) {
-        cb->env->ExceptionClear();
-        return -1; // Abort on Java exception (e.g. cancellation or I/O failure)
+        cb->has_exception = true;
+        return -1; // Abort on Java exception WITHOUT clearing it
     }
 
     return ret;
@@ -53,7 +84,7 @@ static void jni_progress_callback(int current_tile, int total_tiles, int percent
 
     cb->env->CallVoidMethod(cb->progress_callback, g_on_progress_method, current_tile, total_tiles, percent);
     if (cb->env->ExceptionCheck()) {
-        cb->env->ExceptionClear();
+        cb->has_exception = true;
     }
 }
 
@@ -64,15 +95,51 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
     ncnn::create_gpu_instance();
 
     jclass row_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnRowCallback");
-    if (row_cb_cls) {
-        g_row_callback_class = (jclass)env->NewGlobalRef(row_cb_cls);
-        g_on_row_method = env->GetMethodID(g_row_callback_class, "onRow", "(Ljava/nio/ByteBuffer;III)I");
+    if (!row_cb_cls) {
+        LOGE("Failed to find NcnnRowCallback class");
+        return -1;
+    }
+    g_row_callback_class = (jclass)env->NewGlobalRef(row_cb_cls);
+    if (!g_row_callback_class) {
+        LOGE("Failed to create global ref for NcnnRowCallback");
+        return -2;
+    }
+    g_on_row_method = env->GetMethodID(row_cb_cls, "onRow", "(Ljava/nio/ByteBuffer;III)I");
+    if (!g_on_row_method) {
+        LOGE("Failed to find onRow method");
+        return -3;
     }
 
     jclass prog_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnProgressCallback");
-    if (prog_cb_cls) {
-        g_progress_callback_class = (jclass)env->NewGlobalRef(prog_cb_cls);
-        g_on_progress_method = env->GetMethodID(g_progress_callback_class, "onProgress", "(III)V");
+    if (!prog_cb_cls) {
+        LOGE("Failed to find NcnnProgressCallback class");
+        return -4;
+    }
+    g_progress_callback_class = (jclass)env->NewGlobalRef(prog_cb_cls);
+    if (!g_progress_callback_class) {
+        LOGE("Failed to create global ref for NcnnProgressCallback");
+        return -5;
+    }
+    g_on_progress_method = env->GetMethodID(prog_cb_cls, "onProgress", "(III)V");
+    if (!g_on_progress_method) {
+        LOGE("Failed to find onProgress method");
+        return -6;
+    }
+
+    jclass strip_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnStripCallback");
+    if (!strip_cb_cls) {
+        LOGE("Failed to find NcnnStripCallback class");
+        return -7;
+    }
+    g_strip_callback_class = (jclass)env->NewGlobalRef(strip_cb_cls);
+    if (!g_strip_callback_class) {
+        LOGE("Failed to create global ref for NcnnStripCallback");
+        return -8;
+    }
+    g_on_strip_method = env->GetMethodID(strip_cb_cls, "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I");
+    if (!g_on_strip_method) {
+        LOGE("Failed to find onFetchStrip method");
+        return -9;
     }
 
     LOGI("NCNN global initialized, GPU count: %d", ncnn::get_gpu_count());
@@ -88,6 +155,10 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* 
     if (g_progress_callback_class) {
         env->DeleteGlobalRef(g_progress_callback_class);
         g_progress_callback_class = nullptr;
+    }
+    if (g_strip_callback_class) {
+        env->DeleteGlobalRef(g_strip_callback_class);
+        g_strip_callback_class = nullptr;
     }
     ncnn::destroy_gpu_instance();
     LOGI("NCNN global destroyed");
@@ -167,8 +238,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
 
     CallbackUserData udata;
     udata.env = env;
+    udata.strip_callback = nullptr;
     udata.row_callback = rowCallback;
     udata.progress_callback = progressCallback;
+    udata.w = width;
+    udata.channels = channels;
+    udata.has_exception = false;
 
     int ret = realsr->process_streaming(
         pixeldata, width, height, channels,
@@ -176,6 +251,43 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
         progressCallback ? jni_progress_callback : nullptr,
         &udata
     );
+
+    if (udata.has_exception || env->ExceptionCheck()) {
+        return -1;
+    }
+
+    return ret;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
+    JNIEnv* env, jclass clazz, jlong handle,
+    jint width, jint height, jint channels,
+    jobject stripCallback, jobject rowCallback, jobject progressCallback
+) {
+    RealSR* realsr = reinterpret_cast<RealSR*>(handle);
+    if (!realsr) return -1;
+
+    CallbackUserData udata;
+    udata.env = env;
+    udata.strip_callback = stripCallback;
+    udata.row_callback = rowCallback;
+    udata.progress_callback = progressCallback;
+    udata.w = width;
+    udata.channels = channels;
+    udata.has_exception = false;
+
+    int ret = realsr->process_strip_streaming(
+        width, height, channels,
+        jni_strip_callback,
+        jni_row_callback,
+        progressCallback ? jni_progress_callback : nullptr,
+        &udata
+    );
+
+    if (udata.has_exception || env->ExceptionCheck()) {
+        return -1;
+    }
 
     return ret;
 }
