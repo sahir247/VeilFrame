@@ -350,7 +350,8 @@ jobs:
           test -n "$ATTRS_XML" && test -s "$ATTRS_XML"
           test -n "$MARKER" && test -s "$MARKER"
 
-          # The uploaded artifact keeps paths relative to android/opencv-sdk/src/main.
+          # The artifact root may include src/main/ because its AAR path is also uploaded;
+          # derive the exact SDK root from the verified Java binding path instead of assuming it.
           SDK_ROOT="${MAT_JAVA%/java/org/opencv/core/Mat.java}"
           mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
           mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
