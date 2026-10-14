@@ -117,6 +117,19 @@ object NcnnNative {
     ): Int {
         check(isAvailable) { "NCNN native library is not available" }
         require(inputDirectBuffer.isDirect) { "inputDirectBuffer must be a direct ByteBuffer" }
+        require(width > 0 && height > 0 && (channels == 3 || channels == 4)) {
+            "Invalid image dimensions or channel count"
+        }
+        require(inputDirectBuffer.position() == 0) {
+            "inputDirectBuffer must be positioned at zero because JNI reads from its base address"
+        }
+        val requiredBytes = Math.multiplyExact(
+            Math.multiplyExact(width.toLong(), height.toLong()),
+            channels.toLong()
+        )
+        require(inputDirectBuffer.limit().toLong() >= requiredBytes) {
+            "inputDirectBuffer limit ${inputDirectBuffer.limit()} is smaller than required pixel bytes $requiredBytes"
+        }
         return nativeProcessStreaming(handle, inputDirectBuffer, width, height, channels, rowCallback, progressCallback)
     }
 
