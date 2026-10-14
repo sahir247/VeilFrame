@@ -272,6 +272,189 @@ jobs:
   # ------------------------------------------------------------------ #
   # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
   # ------------------------------------------------------------------ #
+  # PR-safe Android verification: independent of release-signing credentials and release-only gates.
+  # Builds the production native bridge, runs upscaler + full JVM tests, packages ARM64 debug APK,
+  # and inspects the actual packaged native libraries (ABI + 16 KB page alignment).
+  android-upscaler-verify:
+    name: Android NCNN hardening (ARM64)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Install Android SDK and NDK packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          sdkmanager --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;26.1.10909125"
+
+      - name: Stage verified custom OpenCV 4.14.0 SDK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+            --workflow "build-opencv-sdk.yml" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::No successful build-opencv-sdk.yml run is available to provide the required verified SDK."
+            exit 1
+          fi
+
+          mkdir -p /tmp/opencv_artifact
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" \
+            --name veilframe-custom-opencv-sdk --dir /tmp/opencv_artifact
+
+          ARM64_SO=$(find /tmp/opencv_artifact -path "*/arm64-v8a/libopencv_java4.so" -print -quit)
+          X86_SO=$(find /tmp/opencv_artifact -path "*/x86_64/libopencv_java4.so" -print -quit)
+          MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
+          test -n "$ARM64_SO" && test -s "$ARM64_SO"
+          test -n "$X86_SO" && test -s "$X86_SO"
+          test -n "$MARKER" && test -s "$MARKER"
+
+          mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
+          mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
+          cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
+          cp -a /tmp/opencv_artifact/. android/opencv-sdk/src/main/ 2>/dev/null || true
+          test -s android/opencv-sdk/src/main/.opencv-sdk-complete
+          sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+
+      - name: Build ARM64 native NCNN bridge
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew ':app:buildCMakeDebug[arm64-v8a]' --stacktrace
+
+      - name: Run focused upscaler unit tests
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.upscale.*" --rerun-tasks --stacktrace
+
+      - name: Run complete Android unit test suite
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble ARM64 debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Verify APK ABI set, required libraries, APK alignment, and ELF page alignment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          READELF="$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -s "$APK"
+          test -x "$ZIPALIGN"
+          test -x "$READELF"
+
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK"
+
+          python3 - "$APK" "$READELF" <<'PY'
+          import subprocess
+          import sys
+          import zipfile
+
+          apk_path, readelf = sys.argv[1:]
+          with zipfile.ZipFile(apk_path) as apk:
+              so_paths = sorted(n for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so"))
+              if not so_paths:
+                  raise SystemExit("APK contains no packaged native libraries")
+              bad_abis = [n for n in so_paths if not n.startswith("lib/arm64-v8a/")]
+              if bad_abis:
+                  raise SystemExit("APK contains unsupported native ABIs: " + ", ".join(bad_abis))
+              names = set(so_paths)
+              required = {
+                  "lib/arm64-v8a/libveilframe_ncnn.so",
+                  "lib/arm64-v8a/libopencv_java4.so",
+              }
+              missing = sorted(required - names)
+              if missing:
+                  raise SystemExit("APK is missing required native libraries: " + ", ".join(missing))
+
+              bad_alignment = []
+              for name in so_paths:
+                  content = apk.read(name)
+                  import tempfile, os
+                  fd, path = tempfile.mkstemp(suffix=".so")
+                  try:
+                      with os.fdopen(fd, "wb") as out:
+                          out.write(content)
+                      proc = subprocess.run(
+                          [readelf, "-lW", path],
+                          check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      )
+                      loads = [line.split() for line in proc.stdout.splitlines() if line.lstrip().startswith("LOAD ")]
+                      if not loads:
+                          bad_alignment.append(f"{name} (no LOAD segments)")
+                          continue
+                      for fields in loads:
+                          align = int(fields[-1], 0)
+                          if align < 0x4000 or align % 0x4000 != 0:
+                              bad_alignment.append(f"{name} (LOAD p_align={align:#x})")
+                              break
+                  finally:
+                      try:
+                          os.unlink(path)
+                      except FileNotFoundError:
+                          pass
+              print("Packaged ARM64 shared objects:")
+              print("\n".join(so_paths))
+              if bad_alignment:
+                  raise SystemExit("Native ELF LOAD segments are not all 16 KB aligned:\n" + "\n".join(bad_alignment))
+          PY
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-android-debug-arm64
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
   release-gate:
     name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
