@@ -175,18 +175,70 @@ class NcnnUpscaleHardeningTest {
     }
 
     @Test
-    fun testPublishFileAtomically_OverwritesExistingFileSafely() {
+    fun testPublishFileAtomically_RefusesToReplaceExistingFile() {
         val existingFinal = tempFolder.newFile("existing_output.png")
         existingFinal.writeText("OLD_CONTENT")
 
         val tempFile = tempFolder.newFile("new_output.part")
         tempFile.writeText("NEW_CONTENT")
 
-        NcnnUpscaleEngine.publishFileAtomically(tempFile, existingFinal)
+        try {
+            NcnnUpscaleEngine.publishFileAtomically(tempFile, existingFinal)
+            fail("Publication must refuse to replace an existing final output")
+        } catch (e: ImageValidationException) {
+            assertTrue(e.message?.contains("Refusing to replace") == true)
+        }
 
-        assertFalse(tempFile.exists())
+        assertTrue(tempFile.exists())
         assertTrue(existingFinal.exists())
-        assertEquals("NEW_CONTENT", existingFinal.readText())
+        assertEquals("OLD_CONTENT", existingFinal.readText())
+    }
+
+    @Test
+    fun testValidatePngFile_CorruptZlibWithRecomputedIdatCrcIsRejected() {
+        val file = tempFolder.newFile("corrupt_zlib.png")
+        val width = 19
+        val height = 7
+        StreamingPngWriter(file, width, height, colorType = StreamingPngWriter.ColorType.RGB).use { writer ->
+            val row = ByteArray(width * 3) { ((it * 17) and 0xFF).toByte() }
+            repeat(height) { writer.writeRow(row) }
+        }
+
+        val bytes = file.readBytes()
+        var offset = 8
+        var changed = false
+        while (offset + 12 <= bytes.size) {
+            val length = ((bytes[offset].toInt() and 0xFF) shl 24) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                (bytes[offset + 3].toInt() and 0xFF)
+            val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
+            val dataOffset = offset + 8
+            val crcOffset = dataOffset + length
+            if (type == "IDAT" && length > 0) {
+                // Corrupt compressed bytes but recompute the PNG chunk CRC, proving that
+                // the validator checks the zlib stream itself rather than only chunk framing.
+                bytes[dataOffset + length - 1] = (bytes[dataOffset + length - 1].toInt() xor 0x01).toByte()
+                val crc = java.util.zip.CRC32()
+                crc.update(bytes, offset + 4, 4 + length)
+                val crcValue = crc.value
+                bytes[crcOffset] = (crcValue ushr 24).toByte()
+                bytes[crcOffset + 1] = (crcValue ushr 16).toByte()
+                bytes[crcOffset + 2] = (crcValue ushr 8).toByte()
+                bytes[crcOffset + 3] = crcValue.toByte()
+                changed = true
+            }
+            offset = crcOffset + 4
+        }
+        assertTrue("Test fixture must contain an IDAT chunk", changed)
+        file.writeBytes(bytes)
+
+        try {
+            NcnnUpscaleEngine.validatePngFile(file, width, height)
+            fail("Corrupt compressed image stream must be rejected even with a valid IDAT CRC")
+        } catch (e: ImageValidationException) {
+            assertTrue(e.message?.contains("zlib") == true || e.message?.contains("compressed") == true)
+        }
     }
 
     @Test
