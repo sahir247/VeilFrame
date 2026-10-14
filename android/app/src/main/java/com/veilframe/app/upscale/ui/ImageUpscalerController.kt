@@ -1030,9 +1030,9 @@ class ImageUpscalerController(
 
         // Select current option
         when (explicitModel?.id) {
-            "realesrgan-general-2x" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
-            "realesrgan-general-4x" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
-            "realesrgan-anime-4x" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
+            "ncnn-realesr-animevideov3-x2" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
+            "ncnn-realesrgan-x4plus" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
+            "ncnn-realesr-animevideov3-x4" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
             "lanczos-3" -> dialogBinding.rbModelLanczos.isChecked = true
             "bicubic" -> dialogBinding.rbModelBicubic.isChecked = true
             "nearest" -> dialogBinding.rbModelNearest.isChecked = true
@@ -1041,9 +1041,9 @@ class ImageUpscalerController(
 
         dialogBinding.btnModelSelectorApply.setOnClickListener {
             val selectedModel: UpscaleModel? = when (dialogBinding.rgModelSelector.checkedRadioButtonId) {
-                R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X
-                R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X
-                R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X
+                R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
+                R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+                R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4
                 R.id.rbModelLanczos -> UpscaleModelRegistry.LANCZOS
                 R.id.rbModelBicubic -> UpscaleModelRegistry.BICUBIC
                 R.id.rbModelNearest -> UpscaleModelRegistry.NEAREST
@@ -1070,8 +1070,7 @@ class ImageUpscalerController(
         }
 
         dialogBinding.btnImportCustomModel.setOnClickListener {
-            onImportCustomModelRequested?.invoke()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+            Toast.makeText(activity, "Custom NCNN pair import is not implemented yet.", Toast.LENGTH_LONG).show()
         }
 
         fun refreshCards() {
@@ -1081,11 +1080,11 @@ class ImageUpscalerController(
             val availGb = String.format(Locale.US, "%.1f GB", availBytes / (1024.0 * 1024.0 * 1024.0))
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
-            val installedAi = repository.getInstalledAiModels()
-            dialogBinding.tvModelCountSummary.text = "${installedAi.size} of 3 AI Models Installed"
+            val installedNcnn = UpscaleModelRegistry.NCNN_MODELS.count { repository.isModelInstalled(it) }
+            dialogBinding.tvModelCountSummary.text = "${installedNcnn} of 3 NCNN Models Installed"
 
             // 2x Card
-            val is2x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)
+            val is2x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2)
             if (is2x) {
                 dialogBinding.tvModelStatus2x.text = "Installed"
                 dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1099,7 +1098,7 @@ class ImageUpscalerController(
             }
 
             // 4x Card
-            val is4x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X)
+            val is4x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS)
             if (is4x) {
                 dialogBinding.tvModelStatus4x.text = "Installed"
                 dialogBinding.tvModelStatus4x.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1113,7 +1112,7 @@ class ImageUpscalerController(
             }
 
             // Anime Card
-            val isAnime = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X)
+            val isAnime = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4)
             if (isAnime) {
                 dialogBinding.tvModelStatusAnime.text = "Installed"
                 dialogBinding.tvModelStatusAnime.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1134,7 +1133,7 @@ class ImageUpscalerController(
             dialogBinding.progressModel2x.visibility = View.VISIBLE
             dialogBinding.btnDownloadModel2x.isEnabled = false
             scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X, object : ModelDownloadManager.DownloadListener {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
                             if (t > 0) {
@@ -1164,7 +1163,7 @@ class ImageUpscalerController(
             }
         }
         dialogBinding.btnDeleteModel2x.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X.id)
+            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2.id)
             refreshCards()
             updateModelDisplay()
         }
@@ -1174,7 +1173,7 @@ class ImageUpscalerController(
             dialogBinding.progressModel4x.visibility = View.VISIBLE
             dialogBinding.btnDownloadModel4x.isEnabled = false
             scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X, object : ModelDownloadManager.DownloadListener {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
                             if (t > 0) {
@@ -1204,7 +1203,7 @@ class ImageUpscalerController(
             }
         }
         dialogBinding.btnDeleteModel4x.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X.id)
+            repository.deleteModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS.id)
             refreshCards()
             updateModelDisplay()
         }
@@ -1214,7 +1213,7 @@ class ImageUpscalerController(
             dialogBinding.progressModelAnime.visibility = View.VISIBLE
             dialogBinding.btnDownloadModelAnime.isEnabled = false
             scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X, object : ModelDownloadManager.DownloadListener {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
                             if (t > 0) {
@@ -1244,7 +1243,7 @@ class ImageUpscalerController(
             }
         }
         dialogBinding.btnDeleteModelAnime.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X.id)
+            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4.id)
             refreshCards()
             updateModelDisplay()
         }
