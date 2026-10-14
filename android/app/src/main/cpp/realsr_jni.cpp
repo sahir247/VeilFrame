@@ -67,6 +67,7 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
     }
     jobject direct_buf = cb->env->NewDirectByteBuffer(strip_data, static_cast<jlong>(capacity64));
     if (!direct_buf) {
+        cb->has_exception = true;
         LOGE("Failed to allocate DirectByteBuffer for input strip y0=%d h=%d", y0, height);
         return -1;
     }
@@ -101,6 +102,7 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
     jobject direct_buf = cb->env->NewDirectByteBuffer(
         const_cast<unsigned char*>(row_data), static_cast<jlong>(capacity64));
     if (!direct_buf) {
+        cb->has_exception = true;
         LOGE("Failed to allocate DirectByteBuffer for row %d", row_index);
         return -1;
     }
@@ -529,11 +531,14 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
+    if (!inputDirectBuffer || !valid_image_dimensions(width, height, channels)) {
+        LOGE("nativeProcessStreaming: invalid direct buffer or dimensions");
+        return -3;
+    }
     const unsigned char* pixeldata = static_cast<const unsigned char*>(
         env->GetDirectBufferAddress(inputDirectBuffer)
     );
-    if (!valid_image_dimensions(width, height, channels) || !inputDirectBuffer ||
-        !pixeldata || env->GetDirectBufferCapacity(inputDirectBuffer) < 0 ||
+    if (!pixeldata || env->GetDirectBufferCapacity(inputDirectBuffer) < 0 ||
         static_cast<uint64_t>(env->GetDirectBufferCapacity(inputDirectBuffer)) <
             expected_image_bytes(width, height, channels) ||
         !rowCallback || !g_on_row_method) {
