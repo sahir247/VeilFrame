@@ -105,8 +105,16 @@ object UpscaleResourceEstimator {
 
         // Adaptive tile size derivation to enforce both MAX_BAND_MEMORY_BYTES and MAX_HOST_WORKING_BYTES
         val chosenTile = requestedTileSize.coerceIn(MIN_TILE_SIZE, MAX_TILE_SIZE)
-        // Never silently exceed the user's requested tile size. Decrease in deterministic steps only.
-        val candidateTileSizes = (listOf(chosenTile) + listOf(160, 128, 96, 64).filter { it < chosenTile }).distinct()
+        // Never silently exceed the user's requested tile size. Try a deterministic
+        // descending 32-pixel ladder, always ending at the minimum supported tile.
+        val candidateTileSizes = buildList {
+            var candidate = chosenTile
+            while (true) {
+                add(candidate)
+                if (candidate == MIN_TILE_SIZE) break
+                candidate = maxOf(MIN_TILE_SIZE, candidate - 32)
+            }
+        }
         var validTile: Int? = null
         var validBandBytes = 0L
         var validStripBytes = 0L
