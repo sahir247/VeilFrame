@@ -510,15 +510,38 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
         realsr.tilesize = tilesize;
         realsr.prepadding = prepadding;
         ret = realsr.load(param_str, bin_str);
+        // Normalize RealSR::load()'s private return values into stable JNI statuses.
+        // -2/-3/-4 are malformed params, weights, or graph names; never retry these.
+        if (ret == -2) {
+            LOGE("nativeLoadModel: NCNN rejected model parameters");
+            ret = -20;
+        } else if (ret == -3) {
+            LOGE("nativeLoadModel: NCNN rejected model weights");
+            ret = -21;
+        } else if (ret == -4) {
+            LOGE("nativeLoadModel: model input/output graph names are invalid");
+            ret = -22;
+        } else if (ret == -5 || ret == -6 || ret == -8) {
+            // These codes represent ncnn Vulkan/compute pipeline setup failures in
+            // RealSR::load. A new CPU instance can retry without reusing GPU state.
+            ret = realsr.has_gpu() ? -2 : -4;
+        } else if (ret == -7) {
+            // The required NCNN Interp layer is unavailable; retrying cannot repair
+            // a missing registered layer and would just obscure the installation fault.
+            ret = -23;
+        } else if (ret != 0) {
+            LOGE("nativeLoadModel: unexpected RealSR load status %d", ret);
+            ret = -23;
+        }
     } catch (const std::bad_alloc&) {
         LOGE("nativeLoadModel: bad_alloc");
         ret = -11;
     } catch (const std::exception& e) {
         LOGE("nativeLoadModel exception: %s", e.what());
-        ret = -1;
+        ret = -23;
     } catch (...) {
         LOGE("nativeLoadModel: unknown exception");
-        ret = -1;
+        ret = -23;
     }
 
     env->ReleaseStringUTFChars(paramPath, param_str);
