@@ -156,7 +156,23 @@ class UpscaleResourceEstimatorTest {
             )
             fail("Expected ResourceLimitExceededException when minimum tile size exceeds band budget")
         } catch (e: ResourceLimitExceededException) {
-            assertTrue(e.message?.contains("exceeding the safe") == true)
+            assertTrue(e.message?.contains("No supported tile fits") == true)
+        }
+    }
+
+    @Test
+    fun testTotalWorkingSetLimitIsEnforced() {
+        try {
+            UpscaleResourceEstimator.estimateAndPlan(
+                srcW = 1920,
+                srcH = 1080,
+                scale = 4,
+                channels = 3,
+                maxTotalWorkingBytes = 1L
+            )
+            fail("Expected ResourceLimitExceededException when total working-set cap is too small")
+        } catch (e: ResourceLimitExceededException) {
+            assertTrue(e.message?.contains("total working set") == true)
         }
     }
 
