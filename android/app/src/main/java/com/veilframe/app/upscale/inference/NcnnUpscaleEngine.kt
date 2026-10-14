@@ -349,7 +349,10 @@ class NcnnUpscaleEngine(
             throw ModelNotInstalledException(model.id, model.name)
         }
 
-        val outDir = File(context.cacheDir, "upscale_streaming").apply { if (!exists()) mkdirs() }
+        val outDir = File(context.cacheDir, "upscale_streaming")
+        if ((!outDir.exists() && !outDir.mkdirs()) || !outDir.isDirectory || !outDir.canWrite()) {
+            throw InsufficientDiskSpaceException("Upscale cache output directory is unavailable or not writable: ${outDir.absolutePath}")
+        }
         val jobId = UUID.randomUUID().toString()
         val tempFile = File(outDir, "ncnn_${jobId}.part")
         val finalFile = File(outDir, "ncnn_${jobId}.png")
@@ -363,123 +366,174 @@ class NcnnUpscaleEngine(
             writer = StreamingPngWriter(tempFile, outW, outH, colorType = colorType)
 
             val gpuCount = NcnnNative.getGpuCount()
-            val gpuid = if (gpuCount > 0) 0 else -1
+            val preferredGpuid = if (gpuCount > 0) 0 else -1
             val numThreads = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+            val backendAttempts = if (preferredGpuid >= 0) listOf(preferredGpuid, -1) else listOf(-1)
+            var inferenceSucceeded = false
+            var lastGpuFailure: DeviceInferenceException? = null
 
-            listener?.onStatus(
-                if (gpuid >= 0) "Initializing NCNN Vulkan GPU (${NcnnNative.getGpuDeviceName(gpuid)})..."
-                else "Initializing NCNN CPU fallback ($numThreads threads)..."
-            )
-            listener?.onStage("Loading Model", 0, 1)
-
-            executionMutex.withLock {
-                val handle = NcnnNative.createInstance(gpuid = gpuid, ttaMode = false, numThreads = numThreads)
-                if (handle == 0L) {
-                    throw DeviceInferenceException(
-                        -1,
-                        "Failed to instantiate native RealSR engine",
-                        if (gpuid >= 0) "Vulkan" else "CPU"
-                    )
+            for ((attemptIndex, attemptGpuid) in backendAttempts.withIndex()) {
+                if (attemptIndex > 0) {
+                    // A failed GPU run may already have written rows. It must never be
+                    // resumed into the same PNG stream; discard it and start from row zero.
+                    writer?.abort()
+                    if (tempFile.exists() && !tempFile.delete()) {
+                        throw ImageValidationException("Could not discard partial Vulkan output before CPU retry")
+                    }
+                    writer = StreamingPngWriter(tempFile, outW, outH, colorType = colorType)
                 }
+                val attemptWriter = writer
+                    ?: throw ImageValidationException("PNG writer was not initialized for inference")
 
                 try {
-                    val loadRet = NcnnNative.loadModel(
-                        handle = handle,
-                        paramPath = paramFile.absolutePath,
-                        binPath = binFile.absolutePath,
-                        scale = model.nativeScale,
-                        tilesize = plan.tileSize,
-                        prepadding = plan.prepadding
-                    )
-                    if (loadRet != 0) {
-                        throw NcnnModelLoadException(loadRet, "Failed to load NCNN model weights from ${paramFile.name}")
-                    }
+                    executionMutex.withLock {
+                        val handle = NcnnNative.createInstance(
+                            gpuid = attemptGpuid,
+                            ttaMode = false,
+                            numThreads = numThreads
+                        )
+                        if (handle == 0L) {
+                            throw DeviceInferenceException(
+                                -1,
+                                "Failed to instantiate native RealSR engine",
+                                if (attemptGpuid >= 0) "Vulkan" else "CPU"
+                            )
+                        }
 
-                    listener?.onStatus("Running ${model.name} via NCNN (${if (gpuid >= 0) "Vulkan GPU" else "CPU"})...")
-                    listener?.onStage("Neural Inference (NCNN)", 0, 1)
-
-                    val pixelRow = IntArray(source.width)
-                    val stripRowBytes = ByteArray(source.width * channels)
-                    var writtenRows = 0
-
-                    val execRet = NcnnNative.processStripStreaming(
-                        handle = handle,
-                        width = source.width,
-                        height = source.height,
-                        channels = channels,
-                        stripCallback = { buffer, y0, stripH ->
-                            if (!coroutineContext.isActive) {
-                                return@processStripStreaming 1
+                        try {
+                            val loadRet = NcnnNative.loadModel(
+                                handle = handle,
+                                paramPath = paramFile.absolutePath,
+                                binPath = binFile.absolutePath,
+                                scale = model.nativeScale,
+                                tilesize = plan.tileSize,
+                                prepadding = plan.prepadding
+                            )
+                            if (loadRet != 0) {
+                                // Model/weight errors are not backend execution failures and
+                                // must not be hidden by retrying the same assets on CPU.
+                                throw NcnnModelLoadException(
+                                    loadRet,
+                                    "Failed to load NCNN model weights from ${paramFile.name}"
+                                )
                             }
-                            buffer.clear()
-                            val stripBitmap = source.region(0, y0, source.width, stripH)
-                            try {
-                                for (y in 0 until stripH) {
-                                    stripBitmap.getPixels(pixelRow, 0, source.width, 0, y, source.width, 1)
-                                    var ri = 0
-                                    if (channels == 3) {
-                                        for (x in 0 until source.width) {
-                                            val p = pixelRow[x]
-                                            stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
-                                            stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
-                                            stripRowBytes[ri++] = (p and 0xFF).toByte()
-                                        }
-                                    } else {
-                                        for (x in 0 until source.width) {
-                                            val p = pixelRow[x]
-                                            stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
-                                            stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
-                                            stripRowBytes[ri++] = (p and 0xFF).toByte()
-                                            stripRowBytes[ri++] = ((p ushr 24) and 0xFF).toByte()
-                                        }
+
+                            val backendName = if (attemptGpuid >= 0) "Vulkan GPU" else "CPU"
+                            listener?.onStatus("Running ${model.name} via NCNN ($backendName)...")
+                            listener?.onStage("Neural Inference (NCNN)", 0, 1)
+
+                            val pixelRow = IntArray(source.width)
+                            val stripRowBytes = ByteArray(Math.multiplyExact(source.width, channels))
+                            var writtenRows = 0
+
+                            val execRet = NcnnNative.processStripStreaming(
+                                handle = handle,
+                                width = source.width,
+                                height = source.height,
+                                channels = channels,
+                                stripCallback = { buffer, y0, stripH ->
+                                    if (!coroutineContext.isActive) {
+                                        return@processStripStreaming 1
                                     }
-                                    buffer.put(stripRowBytes)
+                                    buffer.clear()
+                                    val stripBitmap = source.region(0, y0, source.width, stripH)
+                                    try {
+                                        for (y in 0 until stripH) {
+                                            stripBitmap.getPixels(pixelRow, 0, source.width, 0, y, source.width, 1)
+                                            var ri = 0
+                                            if (channels == 3) {
+                                                for (x in 0 until source.width) {
+                                                    val p = pixelRow[x]
+                                                    stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
+                                                    stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
+                                                    stripRowBytes[ri++] = (p and 0xFF).toByte()
+                                                }
+                                            } else {
+                                                for (x in 0 until source.width) {
+                                                    val p = pixelRow[x]
+                                                    stripRowBytes[ri++] = ((p ushr 16) and 0xFF).toByte()
+                                                    stripRowBytes[ri++] = ((p ushr 8) and 0xFF).toByte()
+                                                    stripRowBytes[ri++] = (p and 0xFF).toByte()
+                                                    stripRowBytes[ri++] = ((p ushr 24) and 0xFF).toByte()
+                                                }
+                                            }
+                                            buffer.put(stripRowBytes)
+                                        }
+                                        buffer.position(0)
+                                        0
+                                    } finally {
+                                        stripBitmap.recycle()
+                                    }
+                                },
+                                rowCallback = { rowBuffer, _, _, _ ->
+                                    if (!coroutineContext.isActive) {
+                                        1
+                                    } else {
+                                        attemptWriter.writeRow(rowBuffer)
+                                        writtenRows++
+                                        0
+                                    }
+                                },
+                                progressCallback = { current, total, pct ->
+                                    listener?.onProgress(current, total, pct)
+                                    listener?.onStage("Neural Inference (NCNN)", current, total)
                                 }
-                                buffer.position(0)
-                                0
-                            } finally {
-                                stripBitmap.recycle()
-                            }
-                        },
-                        rowCallback = { rowBuffer, _, _, _ ->
-                            if (!coroutineContext.isActive) {
-                                1
-                            } else {
-                                writer.writeRow(rowBuffer)
-                                writtenRows++
-                                0
-                            }
-                        },
-                        progressCallback = { current, total, pct ->
-                            listener?.onProgress(current, total, pct)
-                            listener?.onStage("Neural Inference (NCNN)", current, total)
-                        }
-                    )
+                            )
 
-                    when (execRet) {
-                        0 -> { /* Success */ }
-                        -10 -> throw UpscaleCancellationException("NCNN super-resolution was cancelled")
-                        -11 -> throw ResourceLimitExceededException("NCNN native memory allocation failed (bad_alloc)")
-                        -12 -> throw DeviceInferenceException(-12, "JNI callback exception during NCNN processing")
-                        -2 -> throw DeviceInferenceException(-2, "Vulkan command submission or GPU allocation failed", "Vulkan")
-                        -3 -> throw IllegalArgumentException("Invalid arguments provided to NCNN native processing")
-                        else -> {
-                            if (!coroutineContext.isActive) {
-                                throw UpscaleCancellationException("NCNN super-resolution cancelled during execution")
-                            } else {
-                                throw DeviceInferenceException(execRet, "NCNN super-resolution failed with error code $execRet")
+                            when (execRet) {
+                                0 -> Unit
+                                -10 -> throw UpscaleCancellationException("NCNN super-resolution was cancelled")
+                                -11 -> throw ResourceLimitExceededException("NCNN native/device tensor allocation failed")
+                                -12 -> throw DeviceInferenceException(-12, "JNI callback exception during NCNN processing")
+                                -2 -> throw DeviceInferenceException(
+                                    -2,
+                                    "NCNN Vulkan execution failed; a clean CPU retry may succeed",
+                                    "Vulkan"
+                                )
+                                -3 -> throw IllegalArgumentException("Invalid arguments provided to NCNN native processing")
+                                -4 -> throw DeviceInferenceException(
+                                    -4,
+                                    "NCNN CPU inference failed",
+                                    "CPU"
+                                )
+                                else -> {
+                                    if (!coroutineContext.isActive) {
+                                        throw UpscaleCancellationException("NCNN super-resolution cancelled during execution")
+                                    } else {
+                                        throw DeviceInferenceException(
+                                            execRet,
+                                            "NCNN inference failed with normalized error code $execRet",
+                                            if (attemptGpuid >= 0) "Vulkan" else "CPU"
+                                        )
+                                    }
+                                }
                             }
+
+                            if (writtenRows != outH) {
+                                throw ImageValidationException(
+                                    "Row count mismatch: expected $outH rows, but received $writtenRows"
+                                )
+                            }
+                            attemptWriter.close()
+                        } finally {
+                            NcnnNative.destroyInstance(handle)
                         }
                     }
-
-                    if (writtenRows != outH) {
-                        throw ImageValidationException("Row count mismatch: expected $outH rows, but received $writtenRows")
-                    }
-
-                    writer.close()
-                } finally {
-                    NcnnNative.destroyInstance(handle)
+                    inferenceSucceeded = true
+                    break
+                } catch (e: DeviceInferenceException) {
+                    val mayRetryOnCpu = attemptGpuid >= 0 &&
+                        (e.code == -1 || e.code == -2) &&
+                        e.backend == "Vulkan" &&
+                        coroutineContext.isActive
+                    if (!mayRetryOnCpu) throw e
+                    lastGpuFailure = e
+                    Log.w(TAG, "Vulkan upscaling failed (code ${e.code}); discarding partial output and retrying once on CPU", e)
                 }
+            }
+
+            if (!inferenceSucceeded) {
+                throw lastGpuFailure ?: DeviceInferenceException(-4, "NCNN inference did not complete on any backend", "CPU")
             }
 
             // Transactional validation & atomic publication (P0.4)
