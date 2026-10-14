@@ -15,6 +15,8 @@ package com.veilframe.app.upscale.model
 object UpscaleModelRegistry {
 
     private const val HF_UPSCALE_BASE = "https://huggingface.co/T8RIN/imagetoolbox-models/resolve/main/onnx/enhance/upscale/"
+    // Pinned upstream NCNN model mirror revision: do not replace with a mutable "main" URL.
+    private const val NCNN_MODEL_BASE = "https://huggingface.co/edgetools/realesrgan/resolve/b8b8b5de432a09da4ef74279243dcdd66c82d484/"
 
     // Built-in Algorithmic Models
     val LANCZOS = UpscaleModel(
@@ -66,6 +68,95 @@ object UpscaleModelRegistry {
         tier = ModelTier.TIER_A_NATIVE,
         license = "Open Source / Public Domain",
         qualityFocus = "Pixel Art Sharpness"
+    )
+
+    // Initial NCNN roster. Each .param/.bin pair is pinned to a source revision and has
+    // independently verified SHA-256 and byte length. The JNI backend is enabled in a later phase.
+    val NCNN_REAL_ESRGAN_X4PLUS = UpscaleModel(
+        id = "ncnn-realesrgan-x4plus",
+        name = "Real-ESRGAN x4plus (NCNN)",
+        description = "General-purpose photographic restoration using the upstream NCNN FP16 model.",
+        type = ModelType.AI_NCNN,
+        nativeScale = 4,
+        sizeBytes = 33_540_549L,
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo", "photo_quality", "custom"),
+        isBuiltIn = false,
+        genre = ModelGenre.GENERAL_PHOTO,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
+        license = "BSD-3-Clause",
+        qualityFocus = "General Photography",
+        precision = ModelPrecision.FP16,
+        engineKind = NcnnEngineKind.REALSR_ESRGAN,
+        paramDownloadUrl = "${NCNN_MODEL_BASE}realesrgan-x4plus.param",
+        paramSha256 = "4dd4d7a5d01aa0a5b81b06902e7d102bfc626c2ae9a46866a7483d3bd540b89e",
+        paramSizeBytes = 116_029L,
+        binDownloadUrl = "${NCNN_MODEL_BASE}realesrgan-x4plus.bin",
+        binSha256 = "713ee713b0353afaa27976f0563a64a5043bd70b9bd8936c2e26e25ebcdbcddf",
+        binSizeBytes = 33_424_520L,
+        inputBlobName = "data",
+        outputBlobName = "output",
+        prePadding = 10
+    )
+
+    val NCNN_ANIMEVIDEO_V3_X2 = UpscaleModel(
+        id = "ncnn-realesr-animevideov3-x2",
+        name = "Real-ESRGAN AnimeVideoV3 2× (NCNN)",
+        description = "Compact 2× NCNN super-resolution model for anime, flat-color illustrations, and animation frames.",
+        type = ModelType.AI_NCNN,
+        nativeScale = 2,
+        sizeBytes = 1_250_541L,
+        supportedOutputScales = listOf(2, 4),
+        recommendedPresetIds = listOf("fast"),
+        isBuiltIn = false,
+        genre = ModelGenre.ANIME_MANGA,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
+        license = "BSD-3-Clause",
+        qualityFocus = "Compact Anime/Animation Upscaling",
+        precision = ModelPrecision.FP16,
+        engineKind = NcnnEngineKind.REALSR_ESRGAN,
+        paramDownloadUrl = "${NCNN_MODEL_BASE}realesr-animevideov3-x2.param",
+        paramSha256 = "55dc4dc961b949b41cd97938e299213b7b77b3cfe7c1fe50c45227c0f1136b03",
+        paramSizeBytes = 3_173L,
+        binDownloadUrl = "${NCNN_MODEL_BASE}realesr-animevideov3-x2.bin",
+        binSha256 = "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+        binSizeBytes = 1_247_368L,
+        inputBlobName = "data",
+        outputBlobName = "output",
+        prePadding = 10
+    )
+
+    val NCNN_ANIMEVIDEO_V3_X4 = UpscaleModel(
+        id = "ncnn-realesr-animevideov3-x4",
+        name = "Real-ESRGAN AnimeVideoV3 4× (NCNN)",
+        description = "Compact 4× NCNN super-resolution model for anime and clean digital illustrations.",
+        type = ModelType.AI_NCNN,
+        nativeScale = 4,
+        sizeBytes = 1_250_445L,
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("anime", "illustration"),
+        isBuiltIn = false,
+        genre = ModelGenre.ANIME_MANGA,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
+        license = "BSD-3-Clause",
+        qualityFocus = "Compact Anime/Illustration Upscaling",
+        precision = ModelPrecision.FP16,
+        engineKind = NcnnEngineKind.REALSR_ESRGAN,
+        paramDownloadUrl = "${NCNN_MODEL_BASE}realesr-animevideov3-x4.param",
+        paramSha256 = "fae0dab220ac9abd9caea8a710c0d559cfb3864ddd9658c94a20ddc7afbd4893",
+        paramSizeBytes = 3_077L,
+        binDownloadUrl = "${NCNN_MODEL_BASE}realesr-animevideov3-x4.bin",
+        binSha256 = "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
+        binSizeBytes = 1_247_368L,
+        inputBlobName = "data",
+        outputBlobName = "output",
+        prePadding = 10
     )
 
     // Tier A: General Purpose Super-Resolution
@@ -562,6 +653,9 @@ object UpscaleModelRegistry {
         LANCZOS,
         BICUBIC,
         NEAREST,
+        NCNN_REAL_ESRGAN_X4PLUS,
+        NCNN_ANIMEVIDEO_V3_X2,
+        NCNN_ANIMEVIDEO_V3_X4,
         REAL_ESRGAN_GENERAL_2X,
         REAL_ESRGAN_GENERAL_4X,
         REAL_ESRGAN_X4V3,
@@ -600,8 +694,12 @@ object UpscaleModelRegistry {
             it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY && it.tier != ModelTier.TIER_C_DESKTOP
         }
 
+    /** Selectable neural models across the transitional ONNX and native NCNN backends. */
     val AI_MODELS: List<UpscaleModel>
-        get() = SELECTABLE_MODELS.filter { it.type == ModelType.AI_ONNX }
+        get() = SELECTABLE_MODELS.filter { it.type == ModelType.AI_ONNX || it.type == ModelType.AI_NCNN }
+
+    val NCNN_MODELS: List<UpscaleModel>
+        get() = ALL_MODELS.filter { it.type == ModelType.AI_NCNN }
 
     val BUILT_IN_MODELS: List<UpscaleModel>
         get() = ALL_MODELS.filter { it.isBuiltIn }
