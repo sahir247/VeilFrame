@@ -94,13 +94,13 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Debug packages emulator x86_64 + device arm64-v8a by default, or explicit -PtargetAbi
+            // Native targets arm64-v8a only, or explicit -PtargetAbi
             ndk {
                 abiFilters.clear()
                 if (customAbis != null) {
                     abiFilters.addAll(customAbis)
                 } else {
-                    abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+                    abiFilters.add("arm64-v8a")
                 }
             }
         }
