@@ -3,6 +3,7 @@ package com.veilframe.app.upscale.download
 import android.content.Context
 import android.util.Log
 import com.veilframe.app.upscale.model.UpscaleModel
+import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModelRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -82,6 +83,13 @@ class ModelDownloadManager(
         model: UpscaleModel,
         listener: DownloadListener
     ): Result<File> = withContext(Dispatchers.IO) {
+        // Native NCNN weights are a paired artifact; never pass them through the
+        // legacy single-file model.ort downloader.
+        if (model.type == ModelType.AI_NCNN) {
+            return@withContext NcnnModelPairDownloadManager(context, repository)
+                .download(model, listener)
+        }
+
         if (model.isBuiltIn) {
             val dummyFile = File(context.cacheDir, "${model.id}.builtIn")
             listener.onSuccess(model, dummyFile)
