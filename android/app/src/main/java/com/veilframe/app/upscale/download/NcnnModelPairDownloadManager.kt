@@ -1,6 +1,5 @@
 package com.veilframe.app.upscale.download
 
-import android.content.Context
 import android.util.Log
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
@@ -13,6 +12,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.withContext
 
 /**
@@ -22,10 +24,10 @@ import kotlinx.coroutines.withContext
  * half-installed model as usable. The existing ONNX downloader remains separate.
  */
 class NcnnModelPairDownloadManager(
-    private val context: Context,
     private val repository: UpscaleModelRepository
 ) {
     companion object {
+        private val modelLocks = ConcurrentHashMap<String, Mutex>()
         private const val TAG = "VeilFrame.NcnnDownload"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 30_000
@@ -33,6 +35,14 @@ class NcnnModelPairDownloadManager(
     }
 
     suspend fun download(
+        model: UpscaleModel,
+        listener: ModelDownloadManager.DownloadListener
+    ): Result<File> {
+        val modelLock = modelLocks.getOrPut(model.id) { Mutex() }
+        return modelLock.withLock { downloadLocked(model, listener) }
+    }
+
+    private suspend fun downloadLocked(
         model: UpscaleModel,
         listener: ModelDownloadManager.DownloadListener
     ): Result<File> = withContext(Dispatchers.IO) {
@@ -108,8 +118,11 @@ class NcnnModelPairDownloadManager(
             if (hadParam) finalParam.copyTo(paramBackup, overwrite = true)
             if (hadBin) finalBin.copyTo(binBackup, overwrite = true)
 
-            // The marker is the commit point for the pair and is removed before replacement.
-            marker.delete()
+            // The marker is the commit point for the pair. Removing it prevents
+            // concurrent readers from treating a partially swapped pair as installed.
+            if (marker.exists() && !marker.delete()) {
+                throw IllegalStateException("Cannot invalidate NCNN install marker for ${model.id}.")
+            }
             try {
                 moveOrCopy(paramTemp, finalParam)
                 moveOrCopy(binTemp, finalBin)
