@@ -177,8 +177,8 @@ class NcnnModelPairDownloadManager(
         var redirectCount = 0
         var activeConnection: HttpURLConnection? = null
         try {
-            val connection: HttpURLConnection
-            while (true) {
+            var resolvedConnection: HttpURLConnection? = null
+            while (resolvedConnection == null) {
                 currentCoroutineContext().ensureActive()
                 if (!ModelDownloadManager.isAllowedModelUrl(currentUrl)) {
                     throw SecurityException("NCNN model URL or redirect violates the approved origin policy.")
@@ -222,9 +222,9 @@ class NcnnModelPairDownloadManager(
                             "server declared ${candidate.contentLengthLong} bytes."
                     )
                 }
-                connection = candidate
-                break
+                resolvedConnection = candidate
             }
+            val connection = requireNotNull(resolvedConnection)
 
             var downloaded = 0L
             var sinceLastUpdate = 0L
