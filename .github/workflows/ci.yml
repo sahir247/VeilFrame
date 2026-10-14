@@ -335,19 +335,38 @@ jobs:
           gh run download "$RUN_ID" --repo "${{ github.repository }}" \
             --name veilframe-custom-opencv-sdk --dir /tmp/opencv_artifact
 
-          ARM64_SO=$(find /tmp/opencv_artifact -path "*/arm64-v8a/libopencv_java4.so" -print -quit)
-          X86_SO=$(find /tmp/opencv_artifact -path "*/x86_64/libopencv_java4.so" -print -quit)
+          ARM64_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/arm64-v8a/libopencv_java4.so" -print -quit)
+          X86_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/x86_64/libopencv_java4.so" -print -quit)
+          MAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/core/Mat.java" -print -quit)
+          WECHAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/wechat_qrcode/WeChatQRCode.java" -print -quit)
+          VIDEOIO_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/videoio/Videoio.java" -print -quit)
+          ATTRS_XML=$(find /tmp/opencv_artifact -path "*/res/values/attrs.xml" -print -quit)
           MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
           test -n "$ARM64_SO" && test -s "$ARM64_SO"
           test -n "$X86_SO" && test -s "$X86_SO"
+          test -n "$MAT_JAVA" && test -s "$MAT_JAVA"
+          test -n "$WECHAT_JAVA" && test -s "$WECHAT_JAVA"
+          test -n "$VIDEOIO_JAVA" && test -s "$VIDEOIO_JAVA"
+          test -n "$ATTRS_XML" && test -s "$ATTRS_XML"
           test -n "$MARKER" && test -s "$MARKER"
 
+          SDK_ROOT=$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$MAT_JAVA")")")")")
+          # MAT_JAVA is .../java/org/opencv/core/Mat.java; the SDK root is two
+          # levels above java (jniLibs/java/res/.opencv-sdk-complete).
+          SDK_ROOT="${MAT_JAVA%/java/org/opencv/core/Mat.java}"
           mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
           mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
+          mkdir -p android/opencv-sdk/src/main/java android/opencv-sdk/src/main/res
           cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          cp -a "$SDK_ROOT/java/." android/opencv-sdk/src/main/java/
+          cp -a "$SDK_ROOT/res/." android/opencv-sdk/src/main/res/
           cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
           test -s android/opencv-sdk/src/main/.opencv-sdk-complete
+          test -s android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/videoio/Videoio.java
+          test -s android/opencv-sdk/src/main/res/values/attrs.xml
           sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
 
