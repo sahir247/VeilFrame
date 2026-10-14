@@ -511,13 +511,20 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
         realsr.prepadding = prepadding;
         ret = realsr.load(param_str, bin_str);
         // Normalize RealSR::load()'s private return values into stable JNI statuses.
-        // -2/-3/-4 are malformed params, weights, or graph names; never retry these.
+        // -2 (parameter parse) and -4 (graph contract) are deterministic model errors.
+        // -3 combines NCNN weight loading with backend initialization on some paths, so
+        // verify it on CPU once when GPU is active: corrupt weights fail there too.
         if (ret == -2) {
             LOGE("nativeLoadModel: NCNN rejected model parameters");
             ret = -20;
         } else if (ret == -3) {
-            LOGE("nativeLoadModel: NCNN rejected model weights");
-            ret = -21;
+            if (realsr.has_gpu()) {
+                LOGE("nativeLoadModel: ambiguous Vulkan-backed NCNN load failure; allow one clean CPU verification");
+                ret = -2;
+            } else {
+                LOGE("nativeLoadModel: NCNN rejected model weights on CPU");
+                ret = -21;
+            }
         } else if (ret == -4) {
             LOGE("nativeLoadModel: model input/output graph names are invalid");
             ret = -22;
