@@ -86,7 +86,7 @@ class ModelDownloadManager(
         // Native NCNN weights are a paired artifact; never pass them through the
         // legacy single-file model.ort downloader.
         if (model.type == ModelType.AI_NCNN) {
-            return@withContext NcnnModelPairDownloadManager(context, repository)
+            return@withContext NcnnModelPairDownloadManager(repository)
                 .download(model, listener)
         }
 
