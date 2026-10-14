@@ -289,7 +289,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
         g_runtime_state = RuntimeState::READY;
     }
     g_lifecycle_cv.notify_all();
-    LOGI("NCNN global initialized, GPU count: %d", ncnn::get_gpu_count());
+    LOGI("NCNN global initialized");
     return 0;
 }
 
@@ -479,7 +479,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     InstanceLease lease = acquire_instance(handle);
     if (!lease) {
         LOGE("nativeProcessStreaming: invalid handle or runtime not ready: %lld", (long long)handle);
-        return -1;
+        return -3;
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
@@ -507,9 +507,11 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
             progressCallback ? jni_progress_callback : nullptr,
             &udata
         );
-        if (udata.has_exception || env->ExceptionCheck()) return -12; // A pending Java callback exception takes precedence.
+        if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
         if (ret == 1) return -10;
-        return ret;
+        if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
+        if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
+        return 0;
     } catch (const std::bad_alloc&) {
         LOGE("nativeProcessStreaming: out of memory");
         return -11;
@@ -531,7 +533,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     InstanceLease lease = acquire_instance(handle);
     if (!lease) {
         LOGE("nativeProcessStripStreaming: invalid handle or runtime not ready: %lld", (long long)handle);
-        return -1;
+        return -3;
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
@@ -558,9 +560,11 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
             progressCallback ? jni_progress_callback : nullptr,
             &udata
         );
-        if (udata.has_exception || env->ExceptionCheck()) return -12; // Pending Java exceptions are delivered by JNI.
+        if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
         if (ret == 1) return -10;
-        return ret;
+        if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
+        if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
+        return 0;
     } catch (const std::bad_alloc&) {
         LOGE("nativeProcessStripStreaming: out of memory");
         return -11;
