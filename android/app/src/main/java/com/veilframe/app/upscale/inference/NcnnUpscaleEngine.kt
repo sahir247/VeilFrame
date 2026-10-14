@@ -409,12 +409,27 @@ class NcnnUpscaleEngine(
                                 tilesize = plan.tileSize,
                                 prepadding = plan.prepadding
                             )
-                            if (loadRet != 0) {
-                                // Model/weight errors are not backend execution failures and
-                                // must not be hidden by retrying the same assets on CPU.
-                                throw NcnnModelLoadException(
+                            when (loadRet) {
+                                0 -> Unit
+                                NcnnNative.STATUS_VULKAN_FAILURE -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_VULKAN_FAILURE,
+                                    "Vulkan/NCNN pipeline initialization failed; retrying with a clean CPU instance may succeed",
+                                    "Vulkan"
+                                )
+                                NcnnNative.STATUS_CPU_FAILURE -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_CPU_FAILURE,
+                                    "NCNN CPU pipeline initialization failed",
+                                    "CPU"
+                                )
+                                NcnnNative.STATUS_OUT_OF_MEMORY -> throw ResourceLimitExceededException(
+                                    "NCNN native memory allocation failed while loading the model"
+                                )
+                                NcnnNative.STATUS_INVALID_ARGUMENT -> throw IllegalArgumentException(
+                                    "Invalid arguments provided to NCNN model loading"
+                                )
+                                else -> throw NcnnModelLoadException(
                                     loadRet,
-                                    "Failed to load NCNN model weights from ${paramFile.name}"
+                                    "Failed to load or initialize NCNN model ${paramFile.name}"
                                 )
                             }
 
