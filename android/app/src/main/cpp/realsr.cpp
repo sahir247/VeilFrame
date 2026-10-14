@@ -615,41 +615,53 @@ int RealSR::process_strip_streaming(
             const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
             const int in_tile_w = in_tile_x1 - in_tile_x0;
 
+            const int crop_x0 = (xi * TILE_SIZE_X - in_tile_x0) * scale;
+            const int crop_y0 = (yi * TILE_SIZE_Y - in_tile_y0) * scale;
+            const int crop_w = (std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X) * scale;
+            const int crop_h = (std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y) * scale;
+
             ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
                 strip_buf.data(),
-                channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB,
+                channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
                 w, in_band_h,
                 in_tile_x0, 0,
                 in_tile_w, in_band_h
             );
 
+            // Scale to [0, 1] matching model input expectations
+            const float norm_vals[3] = {1 / 255.f, 1 / 255.f, 1 / 255.f};
+            in_tile.substract_mean_normalize(0, norm_vals);
+
             ncnn::VkMat in_tile_gpu;
+            cmd.record_clone(in_tile, in_tile_gpu, opt);
+            if (in_tile_gpu.empty()) return -101;
+
             ncnn::VkMat in_alpha_tile_gpu;
-            {
-                cmd.record_clone(in_tile, in_tile_gpu, opt);
-                if (in_tile_gpu.empty()) return -101;
-
-                if (channels == 4) {
-                    in_alpha_tile_gpu.create(in_tile.w, in_tile.h, 1, (size_t)4u, 1, blob_vkallocator);
-                    if (in_alpha_tile_gpu.empty()) return -102;
-                    std::vector<ncnn::VkMat> preproc_bindings(2);
-                    preproc_bindings[0] = in_tile_gpu;
-                    preproc_bindings[1] = in_alpha_tile_gpu;
-
-                    std::vector<ncnn::vk_constant_type> preproc_constants(5);
-                    preproc_constants[0].i = in_tile_gpu.w;
-                    preproc_constants[1].i = in_tile_gpu.h;
-                    preproc_constants[2].i = in_tile_gpu.cstep;
-                    preproc_constants[3].i = in_alpha_tile_gpu.w;
-                    preproc_constants[4].i = in_alpha_tile_gpu.h;
-
-                    ncnn::VkMat preproc_dispatcher;
-                    preproc_dispatcher.w = in_alpha_tile_gpu.w;
-                    preproc_dispatcher.h = in_alpha_tile_gpu.h;
-                    preproc_dispatcher.c = 1;
-
-                    cmd.record_pipeline(realsr_preproc, preproc_bindings, preproc_constants, preproc_dispatcher);
+            ncnn::VkMat out_alpha_tile_gpu;
+            if (channels == 4) {
+                const int tile_w_nopad = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
+                const int tile_h_nopad = std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y;
+                ncnn::Mat in_alpha(tile_w_nopad, tile_h_nopad, 1);
+                const int y_strip_offset = yi * TILE_SIZE_Y - in_tile_y0;
+                for (int y = 0; y < tile_h_nopad; y++) {
+                    const unsigned char* p = strip_buf.data() + ((size_t)(y_strip_offset + y) * w + xi * TILE_SIZE_X) * 4;
+                    float* aptr = in_alpha.row(y);
+                    for (int x = 0; x < tile_w_nopad; x++) {
+                        aptr[x] = p[x * 4 + 3];
+                    }
                 }
+                cmd.record_clone(in_alpha, in_alpha_tile_gpu, opt);
+                if (in_alpha_tile_gpu.empty()) return -102;
+
+                int fret = 0;
+                if (scale == 2) {
+                    fret = bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                } else if (scale == 3) {
+                    fret = bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                } else {
+                    fret = bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
+                }
+                if (fret != 0) return fret;
             }
 
             ncnn::VkMat out_tile_gpu;
@@ -662,19 +674,6 @@ int RealSR::process_strip_streaming(
                 if (in_ret != 0) return in_ret;
                 int ext_ret = ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
                 if (ext_ret != 0) return ext_ret;
-            }
-
-            ncnn::VkMat out_alpha_tile_gpu;
-            if (channels == 4) {
-                int fret = 0;
-                if (scale == 2) {
-                    fret = bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
-                } else if (scale == 3) {
-                    fret = bicubic_3x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
-                } else {
-                    fret = bicubic_4x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
-                }
-                if (fret != 0) return fret;
             }
 
             // Postprocess tile into band out_gpu
@@ -692,8 +691,8 @@ int RealSR::process_strip_streaming(
             postproc_constants[5].i = out_gpu.cstep;
             postproc_constants[6].i = xi * TILE_SIZE_X * scale;
             postproc_constants[7].i = std::min(TILE_SIZE_X * scale, out_gpu.w - xi * TILE_SIZE_X * scale);
-            postproc_constants[8].i = prepadding * scale;
-            postproc_constants[9].i = prepadding * scale;
+            postproc_constants[8].i = crop_x0;
+            postproc_constants[9].i = crop_y0;
             postproc_constants[10].i = channels;
             postproc_constants[11].i = out_alpha_tile_gpu.w;
             postproc_constants[12].i = out_alpha_tile_gpu.h;

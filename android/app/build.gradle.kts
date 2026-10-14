@@ -7,11 +7,22 @@ android {
     namespace = "com.veilframe.app"
     compileSdk = 35
 
+    val supportedAbis = setOf("arm64-v8a")
     val customAbis = (project.findProperty("targetAbi") as String?)
         ?.split(",")
         ?.map { it.trim() }
         ?.filter { it.isNotEmpty() }
         ?.takeIf { it.isNotEmpty() }
+
+    if (customAbis != null) {
+        val unsupported = customAbis.filter { it !in supportedAbis }
+        if (unsupported.isNotEmpty()) {
+            throw org.gradle.api.GradleException(
+                "Unsupported targetAbi: ${unsupported.joinToString()}. " +
+                "VeilFrame NCNN upscaler subsystem strictly supports arm64-v8a."
+            )
+        }
+    }
 
     defaultConfig {
         applicationId = "com.veilframe.app"
@@ -24,16 +35,14 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments("-DANDROID_STL=c++_static")
+                arguments("-DANDROID_STL=c++_static", "-DANDROID_CPP_FEATURES=rtti exceptions")
+                cppFlags("-fexceptions")
             }
         }
 
         ndk {
-            if (customAbis != null) {
-                abiFilters += customAbis
-            } else {
-                abiFilters += "arm64-v8a"
-            }
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
         }
     }
 
@@ -81,27 +90,19 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
-            // Production release packages arm64-v8a by default, or the explicit -PtargetAbi override
+            // Production release targets arm64-v8a exclusively
             ndk {
                 abiFilters.clear()
-                if (customAbis != null) {
-                    abiFilters.addAll(customAbis)
-                } else {
-                    abiFilters.add("arm64-v8a")
-                }
+                abiFilters.add("arm64-v8a")
             }
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Native targets arm64-v8a only, or explicit -PtargetAbi
+            // Debug targets arm64-v8a exclusively
             ndk {
                 abiFilters.clear()
-                if (customAbis != null) {
-                    abiFilters.addAll(customAbis)
-                } else {
-                    abiFilters.add("arm64-v8a")
-                }
+                abiFilters.add("arm64-v8a")
             }
         }
     }

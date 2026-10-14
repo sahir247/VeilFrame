@@ -90,10 +90,12 @@ static int jni_progress_callback(int current_tile, int total_tiles, int percent,
     return 0;
 }
 
-#include <atomic>
+#include <unordered_set>
+#include <new>
+#include <exception>
 
-static std::atomic<int> g_active_instances{0};
-static std::atomic<bool> g_is_initialized{false};
+static std::unordered_set<RealSR*> g_active_instances;
+static bool g_is_initialized = false;
 static ncnn::Mutex g_lifecycle_lock;
 
 static void release_cached_global_refs(JNIEnv* env) {
@@ -115,10 +117,10 @@ static void release_cached_global_refs(JNIEnv* env) {
     }
     g_on_strip_method = nullptr;
 
-    if (g_active_instances.load() == 0) {
+    if (g_active_instances.empty()) {
         ncnn::destroy_gpu_instance();
     }
-    g_is_initialized.store(false);
+    g_is_initialized = false;
 }
 
 extern "C" {
@@ -126,7 +128,7 @@ extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env, jclass clazz) {
     ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    if (g_is_initialized.load() && g_row_callback_class && g_progress_callback_class && g_strip_callback_class) {
+    if (g_is_initialized && g_row_callback_class && g_progress_callback_class && g_strip_callback_class) {
         return 0; // Already initialized, idempotent
     }
 
@@ -189,7 +191,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
         return -9;
     }
 
-    g_is_initialized.store(true);
+    g_is_initialized = true;
     LOGI("NCNN global initialized, GPU count: %d", ncnn::get_gpu_count());
     return 0;
 }
@@ -197,8 +199,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
     ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    if (g_active_instances.load() > 0) {
-        LOGE("Cannot destroy NCNN global instance while %d instances are still active", g_active_instances.load());
+    if (!g_active_instances.empty()) {
+        LOGE("Cannot destroy NCNN global instance while %zu instances are still active", g_active_instances.size());
         return;
     }
     release_cached_global_refs(env);
@@ -224,8 +226,22 @@ JNIEXPORT jlong JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     JNIEnv* env, jclass clazz, jint gpuid, jboolean ttaMode, jint numThreads
 ) {
-    g_active_instances.fetch_add(1);
-    RealSR* realsr = new RealSR(gpuid, ttaMode, numThreads);
+    RealSR* realsr = nullptr;
+    try {
+        realsr = new RealSR(gpuid, ttaMode, numThreads);
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeCreateInstance: out of memory allocating RealSR");
+        return 0;
+    } catch (const std::exception& e) {
+        LOGE("nativeCreateInstance exception: %s", e.what());
+        return 0;
+    } catch (...) {
+        LOGE("nativeCreateInstance: unknown exception");
+        return 0;
+    }
+
+    ncnn::MutexLockGuard guard(g_lifecycle_lock);
+    g_active_instances.insert(realsr);
     return reinterpret_cast<jlong>(realsr);
 }
 
@@ -233,9 +249,22 @@ JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
     JNIEnv* env, jclass clazz, jlong handle
 ) {
-    RealSR* realsr = reinterpret_cast<RealSR*>(handle);
-    delete realsr;
-    g_active_instances.fetch_sub(1);
+    RealSR* realsr = nullptr;
+    {
+        ncnn::MutexLockGuard guard(g_lifecycle_lock);
+        auto it = g_active_instances.find(reinterpret_cast<RealSR*>(handle));
+        if (it != g_active_instances.end()) {
+            realsr = *it;
+            g_active_instances.erase(it);
+        }
+    }
+    if (realsr) {
+        try {
+            delete realsr;
+        } catch (...) {
+            LOGE("Exception in ~RealSR during destroyInstance");
+        }
+    }
 }
 
 JNIEXPORT jint JNICALL
@@ -244,17 +273,40 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     jstring paramPath, jstring binPath,
     jint scale, jint tilesize, jint prepadding
 ) {
-    RealSR* realsr = reinterpret_cast<RealSR*>(handle);
-    if (!realsr) return -1;
+    RealSR* realsr = nullptr;
+    {
+        ncnn::MutexLockGuard guard(g_lifecycle_lock);
+        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
+            realsr = reinterpret_cast<RealSR*>(handle);
+        }
+    }
+    if (!realsr) {
+        LOGE("nativeLoadModel: invalid or destroyed RealSR handle %lld", (long long)handle);
+        return -1;
+    }
 
     const char* param_str = env->GetStringUTFChars(paramPath, nullptr);
     const char* bin_str = env->GetStringUTFChars(binPath, nullptr);
+    if (!param_str || !bin_str) {
+        if (param_str) env->ReleaseStringUTFChars(paramPath, param_str);
+        if (bin_str) env->ReleaseStringUTFChars(binPath, bin_str);
+        return -1;
+    }
 
     realsr->scale = scale;
     realsr->tilesize = tilesize;
     realsr->prepadding = prepadding;
 
-    int ret = realsr->load(param_str, bin_str);
+    int ret = -1;
+    try {
+        ret = realsr->load(param_str, bin_str);
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeLoadModel: bad_alloc");
+        ret = -11;
+    } catch (...) {
+        LOGE("nativeLoadModel: unknown exception");
+        ret = -1;
+    }
 
     env->ReleaseStringUTFChars(paramPath, param_str);
     env->ReleaseStringUTFChars(binPath, bin_str);
@@ -268,8 +320,17 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     jobject inputDirectBuffer, jint width, jint height, jint channels,
     jobject rowCallback, jobject progressCallback
 ) {
-    RealSR* realsr = reinterpret_cast<RealSR*>(handle);
-    if (!realsr) return -1;
+    RealSR* realsr = nullptr;
+    {
+        ncnn::MutexLockGuard guard(g_lifecycle_lock);
+        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
+            realsr = reinterpret_cast<RealSR*>(handle);
+        }
+    }
+    if (!realsr) {
+        LOGE("nativeProcessStreaming: invalid or destroyed RealSR handle %lld", (long long)handle);
+        return -1;
+    }
 
     const unsigned char* pixeldata = static_cast<const unsigned char*>(
         env->GetDirectBufferAddress(inputDirectBuffer)
@@ -288,18 +349,29 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     udata.channels = channels;
     udata.has_exception = false;
 
-    int ret = realsr->process_streaming(
-        pixeldata, width, height, channels,
-        jni_row_callback,
-        progressCallback ? jni_progress_callback : nullptr,
-        &udata
-    );
+    try {
+        int ret = realsr->process_streaming(
+            pixeldata, width, height, channels,
+            jni_row_callback,
+            progressCallback ? jni_progress_callback : nullptr,
+            &udata
+        );
 
-    if (udata.has_exception || env->ExceptionCheck()) {
+        if (udata.has_exception || env->ExceptionCheck()) {
+            return -12;
+        }
+        if (ret == 1) {
+            return -10;
+        }
+
+        return ret;
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeProcessStreaming: out of memory");
+        return -11;
+    } catch (...) {
+        LOGE("nativeProcessStreaming: exception");
         return -1;
     }
-
-    return ret;
 }
 
 JNIEXPORT jint JNICALL
@@ -308,8 +380,17 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     jint width, jint height, jint channels,
     jobject stripCallback, jobject rowCallback, jobject progressCallback
 ) {
-    RealSR* realsr = reinterpret_cast<RealSR*>(handle);
-    if (!realsr) return -1;
+    RealSR* realsr = nullptr;
+    {
+        ncnn::MutexLockGuard guard(g_lifecycle_lock);
+        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
+            realsr = reinterpret_cast<RealSR*>(handle);
+        }
+    }
+    if (!realsr) {
+        LOGE("nativeProcessStripStreaming: invalid or destroyed RealSR handle %lld", (long long)handle);
+        return -1;
+    }
 
     CallbackUserData udata;
     udata.env = env;
@@ -320,19 +401,33 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     udata.channels = channels;
     udata.has_exception = false;
 
-    int ret = realsr->process_strip_streaming(
-        width, height, channels,
-        jni_strip_callback,
-        jni_row_callback,
-        progressCallback ? jni_progress_callback : nullptr,
-        &udata
-    );
+    try {
+        int ret = realsr->process_strip_streaming(
+            width, height, channels,
+            jni_strip_callback,
+            jni_row_callback,
+            progressCallback ? jni_progress_callback : nullptr,
+            &udata
+        );
 
-    if (udata.has_exception || env->ExceptionCheck()) {
+        if (udata.has_exception || env->ExceptionCheck()) {
+            return -12; // JNI callback exception
+        }
+        if (ret == 1) {
+            return -10; // Explicit user cancellation
+        }
+
+        return ret;
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeProcessStripStreaming: out of memory");
+        return -11;
+    } catch (const std::exception& e) {
+        LOGE("nativeProcessStripStreaming C++ exception: %s", e.what());
+        return -1;
+    } catch (...) {
+        LOGE("nativeProcessStripStreaming unknown exception");
         return -1;
     }
-
-    return ret;
 }
 
 } // extern "C"

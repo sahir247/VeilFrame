@@ -1346,7 +1346,7 @@ class ImageUpscalerController(
      * In-memory results keep the full bitmap for saving; the view gets a copy.
      */
     private fun displayBitmapFor(output: com.veilframe.app.upscale.inference.UpscaleOutput): Bitmap {
-        val bmp = output.previewBitmap()
+        val bmp = output.previewBitmap() ?: return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         val maxEdge = maxOf(bmp.width, bmp.height)
         if (maxEdge <= 4096) return bmp
         val scale = 4096f / maxEdge
