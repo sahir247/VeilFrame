@@ -3,6 +3,9 @@
 
 #include <jni.h>
 #include <string>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <android/log.h>
 #include "realsr.h"
 
