@@ -177,6 +177,20 @@ class UpscaleResourceEstimatorTest {
     }
 
     @Test
+    fun testRuntimeMemoryBudgetTracksAvailableMemoryAndLowMemorySignal() {
+        val gib = 1024L * 1024L * 1024L
+        val mib = 1024L * 1024L
+
+        assertEquals(
+            UpscaleResourceEstimator.MAX_TOTAL_WORKING_BYTES,
+            UpscaleResourceEstimator.totalBudgetForAvailableMemory(2L * gib, lowMemory = false)
+        )
+        assertEquals(75L * mib, UpscaleResourceEstimator.totalBudgetForAvailableMemory(300L * mib, lowMemory = false))
+        assertEquals(50L * mib, UpscaleResourceEstimator.totalBudgetForAvailableMemory(300L * mib, lowMemory = true))
+        assertEquals(0L, UpscaleResourceEstimator.totalBudgetForAvailableMemory(0L, lowMemory = false))
+    }
+
+    @Test
     fun testDiskSpace_SufficientSpacePasses() {
         val cacheDir = tempFolder.newFolder("cache")
         val plan = UpscaleResourceEstimator.estimateAndPlan(
