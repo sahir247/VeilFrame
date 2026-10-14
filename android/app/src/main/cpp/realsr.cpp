@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+#include <unistd.h>
 #include <android/log.h>
 #define LOGD(...) __android_log_print(ANDROID_LOG_INFO, "VeilFrame.NativeSR", __VA_ARGS__)
 
@@ -385,6 +386,9 @@ int RealSR::process_streaming(
                 if (sret != 0) return sret;
                 int rret = cmd.reset();
                 if (rret != 0) return rret;
+#ifdef __ANDROID__
+                usleep(15000); // 15ms yield to allow SurfaceFlinger / GPU scheduler to service UI
+#endif
             }
 
             if (prog_cb) {
@@ -417,6 +421,9 @@ int RealSR::process_streaming(
                 return cb_ret; // Non-zero indicates cancellation or consumer abort
             }
         }
+#ifdef __ANDROID__
+        usleep(10000); // 10ms yield between horizontal bands
+#endif
     }
 
     return 0;
@@ -726,6 +733,9 @@ int RealSR::process_strip_streaming(
                 if (reset_ret != 0) {
                     return reset_ret;
                 }
+#ifdef __ANDROID__
+                usleep(15000); // 15ms yield to allow SurfaceFlinger / GPU scheduler to service UI
+#endif
             }
 
             if (prog_cb) {
@@ -768,6 +778,9 @@ int RealSR::process_strip_streaming(
                 return cb_ret;
             }
         }
+#ifdef __ANDROID__
+        usleep(10000); // 10ms yield between horizontal bands
+#endif
     }
 
     return 0;

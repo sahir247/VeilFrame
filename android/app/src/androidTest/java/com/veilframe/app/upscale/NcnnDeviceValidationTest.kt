@@ -203,6 +203,80 @@ class NcnnDeviceValidationTest {
         }
     }
 
+    @Test
+    fun test04_UserWhatsAppClashOfClans_1280x960_4x() {
+        runBlocking {
+            Log.i(TAG, "=== USER WHATSAPP IMAGE 1280x960 REAL-ESRGAN-X4PLUS (4X -> 5120x3840) ===")
+            val inputFile = File("/data/local/tmp/veilframe_validation/real_inputs/IMG-20261013-WA0005.jpg")
+            assertTrue("Input file IMG-20261013-WA0005.jpg must exist on device", inputFile.exists())
+            val inputBitmap = BitmapFactory.decodeFile(inputFile.absolutePath)
+            assertNotNull("Failed to decode input bitmap", inputBitmap)
+            assertEquals("Input width must be 1280", 1280, inputBitmap.width)
+            assertEquals("Input height must be 960", 960, inputBitmap.height)
+
+            val inputArtifact = File(artifactsDir, "real_input_user_wa_clash_1280x960.png")
+            FileOutputStream(inputArtifact).use { out ->
+                inputBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            Log.i(TAG, "Saved user input artifact to ${inputArtifact.absolutePath} (${inputArtifact.length()} bytes)")
+
+            val targetModel = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+            val expectedW = 1280 * 4
+            val expectedH = 960 * 4
+
+            val t0 = System.nanoTime()
+            val pssBefore = Debug.getPss()
+
+            var lastReportedTile = 0
+            val output = engine.upscale(
+                source = BitmapSource(inputBitmap),
+                model = targetModel,
+                targetScale = 4,
+                params = UpscaleInferenceParams(chunkSize = 160),
+                listener = object : com.veilframe.app.upscale.inference.UpscaleInferenceEngine.InferenceProgressListener {
+                    override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
+                        if (currentTile != lastReportedTile) {
+                            lastReportedTile = currentTile
+                            Log.i(TAG, "UserWA Upscale Progress: Tile $currentTile of $totalTiles ($percent%)")
+                        }
+                    }
+
+                    override fun onStatus(message: String) {
+                        Log.i(TAG, "UserWA Status: $message")
+                    }
+
+                    override fun onStage(stage: String, currentTile: Int, totalTiles: Int) {
+                        Log.d(TAG, "UserWA Stage: $stage ($currentTile/$totalTiles)")
+                    }
+                }
+            ) as UpscaleOutput.Streamed
+
+            val t1 = System.nanoTime()
+            val pssAfter = Debug.getPss()
+            val elapsedMs = (t1 - t0) / 1_000_000
+            val totalMegaPixels = (expectedW.toLong() * expectedH.toLong()) / 1_000_000.0
+            val throughputMpS = totalMegaPixels / (elapsedMs / 1000.0)
+
+            val mpStr = String.format(java.util.Locale.US, "%.2f", totalMegaPixels)
+            val tpStr = String.format(java.util.Locale.US, "%.2f", throughputMpS)
+            Log.i(TAG, "=== USER WA UPSCALE COMPLETED SUCCESSFULLY ===")
+            Log.i(TAG, "Elapsed time: ${elapsedMs}ms (${elapsedMs / 1000.0}s)")
+            Log.i(TAG, "Output resolution: ${output.width}x${output.height} (~$mpStr MP)")
+            Log.i(TAG, "Throughput: $tpStr MP/s")
+            Log.i(TAG, "PSS Memory delta: ${pssAfter - pssBefore} kB")
+
+            assertEquals("Width mismatch", expectedW, output.width)
+            assertEquals("Height mismatch", expectedH, output.height)
+            assertTrue("Output file must exist", output.file.exists())
+            assertTrue("Output file must be non-empty", output.file.length() > 0)
+            NcnnUpscaleEngine.validatePngFile(output.file, expectedW, expectedH)
+
+            val outputArtifact = File(artifactsDir, "real_output_gpu_user_wa_clash_5120x3840.png")
+            output.file.copyTo(outputArtifact, overwrite = true)
+            Log.i(TAG, "Saved user output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
+        }
+    }
+
     private data class RealTestCase(
         val name: String,
         val fileName: String,

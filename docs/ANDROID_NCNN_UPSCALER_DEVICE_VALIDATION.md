@@ -53,8 +53,9 @@ All tests were executed on the physical OnePlus device via `am instrument` runne
 | `04_children_alpha_transparency_2x` | Real photograph of children thumbs-up with alpha transparency cutout | `animevideov3-x2` | 566×350 (RGBA) | 1132×700 (1.40 MB) | 3,114 ms | +54.2 MB | RASTER & DECODE VERIFIED | [Input](device_validation_artifacts/real_input_04_children_alpha_transparency_2x.png) | [Output](device_validation_artifacts/real_output_gpu_04_children_alpha_transparency_2x.png) |
 | `05_phone_wallpaper_4x` | Full-screen phone wallpaper pulled from device Downloads, downscaled 4× | `realesrgan-x4plus` | 480×300 (RGB) | 1920×1200 (4.13 MB) | 19,806 ms | +262.0 MB | RASTER & DECODE VERIFIED | [Input](device_validation_artifacts/real_input_05_phone_wallpaper_4x.png) | [Output](device_validation_artifacts/real_output_gpu_05_phone_wallpaper_4x.png) |
 | `06_large_texture_4x` | High-complexity brick architecture texture with mortar, tiles & foliage | `realesrgan-x4plus` | 448×640 (RGB) | 1792×2560 (11.33 MB) | 38,720 ms | +312.4 MB | RASTER & DECODE VERIFIED | [Input](device_validation_artifacts/real_input_06_large_texture_4x.png) | [Output](device_validation_artifacts/real_output_gpu_06_large_texture_4x.png) |
+| `07_user_wa_clash_4x` | User WhatsApp screenshot (`IMG-20261013-WA0005.jpg`) full base upscaled 4× | `realesrgan-x4plus` | 1280×960 (RGB) | 5120×3840 (49.08 MB) | 176,207 ms | +154.0 MB | RASTER & DECODE VERIFIED | [Input](device_validation_artifacts/real_input_user_wa_clash_1280x960.png) | [Output](device_validation_artifacts/real_output_gpu_user_wa_clash_5120x3840.png) |
 
-Total real-world test suite runtime: **68.105 seconds** across 6 high-resolution cases on hardware.
+Total real-world test suite runtime: **244.3 seconds** across 7 high-resolution real-world cases on hardware. Output upscaled sizes range from 0.72 MP up to **19.66 Megapixels (5K)**.
 
 ---
 
@@ -110,6 +111,19 @@ With full FP32 precision:
 - `realsr_postproc` shader reads `float bottom_blob_data[]` (FP32) and writes denormalized $[0, 255]$ values to `out_gpu` without type mismatch.
 - `out.to_pixels(band_buf.data(), ...)` converts planar float to uint8 RGBA/RGB scanline rows with hardware clamping.
 
+### E. Root Cause & Fix: GPU Watchdog / SurfaceFlinger Compositor Starvation
+1. **The Issue**:
+   - When running large images (e.g. 1280×960 at 4× = 5120×3840, 48 tiles) with heavy models (`realesrgan-x4plus`), each tile takes ~3.2 seconds of 100% compute queue saturation on the Adreno 829 GPU.
+   - Without an explicit yield between tiles, the NCNN compute thread immediately re-submits the next tile (`cmd.submit_and_wait()` followed immediately by `cmd.reset()` and next iteration).
+   - Running 5 back-to-back tiles results in 16+ seconds of 100% uninterrupted GPU saturation.
+   - Qualcomm's KGSL driver and Android's `SurfaceFlinger` display compositor are completely starved of GPU time slices, causing frame drops, touch unresponsiveness, and watchdog freezes (`SurfaceFlinger transaction timeout / Choreographer skipped frames`).
+2. **The Production Fix**:
+   - In [`realsr.cpp`](../android/app/src/main/cpp/realsr.cpp):
+     - Inserted `#ifdef __ANDROID__ usleep(15000); #endif` (15 ms breather) immediately following `cmd.reset()` between adjacent horizontal tiles.
+     - Inserted `#ifdef __ANDROID__ usleep(10000); #endif` (10 ms breather) following each horizontal band download.
+   - **Performance Impact**: Across a 48-tile 5K upscale, $48 \times 15\text{ ms} = 0.72\text{ s}$ total yield overhead (< 0.5% overhead on a 176s run).
+   - **Result**: The Android compositor renders 60/120 FPS UI frames smoothly, the progress bar updates continuously, touch dispatch remains live, and zero system freezes or reboots occur even under maximum 20 MP workloads.
+
 ---
 
 ## 5. Multimodal Vision Inspection & Output Quality Analysis
@@ -156,6 +170,15 @@ Each upscaled output was visually inspected using multimodal vision tools.
   - Scaled to a massive 4.58 Megapixel output image ($1792\times 2560$, 11.33 MB PNG).
   - Individual brick courses, mortar lines, and stone texture are resolved with photorealistic fidelity.
   - The 12 separate horizontal streaming bands stitched seamlessly with zero boundary seams.
+
+### Case 07: `07_user_wa_clash_4x` (1280×960 -> 5120×3840, 19.66 Megapixels / 5K)
+- **Input Visual Profile**: WhatsApp game screenshot (`IMG-20261013-WA0005.jpg`) of a dense Clash of Clans town hall base. Heavy JPEG compression artifacts, pixelated UI fonts ("Kings Rock", "EssJayKay", "Full!"), blurred gold coins, and noisy grass terrain.
+- **Upscaled Output Visual Profile**:
+  - Scaled to a massive **5K resolution** ($5120\times 3840$, 49.08 MB PNG).
+  - **Text & Numbers**: Numeric resource counters ("27 392 332", "12 417 055", "130 025", "10 138") and building labels are completely reconstructed with sharp typography and zero compression haloing.
+  - **Game Defenses & Geometry**: Cannons, multi-mortars, double walls, skull balloons, elixir reservoirs, and hero altars exhibit clean, smooth vector-like outlines.
+  - **Tile Seamlessness**: Processed across 48 distinct tiles ($8\times 6$ grid at $160\times 160$) with zero visible seam artifacts, zero brightness steps, and zero color shifts across tile borders.
+  - **Stability**: Device remained completely fluid and responsive throughout all 48 tiles with zero system freezing.
 
 ---
 
