@@ -195,6 +195,29 @@ class NcnnUpscaleHardeningTest {
     }
 
     @Test
+    fun testPublishFileAtomically_UnsupportedAtomicMoveFailsWithoutFallback() {
+        val tempFile = tempFolder.newFile("atomic_unsupported.part")
+        tempFile.writeText("VALIDATED_CONTENT")
+        val finalFile = File(tempFolder.root, "atomic_unsupported.png")
+
+        try {
+            NcnnUpscaleEngine.publishFileAtomically(tempFile, finalFile) { source, target ->
+                throw java.nio.file.AtomicMoveNotSupportedException(
+                    source.toString(),
+                    target.toString(),
+                    "simulated filesystem limitation"
+                )
+            }
+            fail("Atomic-move unsupported must fail closed rather than fall back to a non-atomic copy")
+        } catch (e: ImageValidationException) {
+            assertTrue(e.message?.contains("does not support atomic") == true)
+        }
+
+        assertTrue("Temporary data must remain available for caller cleanup", tempFile.exists())
+        assertFalse("No partial/fallback final artifact may be created", finalFile.exists())
+    }
+
+    @Test
     fun testValidatePngFile_NonEmptyIendIsRejected() {
         val file = tempFolder.newFile("invalid_iend.png")
         val width = 5
