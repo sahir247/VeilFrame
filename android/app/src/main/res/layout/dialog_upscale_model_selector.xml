@@ -72,7 +72,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="8dp"
-                    android:text="Real-ESRGAN General 2× (AI • 33.8 MB)\nOptimized for real photos, textures, balanced performance"
+                    android:text="AnimeVideoV3 2× (NCNN • 1.3 MB)\nCompact anime and animation upscaling"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
 
@@ -81,7 +81,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="8dp"
-                    android:text="Real-ESRGAN General 4× (Legacy Standard • AI 33.8 MB)\nReliable general-purpose photo restoration"
+                    android:text="Real-ESRGAN x4plus (NCNN • 33.5 MB)\nGeneral-purpose photo and texture restoration"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
 
@@ -90,7 +90,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="8dp"
-                    android:text="Real-ESRGAN Anime 4× (AI • 9.1 MB)\nUltra-clean lines and vibrant tones for anime and art"
+                    android:text="AnimeVideoV3 4× (NCNN • 1.3 MB)\nClean anime lines and digital illustration"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
 
