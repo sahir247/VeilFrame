@@ -350,9 +350,7 @@ jobs:
           test -n "$ATTRS_XML" && test -s "$ATTRS_XML"
           test -n "$MARKER" && test -s "$MARKER"
 
-          SDK_ROOT=$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$MAT_JAVA")")")")")
-          # MAT_JAVA is .../java/org/opencv/core/Mat.java; the SDK root is two
-          # levels above java (jniLibs/java/res/.opencv-sdk-complete).
+          # The uploaded artifact keeps paths relative to android/opencv-sdk/src/main.
           SDK_ROOT="${MAT_JAVA%/java/org/opencv/core/Mat.java}"
           mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
           mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
