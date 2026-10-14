@@ -28,7 +28,8 @@ typedef int (*RowCallback)(const unsigned char* row_data, int row_index, int row
 
 // Callback type for progress updates:
 // (current_tile, total_tiles, percent, user_data)
-typedef void (*ProgressCallback)(int current_tile, int total_tiles, int percent, void* user_data);
+// Return 0 to continue, non-zero to cancel/abort.
+typedef int (*ProgressCallback)(int current_tile, int total_tiles, int percent, void* user_data);
 
 class RealSR
 {

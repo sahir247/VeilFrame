@@ -76,16 +76,40 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
     return ret;
 }
 
-static void jni_progress_callback(int current_tile, int total_tiles, int percent, void* user_data) {
+static int jni_progress_callback(int current_tile, int total_tiles, int percent, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
     if (!cb || !cb->env || !cb->progress_callback) {
-        return;
+        return 0;
     }
 
     cb->env->CallVoidMethod(cb->progress_callback, g_on_progress_method, current_tile, total_tiles, percent);
     if (cb->env->ExceptionCheck()) {
         cb->has_exception = true;
+        return -1; // Abort on Java exception without clearing it
     }
+    return 0;
+}
+
+static void release_cached_global_refs(JNIEnv* env) {
+    if (g_row_callback_class) {
+        env->DeleteGlobalRef(g_row_callback_class);
+        g_row_callback_class = nullptr;
+    }
+    g_on_row_method = nullptr;
+
+    if (g_progress_callback_class) {
+        env->DeleteGlobalRef(g_progress_callback_class);
+        g_progress_callback_class = nullptr;
+    }
+    g_on_progress_method = nullptr;
+
+    if (g_strip_callback_class) {
+        env->DeleteGlobalRef(g_strip_callback_class);
+        g_strip_callback_class = nullptr;
+    }
+    g_on_strip_method = nullptr;
+
+    ncnn::destroy_gpu_instance();
 }
 
 extern "C" {
@@ -97,48 +121,57 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
     jclass row_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnRowCallback");
     if (!row_cb_cls) {
         LOGE("Failed to find NcnnRowCallback class");
+        release_cached_global_refs(env);
         return -1;
     }
     g_row_callback_class = (jclass)env->NewGlobalRef(row_cb_cls);
     if (!g_row_callback_class) {
         LOGE("Failed to create global ref for NcnnRowCallback");
+        release_cached_global_refs(env);
         return -2;
     }
     g_on_row_method = env->GetMethodID(row_cb_cls, "onRow", "(Ljava/nio/ByteBuffer;III)I");
     if (!g_on_row_method) {
         LOGE("Failed to find onRow method");
+        release_cached_global_refs(env);
         return -3;
     }
 
     jclass prog_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnProgressCallback");
     if (!prog_cb_cls) {
         LOGE("Failed to find NcnnProgressCallback class");
+        release_cached_global_refs(env);
         return -4;
     }
     g_progress_callback_class = (jclass)env->NewGlobalRef(prog_cb_cls);
     if (!g_progress_callback_class) {
         LOGE("Failed to create global ref for NcnnProgressCallback");
+        release_cached_global_refs(env);
         return -5;
     }
     g_on_progress_method = env->GetMethodID(prog_cb_cls, "onProgress", "(III)V");
     if (!g_on_progress_method) {
         LOGE("Failed to find onProgress method");
+        release_cached_global_refs(env);
         return -6;
     }
 
     jclass strip_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnStripCallback");
     if (!strip_cb_cls) {
         LOGE("Failed to find NcnnStripCallback class");
+        release_cached_global_refs(env);
         return -7;
     }
     g_strip_callback_class = (jclass)env->NewGlobalRef(strip_cb_cls);
     if (!g_strip_callback_class) {
         LOGE("Failed to create global ref for NcnnStripCallback");
+        release_cached_global_refs(env);
         return -8;
     }
     g_on_strip_method = env->GetMethodID(strip_cb_cls, "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I");
     if (!g_on_strip_method) {
         LOGE("Failed to find onFetchStrip method");
+        release_cached_global_refs(env);
         return -9;
     }
 
@@ -148,19 +181,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
-    if (g_row_callback_class) {
-        env->DeleteGlobalRef(g_row_callback_class);
-        g_row_callback_class = nullptr;
-    }
-    if (g_progress_callback_class) {
-        env->DeleteGlobalRef(g_progress_callback_class);
-        g_progress_callback_class = nullptr;
-    }
-    if (g_strip_callback_class) {
-        env->DeleteGlobalRef(g_strip_callback_class);
-        g_strip_callback_class = nullptr;
-    }
-    ncnn::destroy_gpu_instance();
+    release_cached_global_refs(env);
     LOGI("NCNN global destroyed");
 }
 

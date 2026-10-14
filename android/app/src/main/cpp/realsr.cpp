@@ -120,7 +120,12 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
             }
             realsr_preproc = new ncnn::Pipeline(vkdev);
             realsr_preproc->set_optimal_local_size_xyz(8, 8, 3);
-            realsr_preproc->create(spirv.data(), spirv.size() * 4, specializations);
+            int pret = realsr_preproc->create(spirv.data(), spirv.size() * 4, specializations);
+            if (pret != 0) {
+                delete realsr_preproc;
+                realsr_preproc = nullptr;
+                return -5;
+            }
         }
 
         {
@@ -137,36 +142,62 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
             }
             realsr_postproc = new ncnn::Pipeline(vkdev);
             realsr_postproc->set_optimal_local_size_xyz(8, 8, 3);
-            realsr_postproc->create(spirv.data(), spirv.size() * 4, specializations);
+            int pret = realsr_postproc->create(spirv.data(), spirv.size() * 4, specializations);
+            if (pret != 0) {
+                delete realsr_postproc;
+                realsr_postproc = nullptr;
+                delete realsr_preproc;
+                realsr_preproc = nullptr;
+                return -6;
+            }
         }
     }
 
     // Alpha channel interpolation layers
-    if (scale == 2) {
-        bicubic_2x = ncnn::create_layer("Interp");
-        bicubic_2x->vkdev = vkdev;
-        ncnn::ParamDict pd;
-        pd.set(0, 3); pd.set(1, 2.f); pd.set(2, 2.f);
-        bicubic_2x->load_param(pd);
-        bicubic_2x->create_pipeline(net.opt);
-    } else if (scale == 3) {
-        bicubic_3x = ncnn::create_layer("Interp");
-        bicubic_3x->vkdev = vkdev;
-        ncnn::ParamDict pd;
-        pd.set(0, 3); pd.set(1, 3.f); pd.set(2, 3.f);
-        bicubic_3x->load_param(pd);
-        bicubic_3x->create_pipeline(net.opt);
-    } else {
-        bicubic_4x = ncnn::create_layer("Interp");
-        bicubic_4x->vkdev = vkdev;
-        ncnn::ParamDict pd;
-        pd.set(0, 3); pd.set(1, 4.f); pd.set(2, 4.f);
-        bicubic_4x->load_param(pd);
-        bicubic_4x->create_pipeline(net.opt);
+    ncnn::Layer*& interp_layer = (scale == 2) ? bicubic_2x : ((scale == 3) ? bicubic_3x : bicubic_4x);
+    interp_layer = ncnn::create_layer("Interp");
+    if (!interp_layer) {
+        delete realsr_preproc;
+        realsr_preproc = nullptr;
+        delete realsr_postproc;
+        realsr_postproc = nullptr;
+        return -7;
+    }
+    interp_layer->vkdev = vkdev;
+    ncnn::ParamDict pd;
+    pd.set(0, 3); pd.set(1, (float)scale); pd.set(2, (float)scale);
+    interp_layer->load_param(pd);
+    int iret = interp_layer->create_pipeline(net.opt);
+    if (iret != 0) {
+        delete interp_layer;
+        interp_layer = nullptr;
+        delete realsr_preproc;
+        realsr_preproc = nullptr;
+        delete realsr_postproc;
+        realsr_postproc = nullptr;
+        return -8;
     }
 
     return 0;
 }
+
+namespace {
+struct VulkanAllocatorGuard {
+    ncnn::VulkanDevice* dev;
+    ncnn::VkAllocator* blob;
+    ncnn::VkAllocator* staging;
+    VulkanAllocatorGuard(ncnn::VulkanDevice* d, ncnn::VkAllocator* b, ncnn::VkAllocator* s)
+        : dev(d), blob(b), staging(s) {}
+    ~VulkanAllocatorGuard() {
+        if (dev) {
+            if (blob) dev->reclaim_blob_allocator(blob);
+            if (staging) dev->reclaim_staging_allocator(staging);
+        }
+    }
+    VulkanAllocatorGuard(const VulkanAllocatorGuard&) = delete;
+    VulkanAllocatorGuard& operator=(const VulkanAllocatorGuard&) = delete;
+};
+} // namespace
 
 int RealSR::process_streaming(
     const unsigned char* pixeldata, int w, int h, int channels,
@@ -182,6 +213,7 @@ int RealSR::process_streaming(
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
     ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
+    VulkanAllocatorGuard alloc_guard(vkdev, blob_vkallocator, staging_vkallocator);
 
     ncnn::Option opt = net.opt;
     opt.blob_vkallocator = blob_vkallocator;
@@ -193,6 +225,7 @@ int RealSR::process_streaming(
     const int total_tiles = xtiles * ytiles;
 
     size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
+    std::vector<unsigned char> band_buf((size_t)w * scale * TILE_SIZE_Y * scale * channels);
 
     for (int yi = 0; yi < ytiles; yi++) {
         const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
@@ -288,8 +321,10 @@ int RealSR::process_streaming(
                 ex.set_blob_vkallocator(blob_vkallocator);
                 ex.set_workspace_vkallocator(blob_vkallocator);
                 ex.set_staging_vkallocator(staging_vkallocator);
-                ex.input(net_input_name.c_str(), in_tile_gpu);
-                ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
+                int in_ret = ex.input(net_input_name.c_str(), in_tile_gpu);
+                if (in_ret != 0) return in_ret;
+                int ext_ret = ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
+                if (ext_ret != 0) return ext_ret;
             }
 
             ncnn::VkMat out_alpha_tile_gpu;
@@ -332,27 +367,30 @@ int RealSR::process_streaming(
             cmd.record_pipeline(realsr_postproc, postproc_bindings, postproc_constants, postproc_dispatcher);
 
             if (xtiles > 1) {
-                cmd.submit_and_wait();
+                int sret = cmd.submit_and_wait();
+                if (sret != 0) return sret;
                 cmd.reset();
             }
 
             if (prog_cb) {
                 int current_tile = yi * xtiles + xi + 1;
                 int percent = (current_tile * 100) / total_tiles;
-                prog_cb(current_tile, total_tiles, percent, user_data);
+                int pret = prog_cb(current_tile, total_tiles, percent, user_data);
+                if (pret != 0) return pret;
             }
         }
 
         // Download completed horizontal band and stream row-by-row
-        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
         ncnn::Mat out;
         if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
             out = ncnn::Mat(out_gpu.w, out_gpu.h, band_buf.data(), (size_t)channels, 1, opt.blob_allocator);
             cmd.record_clone(out_gpu, out, opt);
-            cmd.submit_and_wait();
+            int sret = cmd.submit_and_wait();
+            if (sret != 0) return sret;
         } else {
             cmd.record_clone(out_gpu, out, opt);
-            cmd.submit_and_wait();
+            int sret = cmd.submit_and_wait();
+            if (sret != 0) return sret;
             out.to_pixels(band_buf.data(), channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB);
         }
 
@@ -361,15 +399,10 @@ int RealSR::process_streaming(
             const unsigned char* row_ptr = band_buf.data() + (size_t)r * out_band_w * channels;
             int cb_ret = row_cb(row_ptr, abs_row, out_band_w, channels, user_data);
             if (cb_ret != 0) {
-                vkdev->reclaim_blob_allocator(blob_vkallocator);
-                vkdev->reclaim_staging_allocator(staging_vkallocator);
                 return cb_ret; // Non-zero indicates cancellation or consumer abort
             }
         }
     }
-
-    vkdev->reclaim_blob_allocator(blob_vkallocator);
-    vkdev->reclaim_staging_allocator(staging_vkallocator);
 
     return 0;
 }
@@ -386,6 +419,8 @@ int RealSR::process_streaming_cpu(
     const int ytiles = (h + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
     const int total_tiles = xtiles * ytiles;
 
+    std::vector<unsigned char> band_buf((size_t)w * scale * TILE_SIZE_Y * scale * channels);
+
     for (int yi = 0; yi < ytiles; yi++) {
         const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
         const int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
@@ -394,18 +429,18 @@ int RealSR::process_streaming_cpu(
         const int out_band_h = (out_tile_y1 - out_tile_y0) * scale;
         const int out_band_w = w * scale;
 
-        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
-
         for (int xi = 0; xi < xtiles; xi++) {
             const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
             const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
+            const int in_tw = in_tile_x1 - in_tile_x0;
+            const int in_th = in_tile_y1 - in_tile_y0;
 
             ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
                 pixeldata,
                 channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
                 w, h,
                 in_tile_x0, in_tile_y0,
-                in_tile_x1 - in_tile_x0, in_tile_y1 - in_tile_y0
+                in_tw, in_th
             );
 
             // Scale to [0, 1]
@@ -441,6 +476,32 @@ int RealSR::process_streaming_cpu(
             std::vector<unsigned char> tile_pixels((size_t)crop_w * crop_h * 3);
             cropped.to_pixels(tile_pixels.data(), ncnn::Mat::PIXEL_RGB);
 
+            std::vector<float> alpha_cropped;
+            if (channels == 4) {
+                ncnn::Mat in_alpha(in_tw, in_th, 1);
+                for (int y = 0; y < in_th; y++) {
+                    const unsigned char* p = pixeldata + ((size_t)(in_tile_y0 + y) * w + in_tile_x0) * 4;
+                    float* aptr = in_alpha.row(y);
+                    for (int x = 0; x < in_tw; x++) {
+                        aptr[x] = p[x * 4 + 3];
+                    }
+                }
+
+                ncnn::Mat out_alpha;
+                ncnn::resize_bicubic(in_alpha, out_alpha, in_tw * scale, in_th * scale);
+
+                ncnn::Mat cropped_alpha;
+                ncnn::copy_cut_border(out_alpha, cropped_alpha, crop_y0, out_alpha.h - crop_y0 - crop_h, crop_x0, out_alpha.w - crop_x0 - crop_w);
+
+                alpha_cropped.resize((size_t)crop_w * crop_h);
+                for (int y = 0; y < crop_h; y++) {
+                    const float* aptr = cropped_alpha.row(y);
+                    for (int x = 0; x < crop_w; x++) {
+                        alpha_cropped[(size_t)y * crop_w + x] = aptr[x];
+                    }
+                }
+            }
+
             const int dst_x_offset = xi * TILE_SIZE_X * scale;
             for (int r = 0; r < crop_h; r++) {
                 unsigned char* dst_row = band_buf.data() + ((size_t)r * out_band_w + dst_x_offset) * channels;
@@ -448,11 +509,13 @@ int RealSR::process_streaming_cpu(
                 if (channels == 3) {
                     memcpy(dst_row, src_row, (size_t)crop_w * 3);
                 } else {
+                    const float* a_row = alpha_cropped.data() + (size_t)r * crop_w;
                     for (int c = 0; c < crop_w; c++) {
                         dst_row[c * 4] = src_row[c * 3];
                         dst_row[c * 4 + 1] = src_row[c * 3 + 1];
                         dst_row[c * 4 + 2] = src_row[c * 3 + 2];
-                        dst_row[c * 4 + 3] = 255;
+                        float a = a_row[c];
+                        dst_row[c * 4 + 3] = (unsigned char)std::max(0.0f, std::min(255.0f, a + 0.5f));
                     }
                 }
             }
@@ -460,7 +523,8 @@ int RealSR::process_streaming_cpu(
             if (prog_cb) {
                 int current_tile = yi * xtiles + xi + 1;
                 int percent = (current_tile * 100) / total_tiles;
-                prog_cb(current_tile, total_tiles, percent, user_data);
+                int pret = prog_cb(current_tile, total_tiles, percent, user_data);
+                if (pret != 0) return pret;
             }
         }
 
@@ -492,6 +556,7 @@ int RealSR::process_strip_streaming(
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
     ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
+    VulkanAllocatorGuard alloc_guard(vkdev, blob_vkallocator, staging_vkallocator);
 
     ncnn::Option opt = net.opt;
     opt.blob_vkallocator = blob_vkallocator;
@@ -503,6 +568,7 @@ int RealSR::process_strip_streaming(
 
     const int max_in_band_h = TILE_SIZE_Y + 2 * prepadding;
     std::vector<unsigned char> strip_buf((size_t)w * max_in_band_h * channels);
+    std::vector<unsigned char> band_buf((size_t)w * scale * TILE_SIZE_Y * scale * channels);
 
     for (int yi = 0; yi < ytiles; yi++) {
         const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
@@ -516,8 +582,6 @@ int RealSR::process_strip_streaming(
         // Fetch input strip [0, in_tile_y0, w, in_band_h] from consumer
         int sret = strip_cb(strip_buf.data(), in_tile_y0, in_band_h, user_data);
         if (sret != 0) {
-            vkdev->reclaim_blob_allocator(blob_vkallocator);
-            vkdev->reclaim_staging_allocator(staging_vkallocator);
             return sret;
         }
 
@@ -576,8 +640,10 @@ int RealSR::process_strip_streaming(
                 ex.set_blob_vkallocator(blob_vkallocator);
                 ex.set_workspace_vkallocator(blob_vkallocator);
                 ex.set_staging_vkallocator(staging_vkallocator);
-                ex.input(net_input_name.c_str(), in_tile_gpu);
-                ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
+                int in_ret = ex.input(net_input_name.c_str(), in_tile_gpu);
+                if (in_ret != 0) return in_ret;
+                int ext_ret = ex.extract(net_output_name.c_str(), out_tile_gpu, cmd);
+                if (ext_ret != 0) return ext_ret;
             }
 
             ncnn::VkMat out_alpha_tile_gpu;
@@ -622,8 +688,6 @@ int RealSR::process_strip_streaming(
             if (xtiles > 1) {
                 int submit_ret = cmd.submit_and_wait();
                 if (submit_ret != 0) {
-                    vkdev->reclaim_blob_allocator(blob_vkallocator);
-                    vkdev->reclaim_staging_allocator(staging_vkallocator);
                     return submit_ret;
                 }
                 cmd.reset();
@@ -632,28 +696,24 @@ int RealSR::process_strip_streaming(
             if (prog_cb) {
                 int current_tile = yi * xtiles + xi + 1;
                 int percent = (current_tile * 100) / total_tiles;
-                prog_cb(current_tile, total_tiles, percent, user_data);
+                int pret = prog_cb(current_tile, total_tiles, percent, user_data);
+                if (pret != 0) return pret;
             }
         }
 
         // Download completed horizontal band and stream row-by-row
-        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
         ncnn::Mat out;
         if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
             out = ncnn::Mat(out_gpu.w, out_gpu.h, band_buf.data(), (size_t)channels, 1, opt.blob_allocator);
             cmd.record_clone(out_gpu, out, opt);
             int submit_ret = cmd.submit_and_wait();
             if (submit_ret != 0) {
-                vkdev->reclaim_blob_allocator(blob_vkallocator);
-                vkdev->reclaim_staging_allocator(staging_vkallocator);
                 return submit_ret;
             }
         } else {
             cmd.record_clone(out_gpu, out, opt);
             int submit_ret = cmd.submit_and_wait();
             if (submit_ret != 0) {
-                vkdev->reclaim_blob_allocator(blob_vkallocator);
-                vkdev->reclaim_staging_allocator(staging_vkallocator);
                 return submit_ret;
             }
             out.to_pixels(band_buf.data(), channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB);
@@ -664,15 +724,10 @@ int RealSR::process_strip_streaming(
             const unsigned char* row_ptr = band_buf.data() + (size_t)r * out_band_w * channels;
             int cb_ret = row_cb(row_ptr, abs_row, out_band_w, channels, user_data);
             if (cb_ret != 0) {
-                vkdev->reclaim_blob_allocator(blob_vkallocator);
-                vkdev->reclaim_staging_allocator(staging_vkallocator);
                 return cb_ret;
             }
         }
     }
-
-    vkdev->reclaim_blob_allocator(blob_vkallocator);
-    vkdev->reclaim_staging_allocator(staging_vkallocator);
 
     return 0;
 }
@@ -691,6 +746,7 @@ int RealSR::process_strip_streaming_cpu(
 
     const int max_in_band_h = TILE_SIZE_Y + 2 * prepadding;
     std::vector<unsigned char> strip_buf((size_t)w * max_in_band_h * channels);
+    std::vector<unsigned char> band_buf((size_t)w * scale * TILE_SIZE_Y * scale * channels);
 
     for (int yi = 0; yi < ytiles; yi++) {
         const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
@@ -705,8 +761,6 @@ int RealSR::process_strip_streaming_cpu(
         if (sret != 0) {
             return sret;
         }
-
-        std::vector<unsigned char> band_buf((size_t)out_band_w * out_band_h * channels);
 
         for (int xi = 0; xi < xtiles; xi++) {
             const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
@@ -754,6 +808,32 @@ int RealSR::process_strip_streaming_cpu(
             std::vector<unsigned char> tile_pixels((size_t)crop_w * crop_h * 3);
             cropped.to_pixels(tile_pixels.data(), ncnn::Mat::PIXEL_RGB);
 
+            std::vector<float> alpha_cropped;
+            if (channels == 4) {
+                ncnn::Mat in_alpha(in_tile_w, in_band_h, 1);
+                for (int y = 0; y < in_band_h; y++) {
+                    const unsigned char* p = strip_buf.data() + ((size_t)y * w + in_tile_x0) * 4;
+                    float* aptr = in_alpha.row(y);
+                    for (int x = 0; x < in_tile_w; x++) {
+                        aptr[x] = p[x * 4 + 3];
+                    }
+                }
+
+                ncnn::Mat out_alpha;
+                ncnn::resize_bicubic(in_alpha, out_alpha, in_tile_w * scale, in_band_h * scale);
+
+                ncnn::Mat cropped_alpha;
+                ncnn::copy_cut_border(out_alpha, cropped_alpha, crop_y0, out_alpha.h - crop_y0 - crop_h, crop_x0, out_alpha.w - crop_x0 - crop_w);
+
+                alpha_cropped.resize((size_t)crop_w * crop_h);
+                for (int y = 0; y < crop_h; y++) {
+                    const float* aptr = cropped_alpha.row(y);
+                    for (int x = 0; x < crop_w; x++) {
+                        alpha_cropped[(size_t)y * crop_w + x] = aptr[x];
+                    }
+                }
+            }
+
             const int dst_x_offset = xi * TILE_SIZE_X * scale;
             for (int r = 0; r < crop_h; r++) {
                 unsigned char* dst_row = band_buf.data() + ((size_t)r * out_band_w + dst_x_offset) * channels;
@@ -761,11 +841,13 @@ int RealSR::process_strip_streaming_cpu(
                 if (channels == 3) {
                     memcpy(dst_row, src_row, (size_t)crop_w * 3);
                 } else {
+                    const float* a_row = alpha_cropped.data() + (size_t)r * crop_w;
                     for (int c = 0; c < crop_w; c++) {
                         dst_row[c * 4] = src_row[c * 3];
                         dst_row[c * 4 + 1] = src_row[c * 3 + 1];
                         dst_row[c * 4 + 2] = src_row[c * 3 + 2];
-                        dst_row[c * 4 + 3] = 255;
+                        float a = a_row[c];
+                        dst_row[c * 4 + 3] = (unsigned char)std::max(0.0f, std::min(255.0f, a + 0.5f));
                     }
                 }
             }
@@ -773,7 +855,8 @@ int RealSR::process_strip_streaming_cpu(
             if (prog_cb) {
                 int current_tile = yi * xtiles + xi + 1;
                 int percent = (current_tile * 100) / total_tiles;
-                prog_cb(current_tile, total_tiles, percent, user_data);
+                int pret = prog_cb(current_tile, total_tiles, percent, user_data);
+                if (pret != 0) return pret;
             }
         }
 
