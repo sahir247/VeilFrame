@@ -95,143 +95,284 @@ static int jni_progress_callback(int current_tile, int total_tiles, int percent,
 #include <atomic>
 #include <new>
 #include <exception>
+#include <mutex>
+#include <condition_variable>
+#include <utility>
+#include <limits>
 
-static std::unordered_map<jlong, std::shared_ptr<RealSR>> g_instance_registry;
+namespace {
+
+enum class RuntimeState {
+    UNINITIALIZED,
+    INITIALIZING,
+    READY,
+    STOPPING
+};
+
+struct NativeInstance {
+    NativeInstance(int gpuid, bool tta_mode, int num_threads)
+        : engine(std::make_shared<RealSR>(gpuid, tta_mode, num_threads)) {}
+
+    std::shared_ptr<RealSR> engine;
+    std::mutex call_mutex; // RealSR/NCNN instance methods are not concurrently re-entrant.
+};
+
+static std::unordered_map<jlong, std::shared_ptr<NativeInstance>> g_instance_registry;
 static std::atomic<jlong> g_next_handle{1};
-static bool g_is_initialized = false;
-static ncnn::Mutex g_lifecycle_lock;
+static RuntimeState g_runtime_state = RuntimeState::UNINITIALIZED;
+static size_t g_active_operations = 0;
+static std::mutex g_lifecycle_mutex;
+static std::condition_variable g_lifecycle_cv;
+
+class OperationLease {
+public:
+    OperationLease() = default;
+    explicit OperationLease(bool active) : active_(active) {}
+    OperationLease(const OperationLease&) = delete;
+    OperationLease& operator=(const OperationLease&) = delete;
+
+    OperationLease(OperationLease&& other) noexcept : active_(other.active_) {
+        other.active_ = false;
+    }
+
+    OperationLease& operator=(OperationLease&& other) noexcept {
+        if (this != &other) {
+            release();
+            active_ = other.active_;
+            other.active_ = false;
+        }
+        return *this;
+    }
+
+    ~OperationLease() { release(); }
+
+private:
+    void release() noexcept {
+        if (!active_) return;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            if (g_active_operations > 0) --g_active_operations;
+        }
+        active_ = false;
+        g_lifecycle_cv.notify_all();
+    }
+
+    bool active_ = false;
+};
+
+struct InstanceLease {
+    OperationLease operation;
+    std::shared_ptr<NativeInstance> instance;
+    explicit operator bool() const { return instance != nullptr; }
+};
+
+static InstanceLease acquire_instance(jlong handle) {
+    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+    if (g_runtime_state != RuntimeState::READY) return {};
+    auto it = g_instance_registry.find(handle);
+    if (it == g_instance_registry.end()) return {};
+    ++g_active_operations;
+    return InstanceLease{OperationLease(true), it->second};
+}
+
+static bool initialize_callback_method(
+    JNIEnv* env,
+    const char* class_name,
+    const char* method_name,
+    const char* signature,
+    jclass* global_class,
+    jmethodID* method_id
+) {
+    jclass local_class = env->FindClass(class_name);
+    if (!local_class) {
+        // This API reports initialization errors by status code; do not leave a
+        // pending exception that would make the status contract ambiguous.
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return false;
+    }
+
+    *global_class = static_cast<jclass>(env->NewGlobalRef(local_class));
+    if (!*global_class) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(local_class);
+        return false;
+    }
+
+    *method_id = env->GetMethodID(local_class, method_name, signature);
+    env->DeleteLocalRef(local_class);
+    if (!*method_id) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteGlobalRef(*global_class);
+        *global_class = nullptr;
+        return false;
+    }
+    return true;
+}
 
 static void release_cached_global_refs(JNIEnv* env) {
-    if (g_row_callback_class) {
-        env->DeleteGlobalRef(g_row_callback_class);
-        g_row_callback_class = nullptr;
-    }
+    if (g_row_callback_class) env->DeleteGlobalRef(g_row_callback_class);
+    g_row_callback_class = nullptr;
     g_on_row_method = nullptr;
 
-    if (g_progress_callback_class) {
-        env->DeleteGlobalRef(g_progress_callback_class);
-        g_progress_callback_class = nullptr;
-    }
+    if (g_progress_callback_class) env->DeleteGlobalRef(g_progress_callback_class);
+    g_progress_callback_class = nullptr;
     g_on_progress_method = nullptr;
 
-    if (g_strip_callback_class) {
-        env->DeleteGlobalRef(g_strip_callback_class);
-        g_strip_callback_class = nullptr;
-    }
+    if (g_strip_callback_class) env->DeleteGlobalRef(g_strip_callback_class);
+    g_strip_callback_class = nullptr;
     g_on_strip_method = nullptr;
-
-    if (g_instance_registry.empty()) {
-        ncnn::destroy_gpu_instance();
-    }
-    g_is_initialized = false;
 }
+
+} // namespace
 
 extern "C" {
 
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env, jclass clazz) {
-    ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    if (g_is_initialized && g_row_callback_class && g_progress_callback_class && g_strip_callback_class) {
-        return 0; // Already initialized, idempotent
+    {
+        std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
+        g_lifecycle_cv.wait(lock, [] {
+            return g_runtime_state != RuntimeState::INITIALIZING &&
+                   g_runtime_state != RuntimeState::STOPPING;
+        });
+        if (g_runtime_state == RuntimeState::READY) return 0;
+        g_runtime_state = RuntimeState::INITIALIZING;
     }
 
-    ncnn::create_gpu_instance();
+    bool gpu_instance_created = false;
+    int error_code = 0;
+    try {
+        ncnn::create_gpu_instance();
+        gpu_instance_created = true;
 
-    jclass row_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnRowCallback");
-    if (!row_cb_cls) {
-        LOGE("Failed to find NcnnRowCallback class");
-        release_cached_global_refs(env);
-        return -1;
-    }
-    g_row_callback_class = (jclass)env->NewGlobalRef(row_cb_cls);
-    if (!g_row_callback_class) {
-        LOGE("Failed to create global ref for NcnnRowCallback");
-        release_cached_global_refs(env);
-        return -2;
-    }
-    g_on_row_method = env->GetMethodID(row_cb_cls, "onRow", "(Ljava/nio/ByteBuffer;III)I");
-    if (!g_on_row_method) {
-        LOGE("Failed to find onRow method");
-        release_cached_global_refs(env);
-        return -3;
-    }
-
-    jclass prog_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnProgressCallback");
-    if (!prog_cb_cls) {
-        LOGE("Failed to find NcnnProgressCallback class");
-        release_cached_global_refs(env);
-        return -4;
-    }
-    g_progress_callback_class = (jclass)env->NewGlobalRef(prog_cb_cls);
-    if (!g_progress_callback_class) {
-        LOGE("Failed to create global ref for NcnnProgressCallback");
-        release_cached_global_refs(env);
-        return -5;
-    }
-    g_on_progress_method = env->GetMethodID(prog_cb_cls, "onProgress", "(III)V");
-    if (!g_on_progress_method) {
-        LOGE("Failed to find onProgress method");
-        release_cached_global_refs(env);
-        return -6;
+        if (!initialize_callback_method(
+                env,
+                "com/veilframe/app/upscale/inference/NcnnRowCallback",
+                "onRow", "(Ljava/nio/ByteBuffer;III)I",
+                &g_row_callback_class, &g_on_row_method)) {
+            error_code = -1;
+        } else if (!initialize_callback_method(
+                env,
+                "com/veilframe/app/upscale/inference/NcnnProgressCallback",
+                "onProgress", "(III)V",
+                &g_progress_callback_class, &g_on_progress_method)) {
+            error_code = -2;
+        } else if (!initialize_callback_method(
+                env,
+                "com/veilframe/app/upscale/inference/NcnnStripCallback",
+                "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I",
+                &g_strip_callback_class, &g_on_strip_method)) {
+            error_code = -3;
+        }
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeGlobalInit: out of memory");
+        error_code = -4;
+    } catch (const std::exception& e) {
+        LOGE("nativeGlobalInit exception: %s", e.what());
+        error_code = -5;
+    } catch (...) {
+        LOGE("nativeGlobalInit: unknown exception");
+        error_code = -6;
     }
 
-    jclass strip_cb_cls = env->FindClass("com/veilframe/app/upscale/inference/NcnnStripCallback");
-    if (!strip_cb_cls) {
-        LOGE("Failed to find NcnnStripCallback class");
+    if (error_code != 0) {
         release_cached_global_refs(env);
-        return -7;
-    }
-    g_strip_callback_class = (jclass)env->NewGlobalRef(strip_cb_cls);
-    if (!g_strip_callback_class) {
-        LOGE("Failed to create global ref for NcnnStripCallback");
-        release_cached_global_refs(env);
-        return -8;
-    }
-    g_on_strip_method = env->GetMethodID(strip_cb_cls, "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I");
-    if (!g_on_strip_method) {
-        LOGE("Failed to find onFetchStrip method");
-        release_cached_global_refs(env);
-        return -9;
+        if (gpu_instance_created) ncnn::destroy_gpu_instance();
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        g_runtime_state = RuntimeState::UNINITIALIZED;
+        g_lifecycle_cv.notify_all();
+        return error_code;
     }
 
-    g_is_initialized = true;
+    {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        g_runtime_state = RuntimeState::READY;
+    }
+    g_lifecycle_cv.notify_all();
     LOGI("NCNN global initialized, GPU count: %d", ncnn::get_gpu_count());
     return 0;
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
-    ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    if (!g_instance_registry.empty()) {
-        LOGE("Cannot destroy NCNN global instance while %zu instances are still active", g_instance_registry.size());
-        return;
+    {
+        std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
+        g_lifecycle_cv.wait(lock, [] {
+            return g_runtime_state != RuntimeState::INITIALIZING;
+        });
+        if (g_runtime_state != RuntimeState::READY) return;
+        if (!g_instance_registry.empty()) {
+            LOGE("Refusing NCNN global teardown: %zu instance handle(s) remain", g_instance_registry.size());
+            return;
+        }
+
+        // Prevent new operations first, then wait for every operation lease.
+        // This includes calls whose handle was removed by nativeDestroyInstance
+        // but whose shared instance pointer is still being used by inference.
+        g_runtime_state = RuntimeState::STOPPING;
+        g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
     }
+
     release_cached_global_refs(env);
+    ncnn::destroy_gpu_instance();
+
+    {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        g_runtime_state = RuntimeState::UNINITIALIZED;
+    }
+    g_lifecycle_cv.notify_all();
     LOGI("NCNN global destroyed");
 }
 
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuCount(JNIEnv* env, jclass clazz) {
+    OperationLease operation;
+    {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) return 0;
+        ++g_active_operations;
+        operation = OperationLease(true);
+    }
     return ncnn::get_gpu_count();
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuDeviceName(JNIEnv* env, jclass clazz, jint gpuid) {
-    int count = ncnn::get_gpu_count();
-    if (gpuid < 0 || gpuid >= count) {
-        return nullptr;
+    OperationLease operation;
+    {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) return nullptr;
+        ++g_active_operations;
+        operation = OperationLease(true);
     }
+
+    const int count = ncnn::get_gpu_count();
+    if (gpuid < 0 || gpuid >= count) return nullptr;
     const ncnn::GpuInfo& info = ncnn::get_gpu_info(gpuid);
-    return env->NewStringUTF(info.device_name());
+    const char* name = info.device_name();
+    return name ? env->NewStringUTF(name) : nullptr;
 }
 
 JNIEXPORT jlong JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     JNIEnv* env, jclass clazz, jint gpuid, jboolean ttaMode, jint numThreads
 ) {
-    std::shared_ptr<RealSR> realsr;
+    OperationLease operation;
+    {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) {
+            LOGE("nativeCreateInstance called while NCNN runtime is not ready");
+            return 0;
+        }
+        ++g_active_operations;
+        operation = OperationLease(true);
+    }
+
+    std::shared_ptr<NativeInstance> instance;
     try {
-        realsr = std::make_shared<RealSR>(gpuid, ttaMode, numThreads);
+        // Construction happens under an operation lease but without the global
+        // lifecycle mutex, so teardown can enter STOPPING and wait safely.
+        instance = std::make_shared<NativeInstance>(gpuid, ttaMode == JNI_TRUE, numThreads);
     } catch (const std::bad_alloc&) {
         LOGE("nativeCreateInstance: out of memory allocating RealSR");
         return 0;
@@ -243,9 +384,23 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
         return 0;
     }
 
-    ncnn::MutexLockGuard guard(g_lifecycle_lock);
+    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+    if (g_runtime_state != RuntimeState::READY) {
+        // A teardown started while the constructor was running. Do not publish
+        // a handle into a runtime that is stopping.
+        return 0;
+    }
     jlong handle = g_next_handle.fetch_add(1);
-    g_instance_registry[handle] = realsr;
+    if (handle <= 0 || handle == std::numeric_limits<jlong>::max()) {
+        LOGE("nativeCreateInstance: handle space exhausted");
+        return 0;
+    }
+    try {
+        g_instance_registry.emplace(handle, std::move(instance));
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeCreateInstance: out of memory registering handle");
+        return 0;
+    }
     return handle;
 }
 
@@ -253,17 +408,21 @@ JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
     JNIEnv* env, jclass clazz, jlong handle
 ) {
-    std::shared_ptr<RealSR> instance_to_drop;
+    OperationLease operation;
+    std::shared_ptr<NativeInstance> instance_to_drop;
     {
-        ncnn::MutexLockGuard guard(g_lifecycle_lock);
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) return;
         auto it = g_instance_registry.find(handle);
-        if (it != g_instance_registry.end()) {
-            instance_to_drop = std::move(it->second);
-            g_instance_registry.erase(it);
-        }
+        if (it == g_instance_registry.end()) return;
+        ++g_active_operations;
+        operation = OperationLease(true);
+        instance_to_drop = std::move(it->second);
+        g_instance_registry.erase(it);
     }
-    // instance_to_drop is released here. If in-flight processing is active,
-    // the object remains alive until the in-flight shared_ptr stack reference drops.
+    // Drop the registry owner before releasing our lifecycle lease; any
+    // in-flight call has its own lease and keeps the engine alive until done.
+    instance_to_drop.reset();
 }
 
 JNIEXPORT jint JNICALL
@@ -272,37 +431,35 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     jstring paramPath, jstring binPath,
     jint scale, jint tilesize, jint prepadding
 ) {
-    std::shared_ptr<RealSR> realsr;
-    {
-        ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        auto it = g_instance_registry.find(handle);
-        if (it != g_instance_registry.end()) {
-            realsr = it->second;
-        }
-    }
-    if (!realsr) {
-        LOGE("nativeLoadModel: invalid or destroyed RealSR handle %lld", (long long)handle);
+    InstanceLease lease = acquire_instance(handle);
+    if (!lease) {
+        LOGE("nativeLoadModel: invalid handle or runtime not ready: %lld", (long long)handle);
         return -1;
     }
+    std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
+    if (!paramPath || !binPath) return -3;
     const char* param_str = env->GetStringUTFChars(paramPath, nullptr);
+    if (!param_str) return -11;
     const char* bin_str = env->GetStringUTFChars(binPath, nullptr);
-    if (!param_str || !bin_str) {
-        if (param_str) env->ReleaseStringUTFChars(paramPath, param_str);
-        if (bin_str) env->ReleaseStringUTFChars(binPath, bin_str);
-        return -1;
+    if (!bin_str) {
+        env->ReleaseStringUTFChars(paramPath, param_str);
+        return -11;
     }
-
-    realsr->scale = scale;
-    realsr->tilesize = tilesize;
-    realsr->prepadding = prepadding;
 
     int ret = -1;
     try {
-        ret = realsr->load(param_str, bin_str);
+        RealSR& realsr = *lease.instance->engine;
+        realsr.scale = scale;
+        realsr.tilesize = tilesize;
+        realsr.prepadding = prepadding;
+        ret = realsr.load(param_str, bin_str);
     } catch (const std::bad_alloc&) {
         LOGE("nativeLoadModel: bad_alloc");
         ret = -11;
+    } catch (const std::exception& e) {
+        LOGE("nativeLoadModel exception: %s", e.what());
+        ret = -1;
     } catch (...) {
         LOGE("nativeLoadModel: unknown exception");
         ret = -1;
@@ -310,7 +467,6 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
 
     env->ReleaseStringUTFChars(paramPath, param_str);
     env->ReleaseStringUTFChars(binPath, bin_str);
-
     return ret;
 }
 
@@ -320,30 +476,24 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     jobject inputDirectBuffer, jint width, jint height, jint channels,
     jobject rowCallback, jobject progressCallback
 ) {
-    std::shared_ptr<RealSR> realsr;
-    {
-        ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        auto it = g_instance_registry.find(handle);
-        if (it != g_instance_registry.end()) {
-            realsr = it->second;
-        }
-    }
-    if (!realsr) {
-        LOGE("nativeProcessStreaming: invalid or destroyed RealSR handle %lld", (long long)handle);
+    InstanceLease lease = acquire_instance(handle);
+    if (!lease) {
+        LOGE("nativeProcessStreaming: invalid handle or runtime not ready: %lld", (long long)handle);
         return -1;
     }
+    std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
     const unsigned char* pixeldata = static_cast<const unsigned char*>(
         env->GetDirectBufferAddress(inputDirectBuffer)
     );
-    if (!pixeldata) {
-        LOGE("Failed to get direct buffer address from input DirectByteBuffer");
-        return -2;
+    if (!pixeldata || width <= 0 || height <= 0 || (channels != 3 && channels != 4) ||
+        !rowCallback || !g_on_row_method) {
+        LOGE("nativeProcessStreaming: invalid direct buffer or dimensions");
+        return -3;
     }
 
-    CallbackUserData udata;
+    CallbackUserData udata{};
     udata.env = env;
-    udata.strip_callback = nullptr;
     udata.row_callback = rowCallback;
     udata.progress_callback = progressCallback;
     udata.w = width;
@@ -351,26 +501,23 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     udata.has_exception = false;
 
     try {
-        int ret = realsr->process_streaming(
+        const int ret = lease.instance->engine->process_streaming(
             pixeldata, width, height, channels,
             jni_row_callback,
             progressCallback ? jni_progress_callback : nullptr,
             &udata
         );
-
-        if (udata.has_exception || env->ExceptionCheck()) {
-            return -12;
-        }
-        if (ret == 1) {
-            return -10;
-        }
-
+        if (udata.has_exception || env->ExceptionCheck()) return -12; // A pending Java callback exception takes precedence.
+        if (ret == 1) return -10;
         return ret;
     } catch (const std::bad_alloc&) {
         LOGE("nativeProcessStreaming: out of memory");
         return -11;
+    } catch (const std::exception& e) {
+        LOGE("nativeProcessStreaming exception: %s", e.what());
+        return -1;
     } catch (...) {
-        LOGE("nativeProcessStreaming: exception");
+        LOGE("nativeProcessStreaming: unknown exception");
         return -1;
     }
 }
@@ -381,20 +528,20 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     jint width, jint height, jint channels,
     jobject stripCallback, jobject rowCallback, jobject progressCallback
 ) {
-    std::shared_ptr<RealSR> realsr;
-    {
-        ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        auto it = g_instance_registry.find(handle);
-        if (it != g_instance_registry.end()) {
-            realsr = it->second;
-        }
-    }
-    if (!realsr) {
-        LOGE("nativeProcessStripStreaming: invalid or destroyed RealSR handle %lld", (long long)handle);
+    InstanceLease lease = acquire_instance(handle);
+    if (!lease) {
+        LOGE("nativeProcessStripStreaming: invalid handle or runtime not ready: %lld", (long long)handle);
         return -1;
     }
+    std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
-    CallbackUserData udata;
+    if (width <= 0 || height <= 0 || (channels != 3 && channels != 4) ||
+        !stripCallback || !rowCallback || !g_on_strip_method || !g_on_row_method) {
+        LOGE("nativeProcessStripStreaming: invalid dimensions or callbacks");
+        return -3;
+    }
+
+    CallbackUserData udata{};
     udata.env = env;
     udata.strip_callback = stripCallback;
     udata.row_callback = rowCallback;
@@ -404,30 +551,24 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     udata.has_exception = false;
 
     try {
-        int ret = realsr->process_strip_streaming(
+        const int ret = lease.instance->engine->process_strip_streaming(
             width, height, channels,
             jni_strip_callback,
             jni_row_callback,
             progressCallback ? jni_progress_callback : nullptr,
             &udata
         );
-
-        if (udata.has_exception || env->ExceptionCheck()) {
-            return -12; // JNI callback exception
-        }
-        if (ret == 1) {
-            return -10; // Explicit user cancellation
-        }
-
+        if (udata.has_exception || env->ExceptionCheck()) return -12; // Pending Java exceptions are delivered by JNI.
+        if (ret == 1) return -10;
         return ret;
     } catch (const std::bad_alloc&) {
         LOGE("nativeProcessStripStreaming: out of memory");
         return -11;
     } catch (const std::exception& e) {
-        LOGE("nativeProcessStripStreaming C++ exception: %s", e.what());
+        LOGE("nativeProcessStripStreaming exception: %s", e.what());
         return -1;
     } catch (...) {
-        LOGE("nativeProcessStripStreaming unknown exception");
+        LOGE("nativeProcessStripStreaming: unknown exception");
         return -1;
     }
 }
