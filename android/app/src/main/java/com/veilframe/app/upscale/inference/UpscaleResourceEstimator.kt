@@ -193,10 +193,11 @@ object UpscaleResourceEstimator {
         // one filter byte per row, a conservative zlib expansion allowance, and chunk overhead.
         val rawOutputBytes = Math.multiplyExact(totalPixels, channels.toLong())
         val deflateBoundAllowance = Math.addExact(rawOutputBytes / 16L, 128L * 1024L)
-        val chunkCount = Math.addExact(rawOutputBytes, 32L * 1024L - 1L) / (32L * 1024L)
+        val compressedStreamUpperBound = Math.addExact(rawOutputBytes, deflateBoundAllowance)
+        val chunkCount = Math.addExact(compressedStreamUpperBound, 32L * 1024L - 1L) / (32L * 1024L)
         val pngChunkOverhead = Math.multiplyExact(chunkCount, 12L)
         val estimatedDiskBytes = Math.addExact(
-            Math.addExact(Math.addExact(rawOutputBytes, outHLong), deflateBoundAllowance),
+            Math.addExact(compressedStreamUpperBound, outHLong),
             pngChunkOverhead
         )
         val requiredFreeSpace = Math.addExact(estimatedDiskBytes, 50L * 1024L * 1024L)
