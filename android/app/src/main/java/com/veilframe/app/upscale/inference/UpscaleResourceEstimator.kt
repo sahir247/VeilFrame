@@ -38,7 +38,7 @@ object UpscaleResourceEstimator {
         maxBudgetBytes: Long = MAX_TOTAL_WORKING_BYTES
     ): Long {
         if (availableMemoryBytes <= 0L || maxBudgetBytes <= 0L) return 0L
-        val pressureBudget = availableMemoryBytes / if (lowMemory) 6L else 4L
+        val pressureBudget = availableMemoryBytes / (if (lowMemory) 6L else 4L)
         return minOf(maxBudgetBytes, pressureBudget)
     }
 
