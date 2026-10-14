@@ -109,6 +109,17 @@ class UpscaleInferenceEngine(
             listener?.onStage("Preparing", 0, 1)
 
             val resultOutput = when (model.type) {
+                ModelType.AI_NCNN -> {
+                    // Fail closed until the native JNI engine and build integration land.
+                    // This branch may be built/tested, but must not be shipped as a working
+                    // NCNN upscaler before this placeholder is replaced by NcnnUpscaleEngine.
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            "Native NCNN inference is not integrated in this build yet. " +
+                                "Do not release this migration branch as a working upscaler."
+                        )
+                    )
+                }
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
                     listener?.onProgress(0, 1, 0)
