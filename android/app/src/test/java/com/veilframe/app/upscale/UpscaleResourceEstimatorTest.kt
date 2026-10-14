@@ -191,6 +191,23 @@ class UpscaleResourceEstimatorTest {
     }
 
     @Test
+    fun testDiskSpace_MissingCacheDirectoryFailsClosed() {
+        val missingCache = File(tempFolder.root, "does-not-exist")
+        try {
+            UpscaleResourceEstimator.estimateAndPlan(
+                srcW = 100,
+                srcH = 100,
+                scale = 4,
+                channels = 3,
+                cacheDir = missingCache
+            )
+            fail("Expected missing/unwritable cache storage to be rejected")
+        } catch (e: InsufficientDiskSpaceException) {
+            assertTrue(e.message?.contains("unavailable") == true)
+        }
+    }
+
+    @Test
     fun testDiskSpace_SufficientSpacePasses() {
         val cacheDir = tempFolder.newFolder("cache")
         val plan = UpscaleResourceEstimator.estimateAndPlan(
