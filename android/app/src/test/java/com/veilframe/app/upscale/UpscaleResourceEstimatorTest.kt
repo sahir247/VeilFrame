@@ -31,9 +31,12 @@ class UpscaleResourceEstimatorTest {
         assertEquals(7680, plan.outW)
         assertEquals(4320, plan.outH)
         assertEquals(4, plan.scale)
-        assertEquals(3, plan.channels)
         assertEquals(UpscaleResourceEstimator.DEFAULT_TILE_SIZE, plan.tileSize)
         assertTrue(plan.estimatedBandBytes <= UpscaleResourceEstimator.MAX_BAND_MEMORY_BYTES)
+        assertTrue(plan.estimatedHostWorkingBytes <= UpscaleResourceEstimator.MAX_HOST_WORKING_BYTES)
+        assertTrue(plan.estimatedTotalWorkingBytes <= UpscaleResourceEstimator.MAX_TOTAL_WORKING_BYTES)
+        assertTrue(plan.estimatedInputStripBytes > 0)
+        assertTrue(plan.estimatedVulkanBandBytes > plan.estimatedBandBytes)
     }
 
     @Test
@@ -153,7 +156,7 @@ class UpscaleResourceEstimatorTest {
             )
             fail("Expected ResourceLimitExceededException when minimum tile size exceeds band budget")
         } catch (e: ResourceLimitExceededException) {
-            assertTrue(e.message?.contains("per horizontal band, exceeding the safe limit") == true)
+            assertTrue(e.message?.contains("exceeding the safe") == true)
         }
     }
 

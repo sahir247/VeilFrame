@@ -91,7 +91,7 @@ jobs:
           while ($attempt -lt $maxAttempts -and -not $installed) {
             $attempt++
             try {
-              Write-Host "Attempt $attempt: choco install ffmpeg --no-progress -y"
+              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
               choco install ffmpeg --no-progress -y
               if ($LASTEXITCODE -eq 0) {
                 $installed = $true
@@ -100,7 +100,7 @@ jobs:
                 throw "choco exited with code $LASTEXITCODE"
               }
             } catch {
-              Write-Warning "choco install attempt $attempt failed: $($_.Exception.Message)"
+              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
               if ($attempt -lt $maxAttempts) {
                 Start-Sleep -Seconds (5 * $attempt)
               }
@@ -315,7 +315,7 @@ jobs:
           while ($attempt -lt $maxAttempts -and -not $installed) {
             $attempt++
             try {
-              Write-Host "Attempt $attempt: choco install ffmpeg --no-progress -y"
+              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
               choco install ffmpeg --no-progress -y
               if ($LASTEXITCODE -eq 0) {
                 $installed = $true
@@ -324,7 +324,7 @@ jobs:
                 throw "choco exited with code $LASTEXITCODE"
               }
             } catch {
-              Write-Warning "choco install attempt $attempt failed: $($_.Exception.Message)"
+              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
               if ($attempt -lt $maxAttempts) {
                 Start-Sleep -Seconds (5 * $attempt)
               }

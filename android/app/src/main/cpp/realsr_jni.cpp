@@ -90,11 +90,14 @@ static int jni_progress_callback(int current_tile, int total_tiles, int percent,
     return 0;
 }
 
-#include <unordered_set>
+#include <unordered_map>
+#include <memory>
+#include <atomic>
 #include <new>
 #include <exception>
 
-static std::unordered_set<RealSR*> g_active_instances;
+static std::unordered_map<jlong, std::shared_ptr<RealSR>> g_instance_registry;
+static std::atomic<jlong> g_next_handle{1};
 static bool g_is_initialized = false;
 static ncnn::Mutex g_lifecycle_lock;
 
@@ -117,7 +120,7 @@ static void release_cached_global_refs(JNIEnv* env) {
     }
     g_on_strip_method = nullptr;
 
-    if (g_active_instances.empty()) {
+    if (g_instance_registry.empty()) {
         ncnn::destroy_gpu_instance();
     }
     g_is_initialized = false;
@@ -199,8 +202,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
     ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    if (!g_active_instances.empty()) {
-        LOGE("Cannot destroy NCNN global instance while %zu instances are still active", g_active_instances.size());
+    if (!g_instance_registry.empty()) {
+        LOGE("Cannot destroy NCNN global instance while %zu instances are still active", g_instance_registry.size());
         return;
     }
     release_cached_global_refs(env);
@@ -226,9 +229,9 @@ JNIEXPORT jlong JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     JNIEnv* env, jclass clazz, jint gpuid, jboolean ttaMode, jint numThreads
 ) {
-    RealSR* realsr = nullptr;
+    std::shared_ptr<RealSR> realsr;
     try {
-        realsr = new RealSR(gpuid, ttaMode, numThreads);
+        realsr = std::make_shared<RealSR>(gpuid, ttaMode, numThreads);
     } catch (const std::bad_alloc&) {
         LOGE("nativeCreateInstance: out of memory allocating RealSR");
         return 0;
@@ -241,30 +244,26 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     }
 
     ncnn::MutexLockGuard guard(g_lifecycle_lock);
-    g_active_instances.insert(realsr);
-    return reinterpret_cast<jlong>(realsr);
+    jlong handle = g_next_handle.fetch_add(1);
+    g_instance_registry[handle] = realsr;
+    return handle;
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
     JNIEnv* env, jclass clazz, jlong handle
 ) {
-    RealSR* realsr = nullptr;
+    std::shared_ptr<RealSR> instance_to_drop;
     {
         ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        auto it = g_active_instances.find(reinterpret_cast<RealSR*>(handle));
-        if (it != g_active_instances.end()) {
-            realsr = *it;
-            g_active_instances.erase(it);
+        auto it = g_instance_registry.find(handle);
+        if (it != g_instance_registry.end()) {
+            instance_to_drop = std::move(it->second);
+            g_instance_registry.erase(it);
         }
     }
-    if (realsr) {
-        try {
-            delete realsr;
-        } catch (...) {
-            LOGE("Exception in ~RealSR during destroyInstance");
-        }
-    }
+    // instance_to_drop is released here. If in-flight processing is active,
+    // the object remains alive until the in-flight shared_ptr stack reference drops.
 }
 
 JNIEXPORT jint JNICALL
@@ -273,11 +272,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     jstring paramPath, jstring binPath,
     jint scale, jint tilesize, jint prepadding
 ) {
-    RealSR* realsr = nullptr;
+    std::shared_ptr<RealSR> realsr;
     {
         ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
-            realsr = reinterpret_cast<RealSR*>(handle);
+        auto it = g_instance_registry.find(handle);
+        if (it != g_instance_registry.end()) {
+            realsr = it->second;
         }
     }
     if (!realsr) {
@@ -320,11 +320,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     jobject inputDirectBuffer, jint width, jint height, jint channels,
     jobject rowCallback, jobject progressCallback
 ) {
-    RealSR* realsr = nullptr;
+    std::shared_ptr<RealSR> realsr;
     {
         ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
-            realsr = reinterpret_cast<RealSR*>(handle);
+        auto it = g_instance_registry.find(handle);
+        if (it != g_instance_registry.end()) {
+            realsr = it->second;
         }
     }
     if (!realsr) {
@@ -380,11 +381,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     jint width, jint height, jint channels,
     jobject stripCallback, jobject rowCallback, jobject progressCallback
 ) {
-    RealSR* realsr = nullptr;
+    std::shared_ptr<RealSR> realsr;
     {
         ncnn::MutexLockGuard guard(g_lifecycle_lock);
-        if (g_active_instances.find(reinterpret_cast<RealSR*>(handle)) != g_active_instances.end()) {
-            realsr = reinterpret_cast<RealSR*>(handle);
+        auto it = g_instance_registry.find(handle);
+        if (it != g_instance_registry.end()) {
+            realsr = it->second;
         }
     }
     if (!realsr) {

@@ -101,6 +101,65 @@ class NcnnUpscaleHardeningTest {
     }
 
     @Test
+    fun testValidatePngFile_CorruptChunkCrcThrowsImageValidationException() {
+        val testFile = tempFolder.newFile("valid_to_corrupt.png")
+        val width = 16
+        val height = 8
+        val writer = StreamingPngWriter(testFile, width, height, colorType = StreamingPngWriter.ColorType.RGB)
+        val rowBuffer = ByteBuffer.allocateDirect(width * 3).order(ByteOrder.nativeOrder())
+        for (y in 0 until height) {
+            rowBuffer.clear()
+            for (x in 0 until width * 3) {
+                rowBuffer.put(0)
+            }
+            rowBuffer.flip()
+            writer.writeRow(rowBuffer)
+        }
+        writer.close()
+
+        // Read bytes and flip a byte inside the IHDR CRC to break CRC check deterministically
+        val bytes = testFile.readBytes()
+        bytes[31] = (bytes[31].toInt() xor 0xFF).toByte()
+        testFile.writeBytes(bytes)
+
+        try {
+            NcnnUpscaleEngine.validatePngFile(testFile, width, height)
+            fail("Expected ImageValidationException on corrupt chunk CRC")
+        } catch (e: ImageValidationException) {
+            assertTrue(e.message?.contains("CRC mismatch") == true)
+        }
+    }
+
+    @Test
+    fun testValidatePngFile_TrailingGarbageThrowsImageValidationException() {
+        val testFile = tempFolder.newFile("trailing_garbage.png")
+        val width = 16
+        val height = 8
+        val writer = StreamingPngWriter(testFile, width, height, colorType = StreamingPngWriter.ColorType.RGB)
+        val rowBuffer = ByteBuffer.allocateDirect(width * 3).order(ByteOrder.nativeOrder())
+        for (y in 0 until height) {
+            rowBuffer.clear()
+            for (x in 0 until width * 3) {
+                rowBuffer.put(0)
+            }
+            rowBuffer.flip()
+            writer.writeRow(rowBuffer)
+        }
+        writer.close()
+
+        // Append trailing garbage after IEND
+        val bytes = testFile.readBytes() + byteArrayOf(0x01, 0x02, 0x03)
+        testFile.writeBytes(bytes)
+
+        try {
+            NcnnUpscaleEngine.validatePngFile(testFile, width, height)
+            fail("Expected ImageValidationException on trailing garbage after IEND")
+        } catch (e: ImageValidationException) {
+            assertTrue(e.message?.contains("trailing bytes") == true)
+        }
+    }
+
+    @Test
     fun testPublishFileAtomically_SuccessfulMove() {
         val tempFile = tempFolder.newFile("test_output.part")
         tempFile.writeText("VALID_PNG_CONTENT")
@@ -113,6 +172,21 @@ class NcnnUpscaleHardeningTest {
         assertFalse(tempFile.exists())
         assertTrue(finalFile.exists())
         assertEquals("VALID_PNG_CONTENT", finalFile.readText())
+    }
+
+    @Test
+    fun testPublishFileAtomically_OverwritesExistingFileSafely() {
+        val existingFinal = tempFolder.newFile("existing_output.png")
+        existingFinal.writeText("OLD_CONTENT")
+
+        val tempFile = tempFolder.newFile("new_output.part")
+        tempFile.writeText("NEW_CONTENT")
+
+        NcnnUpscaleEngine.publishFileAtomically(tempFile, existingFinal)
+
+        assertFalse(tempFile.exists())
+        assertTrue(existingFinal.exists())
+        assertEquals("NEW_CONTENT", existingFinal.readText())
     }
 
     @Test
