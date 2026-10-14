@@ -11,6 +11,8 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+#include <android/log.h>
+#define LOGD(...) __android_log_print(ANDROID_LOG_INFO, "VeilFrame.NativeSR", __VA_ARGS__)
 
 #include "realsr_preproc.comp.hex.h"
 #include "realsr_postproc.comp.hex.h"
@@ -63,12 +65,12 @@ RealSR::~RealSR()
 int RealSR::load(const std::string& parampath, const std::string& modelpath)
 {
     net.opt.use_vulkan_compute = (vkdev != nullptr);
-    net.opt.use_fp16_packed = true;
-    net.opt.use_fp16_storage = true;
-    net.opt.use_fp16_arithmetic = true;
-    net.opt.use_int8_storage = true;
+    net.opt.use_fp16_packed = false;
+    net.opt.use_fp16_storage = false;
+    net.opt.use_fp16_arithmetic = false;
+    net.opt.use_int8_storage = false;
     net.opt.use_int8_arithmetic = false;
-    net.opt.use_winograd_convolution = true;
+    net.opt.use_winograd_convolution = false;
     net.opt.use_sgemm_convolution = true;
 
     if (vkdev) {
@@ -599,6 +601,12 @@ int RealSR::process_strip_streaming(
             return sret;
         }
 
+        LOGD("process_strip_streaming: yi=%d y0=%d h=%d c=%d scale=%d fp16_s=%d fp16_p=%d int8_s=%d strip_buf[0..5]=%d,%d,%d,%d,%d,%d",
+             yi, in_tile_y0, in_band_h, channels, scale,
+             (int)opt.use_fp16_storage, (int)opt.use_fp16_packed, (int)opt.use_int8_storage,
+             (int)strip_buf[0], (int)strip_buf[1], (int)strip_buf[2],
+             (int)strip_buf[3], (int)strip_buf[4], (int)strip_buf[5]);
+
         ncnn::VkMat out_gpu;
         if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
             out_gpu.create(out_band_w, out_band_h, (size_t)channels, 1, blob_vkallocator);
@@ -632,6 +640,10 @@ int RealSR::process_strip_streaming(
             // Scale to [0, 1] matching model input expectations
             const float norm_vals[3] = {1 / 255.f, 1 / 255.f, 1 / 255.f};
             in_tile.substract_mean_normalize(0, norm_vals);
+
+            const float* fptr = (const float*)in_tile.data;
+            LOGD("tile[%d,%d]: in_tile w=%d h=%d c=%d float[0..2]=%f,%f,%f",
+                 yi, xi, in_tile.w, in_tile.h, in_tile.c, fptr[0], fptr[1], fptr[2]);
 
             ncnn::VkMat in_tile_gpu;
             cmd.record_clone(in_tile, in_tile_gpu, opt);
@@ -741,6 +753,12 @@ int RealSR::process_strip_streaming(
             }
             out.to_pixels(band_buf.data(), channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB);
         }
+
+        LOGD("download: out_gpu w=%d h=%d c=%d cstep=%d. out dims=%d w=%d h=%d c=%d cstep=%d elemsize=%zu. band_buf[0..5]=%d,%d,%d,%d,%d,%d",
+             out_gpu.w, out_gpu.h, out_gpu.c, (int)out_gpu.cstep,
+             out.dims, out.w, out.h, out.c, (int)out.cstep, out.elemsize,
+             (int)band_buf[0], (int)band_buf[1], (int)band_buf[2],
+             (int)band_buf[3], (int)band_buf[4], (int)band_buf[5]);
 
         for (int r = 0; r < out_band_h; r++) {
             int abs_row = out_tile_y0 * scale + r;
