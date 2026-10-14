@@ -353,7 +353,7 @@ int RealSR::process_streaming(
             // Postprocess tile into band out_gpu
             std::vector<ncnn::VkMat> postproc_bindings(3);
             postproc_bindings[0] = out_tile_gpu;
-            postproc_bindings[1] = out_alpha_tile_gpu;
+            postproc_bindings[1] = out_alpha_tile_gpu.empty() ? out_tile_gpu : out_alpha_tile_gpu;
             postproc_bindings[2] = out_gpu;
 
             std::vector<ncnn::vk_constant_type> postproc_constants(13);
@@ -573,6 +573,7 @@ int RealSR::process_strip_streaming(
 
     ncnn::Option opt = net.opt;
     opt.blob_vkallocator = blob_vkallocator;
+    opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
     const int xtiles = (w + TILE_SIZE_X - 1) / TILE_SIZE_X;
@@ -679,7 +680,7 @@ int RealSR::process_strip_streaming(
             // Postprocess tile into band out_gpu
             std::vector<ncnn::VkMat> postproc_bindings(3);
             postproc_bindings[0] = out_tile_gpu;
-            postproc_bindings[1] = out_alpha_tile_gpu;
+            postproc_bindings[1] = out_alpha_tile_gpu.empty() ? out_tile_gpu : out_alpha_tile_gpu;
             postproc_bindings[2] = out_gpu;
 
             std::vector<ncnn::vk_constant_type> postproc_constants(13);
