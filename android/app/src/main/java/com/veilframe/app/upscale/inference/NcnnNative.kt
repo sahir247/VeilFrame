@@ -9,6 +9,18 @@ import java.nio.ByteBuffer
 object NcnnNative {
     private const val TAG = "VeilFrame.NcnnNative"
 
+    // Stable JNI status contract. Keep values synchronized with realsr_jni.cpp.
+    const val STATUS_VULKAN_FAILURE = -2
+    const val STATUS_INVALID_ARGUMENT = -3
+    const val STATUS_CPU_FAILURE = -4
+    const val STATUS_CANCELLED = -10
+    const val STATUS_OUT_OF_MEMORY = -11
+    const val STATUS_CALLBACK_EXCEPTION = -12
+    const val STATUS_MODEL_PARAM_FAILURE = -20
+    const val STATUS_MODEL_WEIGHTS_FAILURE = -21
+    const val STATUS_MODEL_GRAPH_FAILURE = -22
+    const val STATUS_MODEL_LAYER_FAILURE = -23
+
     private val libraryLoaded: Boolean = try {
         System.loadLibrary("veilframe_ncnn")
         nativeGlobalInit() == 0
