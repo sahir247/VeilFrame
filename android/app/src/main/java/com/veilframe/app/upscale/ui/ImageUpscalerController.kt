@@ -445,7 +445,8 @@ class ImageUpscalerController(
             ) {
                 val correctedScale = model.supportedOutputScales.minByOrNull {
                     kotlin.math.abs(it - requestedScale)
-                } ?: run {
+                }
+                if (correctedScale == null) {
                     Toast.makeText(activity, "${model.name} has no supported output scales.", Toast.LENGTH_LONG).show()
                     return@addOnButtonCheckedListener
                 }
