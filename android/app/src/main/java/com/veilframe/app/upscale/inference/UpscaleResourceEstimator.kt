@@ -119,7 +119,7 @@ object UpscaleResourceEstimator {
             )
             val hostWorkingBytes = Math.addExact(
                 Math.addExact(Math.addExact(bandBytes, stripBytes), stripBitmapBytes),
-                Math.addExact(scanlineBytes + 1L, conversionScratchBytes)
+                Math.addExact(Math.addExact(scanlineBytes, 1L), conversionScratchBytes)
             )
 
             // NCNN Vulkan image/band working allocation proxy: fp32 bytes per output channel.
