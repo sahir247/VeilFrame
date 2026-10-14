@@ -453,11 +453,16 @@ class ImageUpscalerController(
         val cpuCores = Runtime.getRuntime().availableProcessors()
 
         upscalerBinding.tvDiagHardware.text = "Device: ${Build.MANUFACTURER} ${Build.MODEL} • $cpuCores CPU cores (~${availMb}MB / ${totalMb}MB RAM)"
-        upscalerBinding.tvDiagBackend.text =
-            "Active Backend: auto-select (NNAPI → XNNPACK → CPU) • last: ${OnnxSessionManager.lastBackend}"
+        val activeModel = getResolvedModel()
+        val ncnnSelected = activeModel.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN
+        upscalerBinding.tvDiagBackend.text = if (ncnnSelected) {
+            "Active Backend: NCNN migration selected • native JNI inference pending"
+        } else {
+            "Active Backend: legacy ONNX auto-select (XNNPACK / NNAPI / CPU) • last: ${OnnxSessionManager.lastBackend}"
+        }
         upscalerBinding.tvDiagExecutionProfile.text =
-            "Engine: VeilFrame ONNX (region-streamed dynamic tiling) • thermal: " +
-                com.veilframe.app.runtime.ThermalGovernor.statusName()
+            (if (ncnnSelected) "Engine: NCNN native integration pending" else "Engine: legacy ONNX (region-streamed dynamic tiling)") +
+                " • thermal: " + com.veilframe.app.runtime.ThermalGovernor.statusName()
         upscalerBinding.tvDiagThroughput.text = "Throughput: Idle"
 
         var isExpanded = false
@@ -472,25 +477,29 @@ class ImageUpscalerController(
             upscalerBinding.tvDiagThroughput.text = "Testing model initialization..."
             scope.launch {
                 val model = getResolvedModel()
-                val modelFile = repository.getModelFile(model.id)
                 val startTime = System.currentTimeMillis()
-                val infoText = withContext(Dispatchers.Default) {
-                    try {
-                        val session = com.veilframe.app.upscale.inference.OnnxSessionManager.createSession(modelFile)
+                val infoText = if (model.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN) {
+                    "NCNN pair metadata registered; native JNI loading/benchmark is not implemented yet."
+                } else {
+                    val modelFile = repository.getModelFile(model.id)
+                    withContext(Dispatchers.Default) {
                         try {
-                            val info = com.veilframe.app.upscale.inference.ModelInfo(
-                                session = session,
-                                modelName = modelFile.name,
-                                explicitScale = model.nativeScale
-                            )
-                            val prec = if (info.isFp16) "FP16" else "FP32"
-                            val dims = if (info.expectedWidth != null) "${info.expectedWidth}x${info.expectedHeight}" else "Dynamic"
-                            "Loaded ${model.name} in ${System.currentTimeMillis() - startTime}ms ($prec, $dims)"
-                        } finally {
-                            session.close()
+                            val session = com.veilframe.app.upscale.inference.OnnxSessionManager.createSession(modelFile)
+                            try {
+                                val info = com.veilframe.app.upscale.inference.ModelInfo(
+                                    session = session,
+                                    modelName = modelFile.name,
+                                    explicitScale = model.nativeScale
+                                )
+                                val prec = if (info.isFp16) "FP16" else "FP32"
+                                val dims = if (info.expectedWidth != null) "${info.expectedWidth}x${info.expectedHeight}" else "Dynamic"
+                                "Loaded ${model.name} in ${System.currentTimeMillis() - startTime}ms ($prec, $dims)"
+                            } finally {
+                                session.close()
+                            }
+                        } catch (e: Exception) {
+                            "Model check failed: ${e.message ?: e.javaClass.simpleName}"
                         }
-                    } catch (e: Exception) {
-                        "Model check completed in ${System.currentTimeMillis() - startTime}ms"
                     }
                 }
                 withContext(Dispatchers.Main) {
@@ -509,7 +518,7 @@ class ImageUpscalerController(
             val mp = (targetW * targetH) / 1_000_000.0
             val model = getResolvedModel()
             val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(targetScale, model.nativeScale)
-            val pipelineSuffix = if (model.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+            val pipelineSuffix = if (model.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
                 " • ${targetScale}× Output (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× Refinement)"
             } else {
                 ""
@@ -858,7 +867,7 @@ class ImageUpscalerController(
                         upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
                         val resolvedModel = getResolvedModel()
                         val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
-                        val badgeText = if (resolvedModel.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+                        val badgeText = if (resolvedModel.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
                             "${scale}× OUTPUT (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× REFINEMENT)"
                         } else {
                             "UPSCALED (${scale}×)"
