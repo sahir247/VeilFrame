@@ -347,7 +347,6 @@ jobs:
           cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
           cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
-          cp -a /tmp/opencv_artifact/. android/opencv-sdk/src/main/ 2>/dev/null || true
           test -s android/opencv-sdk/src/main/.opencv-sdk-complete
           sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
