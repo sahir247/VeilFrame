@@ -320,14 +320,25 @@ class NcnnUpscaleEngine(
         // 3. Checked resource admission and adaptive tile derivation (P0.2)
         val hasAlpha = source.hasAlpha
         val channels = if (hasAlpha) 4 else 3
+        // Fail on missing model assets before doing resource planning or querying memory pressure.
+        if (!repository.isModelInstalled(model)) {
+            throw ModelNotInstalledException(model.id, model.name)
+        }
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memoryInfo = ActivityManager.MemoryInfo()
         val runtimeTotalWorkingBudget = if (activityManager != null) {
             activityManager.getMemoryInfo(memoryInfo)
-            UpscaleResourceEstimator.totalBudgetForAvailableMemory(
-                availableMemoryBytes = memoryInfo.availMem,
-                lowMemory = memoryInfo.lowMemory
-            )
+            if (memoryInfo.availMem > 0L) {
+                UpscaleResourceEstimator.totalBudgetForAvailableMemory(
+                    availableMemoryBytes = memoryInfo.availMem,
+                    lowMemory = memoryInfo.lowMemory
+                )
+            } else {
+                // Some host test/runtime implementations return an uninitialized MemoryInfo.
+                // Do not mistake an unavailable metric for zero usable physical memory.
+                Log.w(TAG, "Android available-memory metric is unavailable; using static working-set budget")
+                UpscaleResourceEstimator.MAX_TOTAL_WORKING_BYTES
+            }
         } else {
             Log.w(TAG, "ActivityManager unavailable; using conservative static NCNN memory budget")
             UpscaleResourceEstimator.MAX_TOTAL_WORKING_BYTES
@@ -351,11 +362,6 @@ class NcnnUpscaleEngine(
 
         val outW = plan.outW
         val outH = plan.outH
-
-        // 4. Model installation check
-        if (!repository.isModelInstalled(model)) {
-            throw ModelNotInstalledException(model.id, model.name)
-        }
 
         // 5. Native library availability check
         if (!NcnnNative.isAvailable) {
