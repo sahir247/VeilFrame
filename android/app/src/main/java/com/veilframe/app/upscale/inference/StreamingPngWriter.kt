@@ -3,27 +3,28 @@ package com.veilframe.app.upscale.inference
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
 import java.util.zip.CRC32
 import java.util.zip.Deflater
 import java.util.zip.DeflaterOutputStream
 
 /**
- * Minimal streaming PNG writer — 8-bit RGBA (color type 6), filter type 0.
+ * Streaming PNG writer supporting 8-bit RGBA (color type 6) and 8-bit Truecolor RGB (color type 2), filter type 0.
  *
- * This is the enabler for F2 band-streaming compose: output scanlines are
- * deflated straight to disk as each tile-row band completes, so a 384 MP
- * output never exists as a bitmap in RAM (the old path OOM-crashed at ~60 MP
- * of output on 512 MB heaps).
+ * This is the enabler for band-streaming compose: output scanlines are
+ * deflated straight to disk as each tile-row band completes, so a large
+ * output never exists as a complete bitmap in RAM.
  *
  * Format notes: PNG = signature, IHDR, IDAT (zlib stream of filtered
  * scanlines), IEND. Each scanline is prefixed with one filter byte (0 = None).
  * CRC-32 covers chunk type + data. Big-endian lengths. Written against the
- * PNG 1.2 spec; decodable by BitmapFactory, libpng, and every browser.
+ * PNG 1.2 spec; decodable by BitmapFactory, libpng, and modern browsers.
  */
 class StreamingPngWriter(
     private val file: File,
     val width: Int,
     val height: Int,
+    val colorType: ColorType = ColorType.RGBA,
 ) : AutoCloseable {
 
     companion object {
@@ -38,6 +39,11 @@ class StreamingPngWriter(
         }
     }
 
+    enum class ColorType(val pngValue: Byte, val channels: Int) {
+        RGB(2, 3),
+        RGBA(6, 4)
+    }
+
     enum class State { OPEN, FINALIZING, COMPLETED, ABORTED }
 
     @Volatile
@@ -48,7 +54,8 @@ class StreamingPngWriter(
         require(width in 1..MAX_DIMENSION && height in 1..MAX_DIMENSION) {
             "invalid PNG dimensions ${width}x${height} (allowed: 1..$MAX_DIMENSION)"
         }
-        val requiredBufSize = 1L + width.toLong() * 4L
+        val bytesPerPixel = colorType.channels
+        val requiredBufSize = 1L + width.toLong() * bytesPerPixel.toLong()
         require(requiredBufSize <= Int.MAX_VALUE) {
             "scanline buffer overflow for width $width"
         }
@@ -58,7 +65,7 @@ class StreamingPngWriter(
     private val idatChunkStream: IdatChunkOutputStream
     private val deflater = Deflater(Deflater.DEFAULT_COMPRESSION)
     private val idat: DeflaterOutputStream
-    private val rowBuf = ByteArray((1L + width.toLong() * 4L).toInt())
+    private val rowBuf = ByteArray((1L + width.toLong() * colorType.channels.toLong()).toInt())
     private var rowsWritten = 0
 
     init {
@@ -67,7 +74,7 @@ class StreamingPngWriter(
         putInt(ihdr, 0, width)
         putInt(ihdr, 4, height)
         ihdr[8] = 8   // bit depth
-        ihdr[9] = 6   // color type: RGBA
+        ihdr[9] = colorType.pngValue   // color type: 2 (RGB) or 6 (RGBA)
         ihdr[10] = 0  // compression
         ihdr[11] = 0  // filter
         ihdr[12] = 0  // interlace
@@ -85,15 +92,59 @@ class StreamingPngWriter(
         check(pixels.size - offset >= width) { "row buffer too small: need $width from offset $offset, but size is ${pixels.size}" }
         rowBuf[0] = 0 // filter: None
         var b = 1
-        for (i in 0 until width) {
-            val p = pixels[offset + i]
-            rowBuf[b] = ((p shr 16) and 0xFF).toByte()      // R
-            rowBuf[b + 1] = ((p shr 8) and 0xFF).toByte()   // G
-            rowBuf[b + 2] = (p and 0xFF).toByte()           // B
-            rowBuf[b + 3] = ((p shr 24) and 0xFF).toByte()  // A
-            b += 4
+        if (colorType == ColorType.RGBA) {
+            for (i in 0 until width) {
+                val p = pixels[offset + i]
+                rowBuf[b] = ((p shr 16) and 0xFF).toByte()      // R
+                rowBuf[b + 1] = ((p shr 8) and 0xFF).toByte()   // G
+                rowBuf[b + 2] = (p and 0xFF).toByte()           // B
+                rowBuf[b + 3] = ((p shr 24) and 0xFF).toByte()  // A
+                b += 4
+            }
+        } else {
+            for (i in 0 until width) {
+                val p = pixels[offset + i]
+                rowBuf[b] = ((p shr 16) and 0xFF).toByte()      // R
+                rowBuf[b + 1] = ((p shr 8) and 0xFF).toByte()   // G
+                rowBuf[b + 2] = (p and 0xFF).toByte()           // B
+                b += 3
+            }
         }
         idat.write(rowBuf, 0, b)
+        rowsWritten++
+    }
+
+    /**
+     * Writes one scanline directly from a [ByteBuffer] (direct or heap).
+     * The buffer must contain at least `width * colorType.channels` bytes remaining.
+     * Advances buffer position by the scanline byte count.
+     */
+    fun writeRow(buffer: ByteBuffer) {
+        check(state == State.OPEN) { "writer is in state $state, cannot write row" }
+        check(rowsWritten < height) { "all $height rows already written" }
+        val rowBytes = width * colorType.channels
+        check(buffer.remaining() >= rowBytes) {
+            "buffer remaining (${buffer.remaining()}) less than required row bytes ($rowBytes)"
+        }
+        rowBuf[0] = 0 // filter: None
+        buffer.get(rowBuf, 1, rowBytes)
+        idat.write(rowBuf, 0, 1 + rowBytes)
+        rowsWritten++
+    }
+
+    /**
+     * Writes one pre-packed scanline from a raw byte array matching [colorType].
+     */
+    fun writeRow(rawRow: ByteArray, offset: Int = 0) {
+        check(state == State.OPEN) { "writer is in state $state, cannot write row" }
+        check(rowsWritten < height) { "all $height rows already written" }
+        val rowBytes = width * colorType.channels
+        check(rawRow.size - offset >= rowBytes) {
+            "rawRow size (${rawRow.size - offset}) less than required row bytes ($rowBytes)"
+        }
+        rowBuf[0] = 0 // filter: None
+        System.arraycopy(rawRow, offset, rowBuf, 1, rowBytes)
+        idat.write(rowBuf, 0, 1 + rowBytes)
         rowsWritten++
     }
 
