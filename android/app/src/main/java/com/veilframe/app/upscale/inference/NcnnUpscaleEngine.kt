@@ -1,5 +1,6 @@
 package com.veilframe.app.upscale.inference
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
@@ -319,13 +320,33 @@ class NcnnUpscaleEngine(
         // 3. Checked resource admission and adaptive tile derivation (P0.2)
         val hasAlpha = source.hasAlpha
         val channels = if (hasAlpha) 4 else 3
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        val runtimeTotalWorkingBudget = if (activityManager != null) {
+            activityManager.getMemoryInfo(memoryInfo)
+            UpscaleResourceEstimator.totalBudgetForAvailableMemory(
+                availableMemoryBytes = memoryInfo.availMem,
+                lowMemory = memoryInfo.lowMemory
+            )
+        } else {
+            Log.w(TAG, "ActivityManager unavailable; using conservative static NCNN memory budget")
+            UpscaleResourceEstimator.MAX_TOTAL_WORKING_BYTES
+        }
+        Log.d(
+            TAG,
+            "Memory admission: available=${if (activityManager != null) memoryInfo.availMem else -1L} bytes, " +
+                "lowMemory=${activityManager != null && memoryInfo.lowMemory}, " +
+                "estimatedWorkingSetCap=$runtimeTotalWorkingBudget bytes"
+        )
+
         val plan = UpscaleResourceEstimator.estimateAndPlan(
             srcW = source.width,
             srcH = source.height,
             scale = targetScale,
             channels = channels,
             requestedTileSize = params.chunkSize,
-            cacheDir = context.cacheDir
+            cacheDir = context.cacheDir,
+            maxTotalWorkingBytes = runtimeTotalWorkingBudget
         )
 
         val outW = plan.outW
