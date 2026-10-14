@@ -353,12 +353,18 @@ class NcnnUpscaleEngine(
                 "estimatedWorkingSetCap=$runtimeTotalWorkingBudget bytes"
         )
 
+        val safeRequestedTileSize = if (targetScale >= 4) {
+            params.chunkSize.coerceAtMost(160)
+        } else {
+            params.chunkSize.coerceAtMost(256)
+        }
+
         val plan = UpscaleResourceEstimator.estimateAndPlan(
             srcW = source.width,
             srcH = source.height,
             scale = targetScale,
             channels = channels,
-            requestedTileSize = params.chunkSize,
+            requestedTileSize = safeRequestedTileSize,
             cacheDir = context.cacheDir,
             maxTotalWorkingBytes = runtimeTotalWorkingBudget
         )

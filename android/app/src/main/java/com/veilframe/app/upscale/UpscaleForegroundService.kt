@@ -53,11 +53,15 @@ class UpscaleForegroundService : Service() {
                 putExtra(EXTRA_LABEL, label)
             }
             try {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } catch (e: Exception) {
-                // ForegroundServiceStartNotAllowedException etc.: the job still
-                // runs in-app; log honestly and continue (never crash the flow).
-                Log.w(TAG, "FGS start denied: ${e.message}")
+                // When called from the foreground app UI, startService is safe and does not enforce
+                // the strict 10s startForegroundService timeout.
+                context.startService(intent)
+            } catch (_: Exception) {
+                try {
+                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "FGS start denied: ${e.message}")
+                }
             }
         }
 
@@ -72,6 +76,8 @@ class UpscaleForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        // Promote immediately in onCreate to satisfy any startForegroundService() contract
+        startAsForeground("AI Upscaling")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -117,8 +123,26 @@ class UpscaleForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "startForeground failed: ${e.message}")
-            stopSelfSafely()
+            Log.w(TAG, "startForeground mediaProcessing failed: ${e.message}; attempting fallback")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } catch (e2: Exception) {
+                Log.w(TAG, "Fallback startForeground failed: ${e2.message}")
+                try {
+                    startForeground(NOTIFICATION_ID, notification)
+                } catch (_: Exception) {
+                    // Do not call stopSelf() here if startForeground failed; let the service run
+                    // without dying and taking down the process.
+                }
+            }
         }
     }
 
