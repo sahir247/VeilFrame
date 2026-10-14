@@ -19,6 +19,22 @@ static jmethodID g_on_progress_method = nullptr;
 static jclass g_strip_callback_class = nullptr;
 static jmethodID g_on_strip_method = nullptr;
 
+static bool valid_image_dimensions(jint width, jint height, jint channels) {
+    if (width <= 0 || height <= 0 || width > 32768 || height > 32768 ||
+        (channels != 3 && channels != 4)) {
+        return false;
+    }
+    const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    // Keep hostile or corrupt JNI inputs away from native allocation paths.
+    if (pixels > 100000000ULL) return false;
+    return pixels <= std::numeric_limits<size_t>::max() / static_cast<uint64_t>(channels);
+}
+
+static uint64_t expected_image_bytes(jint width, jint height, jint channels) {
+    return static_cast<uint64_t>(width) * static_cast<uint64_t>(height) *
+           static_cast<uint64_t>(channels);
+}
+
 struct CallbackUserData {
     JNIEnv* env;
     jobject strip_callback;
@@ -35,8 +51,18 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
         return 0;
     }
 
-    jlong capacity = (jlong)height * cb->w * cb->channels;
-    jobject direct_buf = cb->env->NewDirectByteBuffer(strip_data, capacity);
+    if (height <= 0 || cb->w <= 0 || (cb->channels != 3 && cb->channels != 4)) {
+        cb->has_exception = true;
+        return -1;
+    }
+    const uint64_t capacity64 = static_cast<uint64_t>(height) *
+        static_cast<uint64_t>(cb->w) * static_cast<uint64_t>(cb->channels);
+    if (capacity64 == 0 || capacity64 > static_cast<uint64_t>(std::numeric_limits<jint>::max())) {
+        cb->has_exception = true;
+        LOGE("Rejected out-of-range strip buffer size");
+        return -1;
+    }
+    jobject direct_buf = cb->env->NewDirectByteBuffer(strip_data, static_cast<jlong>(capacity64));
     if (!direct_buf) {
         LOGE("Failed to allocate DirectByteBuffer for input strip y0=%d h=%d", y0, height);
         return -1;
@@ -59,7 +85,18 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
         return 0;
     }
 
-    jobject direct_buf = cb->env->NewDirectByteBuffer(const_cast<unsigned char*>(row_data), (jlong)row_width * channels);
+    if (row_width <= 0 || (channels != 3 && channels != 4)) {
+        cb->has_exception = true;
+        return -1;
+    }
+    const uint64_t capacity64 = static_cast<uint64_t>(row_width) * static_cast<uint64_t>(channels);
+    if (capacity64 == 0 || capacity64 > static_cast<uint64_t>(std::numeric_limits<jint>::max())) {
+        cb->has_exception = true;
+        LOGE("Rejected out-of-range output row buffer size");
+        return -1;
+    }
+    jobject direct_buf = cb->env->NewDirectByteBuffer(
+        const_cast<unsigned char*>(row_data), static_cast<jlong>(capacity64));
     if (!direct_buf) {
         LOGE("Failed to allocate DirectByteBuffer for row %d", row_index);
         return -1;
@@ -99,6 +136,7 @@ static int jni_progress_callback(int current_tile, int total_tiles, int percent,
 #include <condition_variable>
 #include <utility>
 #include <limits>
+#include <cstdint>
 
 namespace {
 
@@ -438,7 +476,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
-    if (!paramPath || !binPath) return -3;
+    if (!paramPath || !binPath ||
+        (scale != 2 && scale != 3 && scale != 4) ||
+        tilesize < 1 || tilesize > 4096 ||
+        prepadding < 0 || prepadding > 256) {
+        return -3;
+    }
     const char* param_str = env->GetStringUTFChars(paramPath, nullptr);
     if (!param_str) return -11;
     const char* bin_str = env->GetStringUTFChars(binPath, nullptr);
@@ -486,7 +529,10 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     const unsigned char* pixeldata = static_cast<const unsigned char*>(
         env->GetDirectBufferAddress(inputDirectBuffer)
     );
-    if (!pixeldata || width <= 0 || height <= 0 || (channels != 3 && channels != 4) ||
+    if (!valid_image_dimensions(width, height, channels) || !inputDirectBuffer ||
+        !pixeldata || env->GetDirectBufferCapacity(inputDirectBuffer) < 0 ||
+        static_cast<uint64_t>(env->GetDirectBufferCapacity(inputDirectBuffer)) <
+            expected_image_bytes(width, height, channels) ||
         !rowCallback || !g_on_row_method) {
         LOGE("nativeProcessStreaming: invalid direct buffer or dimensions");
         return -3;
@@ -537,7 +583,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
-    if (width <= 0 || height <= 0 || (channels != 3 && channels != 4) ||
+    if (!valid_image_dimensions(width, height, channels) ||
         !stripCallback || !rowCallback || !g_on_strip_method || !g_on_row_method) {
         LOGE("nativeProcessStripStreaming: invalid dimensions or callbacks");
         return -3;
