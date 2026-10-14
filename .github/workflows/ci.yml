@@ -80,8 +80,73 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install ffmpeg --no-progress
+          $ErrorActionPreference = 'Stop'
+
+          # Try installing via Chocolatey with retries
+          $maxAttempts = 3
+          $attempt = 0
+          $installed = $false
+          while ($attempt -lt $maxAttempts -and -not $installed) {
+            $attempt++
+            try {
+              Write-Host "Attempt $attempt: choco install ffmpeg --no-progress -y"
+              choco install ffmpeg --no-progress -y
+              if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+                Write-Host "choco install succeeded"
+              } else {
+                throw "choco exited with code $LASTEXITCODE"
+              }
+            } catch {
+              Write-Warning "choco install attempt $attempt failed: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) {
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+
+          # If choco failed, fetch a static ffmpeg build and stage it
+          if (-not $installed) {
+            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
+            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
+            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
+            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
+            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
+
+            if (-not $ffmpegFile -or -not $ffprobeFile) {
+              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
+              exit 1
+            }
+
+            $destDir = "C:\ProgramData\ffmpeg"
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
+
+            # Also copy into chocolatey bin if it exists (which is already in default runner PATH)
+            if (Test-Path "C:\ProgramData\chocolatey\bin") {
+              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
+              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
+            }
+
+            # Copy into repo resources so build/test steps can find them
+            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
+            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
+            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
+            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
+
+            # Ensure ffmpeg is discoverable in current and subsequent steps
+            $env:PATH = "$destDir;$env:PATH"
+            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Copied ffmpeg to $destDir and updated PATH"
+          }
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -89,9 +154,22 @@ jobs:
           brew install ffmpeg || true
 
       - name: Verify FFmpeg Installation
+        shell: bash
         run: |
-          ffmpeg -version
-          ffprobe -version
+          echo "PATH: $PATH"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            where.exe ffmpeg || true
+          else
+            which ffmpeg || true
+          fi
+          ffmpeg -version || {
+            echo "::error::ffmpeg not found or failed to execute"
+            exit 1
+          }
+          ffprobe -version || {
+            echo "::error::ffprobe not found or failed to execute"
+            exit 1
+          }
 
       - name: Install Dependencies
         run: |
@@ -226,8 +304,70 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install ffmpeg --no-progress
+          $ErrorActionPreference = 'Stop'
+
+          # Try installing via Chocolatey with retries
+          $maxAttempts = 3
+          $attempt = 0
+          $installed = $false
+          while ($attempt -lt $maxAttempts -and -not $installed) {
+            $attempt++
+            try {
+              Write-Host "Attempt $attempt: choco install ffmpeg --no-progress -y"
+              choco install ffmpeg --no-progress -y
+              if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+                Write-Host "choco install succeeded"
+              } else {
+                throw "choco exited with code $LASTEXITCODE"
+              }
+            } catch {
+              Write-Warning "choco install attempt $attempt failed: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) {
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+
+          # If choco failed, fetch a static ffmpeg build and stage it
+          if (-not $installed) {
+            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
+            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
+            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
+            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
+            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
+
+            if (-not $ffmpegFile -or -not $ffprobeFile) {
+              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
+              exit 1
+            }
+
+            $destDir = "C:\ProgramData\ffmpeg"
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
+
+            if (Test-Path "C:\ProgramData\chocolatey\bin") {
+              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
+              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
+            }
+
+            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
+            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
+            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
+            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
+
+            $env:PATH = "$destDir;$env:PATH"
+            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Copied ffmpeg to $destDir and updated PATH"
+          }
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -269,7 +409,8 @@ jobs:
           cache: "pip"
 
       - name: Install FFmpeg (Windows)
-        run: choco install ffmpeg --no-progress
+        shell: bash
+        run: choco install ffmpeg --no-progress -y || true
 
       - name: Stage Windows FFmpeg Binaries
         shell: pwsh
