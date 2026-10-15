@@ -6,6 +6,7 @@ on:
     paths:
       - 'android/scripts/build_opencv_contrib_sdk.sh'
       - '.github/workflows/build-opencv-sdk.yml'
+      - '.github/workflows/ci.yml'
       - 'android/opencv-sdk/**'
       - 'android/app/src/androidTest/**'
       - 'android/app/src/main/java/com/veilframe/app/cv/**'
