@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.veilframe.app.cv.color.ColorEngine
+import com.veilframe.app.cv.analysis.ImageQualityAnalyzer
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.document.ColorDetector
@@ -15,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.Rect
 import org.opencv.core.Scalar
 
 @RunWith(AndroidJUnit4::class)
@@ -49,6 +51,38 @@ class CvAuditRegressionTest {
         }
     }
 
+
+    @Test
+    fun alpha8BitmapConvertsItsStoredAlphaSamples() {
+        val bitmap = Bitmap.createBitmap(3, 2, Bitmap.Config.ALPHA_8)
+        try {
+            bitmap.setPixel(0, 0, Color.argb(0, 0, 0, 0))
+            bitmap.setPixel(1, 0, Color.argb(64, 0, 0, 0))
+            bitmap.setPixel(2, 0, Color.argb(128, 0, 0, 0))
+            bitmap.setPixel(0, 1, Color.argb(255, 0, 0, 0))
+            bitmap.setPixel(1, 1, Color.argb(32, 0, 0, 0))
+            bitmap.setPixel(2, 1, Color.argb(200, 0, 0, 0))
+
+            val mat = BitmapBridge.toMat(bitmap)
+            try {
+                assertEquals(CvType.CV_8UC1, mat.type())
+                val pixel = ByteArray(1)
+                mat.get(0, 0, pixel)
+                assertEquals(0, pixel[0].toInt() and 0xFF)
+                mat.get(0, 1, pixel)
+                assertEquals(64, pixel[0].toInt() and 0xFF)
+                mat.get(0, 2, pixel)
+                assertEquals(128, pixel[0].toInt() and 0xFF)
+                mat.get(1, 0, pixel)
+                assertEquals(255, pixel[0].toInt() and 0xFF)
+            } finally {
+                mat.release()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     @Test
     fun colorTransformsPreserveOriginalAlpha() {
         val bitmap = Bitmap.createBitmap(3, 3, Bitmap.Config.ARGB_8888)
@@ -58,8 +92,10 @@ class CvAuditRegressionTest {
         val contrast = ColorEngine.contrast(source, 1.7)
         val saturation = ColorEngine.saturation(source, 1.4)
         val temperature = ColorEngine.temperatureTint(source, 0.5, -0.2)
+        val whiteBalance = ColorEngine.autoWhiteBalance(source).corrected
+        val highlightsShadows = ColorEngine.highlightsShadows(source, highlights = 0.35, shadows = 0.2)
         try {
-            for (result in listOf(exposure, contrast, saturation, temperature)) {
+            for (result in listOf(exposure, contrast, saturation, temperature, whiteBalance, highlightsShadows)) {
                 val pixel = ByteArray(4)
                 result.get(0, 0, pixel)
                 assertEquals("Alpha must remain unchanged", 73, pixel[3].toInt() and 0xFF)
@@ -70,6 +106,8 @@ class CvAuditRegressionTest {
             contrast.release()
             saturation.release()
             temperature.release()
+            whiteBalance.release()
+            highlightsShadows.release()
             bitmap.recycle()
         }
     }
@@ -86,4 +124,49 @@ class CvAuditRegressionTest {
             grayscale.release()
         }
     }
+
+    @Test
+    fun autoColorModeActuallyHonorsExternalMask() {
+        val image = Mat(120, 120, CvType.CV_8UC3, Scalar(180.0, 180.0, 180.0))
+        val fullMask = Mat(120, 120, CvType.CV_8UC1, Scalar(255.0))
+        val maskIgnoringColorPatch = fullMask.clone()
+        val colorPatch = image.submat(Rect(30, 30, 40, 40))
+        val excludedPatch = maskIgnoringColorPatch.submat(Rect(25, 25, 50, 50))
+        try {
+            colorPatch.setTo(Scalar(20.0, 20.0, 240.0)) // BGR red patch.
+            excludedPatch.setTo(Scalar(0.0))
+            val fullImageMode = ColorDetector.autoColorMode(
+                image, emptyList(), externalMask = fullMask
+            )
+            val maskedMode = ColorDetector.autoColorMode(
+                image, emptyList(), externalMask = maskIgnoringColorPatch
+            )
+            assertEquals("Colored patch inside mask should be detected", DocumentColorMode.COLOR, fullImageMode)
+            assertEquals("Excluded colored patch must not influence AUTO mode", DocumentColorMode.GRAYSCALE, maskedMode)
+        } finally {
+            colorPatch.release()
+            excludedPatch.release()
+            maskIgnoringColorPatch.release()
+            fullMask.release()
+            image.release()
+        }
+    }
+
+    @Test
+    fun darkScenePercentileAndQualityMetricsRemainStable() {
+        val luma = Mat(10, 10, CvType.CV_8UC1, Scalar(64.0))
+        val blackRow = luma.submat(Rect(0, 0, 10, 1))
+        try {
+            blackRow.setTo(Scalar(0.0))
+            val report = ImageQualityAnalyzer.analyze(luma)
+            assertEquals("p5 must remain at the zero-valued bin", 64.0, report.raw.lumaSpreadP5P95, 0.0)
+            assertTrue(report.raw.noiseSigma.isFinite())
+            assertTrue(report.raw.ringing.isFinite())
+            assertTrue(ImageQualityAnalyzer.tenengrad(luma).isFinite())
+        } finally {
+            blackRow.release()
+            luma.release()
+        }
+    }
+
 }
