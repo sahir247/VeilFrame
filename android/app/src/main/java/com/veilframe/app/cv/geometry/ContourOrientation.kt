@@ -234,8 +234,6 @@ object ContourOrientation {
         angleThreshold: Double
     ): List<ContourSegment> {
         if (segments.isEmpty()) return emptyList()
-        if (segments.size <= 4) return segments
-
         val merged = mutableListOf<ContourSegment>()
         var cur = segments[0]
 
