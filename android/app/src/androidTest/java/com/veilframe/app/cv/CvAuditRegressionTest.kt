@@ -8,6 +8,10 @@ import com.veilframe.app.cv.analysis.ImageQualityAnalyzer
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.document.ColorDetector
+import com.veilframe.app.cv.document.ColorMode
+import com.veilframe.app.cv.document.Mask
+import com.veilframe.app.cv.geometry.Point as GeometryPoint
+import com.veilframe.app.cv.geometry.Quad
 import com.veilframe.app.cv.document.DocumentColorMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -126,28 +130,40 @@ class CvAuditRegressionTest {
     }
 
     @Test
-    fun autoColorModeActuallyHonorsExternalMask() {
+    fun maskOverloadActuallyUsesTheSuppliedMask() {
         val image = Mat(120, 120, CvType.CV_8UC3, Scalar(180.0, 180.0, 180.0))
-        val fullMask = Mat(120, 120, CvType.CV_8UC1, Scalar(255.0))
-        val maskIgnoringColorPatch = fullMask.clone()
+        val fullMaskMat = Mat(120, 120, CvType.CV_8UC1, Scalar(255.0))
+        val excludeColorPatchMaskMat = fullMaskMat.clone()
         val colorPatch = image.submat(Rect(30, 30, 40, 40))
-        val excludedPatch = maskIgnoringColorPatch.submat(Rect(25, 25, 50, 50))
+        val excludedPatch = excludeColorPatchMaskMat.submat(Rect(25, 25, 50, 50))
+        val quad = Quad(
+            GeometryPoint(0.0, 0.0),
+            GeometryPoint(120.0, 0.0),
+            GeometryPoint(120.0, 120.0),
+            GeometryPoint(0.0, 120.0)
+        )
+        val fullMask = object : Mask {
+            override val width = 120
+            override val height = 120
+            override fun toMat(): Mat = fullMaskMat.clone()
+        }
+        val excludeColorPatchMask = object : Mask {
+            override val width = 120
+            override val height = 120
+            override fun toMat(): Mat = excludeColorPatchMaskMat.clone()
+        }
         try {
             colorPatch.setTo(Scalar(20.0, 20.0, 240.0)) // BGR red patch.
             excludedPatch.setTo(Scalar(0.0))
-            val fullImageMode = ColorDetector.autoColorMode(
-                image, emptyList(), externalMask = fullMask
-            )
-            val maskedMode = ColorDetector.autoColorMode(
-                image, emptyList(), externalMask = maskIgnoringColorPatch
-            )
-            assertEquals("Colored patch inside mask should be detected", DocumentColorMode.COLOR, fullImageMode)
-            assertEquals("Excluded colored patch must not influence AUTO mode", DocumentColorMode.GRAYSCALE, maskedMode)
+            val fullImageMode = ColorDetector.autoColorMode(image, fullMask, quad)
+            val maskedMode = ColorDetector.autoColorMode(image, excludeColorPatchMask, quad)
+            assertEquals("Color inside the mask should be detected", ColorMode.COLOR, fullImageMode)
+            assertEquals("Color outside the supplied mask must not affect AUTO mode", ColorMode.GRAYSCALE, maskedMode)
         } finally {
             colorPatch.release()
             excludedPatch.release()
-            maskIgnoringColorPatch.release()
-            fullMask.release()
+            excludeColorPatchMaskMat.release()
+            fullMaskMat.release()
             image.release()
         }
     }
