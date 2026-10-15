@@ -17,6 +17,7 @@ object NcnnNative {
     const val STATUS_CANCELLED = -10
     const val STATUS_OUT_OF_MEMORY = -11
     const val STATUS_CALLBACK_EXCEPTION = -12
+    const val STATUS_CALLBACK_FAILURE = -13
     const val STATUS_MODEL_PARAM_FAILURE = -20
     const val STATUS_MODEL_WEIGHTS_FAILURE = -21
     const val STATUS_MODEL_GRAPH_FAILURE = -22
