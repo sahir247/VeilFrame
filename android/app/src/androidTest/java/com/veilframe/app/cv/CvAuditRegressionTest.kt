@@ -22,6 +22,7 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Rect
 import org.opencv.core.Scalar
+import java.nio.ByteBuffer
 
 @RunWith(AndroidJUnit4::class)
 class CvAuditRegressionTest {
@@ -60,12 +61,15 @@ class CvAuditRegressionTest {
     fun alpha8BitmapConvertsItsStoredAlphaSamples() {
         val bitmap = Bitmap.createBitmap(3, 2, Bitmap.Config.ALPHA_8)
         try {
-            bitmap.setPixel(0, 0, Color.argb(0, 0, 0, 0))
-            bitmap.setPixel(1, 0, Color.argb(64, 0, 0, 0))
-            bitmap.setPixel(2, 0, Color.argb(128, 0, 0, 0))
-            bitmap.setPixel(0, 1, Color.argb(255, 0, 0, 0))
-            bitmap.setPixel(1, 1, Color.argb(32, 0, 0, 0))
-            bitmap.setPixel(2, 1, Color.argb(200, 0, 0, 0))
+            // Write the raw ALPHA_8 plane, respecting any native row padding.
+            val storage = ByteArray(bitmap.byteCount)
+            val values = intArrayOf(0, 64, 128, 255, 32, 200)
+            for (y in 0 until bitmap.height) {
+                for (x in 0 until bitmap.width) {
+                    storage[y * bitmap.rowBytes + x] = values[y * bitmap.width + x].toByte()
+                }
+            }
+            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(storage))
 
             val mat = BitmapBridge.toMat(bitmap)
             try {
