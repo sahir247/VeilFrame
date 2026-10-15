@@ -52,8 +52,18 @@ object ColorDetector {
         luminanceMin: Double = 40.0,
         luminanceMax: Double = 180.0
     ): DocumentColorMode {
-        if (!CvRuntime.isNativeAvailable || img.nativeObj == 0L || img.empty() || quad.size != 4) {
+        if (!CvRuntime.isNativeAvailable || img.nativeObj == 0L || img.empty()) {
             return DocumentColorMode.COLOR
+        }
+        val effectiveQuad = when {
+            quad.size == 4 -> quad
+            quad.isEmpty() -> listOf(
+                Point(0.0, 0.0),
+                Point(img.cols().toDouble(), 0.0),
+                Point(img.cols().toDouble(), img.rows().toDouble()),
+                Point(0.0, img.rows().toDouble())
+            )
+            else -> return DocumentColorMode.COLOR
         }
 
         // 0) Resize to work size for fast, consistent analysis
@@ -69,7 +79,7 @@ object ColorDetector {
         Imgproc.resize(img, resizedImg, workSize, 0.0, 0.0, Imgproc.INTER_AREA)
 
         // 1) Compute document mask
-        val docMask = createDocumentMask(resizedImg.size(), quad, scale, segmentation)
+        val docMask = createDocumentMask(resizedImg.size(), effectiveQuad, scale, segmentation)
 
         val totalPixels = Core.countNonZero(docMask)
         if (totalPixels == 0) {
