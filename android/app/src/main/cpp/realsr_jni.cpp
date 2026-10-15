@@ -556,6 +556,9 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
             // The required NCNN Interp layer is unavailable; retrying cannot repair
             // a missing registered layer and would just obscure the installation fault.
             ret = -23;
+        } else if (ret == -9) {
+            // TTA's 8-way streaming transform/merge pipeline is not implemented yet.
+            ret = -24;
         } else if (ret != 0) {
             LOGE("nativeLoadModel: unexpected RealSR load status %d", ret);
             ret = -23;
