@@ -66,9 +66,9 @@ class ContourOrientationTest {
             "com.veilframe.app.cv.geometry.ContourOrientation\$ContourSegment"
         )
         val constructor = segmentClass.getDeclaredConstructor(
+            Int::class.javaPrimitiveType!!,
             Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-            Double::class.javaPrimitiveType,
+            Double::class.javaPrimitiveType!!,
             Double::class.javaPrimitiveType,
         ).apply { isAccessible = true }
 
