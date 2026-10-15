@@ -76,18 +76,15 @@ object FrameSynthesizer {
         Core.split(flowFull, channels)
         val mapXLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
         val mapYLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
-        val gridXLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
-        val gridYLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
         val mapX = mapXLease.mat
         val mapY = mapYLease.mat
-        val gridX = gridXLease.mat
-        val gridY = gridYLease.mat
         try {
-            buildGrid(gridX, gridY)
             Core.multiply(channels[0], Scalar(s), mapX)
             Core.multiply(channels[1], Scalar(s), mapY)
-            Core.add(mapX, gridX, mapX)
-            Core.add(mapY, gridY, mapY)
+            CoordinateGridCache.withGrid(src.rows(), src.cols()) { gridX, gridY ->
+                Core.add(mapX, gridX, mapX)
+                Core.add(mapY, gridY, mapY)
+            }
             val out = Mat()
             Imgproc.remap(src, out, mapX, mapY, Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE)
             return out
@@ -96,8 +93,6 @@ object FrameSynthesizer {
             channels.forEach { it.release() }
             mapXLease.close()
             mapYLease.close()
-            gridXLease.close()
-            gridYLease.close()
         }
     }
 
