@@ -114,8 +114,16 @@ mkdir -p "${BUILD_OUT}"
 
 cat << 'EOF' > "${WORK_DIR}/opencv-veilframe.config.py"
 ABIs = [
-    ABI("3", "arm64-v8a", None, "26", cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
-    ABI("4", "x86_64", None, "26", cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
+    ABI("3", "arm64-v8a", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
+    ABI("4", "x86_64", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
 ]
 EOF
 
@@ -175,6 +183,29 @@ validate_elf_arch() {
 
 validate_elf_arch "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "AArch64"
 validate_elf_arch "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "Advanced Micro Devices X86-64"
+
+validate_elf_page_alignment() {
+    local so_path="$1"
+    python3 - "$so_path" <<'PYALIGN'
+import subprocess
+import sys
+path = sys.argv[1]
+output = subprocess.check_output(["readelf", "-lW", path], text=True)
+loads = [line.split() for line in output.splitlines() if line.lstrip().startswith("LOAD ")]
+if not loads:
+    raise SystemExit(f"FATAL: no ELF LOAD segments in {path}")
+bad = []
+for fields in loads:
+    alignment = int(fields[-1], 0)
+    if alignment < 0x4000 or alignment % 0x4000:
+        bad.append(f"{alignment:#x}")
+if bad:
+    raise SystemExit(f"FATAL: {path} has ELF LOAD p_align below 16 KB: {", ".join(bad)}")
+print(f"✓ Validated 16 KB ELF LOAD alignment for {path}")
+PYALIGN
+}
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so"
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so"
 
 if [ ! -s "${SDK_STAGE}/java/src/org/opencv/core/Mat.java" ]; then
     echo "FATAL: Core Java bindings (org/opencv/core/Mat.java) missing or empty!"
