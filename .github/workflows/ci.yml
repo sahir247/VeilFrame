@@ -322,9 +322,10 @@ jobs:
           REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
-          # Never use an unrelated, last-known-good artifact: it can be stale and
-          # package a 4 KB-aligned libopencv_java4.so. Find the build for this
-          # exact source SHA and wait for it to finish before consuming its artifact.
+          # Prefer an artifact built from this exact head. For commits that only
+          # change app/test files, same-branch reuse is allowed only if all OpenCV
+          # SDK build inputs are byte-for-byte unchanged and the later ELF check passes.
+          # Never consume a default-branch artifact for a feature-branch build.
           RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
             --branch "$REQUIRED_BRANCH" \
