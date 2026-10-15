@@ -472,6 +472,10 @@ class NcnnUpscaleEngine(
                                 NcnnNative.STATUS_INVALID_ARGUMENT -> throw IllegalArgumentException(
                                     "Invalid arguments provided to NCNN model loading"
                                 )
+                                NcnnNative.STATUS_UNSUPPORTED_TTA -> throw NcnnModelLoadException(
+                                    loadRet,
+                                    "NCNN TTA is not supported by the streaming engine yet"
+                                )
                                 else -> throw NcnnModelLoadException(
                                     loadRet,
                                     "Failed to load or initialize NCNN model ${paramFile.name}"
