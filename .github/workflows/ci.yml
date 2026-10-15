@@ -340,7 +340,7 @@ jobs:
 
           if [ -z "$RUN_ID" ]; then
             CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
-              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // empty')
+              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
             RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
             ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
             if [ -z "$RUN_ID" ] || [ -z "$ARTIFACT_SHA" ]; then
