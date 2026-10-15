@@ -183,7 +183,18 @@ class ScanResult:
         for f in self.files:
             if getattr(f, "secret_alerts", None):
                 for a in f.secret_alerts:
-                    alerts.append(a)
+                    if hasattr(a, "relative_path") or hasattr(a, "file_path"):
+                        alerts.append(a)
+                    else:
+                        from veilframe.folder.security.secret_detector import SecurityAlert
+                        alerts.append(SecurityAlert(
+                            file_path=getattr(f, "relative_path", "") or getattr(f, "path", ""),
+                            line_number=None,
+                            alert_type="secret",
+                            description=str(a),
+                            masked_snippet="",
+                            rule_id="SECRET_DETECTED",
+                        ))
         return alerts
 
     @property

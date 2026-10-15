@@ -83,7 +83,8 @@ def build_project_tree(
     # 1. Add all included files
     included_dir_prefixes: Set[str] = set()
     for f in files:
-        parts = f.relative_path.replace("\\", "/").strip("/").split("/")
+        rel = getattr(f, "relative_path", str(f))
+        parts = rel.replace("\\", "/").strip("/").split("/")
         accum = ""
         for p in parts[:-1]:
             accum = f"{accum}/{p}" if accum else p
@@ -97,7 +98,8 @@ def build_project_tree(
         loose_excluded: List[Tuple[FileRecord, str]] = []
 
         for f, reason in excluded_files:
-            parts = f.relative_path.replace("\\", "/").strip("/").split("/")
+            rel = getattr(f, "relative_path", str(f))
+            parts = rel.replace("\\", "/").strip("/").split("/")
             if len(parts) > 1:
                 top_part = parts[0]
                 if top_part not in included_dir_prefixes:
@@ -133,7 +135,8 @@ def build_project_tree(
 
         # Add loose excluded files (e.g. .env)
         for f, reason in loose_excluded:
-            parts = f.relative_path.replace("\\", "/").strip("/").split("/")
+            rel = getattr(f, "relative_path", str(f))
+            parts = rel.replace("\\", "/").strip("/").split("/")
             root.add_child(parts, file_rec=f, exclusion_reason=reason)
 
     rendered_lines: List[str] = ["."]

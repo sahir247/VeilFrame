@@ -39,7 +39,7 @@ def aggregate_excluded_summary(excluded_files: List[Tuple[FileRecord, str]]) -> 
     loose_files: List[Tuple[str, str]] = []
 
     for f, reason in excluded_files:
-        norm = f.relative_path.replace("\\", "/").strip("/")
+        norm = getattr(f, "relative_path", str(f)).replace("\\", "/").strip("/")
         parts = norm.split("/")
         if len(parts) > 1:
             top_dir = parts[0] + "/"
@@ -93,25 +93,26 @@ def render_security_section(
     from veilframe.folder.security.sensitive_files import is_sensitive_filepath
     excluded_cred_files = [
         (f, reason) for f, reason in actual_excluded
-        if is_sensitive_filepath(f.path)[0] or f.effective_category in (FileCategory.SECRET, FileCategory.CREDENTIAL, FileCategory.PRIVATE_KEY)
+        if is_sensitive_filepath(getattr(f, "path", str(f)))[0] or getattr(f, "effective_category", None) in (FileCategory.SECRET, FileCategory.CREDENTIAL, FileCategory.PRIVATE_KEY)
     ]
     if excluded_cred_files:
         lines.append("EXCLUDED CREDENTIAL FILES:")
         for sf, reason in excluded_cred_files:
-            rel_p = sf.relative_path.replace("\\", "/")
+            rel_p = getattr(sf, "relative_path", str(sf)).replace("\\", "/")
             lines.append(f"  • {rel_p} | excluded | {reason}")
 
     # 2. Redacted secrets / inline alerts in included context files
     included_with_alerts = [
-        f for f, _, _ in included_files
+        f for f, _, _ in actual_included
         if getattr(f, "secret_alerts", None)
     ]
     if included_with_alerts:
         lines.append("REDACTED INLINE SECRETS (included with safe mask):")
         for f in included_with_alerts:
-            rel_p = f.relative_path.replace("\\", "/")
+            rel_p = getattr(f, "relative_path", str(f)).replace("\\", "/")
             for alert_desc in f.secret_alerts:
-                lines.append(f"  • {rel_p} | redacted | {alert_desc}")
+                desc = getattr(alert_desc, "description", str(alert_desc))
+                lines.append(f"  • {rel_p} | redacted | {desc}")
 
     if not excluded_cred_files and not included_with_alerts:
         lines.append("STATUS: CLEAN | 0 sensitive credentials or security leaks detected in bundle")
