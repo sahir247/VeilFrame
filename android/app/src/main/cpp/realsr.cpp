@@ -201,14 +201,6 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
 }
 
 namespace {
-static int reflect_index(int index, int length) {
-    if (length <= 1) return 0;
-    const int period = 2 * (length - 1);
-    int folded = index % period;
-    if (folded < 0) folded += period;
-    return folded < length ? folded : period - folded;
-}
-
 struct VulkanAllocatorGuard {
     ncnn::VulkanDevice* dev;
     ncnn::VkAllocator* blob;
@@ -307,9 +299,6 @@ int RealSR::process_streaming(
         }
 
         for (int xi = 0; xi < xtiles; xi++) {
-            const int tile_w_nopad = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
-            const int tile_h_nopad = std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y;
-
             ncnn::VkMat in_tile_gpu;
             ncnn::VkMat in_alpha_tile_gpu;
 
@@ -682,8 +671,6 @@ int RealSR::process_strip_streaming(
         }
 
         for (int xi = 0; xi < xtiles; xi++) {
-            const int tile_w_nopad = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
-            const int tile_h_nopad = std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y;
             const int tile_x0 = xi * TILE_SIZE_X - prepadding;
             const int tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w) + prepadding;
             const int tile_y0 = yi * TILE_SIZE_Y - prepadding;
@@ -691,9 +678,6 @@ int RealSR::process_strip_streaming(
 
             const int crop_x0 = prepadding * scale;
             const int crop_y0 = prepadding * scale;
-            const int crop_w = tile_w_nopad * scale;
-            const int crop_h = tile_h_nopad * scale;
-
             ncnn::VkMat in_tile_gpu;
             in_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
             if (in_tile_gpu.empty()) return -101;
