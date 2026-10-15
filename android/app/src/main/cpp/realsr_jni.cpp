@@ -55,6 +55,7 @@ struct CallbackUserData {
     int channels;
     bool has_exception;
     bool cancelled;
+    bool callback_failed;
 };
 
 static int jni_strip_callback(unsigned char* strip_data, int y0, int height, void* user_data) {
@@ -93,7 +94,12 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
         cb->cancelled = true;
         return -1; // Keep callback cancellation out of NCNN's status namespace.
     }
-    return ret;
+    if (ret != 0) {
+        cb->callback_failed = true;
+        LOGE("consumer callback failed with status %d", ret);
+        return -1; // Do not misclassify consumer I/O failure as GPU failure.
+    }
+    return 0;
 }
 
 static int jni_row_callback(const unsigned char* row_data, int row_index, int row_width, int channels, void* user_data) {
@@ -132,7 +138,12 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
         cb->cancelled = true;
         return -1; // Keep callback cancellation out of NCNN's status namespace.
     }
-    return ret;
+    if (ret != 0) {
+        cb->callback_failed = true;
+        LOGE("consumer callback failed with status %d", ret);
+        return -1; // Do not misclassify consumer I/O failure as GPU failure.
+    }
+    return 0;
 }
 
 static int jni_progress_callback(int current_tile, int total_tiles, int percent, void* user_data) {
@@ -601,6 +612,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     udata.w = width;
     udata.channels = channels;
     udata.has_exception = false;
+    udata.cancelled = false;
+    udata.callback_failed = false;
 
     try {
         const int ret = lease.instance->engine->process_streaming(
@@ -611,6 +624,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
         if (udata.cancelled) return -10;
+        if (udata.callback_failed) return -13; // Consumer/storage failure; never trigger GPU fallback.
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
         return 0;
@@ -654,6 +668,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     udata.w = width;
     udata.channels = channels;
     udata.has_exception = false;
+    udata.cancelled = false;
+    udata.callback_failed = false;
 
     try {
         const int ret = lease.instance->engine->process_strip_streaming(
@@ -665,6 +681,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
         if (udata.cancelled) return -10;
+        if (udata.callback_failed) return -13; // Consumer/storage failure; never trigger GPU fallback.
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
         return 0;
