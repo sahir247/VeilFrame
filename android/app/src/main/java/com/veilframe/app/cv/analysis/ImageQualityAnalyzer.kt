@@ -134,38 +134,44 @@ object ImageQualityAnalyzer {
      * MAD / 0.6745 is a robust sigma estimate for Gaussian noise.
      */
     fun estimateNoiseSigma(luma: Mat): Double {
+        val luma32 = Mat()
         val blurred = Mat()
         val residual = Mat()
         try {
-            Imgproc.GaussianBlur(luma, blurred, Size(3.0, 3.0), 0.0)
-            Core.absdiff(luma, blurred, residual)
-            // Exact 8-bit histogram median with row-buffered streaming — avoids
-            // allocating a full-resolution 12 MP ByteArray on the JVM heap.
+            // Preserve fractional residuals: blurring CV_8U first quantizes
+            // away sub-integer differences and produces a coarse sigma estimate.
+            luma.convertTo(luma32, CvType.CV_32F)
+            Imgproc.GaussianBlur(luma32, blurred, Size(3.0, 3.0), 0.0)
+            Core.absdiff(luma32, blurred, residual)
+
+            // Row-buffered fractional histogram avoids a full-resolution heap array.
+            // 1/16 intensity bins provide sub-integer resolution at bounded cost.
             val rows = residual.rows()
             val cols = residual.cols()
-            val rowBuf = ByteArray(cols)
-            val histogram = LongArray(256)
+            val rowBuf = FloatArray(cols)
+            val binsPerLevel = 16
+            val histogram = LongArray(255 * binsPerLevel + 1)
             for (r in 0 until rows) {
                 residual.get(r, 0, rowBuf)
                 for (c in 0 until cols) {
-                    histogram[rowBuf[c].toInt() and 0xFF]++
+                    val bin = (rowBuf[c] * binsPerLevel).toInt()
+                        .coerceIn(0, histogram.lastIndex)
+                    histogram[bin]++
                 }
             }
-            // Use Long throughout: for an 8K image (7680×4320 = ~33 M pixels)
-            // target = ~16 M which overflows Int.MAX_VALUE only at >4 Gpx, but
-            // cumulative must match to avoid a signed-comparison mismatch.
             val target = rows.toLong() * cols / 2L
             var cumulative = 0L
-            var median = 255
-            for (v in histogram.indices) {
-                cumulative += histogram[v]
+            var medianBin = histogram.lastIndex
+            for (bin in histogram.indices) {
+                cumulative += histogram[bin]
                 if (cumulative > target) {
-                    median = v
+                    medianBin = bin
                     break
                 }
             }
-            return median / 0.6745
+            return (medianBin.toDouble() / binsPerLevel) / 0.6745
         } finally {
+            luma32.release()
             blurred.release()
             residual.release()
         }
