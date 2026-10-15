@@ -155,7 +155,7 @@ object ColorDetector {
         luminanceMin: Double = 40.0,
         luminanceMax: Double = 180.0
     ): ColorMode {
-        val maskMat = mask.toMat()
+        val maskMat = if (mask is DocumentSegmentation) null else mask.toMat()
         val docMode = try {
             autoColorMode(
                 img = img,
@@ -165,10 +165,10 @@ object ColorDetector {
                 proportionThreshold = proportionThreshold,
                 luminanceMin = luminanceMin,
                 luminanceMax = luminanceMax,
-                externalMask = if (mask is DocumentSegmentation) null else maskMat
+                externalMask = maskMat
             )
         } finally {
-            maskMat.release()
+            maskMat?.release()
         }
         return if (docMode == DocumentColorMode.COLOR) ColorMode.COLOR else ColorMode.GRAYSCALE
     }
