@@ -105,6 +105,8 @@ object NcnnNative {
 
     /**
      * Execute tiled super-resolution with direct streaming row output.
+     * The row callback receives a reusable direct buffer, reset before every synchronous
+     * callback; consume its bytes before returning and do not retain it for asynchronous use.
      *
      * @return 0 on completion, non-zero if cancelled or failed.
      */
