@@ -115,29 +115,20 @@ object ImageQualityAnalyzer {
         }
     }
 
-    /** Tenengrad: mean squared Sobel response. */
+    /** Tenengrad: mean squared Sobel response with bounded temporary memory. */
     fun tenengrad(luma: Mat): Double {
-        val gx = Mat()
-        val gy = Mat()
-        val gx2 = Mat()
-        val gy2 = Mat()
-        val sum = Mat()
+        val gradient = Mat()
         try {
-            Imgproc.Sobel(luma, gx, CvType.CV_64F, 1, 0, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
-            Imgproc.Sobel(luma, gy, CvType.CV_64F, 0, 1, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
-            Core.multiply(gx, gx, gx2)
-            Core.multiply(gy, gy, gy2)
-            Core.add(gx2, gy2, sum)
-            return Core.mean(sum).`val`[0]
+            Imgproc.Sobel(luma, gradient, CvType.CV_32F, 1, 0, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
+            val gxEnergy = Core.norm(gradient, Core.NORM_L2SQR)
+            Imgproc.Sobel(luma, gradient, CvType.CV_32F, 0, 1, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
+            val gyEnergy = Core.norm(gradient, Core.NORM_L2SQR)
+            val pixels = luma.rows().toDouble() * luma.cols().toDouble()
+            return if (pixels > 0.0) (gxEnergy + gyEnergy) / pixels else 0.0
         } finally {
-            gx.release()
-            gy.release()
-            gx2.release()
-            gy2.release()
-            sum.release()
+            gradient.release()
         }
     }
-
     /**
      * Noise sigma via the median absolute deviation of a high-pass residual.
      * MAD / 0.6745 is a robust sigma estimate for Gaussian noise.
@@ -243,10 +234,14 @@ object ImageQualityAnalyzer {
             val total = luma.rows().toDouble() * luma.cols()
             var cumulative = 0.0
             var p5 = 0
+            var p5Found = false
             var p95 = 255
             for (bin in 0 until 256) {
                 cumulative += hist.get(bin, 0)[0]
-                if (p5 == 0 && cumulative >= total * 0.05) p5 = bin
+                if (!p5Found && cumulative >= total * 0.05) {
+                    p5 = bin
+                    p5Found = true
+                }
                 if (cumulative >= total * 0.95) {
                     p95 = bin
                     break
