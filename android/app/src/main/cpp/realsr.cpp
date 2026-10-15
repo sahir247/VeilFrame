@@ -259,7 +259,8 @@ int RealSR::process_streaming(
         if (in_gpu.empty()) {
             return -101;
         }
-        if (xtiles > 1) {
+        {
+            // Complete input upload before tile commands use in_gpu, including xtiles == 1.
             int submit_ret = cmd.submit_and_wait();
             if (submit_ret != 0) return submit_ret;
             int reset_ret = cmd.reset();
@@ -381,13 +382,17 @@ int RealSR::process_streaming(
 
             cmd.record_pipeline(realsr_postproc, postproc_bindings, postproc_constants, postproc_dispatcher);
 
-            if (xtiles > 1) {
+            {
+                // Complete GPU work before tile-local VkMat objects leave scope.
                 int sret = cmd.submit_and_wait();
                 if (sret != 0) return sret;
                 int rret = cmd.reset();
                 if (rret != 0) return rret;
+            }
+            if (xtiles > 1) {
 #ifdef __ANDROID__
-                usleep(15000); // 15ms yield to allow SurfaceFlinger / GPU scheduler to service UI
+                // Preserve the documented SurfaceFlinger scheduling mitigation.
+                usleep(15000);
 #endif
             }
 
@@ -724,17 +729,17 @@ int RealSR::process_strip_streaming(
 
             cmd.record_pipeline(realsr_postproc, postproc_bindings, postproc_constants, postproc_dispatcher);
 
-            if (xtiles > 1) {
+            {
+                // Complete GPU work before tile-local VkMat objects leave scope.
                 int submit_ret = cmd.submit_and_wait();
-                if (submit_ret != 0) {
-                    return submit_ret;
-                }
+                if (submit_ret != 0) return submit_ret;
                 int reset_ret = cmd.reset();
-                if (reset_ret != 0) {
-                    return reset_ret;
-                }
+                if (reset_ret != 0) return reset_ret;
+            }
+            if (xtiles > 1) {
 #ifdef __ANDROID__
-                usleep(15000); // 15ms yield to allow SurfaceFlinger / GPU scheduler to service UI
+                // Preserve the documented SurfaceFlinger scheduling mitigation.
+                usleep(15000);
 #endif
             }
 
