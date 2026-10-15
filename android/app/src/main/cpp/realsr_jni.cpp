@@ -24,6 +24,9 @@ static jmethodID g_on_progress_method = nullptr;
 static jclass g_strip_callback_class = nullptr;
 static jmethodID g_on_strip_method = nullptr;
 
+static jclass g_buffer_class = nullptr;
+static jmethodID g_buffer_clear_method = nullptr;
+
 static bool valid_image_dimensions(jint width, jint height, jint channels) {
     if (width <= 0 || height <= 0 || width > 16384 || height > 16384 ||
         (channels != 3 && channels != 4)) {
@@ -157,6 +160,15 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
     // Reuse one direct buffer object across all rows. Kotlin consumes it
     // synchronously before this storage is overwritten for the next row.
     std::memcpy(cb->row_buffer.data(), row_data, static_cast<size_t>(capacity64));
+    jobject cleared_buffer = cb->env->CallObjectMethod(
+        cb->row_direct_buffer, g_buffer_clear_method
+    );
+    if (cb->env->ExceptionCheck()) {
+        cb->has_exception = true;
+        return -1;
+    }
+    if (cleared_buffer) cb->env->DeleteLocalRef(cleared_buffer);
+
     jint ret = cb->env->CallIntMethod(
         cb->row_callback, g_on_row_method, cb->row_direct_buffer, row_index, row_width, channels
     );
@@ -324,6 +336,10 @@ static void release_cached_global_refs(JNIEnv* env) {
     if (g_strip_callback_class) env->DeleteGlobalRef(g_strip_callback_class);
     g_strip_callback_class = nullptr;
     g_on_strip_method = nullptr;
+
+    if (g_buffer_class) env->DeleteGlobalRef(g_buffer_class);
+    g_buffer_class = nullptr;
+    g_buffer_clear_method = nullptr;
 }
 
 } // namespace
@@ -366,6 +382,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
                 "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I",
                 &g_strip_callback_class, &g_on_strip_method)) {
             error_code = -3;
+        } else if (!initialize_callback_method(
+                env,
+                "java/nio/Buffer",
+                "clear", "()Ljava/nio/Buffer;",
+                &g_buffer_class, &g_buffer_clear_method)) {
+            error_code = -4;
         }
     } catch (const std::bad_alloc&) {
         LOGE("nativeGlobalInit: out of memory");
