@@ -616,6 +616,8 @@ int RealSR::process_strip_streaming(
     opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
+    const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
+
     const int xtiles = (w + TILE_SIZE_X - 1) / TILE_SIZE_X;
     const int ytiles = (h + TILE_SIZE_Y - 1) / TILE_SIZE_Y;
     const int total_tiles = xtiles * ytiles;
