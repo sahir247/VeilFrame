@@ -1,6 +1,7 @@
 package com.veilframe.app.cv.core
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -34,6 +35,25 @@ object BitmapBridge {
             "HARDWARE bitmaps have no CPU-readable pixels; re-decode with a software config " +
                 "(or Bitmap.copy(ARGB_8888)) before converting to Mat"
         }
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8UC1)
+            val pixels = IntArray(bitmap.width)
+            val row = ByteArray(bitmap.width)
+            try {
+                for (y in 0 until bitmap.height) {
+                    bitmap.getPixels(pixels, 0, bitmap.width, 0, y, bitmap.width, 1)
+                    for (x in pixels.indices) {
+                        row[x] = Color.alpha(pixels[x]).toByte()
+                    }
+                    mat.put(y, 0, row)
+                }
+                return mat
+            } catch (t: Throwable) {
+                mat.release()
+                throw t
+            }
+        }
+
         val needsCopy = bitmap.config != Bitmap.Config.ARGB_8888 &&
             bitmap.config != Bitmap.Config.RGB_565 &&
             bitmap.config != Bitmap.Config.ALPHA_8
