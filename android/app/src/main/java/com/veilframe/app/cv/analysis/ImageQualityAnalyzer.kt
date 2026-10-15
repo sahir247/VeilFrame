@@ -323,7 +323,6 @@ object ImageQualityAnalyzer {
         val dilated = Mat()
         val halo = Mat()
         val ringMask = Mat()
-        val masked = Mat()
         try {
             Imgproc.GaussianBlur(luma, blurred, Size(5.0, 5.0), 0.0)
             Core.absdiff(luma, blurred, residual)
@@ -335,8 +334,7 @@ object ImageQualityAnalyzer {
             Imgproc.dilate(dilated, halo, wide)
             wide.release()
             Core.subtract(halo, dilated, ringMask)
-            Core.bitwise_and(residual, residual, masked, ringMask)
-            val ringEnergy = Core.mean(masked).`val`[0]
+            val ringEnergy = Core.mean(residual, ringMask).`val`[0]
             val totalEnergy = Core.mean(residual).`val`[0] + 1e-6
             return (ringEnergy / totalEnergy).coerceIn(0.0, 1.0)
         } finally {
@@ -346,7 +344,6 @@ object ImageQualityAnalyzer {
             dilated.release()
             halo.release()
             ringMask.release()
-            masked.release()
         }
     }
 }
