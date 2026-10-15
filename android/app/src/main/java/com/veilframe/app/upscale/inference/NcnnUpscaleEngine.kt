@@ -533,6 +533,8 @@ class NcnnUpscaleEngine(
                                     if (!coroutineContext.isActive) {
                                         1
                                     } else {
+                                        // JNI reuses one direct row buffer; reset its window before each synchronous write.
+                                        rowBuffer.clear()
                                         attemptWriter.writeRow(rowBuffer)
                                         writtenRows++
                                         0
