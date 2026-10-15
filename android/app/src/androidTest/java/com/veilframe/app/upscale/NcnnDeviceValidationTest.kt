@@ -155,6 +155,19 @@ class NcnnDeviceValidationTest {
                 assertTrue("Output file must be non-empty", output.file.length() > 0)
                 NcnnUpscaleEngine.validatePngFile(output.file, expectedW, expectedH)
 
+                if (case.name == "04_children_alpha_transparency_2x") {
+                    val decodedAlpha = BitmapFactory.decodeFile(output.file.absolutePath)
+                    assertNotNull("Transparent test output must decode", decodedAlpha)
+                    try {
+                        val alphaPixels = IntArray(decodedAlpha.width * decodedAlpha.height)
+                        decodedAlpha.getPixels(alphaPixels, 0, decodedAlpha.width, 0, 0, decodedAlpha.width, decodedAlpha.height)
+                        assertTrue("Upscaled RGBA output must preserve transparent pixels", alphaPixels.any { Color.alpha(it) < 250 })
+                        assertTrue("Upscaled RGBA output must preserve opaque pixels", alphaPixels.any { Color.alpha(it) > 250 })
+                    } finally {
+                        decodedAlpha.recycle()
+                    }
+                }
+
                 val outputArtifact = File(artifactsDir, "real_output_gpu_${case.name}.png")
                 output.file.copyTo(outputArtifact, overwrite = true)
                 Log.i(TAG, "Saved real output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
