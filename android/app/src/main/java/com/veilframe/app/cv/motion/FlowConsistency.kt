@@ -185,18 +185,15 @@ object FlowConsistency {
         Core.split(byFlow, channels)
         val mapXLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
         val mapYLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
-        val gridXLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
-        val gridYLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
         val mapX = mapXLease.mat
         val mapY = mapYLease.mat
-        val gridX = gridXLease.mat
-        val gridY = gridYLease.mat
         try {
-            buildGrid(gridX, gridY)
             Core.multiply(channels[0], ScalarOf(scale), mapX)
             Core.multiply(channels[1], ScalarOf(scale), mapY)
-            Core.add(mapX, gridX, mapX)
-            Core.add(mapY, gridY, mapY)
+            CoordinateGridCache.withGrid(byFlow.rows(), byFlow.cols()) { gridX, gridY ->
+                Core.add(mapX, gridX, mapX)
+                Core.add(mapY, gridY, mapY)
+            }
             val out = Mat()
             Imgproc.remap(flow, out, mapX, mapY, Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE)
             return out
@@ -204,23 +201,6 @@ object FlowConsistency {
             channels.forEach { it.release() }
             mapXLease.close()
             mapYLease.close()
-            gridXLease.close()
-            gridYLease.close()
-        }
-    }
-
-    private fun buildGrid(gridX: Mat, gridY: Mat) {
-        val rows = gridX.rows()
-        val cols = gridX.cols()
-        val rowX = FloatArray(cols)
-        val rowY = FloatArray(cols)
-        for (x in 0 until cols) {
-            rowX[x] = x.toFloat()
-        }
-        for (y in 0 until rows) {
-            rowY.fill(y.toFloat())
-            gridX.put(y, 0, rowX)
-            gridY.put(y, 0, rowY)
         }
     }
 
