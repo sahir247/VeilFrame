@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.opencv.core.Point
+import com.veilframe.app.cv.geometry.Point as GeometryPoint
 
 class ContourOrientationTest {
 
@@ -92,6 +93,33 @@ class ContourOrientationTest {
         val end = segmentClass.getDeclaredField("end").apply { isAccessible = true }
         assertEquals(30, start.getInt(first))
         assertEquals(10, end.getInt(first))
+    }
+
+
+    @Test
+    fun testCreateQuadUsesAxisAlignedOrderingAcrossAtan2BranchCut() {
+        val cx = 200.0
+        val cy = 200.0
+        val angle = Math.toRadians(35.0)
+        val c = kotlin.math.cos(angle)
+        val s = kotlin.math.sin(angle)
+        fun rotate(x: Double, y: Double) = GeometryPoint(
+            cx + c * x - s * y,
+            cy + s * x + c * y
+        )
+
+        val topLeft = rotate(-60.0, -40.0)
+        val topRight = rotate(60.0, -40.0)
+        val bottomRight = rotate(60.0, 40.0)
+        val bottomLeft = rotate(-60.0, 40.0)
+
+        // Deliberately scramble input order. bottomLeft falls just above cy,
+        // so a raw atan2 sort starts at bottomLeft (the original audit defect).
+        val quad = createQuad(listOf(bottomRight, bottomLeft, topRight, topLeft))
+        assertEquals(topLeft, quad.topLeft)
+        assertEquals(topRight, quad.topRight)
+        assertEquals(bottomRight, quad.bottomRight)
+        assertEquals(bottomLeft, quad.bottomLeft)
     }
 
 }
