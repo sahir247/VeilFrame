@@ -229,7 +229,11 @@ object ColorDetector {
             segmentation != null && CvRuntime.isNativeAvailable -> segmentation.toBinaryMat(0.5f)
             externalMask != null && !externalMask.empty() -> {
                 val binary = Mat()
-                val threshold = if (externalMask.depth() == CvType.CV_8U) 127.0 else 0.5
+                val threshold = if (externalMask.depth() == CvType.CV_8U) {
+                    if (Core.minMaxLoc(externalMask).maxVal <= 1.0) 0.0 else 127.0
+                } else {
+                    0.5
+                }
                 Imgproc.threshold(externalMask, binary, threshold, 255.0, Imgproc.THRESH_BINARY)
                 if (binary.type() != CvType.CV_8UC1) binary.convertTo(binary, CvType.CV_8UC1)
                 binary
