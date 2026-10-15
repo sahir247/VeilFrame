@@ -65,6 +65,20 @@ RealSR::~RealSR()
 
 int RealSR::load(const std::string& parampath, const std::string& modelpath)
 {
+    // Streaming currently binds ordinary 3-buffer shaders and performs one pass.
+    // Reject TTA until its full transform/merge pipeline is implemented.
+    if (tta_mode) {
+        LOGD("TTA requested but unsupported by streaming engine; refusing model load");
+        return -9;
+    }
+
+    // Repeated load() must release custom pipelines/layers before rebuilding them.
+    delete realsr_preproc; realsr_preproc = nullptr;
+    delete realsr_postproc; realsr_postproc = nullptr;
+    if (bicubic_2x) { bicubic_2x->destroy_pipeline(net.opt); delete bicubic_2x; bicubic_2x = nullptr; }
+    if (bicubic_3x) { bicubic_3x->destroy_pipeline(net.opt); delete bicubic_3x; bicubic_3x = nullptr; }
+    if (bicubic_4x) { bicubic_4x->destroy_pipeline(net.opt); delete bicubic_4x; bicubic_4x = nullptr; }
+
     net.opt.use_vulkan_compute = (vkdev != nullptr);
     net.opt.use_fp16_packed = false;
     net.opt.use_fp16_storage = false;
@@ -110,8 +124,9 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
         specializations[0].i = 0; // Android/Linux ABI
 
         {
-            static std::vector<uint32_t> spirv;
+            static std::vector<uint32_t> spirv_by_mode[2];
             static ncnn::Mutex lock;
+            std::vector<uint32_t>& spirv = spirv_by_mode[tta_mode ? 1 : 0];
             {
                 ncnn::MutexLockGuard guard(lock);
                 if (spirv.empty()) {
@@ -132,8 +147,9 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
         }
 
         {
-            static std::vector<uint32_t> spirv;
+            static std::vector<uint32_t> spirv_by_mode[2];
             static ncnn::Mutex lock;
+            std::vector<uint32_t>& spirv = spirv_by_mode[tta_mode ? 1 : 0];
             {
                 ncnn::MutexLockGuard guard(lock);
                 if (spirv.empty()) {
@@ -613,11 +629,15 @@ int RealSR::process_strip_streaming(
             return sret;
         }
 
-        LOGD("process_strip_streaming: yi=%d y0=%d h=%d c=%d scale=%d fp16_s=%d fp16_p=%d int8_s=%d strip_buf[0..5]=%d,%d,%d,%d,%d,%d",
-             yi, in_tile_y0, in_band_h, channels, scale,
-             (int)opt.use_fp16_storage, (int)opt.use_fp16_packed, (int)opt.use_int8_storage,
-             (int)strip_buf[0], (int)strip_buf[1], (int)strip_buf[2],
-             (int)strip_buf[3], (int)strip_buf[4], (int)strip_buf[5]);
+        if (strip_buf.size() >= 6) {
+            LOGD("process_strip_streaming: yi=%d y0=%d h=%d c=%d scale=%d fp16_s=%d fp16_p=%d int8_s=%d strip_buf[0..5]=%d,%d,%d,%d,%d,%d",
+                 yi, in_tile_y0, in_band_h, channels, scale,
+                 (int)opt.use_fp16_storage, (int)opt.use_fp16_packed, (int)opt.use_int8_storage,
+                 (int)strip_buf[0], (int)strip_buf[1], (int)strip_buf[2],
+                 (int)strip_buf[3], (int)strip_buf[4], (int)strip_buf[5]);
+        } else {
+            LOGD("process_strip_streaming: strip buffer has only %zu bytes", strip_buf.size());
+        }
 
         ncnn::VkMat out_gpu;
         if ((opt.use_fp16_storage || opt.use_fp16_packed) && opt.use_int8_storage) {
@@ -769,11 +789,15 @@ int RealSR::process_strip_streaming(
             out.to_pixels(band_buf.data(), channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB);
         }
 
-        LOGD("download: out_gpu w=%d h=%d c=%d cstep=%d. out dims=%d w=%d h=%d c=%d cstep=%d elemsize=%zu. band_buf[0..5]=%d,%d,%d,%d,%d,%d",
-             out_gpu.w, out_gpu.h, out_gpu.c, (int)out_gpu.cstep,
-             out.dims, out.w, out.h, out.c, (int)out.cstep, out.elemsize,
-             (int)band_buf[0], (int)band_buf[1], (int)band_buf[2],
-             (int)band_buf[3], (int)band_buf[4], (int)band_buf[5]);
+        if (band_buf.size() >= 6) {
+            LOGD("download: out_gpu w=%d h=%d c=%d cstep=%d. out dims=%d w=%d h=%d c=%d cstep=%d elemsize=%zu band_buf[0..5]=%d,%d,%d,%d,%d,%d",
+                 out_gpu.w, out_gpu.h, out_gpu.c, (int)out_gpu.cstep,
+                 out.dims, out.w, out.h, out.c, (int)out.cstep, out.elemsize,
+                 (int)band_buf[0], (int)band_buf[1], (int)band_buf[2],
+                 (int)band_buf[3], (int)band_buf[4], (int)band_buf[5]);
+        } else {
+            LOGD("download: band buffer has only %zu bytes", band_buf.size());
+        }
 
         for (int r = 0; r < out_band_h; r++) {
             int abs_row = out_tile_y0 * scale + r;
