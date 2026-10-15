@@ -1,11 +1,11 @@
 package com.veilframe.app.cv.core
 
 import android.graphics.Bitmap
-import android.graphics.Color
 import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
+import java.nio.ByteBuffer
 
 /**
  * Bitmap ⇄ Mat bridge.
@@ -37,14 +37,16 @@ object BitmapBridge {
         }
         if (bitmap.config == Bitmap.Config.ALPHA_8) {
             val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8UC1)
-            val pixels = IntArray(bitmap.width)
-            val row = ByteArray(bitmap.width)
             try {
+                // ALPHA_8 is a single byte per pixel; copy raw storage instead
+                // of asking Utils.bitmapToMat to interpret an unsupported format.
+                val storage = ByteArray(bitmap.byteCount)
+                bitmap.copyPixelsToBuffer(ByteBuffer.wrap(storage))
+                val row = ByteArray(bitmap.width)
+                val rowStride = bitmap.rowBytes
+                require(rowStride >= bitmap.width) { "Invalid ALPHA_8 bitmap row stride" }
                 for (y in 0 until bitmap.height) {
-                    bitmap.getPixels(pixels, 0, bitmap.width, 0, y, bitmap.width, 1)
-                    for (x in pixels.indices) {
-                        row[x] = Color.alpha(pixels[x]).toByte()
-                    }
+                    System.arraycopy(storage, y * rowStride, row, 0, bitmap.width)
                     mat.put(y, 0, row)
                 }
                 return mat
