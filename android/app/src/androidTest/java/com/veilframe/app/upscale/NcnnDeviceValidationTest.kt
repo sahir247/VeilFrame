@@ -236,6 +236,28 @@ class NcnnDeviceValidationTest {
                     assertTrue("Output must exist for ${width}x${height}", output.file.exists())
                     assertTrue("Output must be non-empty for ${width}x${height}", output.file.length() > 0)
                     NcnnUpscaleEngine.validatePngFile(output.file, width * 2, height * 2)
+                    val decoded = BitmapFactory.decodeFile(output.file.absolutePath)
+                    assertNotNull("Output must decode for ${width}x${height}", decoded)
+                    try {
+                        val outputPixels = IntArray(decoded.width * decoded.height)
+                        decoded.getPixels(
+                            outputPixels, 0, decoded.width, 0, 0, decoded.width, decoded.height
+                        )
+                        assertTrue(
+                            "Upscale output must not be entirely black for ${width}x${height}",
+                            outputPixels.any { pixel ->
+                                ((pixel ushr 16) and 0xFF) > 2 ||
+                                    ((pixel ushr 8) and 0xFF) > 2 ||
+                                    (pixel and 0xFF) > 2
+                            }
+                        )
+                        assertTrue(
+                            "Opaque input must retain opaque alpha for ${width}x${height}",
+                            outputPixels.any { Color.alpha(it) > 250 }
+                        )
+                    } finally {
+                        decoded.recycle()
+                    }
                     Log.i(TAG, "Small-image case passed: ${width}x${height} -> ${output.width}x${output.height}")
                 } finally {
                     input.recycle()
