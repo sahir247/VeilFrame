@@ -59,4 +59,39 @@ class ContourOrientationTest {
         assertEquals(4, rect!!.size)
         assertTrue("MinAreaRect produces valid quad", Geometry.isValidQuad(rect))
     }
+
+    @Test
+    fun testMergeSegmentsChecksWrapAroundEvenWithFourSegments() {
+        val segmentClass = Class.forName(
+            "com.veilframe.app.cv.geometry.ContourOrientation\$ContourSegment"
+        )
+        val constructor = segmentClass.getDeclaredConstructor(
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Double::class.javaPrimitiveType,
+            Double::class.javaPrimitiveType,
+        ).apply { isAccessible = true }
+
+        val segments = listOf(
+            constructor.newInstance(0, 10, 0.0, 100.0),
+            constructor.newInstance(10, 20, Math.PI / 2.0, 100.0),
+            constructor.newInstance(20, 30, Math.PI, 100.0),
+            constructor.newInstance(30, 40, 0.01, 10.0),
+        )
+        val merge = ContourOrientation::class.java.getDeclaredMethod(
+            "mergeSegments",
+            List::class.java,
+            Double::class.javaPrimitiveType,
+        ).apply { isAccessible = true }
+
+        val merged = merge.invoke(ContourOrientation, segments, Math.toRadians(7.0)) as List<*>
+        assertEquals("The first and last segments are one circular edge", 3, merged.size)
+
+        val first = merged.first()!!
+        val start = segmentClass.getDeclaredField("start").apply { isAccessible = true }
+        val end = segmentClass.getDeclaredField("end").apply { isAccessible = true }
+        assertEquals(30, start.getInt(first))
+        assertEquals(10, end.getInt(first))
+    }
+
 }
