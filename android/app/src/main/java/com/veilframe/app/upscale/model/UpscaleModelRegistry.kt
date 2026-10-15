@@ -691,7 +691,9 @@ object UpscaleModelRegistry {
      */
     val SELECTABLE_MODELS: List<UpscaleModel>
         get() = ALL_MODELS.filter {
-            it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY && it.tier != ModelTier.TIER_C_DESKTOP
+            it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY &&
+                it.tier != ModelTier.TIER_C_DESKTOP &&
+                (it.isBuiltIn || it.sha256.isNotEmpty() || (it.type == ModelType.AI_NCNN && !it.paramSha256.isNullOrEmpty() && !it.binSha256.isNullOrEmpty()))
         }
 
     /** Selectable neural models across the transitional ONNX and native NCNN backends. */

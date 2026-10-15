@@ -63,7 +63,7 @@ class StreamingPngWriter(
 
     private val out: OutputStream = FileOutputStream(file).buffered(64 * 1024)
     private val idatChunkStream: IdatChunkOutputStream
-    private val deflater = Deflater(Deflater.DEFAULT_COMPRESSION)
+    private val deflater = Deflater(Deflater.BEST_SPEED)
     private val idat: DeflaterOutputStream
     private val rowBuf = ByteArray((1L + width.toLong() * colorType.channels.toLong()).toInt())
     private var rowsWritten = 0

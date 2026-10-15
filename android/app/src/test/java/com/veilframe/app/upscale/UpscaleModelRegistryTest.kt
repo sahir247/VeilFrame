@@ -160,5 +160,26 @@ class UpscaleModelRegistryTest {
         ).validateNcnnArtifactContract()
     }
 
+    @Test
+    fun testSelectableModelsExcludeEmptySha256Models() {
+        val selectable = UpscaleModelRegistry.SELECTABLE_MODELS
+        selectable.forEach { model ->
+            assertTrue(
+                "Selectable model ${model.id} must be built-in, have a non-blank SHA-256, or be a valid NCNN model",
+                model.isBuiltIn || model.sha256.isNotBlank() || (model.type == ModelType.AI_NCNN && !model.paramSha256.isNullOrBlank())
+            )
+        }
+        // Verify that experimental models with empty SHA-256 are excluded
+        val emptyShaModels = UpscaleModelRegistry.ALL_MODELS.filter {
+            !it.isBuiltIn && it.type == ModelType.AI_ONNX && it.sha256.isBlank()
+        }
+        assertTrue("There must be experimental ONNX models without hashes in ALL_MODELS", emptyShaModels.isNotEmpty())
+        emptyShaModels.forEach { emptyModel ->
+            assertFalse(
+                "Experimental model ${emptyModel.id} with empty SHA-256 must not be in SELECTABLE_MODELS",
+                selectable.contains(emptyModel)
+            )
+        }
+    }
 }
 

@@ -37,8 +37,10 @@ class UpscaleForegroundService : Service() {
         const val NOTIFICATION_ID = 1101
 
         private const val ACTION_START = "com.veilframe.action.UPSCALE_START"
+        private const val ACTION_PROGRESS = "com.veilframe.action.UPSCALE_PROGRESS"
         private const val ACTION_CANCEL = "com.veilframe.action.UPSCALE_CANCEL"
         private const val EXTRA_LABEL = "extra_label"
+        private const val EXTRA_PERCENT = "extra_percent"
 
         /**
          * Cooperative cancel hook, bound by ImageUpscalerController while a job
@@ -47,7 +49,11 @@ class UpscaleForegroundService : Service() {
         @Volatile
         var cancelHook: (() -> Unit)? = null
 
+        @Volatile
+        private var lastProgressUpdateMs: Long = 0L
+
         fun start(context: Context, label: String) {
+            lastProgressUpdateMs = 0L
             val intent = Intent(context, UpscaleForegroundService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_LABEL, label)
@@ -65,6 +71,18 @@ class UpscaleForegroundService : Service() {
             }
         }
 
+        fun updateProgress(context: Context, label: String, percent: Int) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (percent in 1..99 && now - lastProgressUpdateMs < 500L) return
+            lastProgressUpdateMs = now
+            val intent = Intent(context, UpscaleForegroundService::class.java).apply {
+                action = ACTION_PROGRESS
+                putExtra(EXTRA_LABEL, label)
+                putExtra(EXTRA_PERCENT, percent.coerceIn(0, 100))
+            }
+            runCatching { context.startService(intent) }
+        }
+
         fun stop(context: Context) {
             try {
                 context.stopService(Intent(context, UpscaleForegroundService::class.java))
@@ -77,14 +95,20 @@ class UpscaleForegroundService : Service() {
         super.onCreate()
         createChannel()
         // Promote immediately in onCreate to satisfy any startForegroundService() contract
-        startAsForeground("AI Upscaling")
+        startAsForeground("AI Upscaling", -1)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
                 val label = intent.getStringExtra(EXTRA_LABEL) ?: "AI upscale"
-                startAsForeground(label)
+                startAsForeground(label, -1)
+            }
+            ACTION_PROGRESS -> {
+                val label = intent.getStringExtra(EXTRA_LABEL) ?: "AI upscale"
+                val pct = intent.getIntExtra(EXTRA_PERCENT, -1)
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                manager?.notify(NOTIFICATION_ID, buildNotification(label, pct))
             }
             ACTION_CANCEL -> {
                 cancelHook?.invoke()
@@ -104,8 +128,8 @@ class UpscaleForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun startAsForeground(label: String) {
-        val notification = buildNotification(label)
+    private fun startAsForeground(label: String, percent: Int = -1) {
+        val notification = buildNotification(label, percent)
         try {
             if (Build.VERSION.SDK_INT >= 35) {
                 startForeground(
@@ -146,19 +170,26 @@ class UpscaleForegroundService : Service() {
         }
     }
 
-    private fun buildNotification(label: String): Notification {
+    private fun buildNotification(label: String, percent: Int = -1): Notification {
         val cancelIntent = PendingIntent.getService(
             this,
             0,
             Intent(this, UpscaleForegroundService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val contentText = if (percent in 0..100) {
+            "Processing on-device ($percent%) — safe to switch apps"
+        } else {
+            "Running on-device. Progress continues while you navigate."
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("VeilFrame — $label")
-            .setContentText("Running on-device. Progress continues while you navigate.")
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download) // neutral system icon; no new assets
             .setOngoing(true)
             .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, percent.coerceIn(0, 100), percent < 0)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .addAction(0, "Cancel", cancelIntent)

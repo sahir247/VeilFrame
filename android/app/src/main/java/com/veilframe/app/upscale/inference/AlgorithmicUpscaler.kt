@@ -135,19 +135,26 @@ object AlgorithmicUpscaler {
             }
         }
 
-        val srcPixels = IntArray(srcW * srcH)
-        source.getPixels(srcPixels, 0, srcW, 0, 0, srcW, srcH)
+        // Sliding 16-slot ring buffer of horizontally resampled source rows.
+        // Peak RAM is 16 * targetWidth * 4 floats (~512 KB for 8K) instead of 384+ MB.
+        val cacheSlots = 16
+        val rowStride = targetWidth * 4
+        val horizCache = FloatArray(cacheSlots * rowStride)
+        val cachedRowTag = IntArray(cacheSlots) { -1 }
+        val srcRowBuf = IntArray(srcW)
+        val dstRowBuf = IntArray(targetWidth)
 
-        // Pass 1: Horizontal resampling to intermediate primitive buffer.
-        val interPixels = FloatArray(targetWidth * srcH * 4)
-        for (y in 0 until srcH) {
-            checkpoint?.invoke() // B6: cancellable per source row (pass 1)
-            val srcRowOffset = y * srcW
-            val dstRowOffset = y * targetWidth
+        fun ensureHorizRow(srcY: Int): Int {
+            val slot = srcY and (cacheSlots - 1)
+            if (cachedRowTag[slot] == srcY) {
+                return slot * rowStride
+            }
+            checkpoint?.invoke()
+            source.getPixels(srcRowBuf, 0, srcW, 0, srcY, srcW, 1)
+            val baseOffset = slot * rowStride
             for (x in 0 until targetWidth) {
                 val taps = colTapIdx[x]
                 val weights = colTapW[x]
-
                 var sumWeight = 0.0f
                 var r = 0.0f
                 var g = 0.0f
@@ -156,7 +163,7 @@ object AlgorithmicUpscaler {
 
                 for (k in taps.indices) {
                     val w = weights[k]
-                    val c = srcPixels[srcRowOffset + taps[k]]
+                    val c = srcRowBuf[taps[k]]
                     alpha += ((c ushr 24) and 0xff).toFloat() * w
                     r += ((c ushr 16) and 0xff).toFloat() * w
                     g += ((c shr 8) and 0xff).toFloat() * w
@@ -164,52 +171,69 @@ object AlgorithmicUpscaler {
                     sumWeight += w
                 }
 
-                val outBase = (dstRowOffset + x) * 4
+                val outBase = baseOffset + x * 4
                 if (sumWeight > 0.0f) {
-                    interPixels[outBase] = (alpha / sumWeight).coerceIn(0.0f, 255.0f)
-                    interPixels[outBase + 1] = (r / sumWeight).coerceIn(0.0f, 255.0f)
-                    interPixels[outBase + 2] = (g / sumWeight).coerceIn(0.0f, 255.0f)
-                    interPixels[outBase + 3] = (b / sumWeight).coerceIn(0.0f, 255.0f)
+                    val inv = 1.0f / sumWeight
+                    horizCache[outBase] = (alpha * inv).coerceIn(0.0f, 255.0f)
+                    horizCache[outBase + 1] = (r * inv).coerceIn(0.0f, 255.0f)
+                    horizCache[outBase + 2] = (g * inv).coerceIn(0.0f, 255.0f)
+                    horizCache[outBase + 3] = (b * inv).coerceIn(0.0f, 255.0f)
+                } else {
+                    horizCache[outBase] = 0f
+                    horizCache[outBase + 1] = 0f
+                    horizCache[outBase + 2] = 0f
+                    horizCache[outBase + 3] = 0f
                 }
             }
+            cachedRowTag[slot] = srcY
+            return baseOffset
         }
 
-        // Pass 2: Vertical resampling to destination pixels.
-        val dstPixels = IntArray(targetWidth * targetHeight)
+        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val tapBases = IntArray(2 * a + 1)
+
         for (y in 0 until targetHeight) {
-            checkpoint?.invoke() // B6: cancellable per output row (pass 2)
+            checkpoint?.invoke() // B6: cancellable per output row
             val taps = rowTapIdx[y]
             val weights = rowTapW[y]
-            val dstRow = y * targetWidth
+            for (k in taps.indices) {
+                tapBases[k] = ensureHorizRow(taps[k])
+            }
+
             for (x in 0 until targetWidth) {
                 var sumWeight = 0.0f
                 var r = 0.0f
                 var g = 0.0f
                 var b = 0.0f
                 var alpha = 0.0f
+                val xOffset = x * 4
 
                 for (k in taps.indices) {
                     val w = weights[k]
-                    val srcIdx = (taps[k] * targetWidth + x) * 4
-                    alpha += interPixels[srcIdx] * w
-                    r += interPixels[srcIdx + 1] * w
-                    g += interPixels[srcIdx + 2] * w
-                    b += interPixels[srcIdx + 3] * w
+                    val srcIdx = tapBases[k] + xOffset
+                    alpha += horizCache[srcIdx] * w
+                    r += horizCache[srcIdx + 1] * w
+                    g += horizCache[srcIdx + 2] * w
+                    b += horizCache[srcIdx + 3] * w
                     sumWeight += w
                 }
 
                 if (sumWeight > 0.0f) {
-                    val finalA = (alpha / sumWeight).toInt().coerceIn(0, 255)
-                    val finalR = (r / sumWeight).toInt().coerceIn(0, 255)
-                    val finalG = (g / sumWeight).toInt().coerceIn(0, 255)
-                    val finalB = (b / sumWeight).toInt().coerceIn(0, 255)
-                    dstPixels[dstRow + x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
+                    val inv = 1.0f / sumWeight
+                    val finalA = (alpha * inv).toInt().coerceIn(0, 255)
+                    val finalR = (r * inv).toInt().coerceIn(0, 255)
+                    val finalG = (g * inv).toInt().coerceIn(0, 255)
+                    val finalB = (b * inv).toInt().coerceIn(0, 255)
+                    dstRowBuf[x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
+                } else {
+                    dstRowBuf[x] = 0
                 }
             }
+            result.setPixels(dstRowBuf, 0, targetWidth, 0, y, targetWidth, 1)
+            // Yield briefly every 32 scanlines so UI thread and GC stay responsive
+            if ((y and 31) == 31) Thread.yield()
         }
 
-        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        result.setPixels(dstPixels, 0, targetWidth, 0, 0, targetWidth, targetHeight)
         return result
     }
 }

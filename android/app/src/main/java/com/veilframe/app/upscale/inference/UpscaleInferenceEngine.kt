@@ -8,6 +8,8 @@ import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRepository
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
@@ -24,6 +26,7 @@ class UpscaleInferenceEngine(
 
     companion object {
         private const val TAG = "VeilFrame.UpscaleEngine"
+        private val verifiedShaCache = ConcurrentHashMap<String, String>()
 
         /**
          * Capability-aware execution validator.
@@ -110,30 +113,61 @@ class UpscaleInferenceEngine(
 
             val resultOutput = when (model.type) {
                 ModelType.AI_NCNN -> {
+                    val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
                     val ncnnEngine = NcnnUpscaleEngine(context, repository)
-                    ncnnEngine.upscale(source, model, targetScale, params, listener)
+                    val aiPassOutput = ncnnEngine.upscale(
+                        source = source,
+                        model = model,
+                        targetScale = model.nativeScale,
+                        params = params,
+                        listener = listener
+                    )
+
+                    if (!scalePlan.requiresRefinement) {
+                        aiPassOutput
+                    } else {
+                        // Streamed refinement pass from the NCNN intermediate output
+                        val refineScale = scalePlan.refinementScale
+                        val finalW = srcW * targetScale
+                        val finalH = srcH * targetScale
+                        if (finalW > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                            finalH > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                            finalW.toLong() * finalH.toLong() > UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS
+                        ) {
+                            (aiPassOutput as? UpscaleOutput.Streamed)?.file?.delete()
+                            throw ResourceLimitExceededException(
+                                "Hybrid ${targetScale}× output (${finalW}x${finalH}) exceeds safe device pixel bounds."
+                            )
+                        }
+                        listener?.onStatus("Applying ${refineScale}× Lanczos refinement...")
+                        listener?.onStage("Refinement", 0, 1)
+                        refineStreamedOutput(aiPassOutput, refineScale, finalW, finalH)
+                    }
                 }
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
                     listener?.onProgress(0, 1, 0)
                     listener?.onStage("Rescaling", 0, 1)
-                    // Controller budget-checks full() eligibility before choosing
-                    // an algorithmic model on a streaming source.
                     val fullSource = source.full()
-                    val targetW = srcW * targetScale
-                    val targetH = srcH * targetScale
-                    // B6: per-row cancellation checkpoints — a cancelled
-                    // algorithmic job stops within one row.
-                    val cc = coroutineContext
-                    val checkpoint: () -> Unit = { cc.ensureActive() }
-                    val res = when (model.id) {
-                        "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
-                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
-                        else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH, checkpoint)
+                    val ownsFullSource = source !is BitmapSource
+                    try {
+                        val targetW = srcW * targetScale
+                        val targetH = srcH * targetScale
+                        val cc = coroutineContext
+                        val checkpoint: () -> Unit = { cc.ensureActive() }
+                        val res = when (model.id) {
+                            "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
+                            "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
+                            else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH, checkpoint)
+                        }
+                        listener?.onProgress(1, 1, 100)
+                        listener?.onStage("Complete", 1, 1)
+                        UpscaleOutput.InMemory(res)
+                    } finally {
+                        if (ownsFullSource && !fullSource.isRecycled) {
+                            fullSource.recycle()
+                        }
                     }
-                    listener?.onProgress(1, 1, 100)
-                    listener?.onStage("Complete", 1, 1)
-                    UpscaleOutput.InMemory(res)
                 }
                 ModelType.AI_ONNX -> {
                     val modelFile = repository.getModelFile(model.id)
@@ -145,8 +179,12 @@ class UpscaleInferenceEngine(
 
                     // Cryptographic model SHA-256 verification
                     if (model.sha256.isNotEmpty()) {
-                        val actualSha = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(modelFile)
+                        val cacheKey = "${modelFile.absolutePath}:${modelFile.length()}:${modelFile.lastModified()}"
+                        val actualSha = verifiedShaCache.getOrPut(cacheKey) {
+                            com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(modelFile)
+                        }
                         if (!actualSha.equals(model.sha256, ignoreCase = true)) {
+                            verifiedShaCache.remove(cacheKey)
                             return@withContext Result.failure(
                                 IllegalStateException("Model ${model.name} SHA-256 mismatch: expected ${model.sha256}, actual $actualSha")
                             )
@@ -296,6 +334,8 @@ class UpscaleInferenceEngine(
                 )
             )
             Result.success(resultOutput)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e(TAG, "Upscale failed: ${e.message}", e)
             val currentBackend = when (model.type) {
@@ -315,6 +355,63 @@ class UpscaleInferenceEngine(
                 )
             )
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Streams a secondary horizontal-band Lanczos/Bicubic refinement pass over a
+     * streamed NCNN output PNG without holding the full output bitmap in memory.
+     */
+    private suspend fun refineStreamedOutput(
+        aiPassOutput: UpscaleOutput,
+        refineScale: Int,
+        finalW: Int,
+        finalH: Int
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
+        val streamed = aiPassOutput as? UpscaleOutput.Streamed
+            ?: throw UpscaleMemoryException("Expected streamed NCNN output for hybrid refinement")
+        val uri = android.net.Uri.fromFile(streamed.file)
+        val regionSource = UriRegionSource(context, uri, streamed.width, streamed.height)
+        val outDir = File(context.cacheDir, "upscale_streaming").apply { mkdirs() }
+        val tempFile = File(outDir, "ncnn_hybrid_${java.util.UUID.randomUUID()}.part")
+        val finalFile = File(outDir, "ncnn_hybrid_${java.util.UUID.randomUUID()}.png")
+        val bandSrcH = 128
+        val rowPixels = IntArray(finalW)
+        var writer: StreamingPngWriter? = null
+        try {
+            writer = StreamingPngWriter(tempFile, finalW, finalH, StreamingPngWriter.ColorType.RGBA)
+            var y0 = 0
+            while (y0 < streamed.height) {
+                ensureActive()
+                val h = minOf(bandSrcH, streamed.height - y0)
+                val stripBmp = regionSource.region(0, y0, streamed.width, h)
+                val scaledStrip = try {
+                    AlgorithmicUpscaler.scaleBicubic(stripBmp, finalW, h * refineScale)
+                } finally {
+                    stripBmp.recycle()
+                }
+                try {
+                    for (r in 0 until scaledStrip.height) {
+                        scaledStrip.getPixels(rowPixels, 0, finalW, 0, r, finalW, 1)
+                        writer.writeRow(rowPixels)
+                    }
+                } finally {
+                    scaledStrip.recycle()
+                }
+                y0 += h
+            }
+            writer.close()
+            NcnnUpscaleEngine.validatePngFile(tempFile, finalW, finalH)
+            NcnnUpscaleEngine.publishFileAtomically(tempFile, finalFile)
+            val preview = com.veilframe.app.media.MediaDecoder.decodeSampledFile(finalFile)
+            UpscaleOutput.Streamed(finalFile, preview, finalW, finalH)
+        } catch (t: Throwable) {
+            runCatching { writer?.abort() }
+            runCatching { tempFile.delete() }
+            throw t
+        } finally {
+            regionSource.close()
+            runCatching { streamed.file.delete() }
         }
     }
 }
