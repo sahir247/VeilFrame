@@ -318,18 +318,26 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRED_BRANCH: ${{ github.head_ref || github.ref_name }}
+          REQUIRED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
+          # Never use an unrelated, last-known-good artifact: it can be stale and
+          # package a 4 KB-aligned libopencv_java4.so. Find the build for this
+          # exact source SHA and wait for it to finish before consuming its artifact.
           RUN_ID=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
-            --status success \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+            --branch "$REQUIRED_BRANCH" \
+            --limit 100 \
+            --json databaseId,headSha \
+            --jq "first(.[] | select(.headSha == \"$REQUIRED_HEAD_SHA\")) | .databaseId")
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No successful build-opencv-sdk.yml run is available to provide the required verified SDK."
+            echo "::error::No build-opencv-sdk.yml run exists for branch $REQUIRED_BRANCH at $REQUIRED_HEAD_SHA. Run the matching SDK workflow; refusing to consume a stale artifact."
             exit 1
           fi
+
+          echo "Waiting for verified OpenCV SDK build $RUN_ID at $REQUIRED_HEAD_SHA..."
+          gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
 
           mkdir -p /tmp/opencv_artifact
           gh run download "$RUN_ID" --repo "${{ github.repository }}" \
