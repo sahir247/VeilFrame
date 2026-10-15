@@ -319,7 +319,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRED_BRANCH: ${{ github.head_ref || github.ref_name }}
-          REQUIRED_HEAD_SHA: ${{ github.sha }}
+          REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
           # Never use an unrelated, last-known-good artifact: it can be stale and
