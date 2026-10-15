@@ -10,8 +10,8 @@ on:
       - 'android/opencv-sdk/**'
       - 'android/app/src/androidTest/**'
       - 'android/app/src/main/java/com/veilframe/app/cv/**'
-  # The CI release gate consumes the artifact for the exact source SHA.
-  # Run on matching feature-branch pushes too; do not silently reuse main/master binaries.
+  # Build SDK artifacts from feature-branch changes as well.
+  # CI prefers the exact head SHA and only permits same-branch reuse when SDK inputs are unchanged.
   push:
     paths:
       - 'android/scripts/build_opencv_contrib_sdk.sh'
