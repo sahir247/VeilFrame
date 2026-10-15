@@ -9,6 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.ByteBuffer
 
 class StreamingPngWriterTest {
 
@@ -53,12 +54,145 @@ class StreamingPngWriterTest {
         val decoded = decodePng(file)
         assertEquals("Decoded image width must match", width, decoded.width)
         assertEquals("Decoded image height must match", height, decoded.height)
+        assertEquals(6, decoded.colorType)
 
         for (y in 0 until height) {
             assertEquals("Pixel (0, $y) Blue channel match", 0xFF0000FF.toInt(), decoded.getPixel(0, y))
             assertEquals("Pixel (1, $y) Green channel match", 0xFF00FF00.toInt(), decoded.getPixel(1, y))
             assertEquals("Pixel (2, $y) Red channel match", 0xFFFF0000.toInt(), decoded.getPixel(2, y))
             assertEquals("Pixel (3, $y) White channel match", 0xFFFFFFFF.toInt(), decoded.getPixel(3, y))
+        }
+    }
+
+    @Test
+    fun testValidPngStreamingRgbOutput() {
+        val file = tempFolder.newFile("test_rgb_complete.png")
+        val width = 4
+        val height = 2
+
+        StreamingPngWriter(file, width, height, colorType = StreamingPngWriter.ColorType.RGB).use { writer ->
+            assertEquals(StreamingPngWriter.ColorType.RGB, writer.colorType)
+            val rowPixels = intArrayOf(
+                0xFF0000FF.toInt(), // Blue
+                0xFF00FF00.toInt(), // Green
+                0xFFFF0000.toInt(), // Red
+                0xFFFFFFFF.toInt(), // White
+            )
+            for (y in 0 until height) {
+                writer.writeRow(rowPixels)
+            }
+            assertEquals(1f, writer.progress(), 0.001f)
+        }
+
+        assertTrue(file.exists())
+        val decoded = decodePng(file)
+        assertEquals(width, decoded.width)
+        assertEquals(height, decoded.height)
+        assertEquals("Must be Color Type 2 (RGB)", 2, decoded.colorType)
+
+        for (y in 0 until height) {
+            assertEquals("Blue match", 0xFF0000FF.toInt(), decoded.getPixel(0, y))
+            assertEquals("Green match", 0xFF00FF00.toInt(), decoded.getPixel(1, y))
+            assertEquals("Red match", 0xFFFF0000.toInt(), decoded.getPixel(2, y))
+            assertEquals("White match", 0xFFFFFFFF.toInt(), decoded.getPixel(3, y))
+        }
+    }
+
+    @Test
+    fun testValidPngStreamingDirectByteBufferRgb() {
+        val file = tempFolder.newFile("test_direct_bb_rgb.png")
+        val width = 3
+        val height = 2
+
+        val directBuffer = ByteBuffer.allocateDirect(width * 3)
+        StreamingPngWriter(file, width, height, colorType = StreamingPngWriter.ColorType.RGB).use { writer ->
+            for (y in 0 until height) {
+                directBuffer.clear()
+                // Row y: 3 pixels RGB: Red, Green, Blue
+                directBuffer.put(byteArrayOf(
+                    0xFF.toByte(), 0x00, 0x00,       // Red
+                    0x00, 0xFF.toByte(), 0x00,       // Green
+                    0x00, 0x00, 0xFF.toByte()        // Blue
+                ))
+                directBuffer.flip()
+                writer.writeRow(directBuffer)
+                assertEquals(0, directBuffer.remaining())
+            }
+        }
+
+        val decoded = decodePng(file)
+        assertEquals(2, decoded.colorType)
+        assertEquals(width, decoded.width)
+        assertEquals(height, decoded.height)
+        for (y in 0 until height) {
+            assertEquals(0xFFFF0000.toInt(), decoded.getPixel(0, y))
+            assertEquals(0xFF00FF00.toInt(), decoded.getPixel(1, y))
+            assertEquals(0xFF0000FF.toInt(), decoded.getPixel(2, y))
+        }
+    }
+
+    @Test
+    fun testValidPngStreamingDirectByteBufferRgba() {
+        val file = tempFolder.newFile("test_direct_bb_rgba.png")
+        val width = 2
+        val height = 2
+
+        val directBuffer = ByteBuffer.allocateDirect(width * 4)
+        StreamingPngWriter(file, width, height, colorType = StreamingPngWriter.ColorType.RGBA).use { writer ->
+            for (y in 0 until height) {
+                directBuffer.clear()
+                // Pixel 0: Semi-transparent Red (R=255, G=0, B=0, A=128)
+                // Pixel 1: Opaque Yellow (R=255, G=255, B=0, A=255)
+                directBuffer.put(byteArrayOf(
+                    0xFF.toByte(), 0x00, 0x00, 0x80.toByte(),
+                    0xFF.toByte(), 0xFF.toByte(), 0x00, 0xFF.toByte()
+                ))
+                directBuffer.flip()
+                writer.writeRow(directBuffer)
+            }
+        }
+
+        val decoded = decodePng(file)
+        assertEquals(6, decoded.colorType)
+        for (y in 0 until height) {
+            assertEquals(0x80FF0000.toInt(), decoded.getPixel(0, y))
+            assertEquals(0xFFFFFF00.toInt(), decoded.getPixel(1, y))
+        }
+    }
+
+    @Test
+    fun testValidPngStreamingByteArray() {
+        val fileRgb = tempFolder.newFile("test_byte_array_rgb.png")
+        val width = 2
+        val height = 2
+        val rgbBytes = byteArrayOf(
+            0xFF.toByte(), 0x55, 0x11,
+            0x22, 0x88.toByte(), 0xEE.toByte()
+        )
+
+        StreamingPngWriter(fileRgb, width, height, colorType = StreamingPngWriter.ColorType.RGB).use { writer ->
+            writer.writeRow(rgbBytes)
+            writer.writeRow(rgbBytes)
+        }
+
+        val decoded = decodePng(fileRgb)
+        assertEquals(2, decoded.colorType)
+        assertEquals(0xFFFF5511.toInt(), decoded.getPixel(0, 0))
+        assertEquals(0xFF2288EE.toInt(), decoded.getPixel(1, 0))
+    }
+
+    @Test
+    fun testByteBufferUnderflowCheck() {
+        val file = tempFolder.newFile("test_bb_underflow.png")
+        val writer = StreamingPngWriter(file, 4, 2, colorType = StreamingPngWriter.ColorType.RGB)
+        val tinyBuffer = ByteBuffer.allocate(5) // needs 4 * 3 = 12 bytes
+        try {
+            writer.writeRow(tinyBuffer)
+            fail("Passing buffer with insufficient bytes must throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("buffer remaining") == true)
+        } finally {
+            writer.abort()
         }
     }
 
@@ -298,7 +432,13 @@ class StreamingPngWriterTest {
      * Independent reference PNG decoder to validate that written files adhere strictly
      * to the PNG 1.2 specification and can be decoded by any standard PNG decoder.
      */
-    data class DecodedPng(val width: Int, val height: Int, val pixels: IntArray, val idatChunkCount: Int) {
+    data class DecodedPng(
+        val width: Int,
+        val height: Int,
+        val pixels: IntArray,
+        val idatChunkCount: Int,
+        val colorType: Int = 6
+    ) {
         fun getPixel(x: Int, y: Int): Int = pixels[y * width + x]
     }
 
@@ -381,7 +521,9 @@ class StreamingPngWriterTest {
         assertTrue("IDAT missing", idatStreams.isNotEmpty())
         assertEquals("Offset must match file size (no trailing bytes)", bytes.size, offset)
         assertEquals("Bit depth must be 8", 8, bitDepth)
-        assertEquals("Color type must be 6 (RGBA)", 6, colorType)
+        assertTrue("Color type must be 2 (RGB) or 6 (RGBA)", colorType == 2 || colorType == 6)
+
+        val bytesPerPixel = if (colorType == 6) 4 else 3
 
         // Concatenate all IDAT payloads
         val totalCompressed = idatStreams.sumOf { it.size }
@@ -393,7 +535,7 @@ class StreamingPngWriterTest {
         }
 
         // Decompress with Inflater
-        val scanlineBytes = 1 + width * 4
+        val scanlineBytes = 1 + width * bytesPerPixel
         val uncompressed = ByteArray(scanlineBytes * height)
         val inflater = java.util.zip.Inflater()
         inflater.setInput(compressed)
@@ -404,17 +546,17 @@ class StreamingPngWriterTest {
 
         // Unfilter scanlines and build ARGB pixel array
         val pixels = IntArray(width * height)
-        val prevRow = ByteArray(width * 4)
-        val curRow = ByteArray(width * 4)
+        val prevRow = ByteArray(width * bytesPerPixel)
+        val curRow = ByteArray(width * bytesPerPixel)
 
         for (y in 0 until height) {
             val rowOffset = y * scanlineBytes
             val filter = uncompressed[rowOffset].toInt() and 0xFF
-            for (x in 0 until width * 4) {
+            for (x in 0 until width * bytesPerPixel) {
                 val rawByte = uncompressed[rowOffset + 1 + x].toInt() and 0xFF
-                val left = if (x >= 4) curRow[x - 4].toInt() and 0xFF else 0
+                val left = if (x >= bytesPerPixel) curRow[x - bytesPerPixel].toInt() and 0xFF else 0
                 val up = prevRow[x].toInt() and 0xFF
-                val upLeft = if (x >= 4) prevRow[x - 4].toInt() and 0xFF else 0
+                val upLeft = if (x >= bytesPerPixel) prevRow[x - bytesPerPixel].toInt() and 0xFF else 0
 
                 val uncur = when (filter) {
                     0 -> rawByte // None
@@ -434,16 +576,25 @@ class StreamingPngWriterTest {
                 curRow[x] = uncur.toByte()
             }
 
-            for (x in 0 until width) {
-                val r = curRow[x * 4].toInt() and 0xFF
-                val g = curRow[x * 4 + 1].toInt() and 0xFF
-                val b = curRow[x * 4 + 2].toInt() and 0xFF
-                val a = curRow[x * 4 + 3].toInt() and 0xFF
-                pixels[y * width + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            if (colorType == 6) {
+                for (x in 0 until width) {
+                    val r = curRow[x * 4].toInt() and 0xFF
+                    val g = curRow[x * 4 + 1].toInt() and 0xFF
+                    val b = curRow[x * 4 + 2].toInt() and 0xFF
+                    val a = curRow[x * 4 + 3].toInt() and 0xFF
+                    pixels[y * width + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                }
+            } else {
+                for (x in 0 until width) {
+                    val r = curRow[x * 3].toInt() and 0xFF
+                    val g = curRow[x * 3 + 1].toInt() and 0xFF
+                    val b = curRow[x * 3 + 2].toInt() and 0xFF
+                    pixels[y * width + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                }
             }
             System.arraycopy(curRow, 0, prevRow, 0, curRow.size)
         }
 
-        return DecodedPng(width, height, pixels, idatStreams.size)
+        return DecodedPng(width, height, pixels, idatStreams.size, colorType)
     }
 }

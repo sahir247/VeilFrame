@@ -5,6 +5,7 @@ import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
+import java.nio.ByteBuffer
 
 /**
  * Bitmap ⇄ Mat bridge.
@@ -34,6 +35,27 @@ object BitmapBridge {
             "HARDWARE bitmaps have no CPU-readable pixels; re-decode with a software config " +
                 "(or Bitmap.copy(ARGB_8888)) before converting to Mat"
         }
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            val mat = Mat(bitmap.height, bitmap.width, CvType.CV_8UC1)
+            try {
+                // ALPHA_8 is a single byte per pixel; copy raw storage instead
+                // of asking Utils.bitmapToMat to interpret an unsupported format.
+                val storage = ByteArray(bitmap.byteCount)
+                bitmap.copyPixelsToBuffer(ByteBuffer.wrap(storage))
+                val row = ByteArray(bitmap.width)
+                val rowStride = bitmap.rowBytes
+                require(rowStride >= bitmap.width) { "Invalid ALPHA_8 bitmap row stride" }
+                for (y in 0 until bitmap.height) {
+                    System.arraycopy(storage, y * rowStride, row, 0, bitmap.width)
+                    mat.put(y, 0, row)
+                }
+                return mat
+            } catch (t: Throwable) {
+                mat.release()
+                throw t
+            }
+        }
+
         val needsCopy = bitmap.config != Bitmap.Config.ARGB_8888 &&
             bitmap.config != Bitmap.Config.RGB_565 &&
             bitmap.config != Bitmap.Config.ALPHA_8
@@ -45,6 +67,11 @@ object BitmapBridge {
         try {
             val mat = createMatFor(source)
             Utils.bitmapToMat(source, mat)
+            // Android Bitmap storage is RGBA; VeilFrame's CV contract is BGRA/BGR.
+            when (mat.channels()) {
+                4 -> Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGRA)
+                3 -> Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR)
+            }
             return mat
         } finally {
             // CV-9: the intermediate copy used to leak (never recycled).
@@ -60,7 +87,15 @@ object BitmapBridge {
     fun toBitmap(mat: Mat): Bitmap {
         val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
         when (mat.channels()) {
-            4 -> Utils.matToBitmap(mat, bitmap)
+            4 -> {
+                val rgba = Mat()
+                Imgproc.cvtColor(mat, rgba, Imgproc.COLOR_BGRA2RGBA)
+                try {
+                    Utils.matToBitmap(rgba, bitmap)
+                } finally {
+                    rgba.release()
+                }
+            }
             3 -> {
                 val rgba = Mat()
                 Imgproc.cvtColor(mat, rgba, Imgproc.COLOR_BGR2RGBA)

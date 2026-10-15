@@ -80,8 +80,73 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install ffmpeg --no-progress
+          $ErrorActionPreference = 'Stop'
+
+          # Try installing via Chocolatey with retries
+          $maxAttempts = 3
+          $attempt = 0
+          $installed = $false
+          while ($attempt -lt $maxAttempts -and -not $installed) {
+            $attempt++
+            try {
+              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
+              choco install ffmpeg --no-progress -y
+              if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+                Write-Host "choco install succeeded"
+              } else {
+                throw "choco exited with code $LASTEXITCODE"
+              }
+            } catch {
+              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) {
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+
+          # If choco failed, fetch a static ffmpeg build and stage it
+          if (-not $installed) {
+            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
+            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
+            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
+            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
+            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
+
+            if (-not $ffmpegFile -or -not $ffprobeFile) {
+              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
+              exit 1
+            }
+
+            $destDir = "C:\ProgramData\ffmpeg"
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
+
+            # Also copy into chocolatey bin if it exists (which is already in default runner PATH)
+            if (Test-Path "C:\ProgramData\chocolatey\bin") {
+              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
+              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
+            }
+
+            # Copy into repo resources so build/test steps can find them
+            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
+            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
+            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
+            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
+
+            # Ensure ffmpeg is discoverable in current and subsequent steps
+            $env:PATH = "$destDir;$env:PATH"
+            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Copied ffmpeg to $destDir and updated PATH"
+          }
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -89,9 +154,22 @@ jobs:
           brew install ffmpeg || true
 
       - name: Verify FFmpeg Installation
+        shell: bash
         run: |
-          ffmpeg -version
-          ffprobe -version
+          echo "PATH: $PATH"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            where.exe ffmpeg || true
+          else
+            which ffmpeg || true
+          fi
+          ffmpeg -version || {
+            echo "::error::ffmpeg not found or failed to execute"
+            exit 1
+          }
+          ffprobe -version || {
+            echo "::error::ffprobe not found or failed to execute"
+            exit 1
+          }
 
       - name: Install Dependencies
         run: |
@@ -194,6 +272,252 @@ jobs:
   # ------------------------------------------------------------------ #
   # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
   # ------------------------------------------------------------------ #
+  # PR-safe Android verification: independent of release-signing credentials and release-only gates.
+  # Builds the production native bridge, runs upscaler + full JVM tests, packages ARM64 debug APK,
+  # and inspects the actual packaged native libraries (ABI + 16 KB page alignment).
+  android-upscaler-verify:
+    name: Android NCNN hardening (ARM64)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Install Android SDK and NDK packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          sdkmanager --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;26.1.10909125"
+
+      - name: Stage verified custom OpenCV 4.14.0 SDK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRED_BRANCH: ${{ github.head_ref || github.ref_name }}
+          REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          # Prefer an artifact built from this exact head. For commits that only
+          # change app/test files, same-branch reuse is allowed only if all OpenCV
+          # SDK build inputs are byte-for-byte unchanged and the later ELF check passes.
+          # Never consume a default-branch artifact for a feature-branch build.
+          RUNS=$(gh run list --repo "${{ github.repository }}" \
+            --workflow "build-opencv-sdk.yml" \
+            --branch "$REQUIRED_BRANCH" \
+            --limit 100 \
+            --json databaseId,headSha,status,conclusion)
+
+          # Prefer an artifact built at this exact head. For unrelated app/test
+          # commits, a same-branch build is safe only when the OpenCV build inputs
+          # have not changed since that artifact's source SHA.
+          RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+            '[.[] | select(.headSha == $sha)] | first | .databaseId // empty')
+          ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
+
+          if [ -z "$RUN_ID" ]; then
+            CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
+              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
+            RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
+            ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
+            if [ -z "$RUN_ID" ] || [ -z "$ARTIFACT_SHA" ]; then
+              echo "::error::No current or successful OpenCV SDK build exists on $REQUIRED_BRANCH."
+              exit 1
+            fi
+
+            git fetch --no-tags --depth=1 origin "$ARTIFACT_SHA"
+            git fetch --no-tags --depth=1 origin "$REQUIRED_HEAD_SHA"
+            CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" "$REQUIRED_HEAD_SHA" | \
+              grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
+            if [ -n "$CHANGED_INPUTS" ]; then
+              echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+              echo "$CHANGED_INPUTS"
+              exit 1
+            fi
+            echo "Reusing same-branch SDK build $RUN_ID at $ARTIFACT_SHA; OpenCV build inputs are unchanged."
+          fi
+
+          echo "Waiting for verified OpenCV SDK build $RUN_ID at $ARTIFACT_SHA..."
+          gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
+
+          mkdir -p /tmp/opencv_artifact
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" \
+            --name veilframe-custom-opencv-sdk --dir /tmp/opencv_artifact
+
+          ARM64_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/arm64-v8a/libopencv_java4.so" -print -quit)
+          X86_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/x86_64/libopencv_java4.so" -print -quit)
+          MAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/core/Mat.java" -print -quit)
+          WECHAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/wechat_qrcode/WeChatQRCode.java" -print -quit)
+          VIDEOIO_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/videoio/Videoio.java" -print -quit)
+          ATTRS_XML=$(find /tmp/opencv_artifact -path "*/res/values/attrs.xml" -print -quit)
+          MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
+          test -n "$ARM64_SO" && test -s "$ARM64_SO"
+          test -n "$X86_SO" && test -s "$X86_SO"
+          test -n "$MAT_JAVA" && test -s "$MAT_JAVA"
+          test -n "$WECHAT_JAVA" && test -s "$WECHAT_JAVA"
+          test -n "$VIDEOIO_JAVA" && test -s "$VIDEOIO_JAVA"
+          test -n "$ATTRS_XML" && test -s "$ATTRS_XML"
+          test -n "$MARKER" && test -s "$MARKER"
+
+          # The artifact root may include src/main/ because its AAR path is also uploaded;
+          # derive the exact SDK root from the verified Java binding path instead of assuming it.
+          SDK_ROOT="${MAT_JAVA%/java/org/opencv/core/Mat.java}"
+          mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
+          mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
+          mkdir -p android/opencv-sdk/src/main/java android/opencv-sdk/src/main/res
+          cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          cp -a "$SDK_ROOT/java/." android/opencv-sdk/src/main/java/
+          cp -a "$SDK_ROOT/res/." android/opencv-sdk/src/main/res/
+          cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
+          test -s android/opencv-sdk/src/main/.opencv-sdk-complete
+          test -s android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/videoio/Videoio.java
+          test -s android/opencv-sdk/src/main/res/values/attrs.xml
+          sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+
+      - name: Build ARM64 native NCNN bridge
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew ':app:buildCMakeDebug[arm64-v8a]' --stacktrace
+
+      - name: Run focused upscaler unit tests
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.upscale.*" --rerun-tasks --stacktrace
+
+      - name: Run complete Android unit test suite
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble ARM64 debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Verify APK ABI set, required libraries, APK alignment, and ELF page alignment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          READELF="$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -s "$APK"
+          test -x "$ZIPALIGN"
+          test -x "$READELF"
+
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK"
+
+          python3 - "$APK" "$READELF" <<'PY'
+          import subprocess
+          import sys
+          import zipfile
+
+          apk_path, readelf = sys.argv[1:]
+          with zipfile.ZipFile(apk_path) as apk:
+              so_paths = sorted(n for n in apk.namelist() if n.startswith("lib/") and n.endswith(".so"))
+              if not so_paths:
+                  raise SystemExit("APK contains no packaged native libraries")
+              bad_abis = [n for n in so_paths if not n.startswith("lib/arm64-v8a/")]
+              if bad_abis:
+                  raise SystemExit("APK contains unsupported native ABIs: " + ", ".join(bad_abis))
+              names = set(so_paths)
+              required = {
+                  "lib/arm64-v8a/libveilframe_ncnn.so",
+                  "lib/arm64-v8a/libopencv_java4.so",
+              }
+              missing = sorted(required - names)
+              if missing:
+                  raise SystemExit("APK is missing required native libraries: " + ", ".join(missing))
+
+              bad_alignment = []
+              for name in so_paths:
+                  content = apk.read(name)
+                  import tempfile, os
+                  fd, path = tempfile.mkstemp(suffix=".so")
+                  try:
+                      with os.fdopen(fd, "wb") as out:
+                          out.write(content)
+                      proc = subprocess.run(
+                          [readelf, "-lW", path],
+                          check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      )
+                      loads = [line.split() for line in proc.stdout.splitlines() if line.lstrip().startswith("LOAD ")]
+                      if not loads:
+                          bad_alignment.append(f"{name} (no LOAD segments)")
+                          continue
+                      # The 16 KB ELF alignment requirement applies to native code built
+                      # for this app and its custom OpenCV dependency. Third-party libraries
+                      # shipped prebuilt are reported separately; don't silently rewrite or
+                      # bless them, but also don't block this NCNN change on unrelated SDKs.
+                      require_strict_alignment = name in {
+                          "lib/arm64-v8a/libveilframe_ncnn.so",
+                          "lib/arm64-v8a/libopencv_java4.so",
+                      }
+                      for fields in loads:
+                          align = int(fields[-1], 0)
+                          if require_strict_alignment and (align < 0x4000 or align % 0x4000 != 0):
+                              bad_alignment.append(f"{name} (LOAD p_align={align:#x})")
+                              break
+                      if not require_strict_alignment:
+                          legacy = [int(fields[-1], 0) for fields in loads if int(fields[-1], 0) < 0x4000]
+                          if legacy:
+                              print(f"NOTICE: prebuilt third-party {name} contains LOAD alignment below 16 KB: " +
+                                    ", ".join(f"{value:#x}" for value in legacy))
+                  finally:
+                      try:
+                          os.unlink(path)
+                      except FileNotFoundError:
+                          pass
+              print("Packaged ARM64 shared objects:")
+              print("\n".join(so_paths))
+              if bad_alignment:
+                  raise SystemExit("Native ELF LOAD segments are not all 16 KB aligned:\n" + "\n".join(bad_alignment))
+          PY
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-android-debug-arm64
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
   release-gate:
     name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -226,8 +550,70 @@ jobs:
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install ffmpeg --no-progress
+          $ErrorActionPreference = 'Stop'
+
+          # Try installing via Chocolatey with retries
+          $maxAttempts = 3
+          $attempt = 0
+          $installed = $false
+          while ($attempt -lt $maxAttempts -and -not $installed) {
+            $attempt++
+            try {
+              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
+              choco install ffmpeg --no-progress -y
+              if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+                Write-Host "choco install succeeded"
+              } else {
+                throw "choco exited with code $LASTEXITCODE"
+              }
+            } catch {
+              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) {
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+
+          # If choco failed, fetch a static ffmpeg build and stage it
+          if (-not $installed) {
+            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
+            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
+            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
+            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
+            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
+
+            if (-not $ffmpegFile -or -not $ffprobeFile) {
+              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
+              exit 1
+            }
+
+            $destDir = "C:\ProgramData\ffmpeg"
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
+            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
+
+            if (Test-Path "C:\ProgramData\chocolatey\bin") {
+              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
+              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
+            }
+
+            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
+            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
+            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
+            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
+
+            $env:PATH = "$destDir;$env:PATH"
+            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Copied ffmpeg to $destDir and updated PATH"
+          }
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -269,7 +655,8 @@ jobs:
           cache: "pip"
 
       - name: Install FFmpeg (Windows)
-        run: choco install ffmpeg --no-progress
+        shell: bash
+        run: choco install ffmpeg --no-progress -y || true
 
       - name: Stage Windows FFmpeg Binaries
         shell: pwsh

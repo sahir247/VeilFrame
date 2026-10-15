@@ -60,15 +60,17 @@ data class UpscaleInferenceParams(
             var workers: Int
             when {
                 lowRam || heapMb < 256 -> {
-                    chunk = if (bigScale) 160 else 256
+                    chunk = if (bigScale) 128 else 160
                     workers = 1
                 }
                 heapMb < 512 -> {
-                    chunk = if (bigScale) 256 else 384
+                    chunk = if (bigScale) 160 else 256
                     workers = 1
                 }
                 else -> {
-                    chunk = if (bigScale) 384 else 512
+                    // For >=4x scales, 160 produces a 640px output tile per pass, ensuring
+                    // single-dispatch GPU executions stay under 3-4s and never trip system watchdogs.
+                    chunk = if (bigScale) 160 else 256
                     workers = 2
                 }
             }

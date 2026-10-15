@@ -27,7 +27,7 @@ sealed class UpscaleOutput {
      */
     data class Streamed(
         val file: File,
-        val preview: Bitmap,
+        val preview: Bitmap?,
         override val width: Int,
         override val height: Int,
     ) : UpscaleOutput()
@@ -35,8 +35,8 @@ sealed class UpscaleOutput {
     abstract val width: Int
     abstract val height: Int
 
-    /** Best bitmap for display without materializing the full output. */
-    fun previewBitmap(): Bitmap = when (this) {
+    /** Best bitmap for display without materializing the full output. Null if preview generation was skipped or failed. */
+    fun previewBitmap(): Bitmap? = when (this) {
         is InMemory -> bitmap
         is Streamed -> preview
     }

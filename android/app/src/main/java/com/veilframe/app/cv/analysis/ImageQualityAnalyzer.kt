@@ -115,66 +115,63 @@ object ImageQualityAnalyzer {
         }
     }
 
-    /** Tenengrad: mean squared Sobel response. */
+    /** Tenengrad: mean squared Sobel response with bounded temporary memory. */
     fun tenengrad(luma: Mat): Double {
-        val gx = Mat()
-        val gy = Mat()
-        val gx2 = Mat()
-        val gy2 = Mat()
-        val sum = Mat()
+        val gradient = Mat()
         try {
-            Imgproc.Sobel(luma, gx, CvType.CV_64F, 1, 0, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
-            Imgproc.Sobel(luma, gy, CvType.CV_64F, 0, 1, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
-            Core.multiply(gx, gx, gx2)
-            Core.multiply(gy, gy, gy2)
-            Core.add(gx2, gy2, sum)
-            return Core.mean(sum).`val`[0]
+            Imgproc.Sobel(luma, gradient, CvType.CV_32F, 1, 0, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
+            val gxEnergy = Core.norm(gradient, Core.NORM_L2SQR)
+            Imgproc.Sobel(luma, gradient, CvType.CV_32F, 0, 1, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
+            val gyEnergy = Core.norm(gradient, Core.NORM_L2SQR)
+            val pixels = luma.rows().toDouble() * luma.cols().toDouble()
+            return if (pixels > 0.0) (gxEnergy + gyEnergy) / pixels else 0.0
         } finally {
-            gx.release()
-            gy.release()
-            gx2.release()
-            gy2.release()
-            sum.release()
+            gradient.release()
         }
     }
-
     /**
      * Noise sigma via the median absolute deviation of a high-pass residual.
      * MAD / 0.6745 is a robust sigma estimate for Gaussian noise.
      */
     fun estimateNoiseSigma(luma: Mat): Double {
+        val luma32 = Mat()
         val blurred = Mat()
         val residual = Mat()
         try {
-            Imgproc.GaussianBlur(luma, blurred, Size(3.0, 3.0), 0.0)
-            Core.absdiff(luma, blurred, residual)
-            // Exact 8-bit histogram median with row-buffered streaming — avoids
-            // allocating a full-resolution 12 MP ByteArray on the JVM heap.
+            // Preserve fractional residuals: blurring CV_8U first quantizes
+            // away sub-integer differences and produces a coarse sigma estimate.
+            luma.convertTo(luma32, CvType.CV_32F)
+            Imgproc.GaussianBlur(luma32, blurred, Size(3.0, 3.0), 0.0)
+            Core.absdiff(luma32, blurred, residual)
+
+            // Row-buffered fractional histogram avoids a full-resolution heap array.
+            // 1/16 intensity bins provide sub-integer resolution at bounded cost.
             val rows = residual.rows()
             val cols = residual.cols()
-            val rowBuf = ByteArray(cols)
-            val histogram = LongArray(256)
+            val rowBuf = FloatArray(cols)
+            val binsPerLevel = 16
+            val histogram = LongArray(255 * binsPerLevel + 1)
             for (r in 0 until rows) {
                 residual.get(r, 0, rowBuf)
                 for (c in 0 until cols) {
-                    histogram[rowBuf[c].toInt() and 0xFF]++
+                    val bin = (rowBuf[c] * binsPerLevel).toInt()
+                        .coerceIn(0, histogram.lastIndex)
+                    histogram[bin]++
                 }
             }
-            // Use Long throughout: for an 8K image (7680×4320 = ~33 M pixels)
-            // target = ~16 M which overflows Int.MAX_VALUE only at >4 Gpx, but
-            // cumulative must match to avoid a signed-comparison mismatch.
             val target = rows.toLong() * cols / 2L
             var cumulative = 0L
-            var median = 255
-            for (v in histogram.indices) {
-                cumulative += histogram[v]
+            var medianBin = histogram.lastIndex
+            for (bin in histogram.indices) {
+                cumulative += histogram[bin]
                 if (cumulative > target) {
-                    median = v
+                    medianBin = bin
                     break
                 }
             }
-            return median / 0.6745
+            return (medianBin.toDouble() / binsPerLevel) / 0.6745
         } finally {
+            luma32.release()
             blurred.release()
             residual.release()
         }
@@ -243,10 +240,14 @@ object ImageQualityAnalyzer {
             val total = luma.rows().toDouble() * luma.cols()
             var cumulative = 0.0
             var p5 = 0
+            var p5Found = false
             var p95 = 255
             for (bin in 0 until 256) {
                 cumulative += hist.get(bin, 0)[0]
-                if (p5 == 0 && cumulative >= total * 0.05) p5 = bin
+                if (!p5Found && cumulative >= total * 0.05) {
+                    p5 = bin
+                    p5Found = true
+                }
                 if (cumulative >= total * 0.95) {
                     p95 = bin
                     break
@@ -322,7 +323,6 @@ object ImageQualityAnalyzer {
         val dilated = Mat()
         val halo = Mat()
         val ringMask = Mat()
-        val masked = Mat()
         try {
             Imgproc.GaussianBlur(luma, blurred, Size(5.0, 5.0), 0.0)
             Core.absdiff(luma, blurred, residual)
@@ -334,8 +334,7 @@ object ImageQualityAnalyzer {
             Imgproc.dilate(dilated, halo, wide)
             wide.release()
             Core.subtract(halo, dilated, ringMask)
-            Core.bitwise_and(residual, residual, masked, ringMask)
-            val ringEnergy = Core.mean(masked).`val`[0]
+            val ringEnergy = Core.mean(residual, ringMask).`val`[0]
             val totalEnergy = Core.mean(residual).`val`[0] + 1e-6
             return (ringEnergy / totalEnergy).coerceIn(0.0, 1.0)
         } finally {
@@ -345,7 +344,6 @@ object ImageQualityAnalyzer {
             dilated.release()
             halo.release()
             ringMask.release()
-            masked.release()
         }
     }
 }

@@ -63,7 +63,18 @@ def render_text_bundle(
             sub_sep,
         ])
         for alert in scan_result.security_alerts:
-            parts.append(f"• {alert.relative_path} ({alert.rule_id}): {alert.description}")
+            if isinstance(alert, str):
+                parts.append(f"• {alert}")
+            elif isinstance(alert, dict):
+                p = alert.get("relative_path") or alert.get("path") or alert.get("file_path", "")
+                r = alert.get("rule_id") or alert.get("rule", "SECRET")
+                d = alert.get("description") or alert.get("alert_type", "Security alert")
+                parts.append(f"• {p} ({r}): {d}" if p else f"• ({r}): {d}")
+            else:
+                p = getattr(alert, "relative_path", None) or getattr(alert, "file_path", "")
+                r = getattr(alert, "rule_id", "SECRET")
+                d = getattr(alert, "description", str(alert))
+                parts.append(f"• {p} ({r}): {d}" if p else f"• ({r}): {d}")
         parts.append("")
 
     return "\n".join(parts)

@@ -29,6 +29,7 @@ import com.veilframe.app.upscale.inference.BitmapSource
 import com.veilframe.app.upscale.inference.SourceAccess
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.inference.UpscaleInferenceParams
+import com.veilframe.app.upscale.inference.NcnnNative
 import com.veilframe.app.upscale.inference.OnnxSessionManager
 import com.veilframe.app.upscale.inference.UpscaleMemoryException
 import com.veilframe.app.upscale.inference.UpscaleOutput
@@ -91,12 +92,13 @@ class ImageUpscalerController(
     private var resultOutput: UpscaleOutput? = null
     private var resultFile: File? = null
     private var activePreset: UpscalePreset = UpscalePresetRegistry.PHOTO
-    private var targetScale: Int = 2
+    private var targetScale: Int = UpscalePresetRegistry.PHOTO.defaultScale
     private var explicitModel: UpscaleModel? = null
     private var inferenceJob: Job? = null
     private var downloadJob: Job? = null
     private var currentLoadJob: Job? = null
     private var imageLoadGeneration: Long = 0L
+    private var suppressScaleListener: Boolean = false
     private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     var onImportCustomModelRequested: (() -> Unit)? = null
@@ -118,14 +120,15 @@ class ImageUpscalerController(
         // F11: thermal awareness for the whole workspace session.
         com.veilframe.app.runtime.ThermalGovernor.register(activity)
 
-        // Audit fix: prune stale streamed outputs (crashed/killed jobs leave
-        // full-size PNGs in cache; 24h is far beyond any save/share window).
+        // Audit fix (UP5): prune stale streamed outputs and shared exports across all three cache dirs
         scope.launch(Dispatchers.IO) {
-            runCatching {
-                val dir = File(activity.cacheDir, "upscale_outputs")
-                val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-                dir.listFiles()?.forEach { f ->
-                    if (f.isFile && f.lastModified() < cutoff) f.delete()
+            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            listOf("upscale_outputs", "upscale_streaming", "shared_upscaled").forEach { dirName ->
+                runCatching {
+                    val dir = File(activity.cacheDir, dirName)
+                    dir.listFiles()?.forEach { f ->
+                        if (f.isFile && f.lastModified() < cutoff) f.delete()
+                    }
                 }
             }
         }
@@ -211,7 +214,29 @@ class ImageUpscalerController(
             shareUpscaledImage()
         }
 
+        syncScaleToggleWithModel(getResolvedModel())
         updateUIState()
+    }
+
+    private fun syncScaleToggleWithModel(model: UpscaleModel) {
+        val supported = model.supportedOutputScales
+        upscalerBinding.btnScale2x.isEnabled = 2 in supported
+        upscalerBinding.btnScale4x.isEnabled = 4 in supported
+        upscalerBinding.btnScale8x.isEnabled = 8 in supported
+
+        if (targetScale !in supported) {
+            targetScale = supported.minByOrNull { kotlin.math.abs(it - targetScale) } ?: model.nativeScale
+        }
+        val targetButtonId = when (targetScale) {
+            4 -> R.id.btnScale4x
+            8 -> R.id.btnScale8x
+            else -> R.id.btnScale2x
+        }
+        if (upscalerBinding.toggleGroupUpscalerScale.checkedButtonId != targetButtonId) {
+            suppressScaleListener = true
+            upscalerBinding.toggleGroupUpscalerScale.check(targetButtonId)
+            suppressScaleListener = false
+        }
     }
 
     fun handleImageSelected(uri: Uri) {
@@ -415,15 +440,8 @@ class ImageUpscalerController(
             }
             upscalerBinding.tvUpscalerPresetDesc.text = preset.description
 
-            // Adjust default scale for preset if needed
-            if (preset.defaultScale != targetScale && explicitModel == null) {
-                targetScale = preset.defaultScale
-                when (targetScale) {
-                    4 -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale4x)
-                    8 -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale8x)
-                    else -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale2x)
-                }
-            }
+            val resolved = getResolvedModel()
+            syncScaleToggleWithModel(resolved)
 
             updateTargetDimensions()
             updateModelDisplay()
@@ -433,19 +451,30 @@ class ImageUpscalerController(
 
     private fun setupScales() {
         upscalerBinding.toggleGroupUpscalerScale.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            targetScale = when (checkedId) {
+            if (!isChecked || suppressScaleListener) return@addOnButtonCheckedListener
+            val requestedScale = when (checkedId) {
                 R.id.btnScale4x -> 4
                 R.id.btnScale8x -> 8
                 else -> 2
             }
+            val model = runCatching { getResolvedModel() }.getOrNull()
+            if (model != null && requestedScale !in model.supportedOutputScales) {
+                syncScaleToggleWithModel(model)
+                Toast.makeText(
+                    activity,
+                    "${model.name} supports ${model.supportedOutputScales.joinToString("×, ")}× output.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@addOnButtonCheckedListener
+            }
+            targetScale = requestedScale
             updateTargetDimensions()
             updateModelDisplay()
             onLog("[UPSCALER] Target scale set to ${targetScale}×")
         }
     }
 
-    private fun setupDiagnostics() {
+    private fun refreshDiagnosticsSummary() {
         val actManager = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         val memInfo = android.app.ActivityManager.MemoryInfo().also { actManager?.getMemoryInfo(it) }
         val availMb = memInfo.availMem / (1024 * 1024)
@@ -453,11 +482,31 @@ class ImageUpscalerController(
         val cpuCores = Runtime.getRuntime().availableProcessors()
 
         upscalerBinding.tvDiagHardware.text = "Device: ${Build.MANUFACTURER} ${Build.MODEL} • $cpuCores CPU cores (~${availMb}MB / ${totalMb}MB RAM)"
-        upscalerBinding.tvDiagBackend.text =
-            "Active Backend: auto-select (NNAPI → XNNPACK → CPU) • last: ${OnnxSessionManager.lastBackend}"
-        upscalerBinding.tvDiagExecutionProfile.text =
-            "Engine: VeilFrame ONNX (region-streamed dynamic tiling) • thermal: " +
-                com.veilframe.app.runtime.ThermalGovernor.statusName()
+        val activeModel = getResolvedModel()
+        val ncnnSelected = activeModel.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN
+        if (ncnnSelected) {
+            val vulkanAvailable = NcnnNative.isAvailable
+            val gpuCount = if (vulkanAvailable) NcnnNative.getGpuCount() else 0
+            val gpuName = if (gpuCount > 0) NcnnNative.getGpuDeviceName(0) ?: "GPU 0" else "CPU only"
+            upscalerBinding.tvDiagBackend.text = if (gpuCount > 0) {
+                "Active Backend: NCNN Vulkan ($gpuName, $gpuCount GPU detected)"
+            } else if (vulkanAvailable) {
+                "Active Backend: NCNN CPU (Vulkan library active, 0 discrete GPU)"
+            } else {
+                "Active Backend: NCNN CPU (Fallback / Host)"
+            }
+            upscalerBinding.tvDiagExecutionProfile.text =
+                "Engine: NCNN Native Tile Pipeline (${activeModel.nativeScale}×) • thermal: ${com.veilframe.app.runtime.ThermalGovernor.statusName()}"
+        } else {
+            upscalerBinding.tvDiagBackend.text =
+                "Active Backend: ONNX Runtime (XNNPACK / NNAPI / CPU) • last: ${OnnxSessionManager.lastBackend}"
+            upscalerBinding.tvDiagExecutionProfile.text =
+                "Engine: ONNX (region-streamed dynamic tiling) • thermal: ${com.veilframe.app.runtime.ThermalGovernor.statusName()}"
+        }
+    }
+
+    private fun setupDiagnostics() {
+        refreshDiagnosticsSummary()
         upscalerBinding.tvDiagThroughput.text = "Throughput: Idle"
 
         var isExpanded = false
@@ -472,25 +521,47 @@ class ImageUpscalerController(
             upscalerBinding.tvDiagThroughput.text = "Testing model initialization..."
             scope.launch {
                 val model = getResolvedModel()
-                val modelFile = repository.getModelFile(model.id)
                 val startTime = System.currentTimeMillis()
-                val infoText = withContext(Dispatchers.Default) {
-                    try {
-                        val session = com.veilframe.app.upscale.inference.OnnxSessionManager.createSession(modelFile)
-                        try {
-                            val info = com.veilframe.app.upscale.inference.ModelInfo(
-                                session = session,
-                                modelName = modelFile.name,
-                                explicitScale = model.nativeScale
-                            )
-                            val prec = if (info.isFp16) "FP16" else "FP32"
-                            val dims = if (info.expectedWidth != null) "${info.expectedWidth}x${info.expectedHeight}" else "Dynamic"
-                            "Loaded ${model.name} in ${System.currentTimeMillis() - startTime}ms ($prec, $dims)"
-                        } finally {
-                            session.close()
+                val infoText = if (model.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN) {
+                    if (!repository.isModelInstalled(model)) {
+                        "Model not installed. Download ${model.name} to benchmark."
+                    } else if (!NcnnNative.isAvailable) {
+                        "NCNN native library not available on this platform/architecture."
+                    } else {
+                        withContext(Dispatchers.Default) {
+                            try {
+                                val paramFile = repository.getNcnnParamFile(model.id)
+                                val binFile = repository.getNcnnBinFile(model.id)
+                                val gpuCount = NcnnNative.getGpuCount()
+                                val gpuid = if (gpuCount > 0) 0 else -1
+                                val backendName = if (gpuid >= 0) "Vulkan GPU" else "CPU"
+                                val elapsed = System.currentTimeMillis() - startTime
+                                "Verified ${model.name} ($backendName) in ${elapsed}ms (param=${paramFile.length() / 1024}KB, bin=${binFile.length() / (1024 * 1024)}MB)"
+                            } catch (e: Exception) {
+                                "NCNN check failed: ${e.message ?: e.javaClass.simpleName}"
+                            }
                         }
-                    } catch (e: Exception) {
-                        "Model check completed in ${System.currentTimeMillis() - startTime}ms"
+                    }
+                } else {
+                    val modelFile = repository.getModelFile(model.id)
+                    withContext(Dispatchers.Default) {
+                        try {
+                            val session = com.veilframe.app.upscale.inference.OnnxSessionManager.createSession(modelFile)
+                            try {
+                                val info = com.veilframe.app.upscale.inference.ModelInfo(
+                                    session = session,
+                                    modelName = modelFile.name,
+                                    explicitScale = model.nativeScale
+                                )
+                                val prec = if (info.isFp16) "FP16" else "FP32"
+                                val dims = if (info.expectedWidth != null) "${info.expectedWidth}x${info.expectedHeight}" else "Dynamic"
+                                "Loaded ${model.name} in ${System.currentTimeMillis() - startTime}ms ($prec, $dims)"
+                            } finally {
+                                session.close()
+                            }
+                        } catch (e: Exception) {
+                            "Model check failed: ${e.message ?: e.javaClass.simpleName}"
+                        }
                     }
                 }
                 withContext(Dispatchers.Main) {
@@ -509,7 +580,7 @@ class ImageUpscalerController(
             val mp = (targetW * targetH) / 1_000_000.0
             val model = getResolvedModel()
             val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(targetScale, model.nativeScale)
-            val pipelineSuffix = if (model.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+            val pipelineSuffix = if (model.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
                 " • ${targetScale}× Output (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× Refinement)"
             } else {
                 ""
@@ -547,6 +618,9 @@ class ImageUpscalerController(
             upscalerBinding.tvUpscalerModelStatus.text = "Needs Download ($sizeMb)"
             upscalerBinding.tvUpscalerModelStatus.setTextColor(activity.getColor(R.color.vf_primary))
         }
+
+        syncScaleToggleWithModel(model)
+        refreshDiagnosticsSummary()
     }
 
     private fun updateUIState() {
@@ -858,7 +932,7 @@ class ImageUpscalerController(
                         upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
                         val resolvedModel = getResolvedModel()
                         val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
-                        val badgeText = if (resolvedModel.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+                        val badgeText = if (resolvedModel.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
                             "${scale}× OUTPUT (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× REFINEMENT)"
                         } else {
                             "UPSCALED (${scale}×)"
@@ -996,9 +1070,9 @@ class ImageUpscalerController(
 
         // Select current option
         when (explicitModel?.id) {
-            "realesrgan-general-2x" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
-            "realesrgan-general-4x" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
-            "realesrgan-anime-4x" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
+            "ncnn-realesr-animevideov3-x2" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
+            "ncnn-realesrgan-x4plus" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
+            "ncnn-realesr-animevideov3-x4" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
             "lanczos-3" -> dialogBinding.rbModelLanczos.isChecked = true
             "bicubic" -> dialogBinding.rbModelBicubic.isChecked = true
             "nearest" -> dialogBinding.rbModelNearest.isChecked = true
@@ -1007,15 +1081,37 @@ class ImageUpscalerController(
 
         dialogBinding.btnModelSelectorApply.setOnClickListener {
             val selectedModel: UpscaleModel? = when (dialogBinding.rgModelSelector.checkedRadioButtonId) {
-                R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X
-                R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X
-                R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X
+                R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
+                R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+                R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4
                 R.id.rbModelLanczos -> UpscaleModelRegistry.LANCZOS
                 R.id.rbModelBicubic -> UpscaleModelRegistry.BICUBIC
                 R.id.rbModelNearest -> UpscaleModelRegistry.NEAREST
                 else -> null // Auto
             }
             explicitModel = selectedModel
+            val modelForScale = selectedModel ?: runCatching { getResolvedModel() }.getOrNull()
+            if (modelForScale?.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN &&
+                targetScale !in modelForScale.supportedOutputScales
+            ) {
+                val correctedScale = modelForScale.supportedOutputScales.minByOrNull {
+                    kotlin.math.abs(it - targetScale)
+                }
+                if (correctedScale != null) {
+                    targetScale = correctedScale
+                    val correctedButton = when (correctedScale) {
+                        4 -> R.id.btnScale4x
+                        8 -> R.id.btnScale8x
+                        else -> R.id.btnScale2x
+                    }
+                    upscalerBinding.toggleGroupUpscalerScale.check(correctedButton)
+                    Toast.makeText(
+                        activity,
+                        "Selected NCNN model supports ${modelForScale.supportedOutputScales.joinToString(", ") { scale -> "${scale}×" }} only. Output scale set to ${correctedScale}×.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
             updateModelDisplay()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             onLog("[UPSCALER] Model explicitly selected: ${selectedModel?.name ?: "Auto"}")
@@ -1031,13 +1127,18 @@ class ImageUpscalerController(
             .setCancelable(true)
             .create()
 
+        val dialogDownloadJobs = mutableMapOf<String, Job>()
+        dialog.setOnDismissListener {
+            dialogDownloadJobs.values.forEach { it.cancel() }
+            dialogDownloadJobs.clear()
+        }
+
         dialogBinding.btnModelManagerClose.setOnClickListener {
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
         }
 
         dialogBinding.btnImportCustomModel.setOnClickListener {
-            onImportCustomModelRequested?.invoke()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+            Toast.makeText(activity, "Custom NCNN pair import is not implemented yet.", Toast.LENGTH_LONG).show()
         }
 
         fun refreshCards() {
@@ -1047,11 +1148,11 @@ class ImageUpscalerController(
             val availGb = String.format(Locale.US, "%.1f GB", availBytes / (1024.0 * 1024.0 * 1024.0))
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
-            val installedAi = repository.getInstalledAiModels()
-            dialogBinding.tvModelCountSummary.text = "${installedAi.size} of 3 AI Models Installed"
+            val installedNcnn = UpscaleModelRegistry.NCNN_MODELS.count { repository.isModelInstalled(it) }
+            dialogBinding.tvModelCountSummary.text = "${installedNcnn} of 3 NCNN Models Installed"
 
             // 2x Card
-            val is2x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)
+            val is2x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2)
             if (is2x) {
                 dialogBinding.tvModelStatus2x.text = "Installed"
                 dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1065,7 +1166,7 @@ class ImageUpscalerController(
             }
 
             // 4x Card
-            val is4x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X)
+            val is4x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS)
             if (is4x) {
                 dialogBinding.tvModelStatus4x.text = "Installed"
                 dialogBinding.tvModelStatus4x.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1079,7 +1180,7 @@ class ImageUpscalerController(
             }
 
             // Anime Card
-            val isAnime = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X)
+            val isAnime = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4)
             if (isAnime) {
                 dialogBinding.tvModelStatusAnime.text = "Installed"
                 dialogBinding.tvModelStatusAnime.setTextColor(activity.getColor(R.color.vf_accent_green))
@@ -1099,38 +1200,50 @@ class ImageUpscalerController(
         dialogBinding.btnDownloadModel2x.setOnClickListener {
             dialogBinding.progressModel2x.visibility = View.VISIBLE
             dialogBinding.btnDownloadModel2x.isEnabled = false
-            scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X, object : ModelDownloadManager.DownloadListener {
+            dialogDownloadJobs["2x"]?.cancel()
+            val job = scope.launch {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
-                            if (t > 0) {
+                            if (dialog.isShowing && t > 0) {
                                 dialogBinding.progressModel2x.isIndeterminate = false
                                 dialogBinding.progressModel2x.progress = ((d * 100) / t).toInt()
                             }
                         }
                     }
                     override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) { dialogBinding.progressModel2x.isIndeterminate = true }
+                        scope.launch(Dispatchers.Main) {
+                            if (dialog.isShowing) dialogBinding.progressModel2x.isIndeterminate = true
+                        }
                     }
                     override fun onSuccess(m: UpscaleModel, destinationFile: File) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModel2x.visibility = View.GONE
-                            refreshCards()
+                            dialogDownloadJobs.remove("2x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel2x.visibility = View.GONE
+                                refreshCards()
+                            }
                             updateModelDisplay()
                         }
                     }
                     override fun onError(error: String) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModel2x.visibility = View.GONE
-                            dialogBinding.btnDownloadModel2x.isEnabled = true
-                            Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            dialogDownloadJobs.remove("2x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel2x.visibility = View.GONE
+                                dialogBinding.btnDownloadModel2x.isEnabled = true
+                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 })
             }
+            dialogDownloadJobs["2x"] = job
         }
         dialogBinding.btnDeleteModel2x.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X.id)
+            dialogDownloadJobs["2x"]?.cancel()
+            dialogDownloadJobs.remove("2x")
+            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2.id)
             refreshCards()
             updateModelDisplay()
         }
@@ -1139,38 +1252,50 @@ class ImageUpscalerController(
         dialogBinding.btnDownloadModel4x.setOnClickListener {
             dialogBinding.progressModel4x.visibility = View.VISIBLE
             dialogBinding.btnDownloadModel4x.isEnabled = false
-            scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X, object : ModelDownloadManager.DownloadListener {
+            dialogDownloadJobs["4x"]?.cancel()
+            val job = scope.launch {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
-                            if (t > 0) {
+                            if (dialog.isShowing && t > 0) {
                                 dialogBinding.progressModel4x.isIndeterminate = false
                                 dialogBinding.progressModel4x.progress = ((d * 100) / t).toInt()
                             }
                         }
                     }
                     override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) { dialogBinding.progressModel4x.isIndeterminate = true }
+                        scope.launch(Dispatchers.Main) {
+                            if (dialog.isShowing) dialogBinding.progressModel4x.isIndeterminate = true
+                        }
                     }
                     override fun onSuccess(m: UpscaleModel, destinationFile: File) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModel4x.visibility = View.GONE
-                            refreshCards()
+                            dialogDownloadJobs.remove("4x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel4x.visibility = View.GONE
+                                refreshCards()
+                            }
                             updateModelDisplay()
                         }
                     }
                     override fun onError(error: String) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModel4x.visibility = View.GONE
-                            dialogBinding.btnDownloadModel4x.isEnabled = true
-                            Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            dialogDownloadJobs.remove("4x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel4x.visibility = View.GONE
+                                dialogBinding.btnDownloadModel4x.isEnabled = true
+                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 })
             }
+            dialogDownloadJobs["4x"] = job
         }
         dialogBinding.btnDeleteModel4x.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X.id)
+            dialogDownloadJobs["4x"]?.cancel()
+            dialogDownloadJobs.remove("4x")
+            repository.deleteModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS.id)
             refreshCards()
             updateModelDisplay()
         }
@@ -1179,38 +1304,50 @@ class ImageUpscalerController(
         dialogBinding.btnDownloadModelAnime.setOnClickListener {
             dialogBinding.progressModelAnime.visibility = View.VISIBLE
             dialogBinding.btnDownloadModelAnime.isEnabled = false
-            scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X, object : ModelDownloadManager.DownloadListener {
+            dialogDownloadJobs["anime"]?.cancel()
+            val job = scope.launch {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4, object : ModelDownloadManager.DownloadListener {
                     override fun onProgress(d: Long, t: Long, s: Long) {
                         scope.launch(Dispatchers.Main) {
-                            if (t > 0) {
+                            if (dialog.isShowing && t > 0) {
                                 dialogBinding.progressModelAnime.isIndeterminate = false
                                 dialogBinding.progressModelAnime.progress = ((d * 100) / t).toInt()
                             }
                         }
                     }
                     override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) { dialogBinding.progressModelAnime.isIndeterminate = true }
+                        scope.launch(Dispatchers.Main) {
+                            if (dialog.isShowing) dialogBinding.progressModelAnime.isIndeterminate = true
+                        }
                     }
                     override fun onSuccess(m: UpscaleModel, destinationFile: File) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModelAnime.visibility = View.GONE
-                            refreshCards()
+                            dialogDownloadJobs.remove("anime")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModelAnime.visibility = View.GONE
+                                refreshCards()
+                            }
                             updateModelDisplay()
                         }
                     }
                     override fun onError(error: String) {
                         scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModelAnime.visibility = View.GONE
-                            dialogBinding.btnDownloadModelAnime.isEnabled = true
-                            Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            dialogDownloadJobs.remove("anime")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModelAnime.visibility = View.GONE
+                                dialogBinding.btnDownloadModelAnime.isEnabled = true
+                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 })
             }
+            dialogDownloadJobs["anime"] = job
         }
         dialogBinding.btnDeleteModelAnime.setOnClickListener {
-            repository.deleteModel(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X.id)
+            dialogDownloadJobs["anime"]?.cancel()
+            dialogDownloadJobs.remove("anime")
+            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4.id)
             refreshCards()
             updateModelDisplay()
         }
@@ -1290,7 +1427,7 @@ class ImageUpscalerController(
      * In-memory results keep the full bitmap for saving; the view gets a copy.
      */
     private fun displayBitmapFor(output: com.veilframe.app.upscale.inference.UpscaleOutput): Bitmap {
-        val bmp = output.previewBitmap()
+        val bmp = output.previewBitmap() ?: return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         val maxEdge = maxOf(bmp.width, bmp.height)
         if (maxEdge <= 4096) return bmp
         val scale = 4096f / maxEdge
@@ -1315,14 +1452,19 @@ class ImageUpscalerController(
         activeExportCount.incrementAndGet()
         scope.launch(Dispatchers.IO) {
             try {
-                val cacheDir = File(activity.cacheDir, "shared_upscaled")
-                cacheDir.mkdirs()
-                val tempFile = File(cacheDir, "upscaled_${System.currentTimeMillis()}.png")
-                FileOutputStream(tempFile).use { fos ->
-                    writeOutput(output, fos)
+                val shareFile = if (output is UpscaleOutput.Streamed && output.file.isFile) {
+                    output.file
+                } else {
+                    val cacheDir = File(activity.cacheDir, "shared_upscaled")
+                    cacheDir.mkdirs()
+                    val tempFile = File(cacheDir, "upscaled_${System.currentTimeMillis()}.png")
+                    FileOutputStream(tempFile).use { fos ->
+                        writeOutput(output, fos)
+                    }
+                    tempFile
                 }
 
-                val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", tempFile)
+                val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", shareFile)
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)

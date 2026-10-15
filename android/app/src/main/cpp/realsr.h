@@ -1,0 +1,90 @@
+// VeilFrame NCNN Upscaler Engine
+// Based on RealSR (Tencent ncnn) with:
+// 1. Destructor null-pointer safety
+// 2. Qualcomm Adreno 740 unaligned tile memcpy fix
+// 3. True scanline-band streaming callback (eliminating full-image host allocations)
+// 4. Return-code validation for model loading
+
+#ifndef VEILFRAME_REALSR_H
+#define VEILFRAME_REALSR_H
+
+#include <string>
+#include <vector>
+
+// ncnn headers
+#include "ncnn/net.h"
+#include "ncnn/gpu.h"
+#include "ncnn/layer.h"
+
+// Callback type for requesting a horizontal input strip:
+// (strip_buffer, y0, height, user_data)
+// Return 0 to continue, non-zero to cancel/abort.
+typedef int (*StripCallback)(unsigned char* strip_buffer, int y0, int height, void* user_data);
+
+// Callback type for streaming row delivery:
+// (row_data, row_index, row_width, channels, user_data)
+// Return 0 to continue, non-zero to cancel/abort.
+typedef int (*RowCallback)(const unsigned char* row_data, int row_index, int row_width, int channels, void* user_data);
+
+// Callback type for progress updates:
+// (current_tile, total_tiles, percent, user_data)
+// Return 0 to continue, non-zero to cancel/abort.
+typedef int (*ProgressCallback)(int current_tile, int total_tiles, int percent, void* user_data);
+
+class RealSR
+{
+public:
+    RealSR(int gpuid, bool tta_mode = false, int num_threads = 1);
+    ~RealSR();
+
+    int load(const std::string& parampath, const std::string& modelpath);
+
+    bool has_gpu() const { return vkdev != nullptr; }
+
+    // Standard in-memory processing (allocates output image in host RAM)
+    int process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const;
+    int process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const;
+
+    // Output streaming processing from full input pixel buffer
+    int process_streaming(
+        const unsigned char* pixeldata, int w, int h, int channels,
+        RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+    int process_streaming_cpu(
+        const unsigned char* pixeldata, int w, int h, int channels,
+        RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+    // True dual-ended bounded-memory streaming: requests input strips on demand
+    // and streams output scanlines directly into row callback.
+    int process_strip_streaming(
+        int w, int h, int channels,
+        StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+    int process_strip_streaming_cpu(
+        int w, int h, int channels,
+        StripCallback strip_cb, RowCallback row_cb, ProgressCallback prog_cb, void* user_data
+    ) const;
+
+public:
+    // realsr parameters
+    int scale;
+    int tilesize;
+    int prepadding;
+    std::string net_input_name = "data";
+    std::string net_output_name = "output";
+
+private:
+    ncnn::VulkanDevice* vkdev;
+    ncnn::Net net;
+    ncnn::Pipeline* realsr_preproc;
+    ncnn::Pipeline* realsr_postproc;
+    ncnn::Layer* bicubic_2x;
+    ncnn::Layer* bicubic_3x;
+    ncnn::Layer* bicubic_4x;
+    bool tta_mode;
+};
+
+#endif // VEILFRAME_REALSR_H

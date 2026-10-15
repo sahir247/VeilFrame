@@ -50,10 +50,21 @@ object ColorDetector {
         chromaThreshold: Double = 17.5,
         proportionThreshold: Double = 0.0003,
         luminanceMin: Double = 40.0,
-        luminanceMax: Double = 180.0
+        luminanceMax: Double = 180.0,
+        externalMask: Mat? = null
     ): DocumentColorMode {
-        if (!CvRuntime.isNativeAvailable || img.nativeObj == 0L || img.empty() || quad.size != 4) {
+        if (!CvRuntime.isNativeAvailable || img.nativeObj == 0L || img.empty()) {
             return DocumentColorMode.COLOR
+        }
+        val effectiveQuad = when {
+            quad.size == 4 -> quad
+            quad.isEmpty() -> listOf(
+                Point(0.0, 0.0),
+                Point(img.cols().toDouble(), 0.0),
+                Point(img.cols().toDouble(), img.rows().toDouble()),
+                Point(0.0, img.rows().toDouble())
+            )
+            else -> return DocumentColorMode.COLOR
         }
 
         // 0) Resize to work size for fast, consistent analysis
@@ -69,7 +80,7 @@ object ColorDetector {
         Imgproc.resize(img, resizedImg, workSize, 0.0, 0.0, Imgproc.INTER_AREA)
 
         // 1) Compute document mask
-        val docMask = createDocumentMask(resizedImg.size(), quad, scale, segmentation)
+        val docMask = createDocumentMask(resizedImg.size(), effectiveQuad, scale, segmentation, externalMask)
 
         val totalPixels = Core.countNonZero(docMask)
         if (totalPixels == 0) {
@@ -144,15 +155,21 @@ object ColorDetector {
         luminanceMin: Double = 40.0,
         luminanceMax: Double = 180.0
     ): ColorMode {
-        val docMode = autoColorMode(
-            img = img,
-            quad = listOf(quad.topLeft.toCv(), quad.topRight.toCv(), quad.bottomRight.toCv(), quad.bottomLeft.toCv()),
-            segmentation = null,
-            chromaThreshold = chromaThreshold,
-            proportionThreshold = proportionThreshold,
-            luminanceMin = luminanceMin,
-            luminanceMax = luminanceMax
-        )
+        val maskMat = if (mask is DocumentSegmentation) null else mask.toMat()
+        val docMode = try {
+            autoColorMode(
+                img = img,
+                quad = listOf(quad.topLeft.toCv(), quad.topRight.toCv(), quad.bottomRight.toCv(), quad.bottomLeft.toCv()),
+                segmentation = mask as? DocumentSegmentation,
+                chromaThreshold = chromaThreshold,
+                proportionThreshold = proportionThreshold,
+                luminanceMin = luminanceMin,
+                luminanceMax = luminanceMax,
+                externalMask = maskMat
+            )
+        } finally {
+            maskMat?.release()
+        }
         return if (docMode == DocumentColorMode.COLOR) ColorMode.COLOR else ColorMode.GRAYSCALE
     }
 
@@ -182,7 +199,8 @@ object ColorDetector {
         workSize: Size,
         quad: List<Point>,
         scale: Double,
-        segmentation: DocumentSegmentation?
+        segmentation: DocumentSegmentation?,
+        externalMask: Mat? = null
     ): Mat {
         val quadMask = Mat.zeros(workSize, CV_8UC1)
         val scaledPoints = quad.map { Point(it.x * scale, it.y * scale) }
@@ -207,16 +225,29 @@ object ColorDetector {
         quadMask.release()
         kernel.release()
 
-        if (segmentation != null && CvRuntime.isNativeAvailable) {
-            val segBin = segmentation.toBinaryMat(0.5f)
-            val resizedSeg = Mat()
-            Imgproc.resize(segBin, resizedSeg, workSize, 0.0, 0.0, Imgproc.INTER_AREA)
-            segBin.release()
-
+        val maskSource = when {
+            segmentation != null && CvRuntime.isNativeAvailable -> segmentation.toBinaryMat(0.5f)
+            externalMask != null && !externalMask.empty() -> {
+                val binary = Mat()
+                val threshold = if (externalMask.depth() == CvType.CV_8U) {
+                    if (Core.minMaxLoc(externalMask).maxVal <= 1.0) 0.0 else 127.0
+                } else {
+                    0.5
+                }
+                Imgproc.threshold(externalMask, binary, threshold, 255.0, Imgproc.THRESH_BINARY)
+                if (binary.type() != CvType.CV_8UC1) binary.convertTo(binary, CvType.CV_8UC1)
+                binary
+            }
+            else -> null
+        }
+        if (maskSource != null) {
+            val resizedMask = Mat()
+            Imgproc.resize(maskSource, resizedMask, workSize, 0.0, 0.0, Imgproc.INTER_NEAREST)
+            maskSource.release()
             val combined = Mat()
-            Core.bitwise_and(erodedQuadMask, resizedSeg, combined)
+            Core.bitwise_and(erodedQuadMask, resizedMask, combined)
             erodedQuadMask.release()
-            resizedSeg.release()
+            resizedMask.release()
             return combined
         }
 

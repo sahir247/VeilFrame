@@ -1,6 +1,5 @@
 package com.veilframe.app.cv.geometry
 
-import kotlin.math.atan2
 import kotlin.math.hypot
 
 data class Point(val x: Double, val y: Double) {
@@ -78,16 +77,13 @@ data class Quad(
 fun createQuad(vertices: List<Point>): Quad {
     require(vertices.size == 4) { "vertices must contain exactly 4 points" }
 
-    // Centroid of the points
-    val cx = vertices.map { it.x }.average()
-    val cy = vertices.map { it.y }.average()
-
-    // Sort by angle from centroid (clockwise)
-    val sorted = vertices.sortedWith(compareBy {
-        atan2(it.y - cy, it.x - cx)
-    })
-
-    return Quad(sorted[0], sorted[1], sorted[2], sorted[3])
+    // Use the shared cyclic-shift ordering. A raw atan2 sort alone can choose
+    // the wrong top-left vertex across the -PI/+PI branch cut on tilted quads.
+    val ordered = Geometry.orderCorners(
+        vertices.map { org.opencv.core.Point(it.x, it.y) }
+    )
+    val points = ordered.map { Point(it.x, it.y) }
+    return Quad(points[0], points[1], points[2], points[3])
 }
 
 fun Quad.scaledTo(fromWidth: Double, fromHeight: Double, toWidth: Double, toHeight: Double): Quad {

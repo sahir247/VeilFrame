@@ -60,6 +60,25 @@ class GeometryTest {
     }
 
     @Test
+    fun `createQuad keeps canonical corners for tilted points across angle branch cut`() {
+        val expected = listOf(
+            com.veilframe.app.cv.geometry.Point(80.0, 30.0),
+            com.veilframe.app.cv.geometry.Point(430.0, 90.0),
+            com.veilframe.app.cv.geometry.Point(390.0, 520.0),
+            com.veilframe.app.cv.geometry.Point(40.0, 470.0)
+        )
+        val actual = createQuad(listOf(expected[2], expected[0], expected[3], expected[1]))
+        assertEquals(expected[0].x, actual.topLeft.x, 0.001)
+        assertEquals(expected[0].y, actual.topLeft.y, 0.001)
+        assertEquals(expected[1].x, actual.topRight.x, 0.001)
+        assertEquals(expected[1].y, actual.topRight.y, 0.001)
+        assertEquals(expected[2].x, actual.bottomRight.x, 0.001)
+        assertEquals(expected[2].y, actual.bottomRight.y, 0.001)
+        assertEquals(expected[3].x, actual.bottomLeft.x, 0.001)
+        assertEquals(expected[3].y, actual.bottomLeft.y, 0.001)
+    }
+
+    @Test
     fun `test scalePoints scales all coordinates uniformly`() {
         val points = listOf(
             Point(10.0, 20.0),

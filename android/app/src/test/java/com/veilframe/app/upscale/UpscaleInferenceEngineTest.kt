@@ -108,4 +108,62 @@ class UpscaleInferenceEngineTest {
             )
         }
     }
+
+    @Test
+    fun testNcnnRealEsrgan4x_AllowsSupported4xAnd8x() {
+        val model = UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+        // 4x native should pass
+        UpscaleInferenceEngine.validateExecutionPlan(
+            srcW = 256,
+            srcH = 256,
+            model = model,
+            targetScale = 4
+        )
+        // 8x hybrid refinement should pass
+        UpscaleInferenceEngine.validateExecutionPlan(
+            srcW = 256,
+            srcH = 256,
+            model = model,
+            targetScale = 8
+        )
+    }
+
+    @Test
+    fun testNcnnAnimeVideo2x_AllowsSupported2xAnd4x() {
+        val model = UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
+        // 2x native should pass
+        UpscaleInferenceEngine.validateExecutionPlan(
+            srcW = 256,
+            srcH = 256,
+            model = model,
+            targetScale = 2
+        )
+        // 4x hybrid refinement should pass
+        UpscaleInferenceEngine.validateExecutionPlan(
+            srcW = 256,
+            srcH = 256,
+            model = model,
+            targetScale = 4
+        )
+    }
+
+    @Test
+    fun testSourceAccess_AutoCloseableContract() {
+        var closed = false
+        val customSource = object : com.veilframe.app.upscale.inference.SourceAccess {
+            override val width: Int = 100
+            override val height: Int = 100
+            override fun region(x: Int, y: Int, width: Int, height: Int): android.graphics.Bitmap =
+                throw UnsupportedOperationException()
+            override fun full(): android.graphics.Bitmap =
+                throw UnsupportedOperationException()
+            override fun close() {
+                closed = true
+            }
+        }
+        customSource.use {
+            assert(!closed)
+        }
+        assert(closed)
+    }
 }

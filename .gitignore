@@ -100,6 +100,7 @@ resource_videos
 .gradle/
 **/android/.gradle/
 **/android/**/build/
+**/.cxx/
 **/.kotlin/
 **/jdk-*/
 android/jdk*/
@@ -118,3 +119,5 @@ GUIDE.txt
 # OpenCV local build scratch
 android/scripts/.opencv_build/
 android/opencv-sdk/src/main/.opencv-sdk-complete
+# Large device validation matrix artifacts
+docs/device_validation_artifacts/matrix_artifacts/

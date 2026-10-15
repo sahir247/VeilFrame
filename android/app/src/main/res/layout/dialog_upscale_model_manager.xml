@@ -78,35 +78,36 @@
                         android:id="@+id/tvModelCountSummary"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0 of 3 AI Models Installed"
+                        android:text="0 of 3 NCNN Models Installed"
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnImportCustomModel"
+                        android:enabled="false"
                         style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:text="Import Custom Model (.ort / .onnx)"
+                        android:text="Custom NCNN Model Pair Import (Coming Later)"
                         android:textColor="@color/vf_accent_blue"
                         app:icon="@drawable/ic_file_pick"
                         app:iconTint="@color/vf_accent_blue" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- SECTION HEADER: AI ONNX MODELS -->
+            <!-- SECTION HEADER: NATIVE NCNN MODELS -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="DOWNLOADABLE AI MODELS"
+                android:text="DOWNLOADABLE NCNN MODELS"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06"
                 android:layout_marginBottom="8dp" />
 
-            <!-- MODEL 1: Real-ESRGAN General 2x -->
+            <!-- MODEL 1: Real-ESRGAN AnimeVideoV3 x2 (NCNN) -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -137,7 +138,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Real-ESRGAN General 2×"
+                                android:text="Real-ESRGAN AnimeVideoV3 2× (NCNN)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -145,7 +146,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="33.8 MB • Photo &amp; Texture Restoration"
+                                android:text="1.3 MB • Compact Anime/Animation Restoration"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -191,7 +192,7 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Download (33.8 MB)"
+                            android:text="Download (1.3 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconTint="@color/vf_primary" />
@@ -199,7 +200,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- MODEL 2: Real-ESRGAN General 4x -->
+            <!-- MODEL 2: Real-ESRGAN x4plus (NCNN) -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -230,7 +231,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Real-ESRGAN General 4×"
+                                android:text="Real-ESRGAN x4plus (NCNN)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -238,7 +239,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="33.8 MB • Reliable Photo Restoration"
+                                android:text="33.5 MB • General Photography &amp; Texture Restoration"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -284,7 +285,7 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Download (33.8 MB)"
+                            android:text="Download (33.5 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconTint="@color/vf_primary" />
@@ -292,7 +293,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- MODEL 3: Real-ESRGAN Anime 4x -->
+            <!-- MODEL 3: Real-ESRGAN AnimeVideoV3 x4 (NCNN) -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -323,7 +324,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Real-ESRGAN Anime 4×"
+                                android:text="Real-ESRGAN AnimeVideoV3 4× (NCNN)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -331,7 +332,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="9.1 MB • Razor-sharp Clean Lines &amp; Anime"
+                                android:text="1.3 MB • Clean Lines &amp; Digital Illustration"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -377,7 +378,7 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Download (9.1 MB)"
+                            android:text="Download (1.3 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconTint="@color/vf_primary" />

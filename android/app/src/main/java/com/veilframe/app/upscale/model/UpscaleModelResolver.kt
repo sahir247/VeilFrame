@@ -5,6 +5,9 @@ import com.veilframe.app.upscale.preset.UpscalePresetRegistry
 
 /**
  * Resolves the appropriate UpscaleModel based on preset, manual override, target scale, and installation.
+ *
+ * Resolution is fail-closed: a misspelled preset/model ID must never silently switch
+ * the user's requested AI operation to Lanczos.
  */
 object UpscaleModelResolver {
 
@@ -13,13 +16,17 @@ object UpscaleModelResolver {
         overrideModelId: String? = null
     ): UpscaleModel {
         if (!overrideModelId.isNullOrEmpty()) {
-            val overridden = UpscaleModelRegistry.getModelById(overrideModelId)
-            if (overridden != null) return overridden
+            return requireNotNull(UpscaleModelRegistry.getModelById(overrideModelId)) {
+                "Unknown upscale model override '$overrideModelId'. No fallback was applied."
+            }
         }
 
-        val preset = UpscalePresetRegistry.getPresetById(presetId) ?: UpscalePresetRegistry.PHOTO
-        val recommended = UpscaleModelRegistry.getModelById(preset.recommendedModelId)
-        return recommended ?: UpscaleModelRegistry.LANCZOS
+        val preset = requireNotNull(UpscalePresetRegistry.getPresetById(presetId)) {
+            "Unknown upscale preset '$presetId'. No fallback was applied."
+        }
+        return requireNotNull(UpscaleModelRegistry.getModelById(preset.recommendedModelId)) {
+            "Preset '${preset.id}' refers to unregistered model '${preset.recommendedModelId}'. No fallback was applied."
+        }
     }
 
     fun resolve(
@@ -30,16 +37,21 @@ object UpscaleModelResolver {
     ): UpscaleModel {
         if (explicitModel != null) return explicitModel
 
-        val recommended = UpscaleModelRegistry.getModelById(preset.recommendedModelId)
-        if (recommended != null) {
-            // If scale is 2x but recommended model is 4x native and not built-in, prefer 2x model if available
-            if (targetScale == 2 && recommended.nativeScale == 4 && !recommended.isBuiltIn) {
-                if (repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)) {
-                    return UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X
-                }
-            }
-            return recommended
+        val recommended = requireNotNull(UpscaleModelRegistry.getModelById(preset.recommendedModelId)) {
+            "Preset refers to an unregistered model. No fallback was applied."
         }
-        return UpscaleModelRegistry.LANCZOS
+
+        // Legacy ONNX scale fallback is migration-only. An NCNN preset must never
+        // be redirected to ONNX merely because the user selected a 2x output.
+        if (targetScale == 2 &&
+            recommended.nativeScale == 4 &&
+            !recommended.isBuiltIn &&
+            recommended.type == ModelType.AI_ONNX &&
+            repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)
+        ) {
+            return UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X
+        }
+
+        return recommended
     }
 }

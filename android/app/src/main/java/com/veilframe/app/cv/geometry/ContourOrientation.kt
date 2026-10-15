@@ -234,8 +234,6 @@ object ContourOrientation {
         angleThreshold: Double
     ): List<ContourSegment> {
         if (segments.isEmpty()) return emptyList()
-        if (segments.size <= 4) return segments
-
         val merged = mutableListOf<ContourSegment>()
         var cur = segments[0]
 
@@ -254,6 +252,23 @@ object ContourOrientation {
             }
         }
         merged += cur
+
+        // Contour segments are circular: merge tail and head when their
+        // directions agree across the contour wrap-around seam.
+        if (merged.size > 1) {
+            val first = merged.first()
+            val last = merged.last()
+            if (angleDiff(first.angle, last.angle) < angleThreshold) {
+                val wrapMerged = ContourSegment(
+                    last.start,
+                    first.end,
+                    angleMean(last.angle, first.angle),
+                    last.length + first.length
+                )
+                merged.removeAt(merged.lastIndex)
+                merged[0] = wrapMerged
+            }
+        }
         return merged
     }
 

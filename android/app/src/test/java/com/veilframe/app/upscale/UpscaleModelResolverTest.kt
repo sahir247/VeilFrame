@@ -10,25 +10,25 @@ import org.junit.Test
 class UpscaleModelResolverTest {
 
     @Test
-    fun `resolveModel resolves expected model for all standard presets`() {
+    fun `resolveModel routes neural presets to NCNN and standard to Lanczos`() {
         assertEquals(
-            UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X,
+            UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS,
             UpscaleModelResolver.resolveModel("photo")
         )
         assertEquals(
-            UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X,
+            UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS,
             UpscaleModelResolver.resolveModel("photo_quality")
         )
         assertEquals(
-            UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X,
+            UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4,
             UpscaleModelResolver.resolveModel("anime")
         )
         assertEquals(
-            UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X,
+            UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4,
             UpscaleModelResolver.resolveModel("illustration")
         )
         assertEquals(
-            UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X,
+            UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2,
             UpscaleModelResolver.resolveModel("fast")
         )
         assertEquals(
@@ -38,25 +38,50 @@ class UpscaleModelResolverTest {
     }
 
     @Test
-    fun `resolveModel honors explicit overrideModelId over preset default`() {
-        val overrideLanczos = UpscaleModelResolver.resolveModel(
-            presetId = "anime",
-            overrideModelId = "lanczos-3"
+    fun `resolveModel honors explicit model override over preset default`() {
+        assertEquals(
+            UpscaleModelRegistry.LANCZOS,
+            UpscaleModelResolver.resolveModel(
+                presetId = "anime",
+                overrideModelId = "lanczos-3"
+            )
         )
-        assertEquals(UpscaleModelRegistry.LANCZOS, overrideLanczos)
+        assertEquals(
+            UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4,
+            UpscaleModelResolver.resolveModel(
+                presetId = "photo",
+                overrideModelId = "ncnn-realesr-animevideov3-x4"
+            )
+        )
+    }
 
-        val overrideAnime = UpscaleModelResolver.resolveModel(
+    @Test(expected = IllegalArgumentException::class)
+    fun `unknown preset must not silently fall back to Lanczos`() {
+        UpscaleModelResolver.resolveModel("unknown-preset")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `unknown model override must be rejected`() {
+        UpscaleModelResolver.resolveModel(
             presetId = "photo",
-            overrideModelId = "realesrgan-anime-4x"
+            overrideModelId = "does-not-exist"
         )
-        assertEquals(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X, overrideAnime)
     }
 
     @Test
-    fun `all presets have valid non-null recommended models registered`() {
+    fun `every preset points to a registered model and only Standard is algorithmic`() {
         UpscalePresetRegistry.ALL_PRESETS.forEach { preset ->
             val resolved = UpscaleModelResolver.resolveModel(preset.id)
             assertNotNull("Preset ${preset.id} must resolve to a valid model", resolved)
+            if (preset.id == "standard") {
+                assertEquals(UpscaleModelRegistry.LANCZOS, resolved)
+            } else {
+                assertEquals(
+                    "Preset ${preset.id} must not silently select an algorithmic model",
+                    com.veilframe.app.upscale.model.ModelType.AI_NCNN,
+                    resolved.type
+                )
+            }
         }
     }
 }

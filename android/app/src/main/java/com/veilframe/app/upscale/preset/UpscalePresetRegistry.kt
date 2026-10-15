@@ -2,46 +2,49 @@ package com.veilframe.app.upscale.preset
 
 /**
  * Built-in presets for VeilFrame Image Upscaler.
+ *
+ * Neural presets now select native NCNN model IDs. The algorithmic Standard preset
+ * intentionally remains Lanczos and is not an AI fallback.
  */
 object UpscalePresetRegistry {
 
     val PHOTO = UpscalePreset(
         id = "photo",
         name = "Photo",
-        description = "Balanced natural photographic upscaling preserving real textures.",
-        recommendedModelId = "realesrgan-general-2x",
-        defaultScale = 2
+        description = "General-purpose photographic restoration using native NCNN Real-ESRGAN.",
+        recommendedModelId = "ncnn-realesrgan-x4plus",
+        defaultScale = 4
     )
 
     val PHOTO_QUALITY = UpscalePreset(
         id = "photo_quality",
         name = "Photo (High Quality)",
-        description = "Reliable general-purpose photo restoration with neural detail synthesis.",
-        recommendedModelId = "realesrgan-general-4x",
+        description = "General-purpose photo restoration using the NCNN Real-ESRGAN x4plus model.",
+        recommendedModelId = "ncnn-realesrgan-x4plus",
         defaultScale = 4
     )
 
     val ANIME = UpscalePreset(
         id = "anime",
         name = "Anime",
-        description = "Optimized for anime and manga with crisp lines and vibrant colors.",
-        recommendedModelId = "realesrgan-anime-4x",
+        description = "Compact NCNN Real-ESRGAN AnimeVideoV3 model for anime and animation frames.",
+        recommendedModelId = "ncnn-realesr-animevideov3-x4",
         defaultScale = 4
     )
 
     val ILLUSTRATION = UpscalePreset(
         id = "illustration",
         name = "Illustration & Art",
-        description = "Preserves digital illustrations, graphics, and hand-drawn art.",
-        recommendedModelId = "realesrgan-anime-4x",
+        description = "Native NCNN AnimeVideoV3 model for clean digital illustrations and line art.",
+        recommendedModelId = "ncnn-realesr-animevideov3-x4",
         defaultScale = 4
     )
 
     val FAST = UpscalePreset(
         id = "fast",
-        name = "Fast (AI)",
-        description = "Fast 2× neural upscaling with low memory footprint.",
-        recommendedModelId = "realesrgan-general-2x",
+        name = "Fast (Anime AI)",
+        description = "Compact 2× neural upscaling for anime, flat-color artwork, and animation frames.",
+        recommendedModelId = "ncnn-realesr-animevideov3-x2",
         defaultScale = 2
     )
 
@@ -56,9 +59,9 @@ object UpscalePresetRegistry {
     val CUSTOM = UpscalePreset(
         id = "custom",
         name = "Custom",
-        description = "Manual configuration with custom model and scaling controls.",
-        recommendedModelId = "realesrgan-general-2x",
-        defaultScale = 2
+        description = "Manual configuration with native NCNN Real-ESRGAN and scaling controls.",
+        recommendedModelId = "ncnn-realesrgan-x4plus",
+        defaultScale = 4
     )
 
     val ALL_PRESETS: List<UpscalePreset> = listOf(

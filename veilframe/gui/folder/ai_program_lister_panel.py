@@ -74,6 +74,8 @@ class BundleGenerationWorker(QThread):
         except InterruptedError:
             pass
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.failed.emit(str(e))
 
 

@@ -5,7 +5,8 @@ import java.io.File
 
 /**
  * Manages local storage and installation state of upscaling models.
- * App-private storage at: context.filesDir/models/upscaler/{modelId}/model.ort
+ * App-private storage at: context.filesDir/models/upscaler/{modelId}/
+ * ONNX uses model.ort; NCNN uses model.param + model.bin and an install marker.
  */
 class UpscaleModelRepository(private val context: Context) {
 
@@ -16,14 +17,44 @@ class UpscaleModelRepository(private val context: Context) {
         return File(baseModelsDir, modelId).apply { if (!exists()) mkdirs() }
     }
 
+    /** Legacy ONNX/ORT storage location. Not used by native NCNN inference. */
     fun getModelFile(modelId: String): File {
         return File(getModelDir(modelId), "model.ort")
     }
 
+    fun getNcnnParamFile(modelId: String): File =
+        File(getModelDir(modelId), "model.param")
+
+    fun getNcnnBinFile(modelId: String): File =
+        File(getModelDir(modelId), "model.bin")
+
+    fun getNcnnInstallMarkerFile(modelId: String): File =
+        File(getModelDir(modelId), "model.ncnn.complete")
+
     fun isModelInstalled(model: UpscaleModel): Boolean {
         if (model.isBuiltIn) return true
-        val file = getModelFile(model.id)
-        return file.exists() && file.length() > 0
+        return when (model.type) {
+            ModelType.ALGORITHMIC -> false
+            ModelType.AI_ONNX -> {
+                val file = getModelFile(model.id)
+                file.isFile && file.length() > 0L
+            }
+            ModelType.AI_NCNN -> {
+                val paramFile = getNcnnParamFile(model.id)
+                val binFile = getNcnnBinFile(model.id)
+                val marker = getNcnnInstallMarkerFile(model.id)
+                if (!marker.isFile || !paramFile.isFile || !binFile.isFile) {
+                    false
+                } else {
+                    val markerLines = runCatching { marker.readLines() }.getOrDefault(emptyList())
+                    markerLines.size >= 2 &&
+                        markerLines[0].equals(model.paramSha256, ignoreCase = true) &&
+                        markerLines[1].equals(model.binSha256, ignoreCase = true) &&
+                        paramFile.length() == model.paramSizeBytes &&
+                        binFile.length() == model.binSizeBytes
+                }
+            }
+        }
     }
 
     fun isModelInstalled(modelId: String): Boolean {

@@ -463,6 +463,79 @@ class TestAIBundleFixes(unittest.TestCase):
             self.assertIn("std/", parsed_deno.dependencies)
             self.assertIn("start", parsed_deno.scripts)
 
+    def test_bundle_generation_with_string_secret_alerts_all_formats(self):
+        """Verify all bundle formats succeed when files contain string secret alerts without AttributeError."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            f_rec = FileRecord(
+                id=1,
+                name="secrets.py",
+                path=os.path.join(tmp_dir, "secrets.py"),
+                relative_path="secrets.py",
+                size=50,
+                language="Python",
+                classification=ClassificationResult(category=FileCategory.SOURCE, action=AIAction.INCLUDE),
+                secret_alerts=["Generic API Key detected", "Potential AWS Access Key"],
+            )
+            with open(f_rec.path, "w", encoding="utf-8") as f:
+                f.write('api_key = "AKIA1234567890ABCDEF"\n')
+
+            scan_res = ScanResult(
+                config=None,
+                root_path=tmp_dir,
+                files=[f_rec],
+                stats=ScanStats(root_path=tmp_dir, total_files=1),
+            )
+
+            # Ensure ScanResult.security_alerts property returns structured alerts with relative_path
+            alerts = scan_res.security_alerts
+            self.assertEqual(len(alerts), 2)
+            for a in alerts:
+                self.assertTrue(hasattr(a, "relative_path"))
+                self.assertEqual(a.relative_path, "secrets.py")
+
+            # Test all output formats
+            for fmt in [BundleFormat.AIBUNDLE, BundleFormat.MARKDOWN, BundleFormat.TEXT, BundleFormat.JSON, BundleFormat.ZIP, BundleFormat.HTML]:
+                cfg = BundleConfig(format=fmt)
+                builder = AIBundleBuilder(cfg)
+                bundle_res = builder.build(scan_res)
+                self.assertIsNotNone(bundle_res.content)
+                self.assertTrue(len(bundle_res.content) > 0)
+
+    def test_bundle_generation_with_raw_string_and_dict_context_alerts(self):
+        """Verify bundle renderers gracefully handle string and dict alerts in project_context."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            f_rec = FileRecord(
+                id=1,
+                name="main.py",
+                path=os.path.join(tmp_dir, "main.py"),
+                relative_path="main.py",
+                size=20,
+                language="Python",
+                classification=ClassificationResult(category=FileCategory.SOURCE, action=AIAction.INCLUDE),
+            )
+            with open(f_rec.path, "w", encoding="utf-8") as f:
+                f.write("print('hello')\n")
+
+            scan_res = ScanResult(
+                config=None,
+                root_path=tmp_dir,
+                files=[f_rec],
+                stats=ScanStats(root_path=tmp_dir, total_files=1),
+                project_context={
+                    "security_alerts": [
+                        "Raw string alert in project context",
+                        {"relative_path": "config.json", "rule_id": "API_KEY", "description": "Dict alert"},
+                    ]
+                },
+            )
+
+            for fmt in [BundleFormat.AIBUNDLE, BundleFormat.MARKDOWN, BundleFormat.TEXT, BundleFormat.JSON, BundleFormat.ZIP, BundleFormat.HTML]:
+                cfg = BundleConfig(format=fmt)
+                builder = AIBundleBuilder(cfg)
+                bundle_res = builder.build(scan_res)
+                self.assertIsNotNone(bundle_res.content)
+                self.assertTrue(len(bundle_res.content) > 0)
+
 
 if __name__ == "__main__":
     unittest.main()

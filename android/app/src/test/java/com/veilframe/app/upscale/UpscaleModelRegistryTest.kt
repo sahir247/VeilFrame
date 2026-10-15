@@ -3,6 +3,8 @@ package com.veilframe.app.upscale
 import com.veilframe.app.upscale.model.ModelCapability
 import com.veilframe.app.upscale.model.ModelGenre
 import com.veilframe.app.upscale.model.ModelTier
+import com.veilframe.app.upscale.model.ModelType
+import com.veilframe.app.upscale.model.NcnnEngineKind
 import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -123,6 +125,61 @@ class UpscaleModelRegistryTest {
         val removed = UpscaleModelRegistry.unregisterCustomModel("custom-test-model")
         assertTrue(removed)
         assertEquals(null, UpscaleModelRegistry.getModelById("custom-test-model"))
+    }
+    @Test
+    fun testNcnnModelsHaveCompletePinnedArtifactContracts() {
+        val models = UpscaleModelRegistry.NCNN_MODELS
+        assertEquals(3, models.size)
+
+        models.forEach { model ->
+            assertEquals(ModelType.AI_NCNN, model.type)
+            assertEquals(NcnnEngineKind.REALSR_ESRGAN, model.engineKind)
+            model.validateNcnnArtifactContract()
+            assertTrue(model.paramDownloadUrl!!.endsWith(".param"))
+            assertTrue(model.binDownloadUrl!!.endsWith(".bin"))
+            assertEquals(model.paramSizeBytes + model.binSizeBytes, model.sizeBytes)
+            assertTrue(model.paramSha256!!.matches(Regex("^[A-Fa-f0-9]{64}$")))
+            assertTrue(model.binSha256!!.matches(Regex("^[A-Fa-f0-9]{64}$")))
+        }
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS.nativeScale)
+        assertEquals(2, UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2.nativeScale)
+        assertEquals(4, UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4.nativeScale)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun testNcnnContractRejectsMissingPairMetadata() {
+        com.veilframe.app.upscale.model.UpscaleModel(
+            id = "broken-ncnn-model",
+            name = "Broken NCNN Model",
+            description = "Test fixture",
+            type = ModelType.AI_NCNN,
+            nativeScale = 4,
+            sizeBytes = 10L,
+            engineKind = NcnnEngineKind.REALSR_ESRGAN
+        ).validateNcnnArtifactContract()
+    }
+
+    @Test
+    fun testSelectableModelsExcludeEmptySha256Models() {
+        val selectable = UpscaleModelRegistry.SELECTABLE_MODELS
+        selectable.forEach { model ->
+            assertTrue(
+                "Selectable model ${model.id} must be built-in, have a non-blank SHA-256, or be a valid NCNN model",
+                model.isBuiltIn || model.sha256.isNotBlank() || (model.type == ModelType.AI_NCNN && !model.paramSha256.isNullOrBlank())
+            )
+        }
+        // Verify that experimental models with empty SHA-256 are excluded
+        val emptyShaModels = UpscaleModelRegistry.ALL_MODELS.filter {
+            !it.isBuiltIn && it.type == ModelType.AI_ONNX && it.sha256.isBlank()
+        }
+        assertTrue("There must be experimental ONNX models without hashes in ALL_MODELS", emptyShaModels.isNotEmpty())
+        emptyShaModels.forEach { emptyModel ->
+            assertFalse(
+                "Experimental model ${emptyModel.id} with empty SHA-256 must not be in SELECTABLE_MODELS",
+                selectable.contains(emptyModel)
+            )
+        }
     }
 }
 
