@@ -22,6 +22,7 @@ object NcnnNative {
     const val STATUS_MODEL_WEIGHTS_FAILURE = -21
     const val STATUS_MODEL_GRAPH_FAILURE = -22
     const val STATUS_MODEL_LAYER_FAILURE = -23
+    const val STATUS_UNSUPPORTED_TTA = -24
 
     private val libraryLoaded: Boolean = try {
         System.loadLibrary("veilframe_ncnn")
