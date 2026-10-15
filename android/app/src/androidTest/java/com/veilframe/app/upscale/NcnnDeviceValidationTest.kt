@@ -204,6 +204,34 @@ class NcnnDeviceValidationTest {
     }
 
     @Test
+    fun test05_SmallAndSingleColumnInputs() {
+        runBlocking {
+            Log.i(TAG, "=== SMALL DIMENSION / SINGLE-COLUMN GPU REGRESSION GATE ===")
+            val sizes = listOf(1 to 1, 2 to 3, 63 to 65, 65 to 63, 127 to 129)
+            for ((width, height) in sizes) {
+                val input = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                try {
+                    input.eraseColor(Color.rgb(80, 120, 160))
+                    val output = engine.upscale(
+                        source = BitmapSource(input),
+                        model = UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2,
+                        targetScale = 2,
+                        params = UpscaleInferenceParams(chunkSize = 128, overlap = 16)
+                    ) as UpscaleOutput.Streamed
+                    assertEquals("Output width for ${width}x${height}", width * 2, output.width)
+                    assertEquals("Output height for ${width}x${height}", height * 2, output.height)
+                    assertTrue("Output must exist for ${width}x${height}", output.file.exists())
+                    assertTrue("Output must be non-empty for ${width}x${height}", output.file.length() > 0)
+                    NcnnUpscaleEngine.validatePngFile(output.file, width * 2, height * 2)
+                    Log.i(TAG, "Small-image case passed: ${width}x${height} -> ${output.width}x${output.height}")
+                } finally {
+                    input.recycle()
+                }
+            }
+        }
+    }
+
+    @Test
     fun test04_UserWhatsAppClashOfClans_1280x960_4x() {
         runBlocking {
             Log.i(TAG, "=== USER WHATSAPP IMAGE 1280x960 REAL-ESRGAN-X4PLUS (4X -> 5120x3840) ===")
