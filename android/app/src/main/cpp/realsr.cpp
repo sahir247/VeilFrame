@@ -201,6 +201,14 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
 }
 
 namespace {
+static int reflect_index(int index, int length) {
+    if (length <= 1) return 0;
+    const int period = 2 * (length - 1);
+    int folded = index % period;
+    if (folded < 0) folded += period;
+    return folded < length ? folded : period - folded;
+}
+
 struct VulkanAllocatorGuard {
     ncnn::VulkanDevice* dev;
     ncnn::VkAllocator* blob;
@@ -313,7 +321,9 @@ int RealSR::process_streaming(
             in_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
             if (in_tile_gpu.empty()) return -101;
             if (channels == 4) {
-                in_alpha_tile_gpu.create(tile_w_nopad, tile_h_nopad, 1, in_out_tile_elemsize, 1, blob_vkallocator);
+                // Match RGB tile padding so bicubic alpha interpolation has
+                // a valid neighborhood across tile boundaries and outer edges.
+                in_alpha_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 1, in_out_tile_elemsize, 1, blob_vkallocator);
                 if (in_alpha_tile_gpu.empty()) return -102;
             }
 
@@ -652,21 +662,40 @@ int RealSR::process_strip_streaming(
         ncnn::VkCompute cmd(vkdev);
 
         for (int xi = 0; xi < xtiles; xi++) {
-            const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
-            const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
-            const int in_tile_w = in_tile_x1 - in_tile_x0;
+            const int core_x0 = xi * TILE_SIZE_X;
+            const int core_x1 = std::min((xi + 1) * TILE_SIZE_X, w);
+            const int core_y0 = yi * TILE_SIZE_Y;
+            const int core_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
+            const int padded_x0 = core_x0 - prepadding;
+            const int padded_y0 = core_y0 - prepadding;
+            const int padded_w = (core_x1 - core_x0) + 2 * prepadding;
+            const int padded_h = (core_y1 - core_y0) + 2 * prepadding;
+            const int crop_x0 = prepadding * scale;
+            const int crop_y0 = prepadding * scale;
+            const int crop_w = (core_x1 - core_x0) * scale;
+            const int crop_h = (core_y1 - core_y0) * scale;
 
-            const int crop_x0 = (xi * TILE_SIZE_X - in_tile_x0) * scale;
-            const int crop_y0 = (yi * TILE_SIZE_Y - in_tile_y0) * scale;
-            const int crop_w = (std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X) * scale;
-            const int crop_h = (std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y) * scale;
+            // Reconstruct the full reflected tile from the requested source strip.
+            // This keeps strip streaming's edge semantics aligned with regular GPU
+            // streaming, including padding at all four outer image borders.
+            std::vector<unsigned char> padded_pixels((size_t)padded_w * padded_h * channels);
+            for (int py = 0; py < padded_h; py++) {
+                const int src_y = reflect_index(padded_y0 + py, h);
+                const int local_y = src_y - in_tile_y0;
+                for (int px = 0; px < padded_w; px++) {
+                    const int src_x = reflect_index(padded_x0 + px, w);
+                    const unsigned char* src = strip_buf.data() +
+                        ((size_t)local_y * w + src_x) * channels;
+                    unsigned char* dst = padded_pixels.data() +
+                        ((size_t)py * padded_w + px) * channels;
+                    memcpy(dst, src, (size_t)channels);
+                }
+            }
 
-            ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
-                strip_buf.data(),
+            ncnn::Mat in_tile = ncnn::Mat::from_pixels(
+                padded_pixels.data(),
                 channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
-                w, in_band_h,
-                in_tile_x0, 0,
-                in_tile_w, in_band_h
+                padded_w, padded_h
             );
 
             // Scale to [0, 1] matching model input expectations
@@ -684,15 +713,11 @@ int RealSR::process_strip_streaming(
             ncnn::VkMat in_alpha_tile_gpu;
             ncnn::VkMat out_alpha_tile_gpu;
             if (channels == 4) {
-                const int tile_w_nopad = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
-                const int tile_h_nopad = std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y;
-                ncnn::Mat in_alpha(tile_w_nopad, tile_h_nopad, 1);
-                const int y_strip_offset = yi * TILE_SIZE_Y - in_tile_y0;
-                for (int y = 0; y < tile_h_nopad; y++) {
-                    const unsigned char* p = strip_buf.data() + ((size_t)(y_strip_offset + y) * w + xi * TILE_SIZE_X) * 4;
+                ncnn::Mat in_alpha(padded_w, padded_h, 1);
+                for (int y = 0; y < padded_h; y++) {
                     float* aptr = in_alpha.row(y);
-                    for (int x = 0; x < tile_w_nopad; x++) {
-                        aptr[x] = p[x * 4 + 3];
+                    for (int x = 0; x < padded_w; x++) {
+                        aptr[x] = padded_pixels[((size_t)y * padded_w + x) * 4 + 3];
                     }
                 }
                 cmd.record_clone(in_alpha, in_alpha_tile_gpu, opt);
