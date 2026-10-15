@@ -552,7 +552,7 @@ int RealSR::process_streaming_cpu(
                 }
 
                 ncnn::Mat out_alpha;
-                ncnn::resize_bicubic(in_alpha, out_alpha, in_tw * scale, in_th * scale);
+                ncnn::resize_bicubic(in_alpha, out_alpha, padded_tile_w * scale, padded_tile_h * scale);
 
                 ncnn::Mat cropped_alpha;
                 ncnn::copy_cut_border(out_alpha, cropped_alpha, crop_y0, out_alpha.h - crop_y0 - crop_h, crop_x0, out_alpha.w - crop_x0 - crop_w);
@@ -964,7 +964,7 @@ int RealSR::process_strip_streaming_cpu(
                 }
 
                 ncnn::Mat out_alpha;
-                ncnn::resize_bicubic(in_alpha, out_alpha, in_tile_w * scale, in_band_h * scale);
+                ncnn::resize_bicubic(in_alpha, out_alpha, padded_tile_w * scale, padded_tile_h * scale);
 
                 ncnn::Mat cropped_alpha;
                 ncnn::copy_cut_border(out_alpha, cropped_alpha, crop_y0, out_alpha.h - crop_y0 - crop_h, crop_x0, out_alpha.w - crop_x0 - crop_w);
