@@ -185,4 +185,23 @@ class CvAuditRegressionTest {
         }
     }
 
+
+    @Test
+    fun noiseSigmaRetainsSubIntegerResidualPrecision() {
+        val size = 64
+        val checkerboard = Mat(size, size, CvType.CV_8UC1)
+        val pixels = ByteArray(size * size) { index ->
+            val x = index % size
+            val y = index / size
+            if ((x + y) % 2 == 0) 0 else 1
+        }
+        try {
+            checkerboard.put(0, 0, pixels)
+            val sigma = ImageQualityAnalyzer.estimateNoiseSigma(checkerboard)
+            assertTrue("Sub-integer residuals should produce a fractional noise estimate: $sigma", sigma in 0.6..0.9)
+        } finally {
+            checkerboard.release()
+        }
+    }
+
 }
