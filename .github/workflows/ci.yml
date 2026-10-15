@@ -325,18 +325,42 @@ jobs:
           # Never use an unrelated, last-known-good artifact: it can be stale and
           # package a 4 KB-aligned libopencv_java4.so. Find the build for this
           # exact source SHA and wait for it to finish before consuming its artifact.
-          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+          RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
             --branch "$REQUIRED_BRANCH" \
             --limit 100 \
-            --json databaseId,headSha \
-            --jq "first(.[] | select(.headSha == \"$REQUIRED_HEAD_SHA\")) | .databaseId")
-          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No build-opencv-sdk.yml run exists for branch $REQUIRED_BRANCH at $REQUIRED_HEAD_SHA. Run the matching SDK workflow; refusing to consume a stale artifact."
-            exit 1
+            --json databaseId,headSha,status,conclusion)
+
+          # Prefer an artifact built at this exact head. For unrelated app/test
+          # commits, a same-branch build is safe only when the OpenCV build inputs
+          # have not changed since that artifact's source SHA.
+          RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+            '[.[] | select(.headSha == $sha)] | first | .databaseId // empty')
+          ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
+
+          if [ -z "$RUN_ID" ]; then
+            CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
+              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // empty')
+            RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
+            ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
+            if [ -z "$RUN_ID" ] || [ -z "$ARTIFACT_SHA" ]; then
+              echo "::error::No current or successful OpenCV SDK build exists on $REQUIRED_BRANCH."
+              exit 1
+            fi
+
+            git fetch --no-tags --depth=1 origin "$ARTIFACT_SHA"
+            git fetch --no-tags --depth=1 origin "$REQUIRED_HEAD_SHA"
+            CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" "$REQUIRED_HEAD_SHA" | \
+              grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
+            if [ -n "$CHANGED_INPUTS" ]; then
+              echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+              echo "$CHANGED_INPUTS"
+              exit 1
+            fi
+            echo "Reusing same-branch SDK build $RUN_ID at $ARTIFACT_SHA; OpenCV build inputs are unchanged."
           fi
 
-          echo "Waiting for verified OpenCV SDK build $RUN_ID at $REQUIRED_HEAD_SHA..."
+          echo "Waiting for verified OpenCV SDK build $RUN_ID at $ARTIFACT_SHA..."
           gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
 
           mkdir -p /tmp/opencv_artifact
