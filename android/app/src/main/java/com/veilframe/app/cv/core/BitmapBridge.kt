@@ -45,6 +45,11 @@ object BitmapBridge {
         try {
             val mat = createMatFor(source)
             Utils.bitmapToMat(source, mat)
+            // Android Bitmap storage is RGBA; VeilFrame's CV contract is BGRA/BGR.
+            when (mat.channels()) {
+                4 -> Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGRA)
+                3 -> Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR)
+            }
             return mat
         } finally {
             // CV-9: the intermediate copy used to leak (never recycled).
@@ -60,7 +65,15 @@ object BitmapBridge {
     fun toBitmap(mat: Mat): Bitmap {
         val bitmap = Bitmap.createBitmap(mat.cols(), mat.rows(), Bitmap.Config.ARGB_8888)
         when (mat.channels()) {
-            4 -> Utils.matToBitmap(mat, bitmap)
+            4 -> {
+                val rgba = Mat()
+                Imgproc.cvtColor(mat, rgba, Imgproc.COLOR_BGRA2RGBA)
+                try {
+                    Utils.matToBitmap(rgba, bitmap)
+                } finally {
+                    rgba.release()
+                }
+            }
             3 -> {
                 val rgba = Mat()
                 Imgproc.cvtColor(mat, rgba, Imgproc.COLOR_BGR2RGBA)
