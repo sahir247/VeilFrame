@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <vector>
+#include <cstring>
 #include <android/log.h>
 #include "realsr.h"
 
@@ -56,7 +58,36 @@ struct CallbackUserData {
     bool has_exception;
     bool cancelled;
     bool callback_failed;
+    // One reusable row buffer and one DirectByteBuffer object per inference call.
+    // The native callback copies the current row here before invoking Kotlin.
+    std::vector<unsigned char> row_buffer;
+    jobject row_direct_buffer;
 };
+
+static bool prepare_reusable_row_buffer(
+    JNIEnv* env,
+    CallbackUserData* cb,
+    jint input_width,
+    jint channels,
+    int scale
+) {
+    if (!env || !cb || input_width <= 0 || scale <= 0 ||
+        (channels != 3 && channels != 4)) {
+        return false;
+    }
+    const uint64_t output_width = static_cast<uint64_t>(input_width) *
+        static_cast<uint64_t>(scale);
+    const uint64_t capacity64 = output_width * static_cast<uint64_t>(channels);
+    if (capacity64 == 0 ||
+        capacity64 > static_cast<uint64_t>(std::numeric_limits<jint>::max()) ||
+        capacity64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return false;
+    }
+    cb->row_buffer.resize(static_cast<size_t>(capacity64));
+    cb->row_direct_buffer = env->NewDirectByteBuffer(
+        cb->row_buffer.data(), static_cast<jlong>(capacity64));
+    return cb->row_direct_buffer != nullptr;
+}
 
 static int jni_strip_callback(unsigned char* strip_data, int y0, int height, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
@@ -118,16 +149,17 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
         LOGE("Rejected out-of-range output row buffer size");
         return -1;
     }
-    jobject direct_buf = cb->env->NewDirectByteBuffer(
-        const_cast<unsigned char*>(row_data), static_cast<jlong>(capacity64));
-    if (!direct_buf) {
+    if (!cb->row_direct_buffer || cb->row_buffer.size() < capacity64) {
         cb->has_exception = true;
-        LOGE("Failed to allocate DirectByteBuffer for row %d", row_index);
+        LOGE("Reusable DirectByteBuffer is not initialized for row %d", row_index);
         return -1;
     }
-
-    jint ret = cb->env->CallIntMethod(cb->row_callback, g_on_row_method, direct_buf, row_index, row_width, channels);
-    cb->env->DeleteLocalRef(direct_buf);
+    // Reuse one direct buffer object across all rows. Kotlin consumes it
+    // synchronously before this storage is overwritten for the next row.
+    std::memcpy(cb->row_buffer.data(), row_data, static_cast<size_t>(capacity64));
+    jint ret = cb->env->CallIntMethod(
+        cb->row_callback, g_on_row_method, cb->row_direct_buffer, row_index, row_width, channels
+    );
 
     if (cb->env->ExceptionCheck()) {
         cb->has_exception = true;
@@ -619,6 +651,10 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
     udata.callback_failed = false;
 
     try {
+        if (!prepare_reusable_row_buffer(
+                env, &udata, width, channels, lease.instance->engine->scale)) {
+            return env->ExceptionCheck() ? -12 : -11;
+        }
         const int ret = lease.instance->engine->process_streaming(
             pixeldata, width, height, channels,
             jni_row_callback,
@@ -675,6 +711,10 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     udata.callback_failed = false;
 
     try {
+        if (!prepare_reusable_row_buffer(
+                env, &udata, width, channels, lease.instance->engine->scale)) {
+            return env->ExceptionCheck() ? -12 : -11;
+        }
         const int ret = lease.instance->engine->process_strip_streaming(
             width, height, channels,
             jni_strip_callback,
