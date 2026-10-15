@@ -201,6 +201,16 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
 }
 
 namespace {
+int reflect_index(int coord, int size)
+{
+    // Reflect-101 padding, including dimensions smaller than the padding amount.
+    if (size <= 1) return 0;
+    const int period = 2 * (size - 1);
+    int folded = coord % period;
+    if (folded < 0) folded += period;
+    return folded < size ? folded : period - folded;
+}
+
 struct VulkanAllocatorGuard {
     ncnn::VulkanDevice* dev;
     ncnn::VkAllocator* blob;
@@ -464,25 +474,35 @@ int RealSR::process_streaming_cpu(
     std::vector<unsigned char> band_buf((size_t)w * scale * TILE_SIZE_Y * scale * channels);
 
     for (int yi = 0; yi < ytiles; yi++) {
-        const int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
-        const int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
         const int out_tile_y0 = std::max(yi * TILE_SIZE_Y, 0);
         const int out_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
         const int out_band_h = (out_tile_y1 - out_tile_y0) * scale;
         const int out_band_w = w * scale;
 
         for (int xi = 0; xi < xtiles; xi++) {
-            const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
-            const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
-            const int in_tw = in_tile_x1 - in_tile_x0;
-            const int in_th = in_tile_y1 - in_tile_y0;
+            // Use full reflected padding so CPU fallback matches the Vulkan tile edges.
+            const int padded_tile_x0 = xi * TILE_SIZE_X - prepadding;
+            const int padded_tile_y0 = yi * TILE_SIZE_Y - prepadding;
+            const int padded_tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w) + prepadding;
+            const int padded_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h) + prepadding;
+            const int padded_tile_w = padded_tile_x1 - padded_tile_x0;
+            const int padded_tile_h = padded_tile_y1 - padded_tile_y0;
 
-            ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
-                pixeldata,
-                channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
-                w, h,
-                in_tile_x0, in_tile_y0,
-                in_tw, in_th
+            std::vector<unsigned char> padded_rgb((size_t)padded_tile_w * padded_tile_h * 3);
+            for (int ty = 0; ty < padded_tile_h; ty++) {
+                const int src_y = reflect_index(padded_tile_y0 + ty, h);
+                for (int tx = 0; tx < padded_tile_w; tx++) {
+                    const int src_x = reflect_index(padded_tile_x0 + tx, w);
+                    const unsigned char* src = pixeldata + ((size_t)src_y * w + src_x) * channels;
+                    unsigned char* dst = padded_rgb.data() + ((size_t)ty * padded_tile_w + tx) * 3;
+                    dst[0] = src[0];
+                    dst[1] = src[1];
+                    dst[2] = src[2];
+                }
+            }
+
+            ncnn::Mat in_tile = ncnn::Mat::from_pixels(
+                padded_rgb.data(), ncnn::Mat::PIXEL_RGB, padded_tile_w, padded_tile_h
             );
 
             // Scale to [0, 1]
@@ -506,8 +526,8 @@ int RealSR::process_streaming_cpu(
             out_tile.substract_mean_normalize(0, denorm_vals);
 
             // Crop prepadding borders
-            const int crop_x0 = (xi * TILE_SIZE_X - in_tile_x0) * scale;
-            const int crop_y0 = (yi * TILE_SIZE_Y - in_tile_y0) * scale;
+            const int crop_x0 = prepadding * scale;
+            const int crop_y0 = prepadding * scale;
             const int crop_w = (std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X) * scale;
             const int crop_h = (std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y) * scale;
 
@@ -520,12 +540,14 @@ int RealSR::process_streaming_cpu(
 
             std::vector<float> alpha_cropped;
             if (channels == 4) {
-                ncnn::Mat in_alpha(in_tw, in_th, 1);
-                for (int y = 0; y < in_th; y++) {
-                    const unsigned char* p = pixeldata + ((size_t)(in_tile_y0 + y) * w + in_tile_x0) * 4;
+                ncnn::Mat in_alpha(padded_tile_w, padded_tile_h, 1);
+                for (int y = 0; y < padded_tile_h; y++) {
+                    const int src_y = reflect_index(padded_tile_y0 + y, h);
                     float* aptr = in_alpha.row(y);
-                    for (int x = 0; x < in_tw; x++) {
-                        aptr[x] = p[x * 4 + 3];
+                    for (int x = 0; x < padded_tile_w; x++) {
+                        const int src_x = reflect_index(padded_tile_x0 + x, w);
+                        const unsigned char* src = pixeldata + ((size_t)src_y * w + src_x) * channels;
+                        aptr[x] = src[3];
                     }
                 }
 
@@ -864,16 +886,32 @@ int RealSR::process_strip_streaming_cpu(
         }
 
         for (int xi = 0; xi < xtiles; xi++) {
-            const int in_tile_x0 = std::max(xi * TILE_SIZE_X - prepadding, 0);
-            const int in_tile_x1 = std::min((xi + 1) * TILE_SIZE_X + prepadding, w);
-            const int in_tile_w = in_tile_x1 - in_tile_x0;
+            // Match the Vulkan preprocessor's reflected padding on every image edge.
+            const int padded_tile_x0 = xi * TILE_SIZE_X - prepadding;
+            const int padded_tile_y0 = yi * TILE_SIZE_Y - prepadding;
+            const int padded_tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w) + prepadding;
+            const int padded_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h) + prepadding;
+            const int padded_tile_w = padded_tile_x1 - padded_tile_x0;
+            const int padded_tile_h = padded_tile_y1 - padded_tile_y0;
 
-            ncnn::Mat in_tile = ncnn::Mat::from_pixels_roi(
-                strip_buf.data(),
-                channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
-                w, in_band_h,
-                in_tile_x0, 0,
-                in_tile_w, in_band_h
+            std::vector<unsigned char> padded_rgb((size_t)padded_tile_w * padded_tile_h * 3);
+            for (int ty = 0; ty < padded_tile_h; ty++) {
+                const int src_y = reflect_index(padded_tile_y0 + ty, h);
+                const int strip_y = src_y - in_tile_y0;
+                if (strip_y < 0 || strip_y >= in_band_h) return -103;
+                for (int tx = 0; tx < padded_tile_w; tx++) {
+                    const int src_x = reflect_index(padded_tile_x0 + tx, w);
+                    const unsigned char* src = strip_buf.data() +
+                        ((size_t)strip_y * w + src_x) * channels;
+                    unsigned char* dst = padded_rgb.data() + ((size_t)ty * padded_tile_w + tx) * 3;
+                    dst[0] = src[0];
+                    dst[1] = src[1];
+                    dst[2] = src[2];
+                }
+            }
+
+            ncnn::Mat in_tile = ncnn::Mat::from_pixels(
+                padded_rgb.data(), ncnn::Mat::PIXEL_RGB, padded_tile_w, padded_tile_h
             );
 
             // Scale to [0, 1]
@@ -897,8 +935,8 @@ int RealSR::process_strip_streaming_cpu(
             out_tile.substract_mean_normalize(0, denorm_vals);
 
             // Crop prepadding borders
-            const int crop_x0 = (xi * TILE_SIZE_X - in_tile_x0) * scale;
-            const int crop_y0 = (yi * TILE_SIZE_Y - in_tile_y0) * scale;
+            const int crop_x0 = prepadding * scale;
+            const int crop_y0 = prepadding * scale;
             const int crop_w = (std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X) * scale;
             const int crop_h = (std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y) * scale;
 
@@ -911,12 +949,17 @@ int RealSR::process_strip_streaming_cpu(
 
             std::vector<float> alpha_cropped;
             if (channels == 4) {
-                ncnn::Mat in_alpha(in_tile_w, in_band_h, 1);
-                for (int y = 0; y < in_band_h; y++) {
-                    const unsigned char* p = strip_buf.data() + ((size_t)y * w + in_tile_x0) * 4;
+                ncnn::Mat in_alpha(padded_tile_w, padded_tile_h, 1);
+                for (int y = 0; y < padded_tile_h; y++) {
+                    const int src_y = reflect_index(padded_tile_y0 + y, h);
+                    const int strip_y = src_y - in_tile_y0;
+                    if (strip_y < 0 || strip_y >= in_band_h) return -103;
                     float* aptr = in_alpha.row(y);
-                    for (int x = 0; x < in_tile_w; x++) {
-                        aptr[x] = p[x * 4 + 3];
+                    for (int x = 0; x < padded_tile_w; x++) {
+                        const int src_x = reflect_index(padded_tile_x0 + x, w);
+                        const unsigned char* src = strip_buf.data() +
+                            ((size_t)strip_y * w + src_x) * channels;
+                        aptr[x] = src[3];
                     }
                 }
 
