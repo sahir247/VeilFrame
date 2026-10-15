@@ -13,7 +13,11 @@
 #include <cstdio>
 #include <unistd.h>
 #include <android/log.h>
+#if !defined(NDEBUG) || defined(VEILFRAME_VERBOSE_NATIVE_LOGGING)
 #define LOGD(...) __android_log_print(ANDROID_LOG_INFO, "VeilFrame.NativeSR", __VA_ARGS__)
+#else
+#define LOGD(...) ((void)0)
+#endif
 
 #include "realsr_preproc.comp.hex.h"
 #include "realsr_postproc.comp.hex.h"
@@ -137,7 +141,7 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
                 }
             }
             realsr_preproc = new ncnn::Pipeline(vkdev);
-            realsr_preproc->set_optimal_local_size_xyz(8, 8, 3);
+            realsr_preproc->set_optimal_local_size_xyz(8, 8, 1);
             int pret = realsr_preproc->create(spirv.data(), spirv.size() * 4, specializations);
             if (pret != 0) {
                 delete realsr_preproc;
@@ -160,7 +164,7 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
                 }
             }
             realsr_postproc = new ncnn::Pipeline(vkdev);
-            realsr_postproc->set_optimal_local_size_xyz(8, 8, 3);
+            realsr_postproc->set_optimal_local_size_xyz(8, 8, 1);
             int pret = realsr_postproc->create(spirv.data(), spirv.size() * 4, specializations);
             if (pret != 0) {
                 delete realsr_postproc;
