@@ -2,6 +2,8 @@
 
 This document serves as the formal release gate for the VeilFrame NCNN neural upscaler subsystem executing on physical target hardware. It records actual on-device benchmarks, numerical precision verification, memory profiles, and multimodal visual inspection across multiple real-world neural super-resolution models on Snapdragon 8 Gen 5 / Elite (Qualcomm Adreno 829 GPU).
 
+> **Audit-fix branch status (2026-10-15):** The APK hash and measurements below are historical evidence for the exact binary listed in Section 2; they do not validate later source changes on `fix/ncnn-audit-hardening`. The audit-fix branch must be rebuilt and the device suite rerun before its code is considered release-validated. The Android **15 ms per-tile yield** and **10 ms per-band yield** described in Section 4 remain intentional scheduling mitigations and must not be removed or reduced without a new controlled physical-device A/B validation and UI responsiveness evidence.
+
 ---
 
 ## 1. Hardware & Platform Profile
