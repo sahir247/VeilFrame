@@ -661,68 +661,75 @@ int RealSR::process_strip_streaming(
 
         ncnn::VkCompute cmd(vkdev);
 
+        // Upload each source band once. GPU preprocessing below creates all
+        // reflected RGB/alpha tiles, avoiding a CPU ROI conversion and upload
+        // for every horizontal tile.
+        ncnn::Mat band_in = ncnn::Mat::from_pixels(
+            strip_buf.data(),
+            channels == 4 ? ncnn::Mat::PIXEL_RGBA : ncnn::Mat::PIXEL_RGB,
+            w, in_band_h
+        );
+        ncnn::VkMat in_gpu;
+        cmd.record_clone(band_in, in_gpu, opt);
+        if (in_gpu.empty()) return -101;
+        {
+            int upload_ret = cmd.submit_and_wait();
+            if (upload_ret != 0) return upload_ret;
+            int reset_ret = cmd.reset();
+            if (reset_ret != 0) return reset_ret;
+        }
+
         for (int xi = 0; xi < xtiles; xi++) {
-            const int core_x0 = xi * TILE_SIZE_X;
-            const int core_x1 = std::min((xi + 1) * TILE_SIZE_X, w);
-            const int core_y0 = yi * TILE_SIZE_Y;
-            const int core_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
-            const int padded_x0 = core_x0 - prepadding;
-            const int padded_y0 = core_y0 - prepadding;
-            const int padded_w = (core_x1 - core_x0) + 2 * prepadding;
-            const int padded_h = (core_y1 - core_y0) + 2 * prepadding;
+            const int tile_w_nopad = std::min((xi + 1) * TILE_SIZE_X, w) - xi * TILE_SIZE_X;
+            const int tile_h_nopad = std::min((yi + 1) * TILE_SIZE_Y, h) - yi * TILE_SIZE_Y;
+            const int tile_x0 = xi * TILE_SIZE_X - prepadding;
+            const int tile_x1 = std::min((xi + 1) * TILE_SIZE_X, w) + prepadding;
+            const int tile_y0 = yi * TILE_SIZE_Y - prepadding;
+            const int tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h) + prepadding;
+
             const int crop_x0 = prepadding * scale;
             const int crop_y0 = prepadding * scale;
-            const int crop_w = (core_x1 - core_x0) * scale;
-            const int crop_h = (core_y1 - core_y0) * scale;
-
-            // Reconstruct the full reflected tile from the requested source strip.
-            // This keeps strip streaming's edge semantics aligned with regular GPU
-            // streaming, including padding at all four outer image borders.
-            std::vector<unsigned char> padded_pixels((size_t)padded_w * padded_h * channels);
-            for (int py = 0; py < padded_h; py++) {
-                const int src_y = reflect_index(padded_y0 + py, h);
-                const int local_y = src_y - in_tile_y0;
-                for (int px = 0; px < padded_w; px++) {
-                    const int src_x = reflect_index(padded_x0 + px, w);
-                    const unsigned char* src = strip_buf.data() +
-                        ((size_t)local_y * w + src_x) * channels;
-                    unsigned char* dst = padded_pixels.data() +
-                        ((size_t)py * padded_w + px) * channels;
-                    memcpy(dst, src, (size_t)channels);
-                }
-            }
-
-            ncnn::Mat in_tile = ncnn::Mat::from_pixels(
-                padded_pixels.data(),
-                channels == 4 ? ncnn::Mat::PIXEL_RGBA2RGB : ncnn::Mat::PIXEL_RGB,
-                padded_w, padded_h
-            );
-
-            // Scale to [0, 1] matching model input expectations
-            const float norm_vals[3] = {1 / 255.f, 1 / 255.f, 1 / 255.f};
-            in_tile.substract_mean_normalize(0, norm_vals);
-
-            const float* fptr = (const float*)in_tile.data;
-            LOGD("tile[%d,%d]: in_tile w=%d h=%d c=%d float[0..2]=%f,%f,%f",
-                 yi, xi, in_tile.w, in_tile.h, in_tile.c, fptr[0], fptr[1], fptr[2]);
+            const int crop_w = tile_w_nopad * scale;
+            const int crop_h = tile_h_nopad * scale;
 
             ncnn::VkMat in_tile_gpu;
-            cmd.record_clone(in_tile, in_tile_gpu, opt);
+            in_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 3, in_out_tile_elemsize, 1, blob_vkallocator);
             if (in_tile_gpu.empty()) return -101;
 
             ncnn::VkMat in_alpha_tile_gpu;
+            if (channels == 4) {
+                in_alpha_tile_gpu.create(tile_x1 - tile_x0, tile_y1 - tile_y0, 1, in_out_tile_elemsize, 1, blob_vkallocator);
+                if (in_alpha_tile_gpu.empty()) return -102;
+            }
+
+            std::vector<ncnn::VkMat> preproc_bindings(3);
+            preproc_bindings[0] = in_gpu;
+            preproc_bindings[1] = in_tile_gpu;
+            preproc_bindings[2] = in_alpha_tile_gpu;
+
+            std::vector<ncnn::vk_constant_type> preproc_constants(13);
+            preproc_constants[0].i = in_gpu.w;
+            preproc_constants[1].i = in_gpu.h;
+            preproc_constants[2].i = in_gpu.cstep;
+            preproc_constants[3].i = in_tile_gpu.w;
+            preproc_constants[4].i = in_tile_gpu.h;
+            preproc_constants[5].i = in_tile_gpu.cstep;
+            preproc_constants[6].i = prepadding;
+            preproc_constants[7].i = prepadding;
+            preproc_constants[8].i = xi * TILE_SIZE_X;
+            preproc_constants[9].i = std::min(yi * TILE_SIZE_Y, prepadding);
+            preproc_constants[10].i = channels;
+            preproc_constants[11].i = in_alpha_tile_gpu.w;
+            preproc_constants[12].i = in_alpha_tile_gpu.h;
+
+            ncnn::VkMat preproc_dispatcher;
+            preproc_dispatcher.w = in_tile_gpu.w;
+            preproc_dispatcher.h = in_tile_gpu.h;
+            preproc_dispatcher.c = channels;
+            cmd.record_pipeline(realsr_preproc, preproc_bindings, preproc_constants, preproc_dispatcher);
+
             ncnn::VkMat out_alpha_tile_gpu;
             if (channels == 4) {
-                ncnn::Mat in_alpha(padded_w, padded_h, 1);
-                for (int y = 0; y < padded_h; y++) {
-                    float* aptr = in_alpha.row(y);
-                    for (int x = 0; x < padded_w; x++) {
-                        aptr[x] = padded_pixels[((size_t)y * padded_w + x) * 4 + 3];
-                    }
-                }
-                cmd.record_clone(in_alpha, in_alpha_tile_gpu, opt);
-                if (in_alpha_tile_gpu.empty()) return -102;
-
                 int fret = 0;
                 if (scale == 2) {
                     fret = bicubic_2x->forward(in_alpha_tile_gpu, out_alpha_tile_gpu, cmd, opt);
