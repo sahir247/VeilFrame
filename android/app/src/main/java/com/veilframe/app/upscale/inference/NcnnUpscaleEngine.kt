@@ -548,6 +548,10 @@ class NcnnUpscaleEngine(
                                     NcnnNative.STATUS_CALLBACK_EXCEPTION,
                                     "JNI callback exception during NCNN processing"
                                 )
+                                NcnnNative.STATUS_CALLBACK_FAILURE -> throw DeviceInferenceException(
+                                    NcnnNative.STATUS_CALLBACK_FAILURE,
+                                    "Output callback or storage write failed during NCNN processing"
+                                )
                                 NcnnNative.STATUS_VULKAN_FAILURE -> throw DeviceInferenceException(
                                     NcnnNative.STATUS_VULKAN_FAILURE,
                                     "NCNN Vulkan execution failed; a clean CPU retry may succeed",
