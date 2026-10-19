@@ -30,7 +30,8 @@ class FloatingDockStateController(
     private val primaryButton: MaterialButton,
     private val secondaryButton: MaterialButton?,
     private val onPrimaryClick: () -> Unit,
-    private val onSecondaryClick: (() -> Unit)? = null
+    private val onSecondaryClick: (() -> Unit)? = null,
+    private val onCancelClick: (() -> Unit)? = null
 ) {
     var currentState: FloatingActionState = FloatingActionState.EMPTY
         private set
@@ -48,7 +49,11 @@ class FloatingDockStateController(
         }
         secondaryButton?.setOnClickListener {
             ExpressiveMotion.performConfirmationHaptic(it)
-            onSecondaryClick?.invoke()
+            if (currentState == FloatingActionState.PROCESSING) {
+                onCancelClick?.invoke()
+            } else {
+                onSecondaryClick?.invoke()
+            }
         }
     }
 
@@ -90,7 +95,15 @@ class FloatingDockStateController(
                 primaryButton.isEnabled = false
                 primaryButton.alpha = 0.85f
                 primaryButton.setIconResource(actionIcon ?: R.drawable.ic_compress)
-                secondaryButton?.visibility = View.GONE
+                if (secondaryButton != null && onCancelClick != null) {
+                    secondaryButton.visibility = View.VISIBLE
+                    secondaryButton.isEnabled = true
+                    secondaryButton.alpha = 1.0f
+                    secondaryButton.text = "Cancel"
+                    secondaryButton.setIconResource(R.drawable.ic_close)
+                } else {
+                    secondaryButton?.visibility = View.GONE
+                }
                 showDockWithSpring(animate && !isReduced)
             }
 

@@ -235,6 +235,13 @@ class MorphDialogController {
         dialog.setOnCancelListener {
             requestDismiss(dialog, originView, dialogView, null, onDismissComplete)
         }
+
+        dialog.setOnDismissListener {
+            if (state != DialogMotionState.DISMISSED) {
+                state = DialogMotionState.DISMISSED
+                onDismissComplete?.invoke()
+            }
+        }
     }
 
     companion object {
@@ -248,6 +255,7 @@ class MorphDialogController {
             onDismissComplete: (() -> Unit)? = null
         ): MorphDialogController {
             val controller = MorphDialogController()
+            dialogView.setTag(com.veilframe.app.R.id.vf_tag_morph_controller, controller)
             dialogView.tag = controller
             controller.showMorphDialog(dialogView.context, originView, dialog, dialogView, onDismissComplete)
             return controller
@@ -263,7 +271,9 @@ class MorphDialogController {
             commitAction: (() -> Unit)? = null,
             onDismissComplete: (() -> Unit)? = null
         ) {
-            val controller = (dialogView.tag as? MorphDialogController) ?: MorphDialogController()
+            val controller = (dialogView.getTag(com.veilframe.app.R.id.vf_tag_morph_controller) as? MorphDialogController)
+                ?: (dialogView.tag as? MorphDialogController)
+                ?: MorphDialogController()
             controller.requestDismiss(dialog, originView, dialogView, commitAction, onDismissComplete)
         }
     }

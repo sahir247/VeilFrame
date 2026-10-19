@@ -111,6 +111,13 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     private var checkerShader: BitmapShader? = null
     private val checkerPaint = Paint()
 
+    var leftLabel: String = "ORIGINAL"
+        set(value) { field = value; postInvalidateOnAnimation() }
+    var rightLabel: String = "CUTOUT"
+        set(value) { field = value; postInvalidateOnAnimation() }
+
+    private var resetAnimator: ValueAnimator? = null
+
     // Touch state
     private var isDraggingDivider = false
     private val touchTargetRadius = dpToPx(28f) // >= 56dp diameter touch target
@@ -120,8 +127,12 @@ class BeforeAfterSplitView @JvmOverloads constructor(
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val prevScale = scaleFactor
             scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.8f, 5.0f)
+            val factor = scaleFactor / prevScale
+            translationX += (detector.focusX - width / 2f) * (1f - factor)
+            translationY += (detector.focusY - height / 2f) * (1f - factor)
             focusX = detector.focusX
             focusY = detector.focusY
+            clampTranslations()
             postInvalidateOnAnimation()
             return true
         }
@@ -158,6 +169,7 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     }
 
     fun resetViewAnimated() {
+        resetAnimator?.cancel()
         val startFraction = splitFraction
         val startScale = scaleFactor
         val startTransX = translationX
@@ -175,7 +187,14 @@ class BeforeAfterSplitView @JvmOverloads constructor(
                 postInvalidateOnAnimation()
             }
         }
+        resetAnimator = anim
         anim.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        resetAnimator?.cancel()
+        resetAnimator = null
     }
 
     private fun resetTransform() {
@@ -201,6 +220,7 @@ class BeforeAfterSplitView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                resetAnimator?.cancel()
                 val dx = event.x - splitX
                 val dy = event.y - handleY
                 // If user touched within the handle area or within 48dp of the divider line
@@ -209,6 +229,12 @@ class BeforeAfterSplitView @JvmOverloads constructor(
                     parent?.requestDisallowInterceptTouchEvent(true)
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     return true
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (isDraggingDivider) {
+                    isDraggingDivider = false
+                    parent?.requestDisallowInterceptTouchEvent(false)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -304,8 +330,8 @@ class BeforeAfterSplitView @JvmOverloads constructor(
         canvas.drawText("◀ ▶", splitX, textBaseline, handleIconPaint)
 
         // 6. Draw Subtle Floating Badges ("BEFORE" on left, "AFTER" on right)
-        drawBadge(canvas, "ORIGINAL", dpToPx(16f), dpToPx(24f))
-        drawBadge(canvas, "CUTOUT", w - dpToPx(76f), dpToPx(24f))
+        drawBadge(canvas, leftLabel, dpToPx(16f), dpToPx(24f))
+        drawBadge(canvas, rightLabel, w - dpToPx(76f), dpToPx(24f))
     }
 
     private fun getOrCreateCheckerShader(): BitmapShader {

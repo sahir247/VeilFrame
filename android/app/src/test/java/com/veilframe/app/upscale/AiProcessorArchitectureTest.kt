@@ -43,6 +43,48 @@ class AiProcessorArchitectureTest {
     }
 
     @Test
+    fun testFloat16Ieee754SpecialCases() {
+        // 1. NaN preservation
+        val nanFp16 = floatToFloat16(Float.NaN)
+        val recoveredNan = float16ToFloat(nanFp16)
+        assertTrue("FP16 NaN must produce Float.NaN", recoveredNan.isNaN())
+
+        // 2. Positive & Negative Infinity
+        val posInfFp16 = floatToFloat16(Float.POSITIVE_INFINITY)
+        assertEquals(0x7C00.toShort(), posInfFp16)
+        assertEquals(Float.POSITIVE_INFINITY, float16ToFloat(posInfFp16), 0.0f)
+
+        val negInfFp16 = floatToFloat16(Float.NEGATIVE_INFINITY)
+        assertEquals(0xFC00.toShort(), negInfFp16)
+        assertEquals(Float.NEGATIVE_INFINITY, float16ToFloat(negInfFp16), 0.0f)
+
+        // 3. Positive & Negative Zero
+        val posZero = floatToFloat16(0.0f)
+        assertEquals(0.toShort(), posZero)
+        assertEquals(0.0f, float16ToFloat(posZero), 0.0f)
+
+        val negZero = floatToFloat16(-0.0f)
+        assertEquals(0x8000.toShort(), negZero)
+        assertEquals(-0.0f, float16ToFloat(negZero), 0.0f)
+
+        // 4. Overflow to Infinity (> 65504.0f)
+        val overflow = floatToFloat16(100_000.0f)
+        assertEquals(0x7C00.toShort(), overflow)
+
+        // 5. Round to nearest, ties to even:
+        // For 0x3C000000 (exp32=120 -> exp16=8):
+        // Mantissa 0x001000 (lsb=0, round=1, sticky=0) rounds DOWN to even
+        // Mantissa 0x003000 (lsb=1, round=1, sticky=0) rounds UP to even
+        val valDown = java.lang.Float.intBitsToFloat(0x3C000000 or 0x001000)
+        val fpDown = floatToFloat16(valDown)
+        assertEquals("Ties to even rounds down when lsb is 0", (8 shl 10).toShort(), fpDown)
+
+        val valUp = java.lang.Float.intBitsToFloat(0x3C000000 or 0x003000)
+        val fpUp = floatToFloat16(valUp)
+        assertEquals("Ties to even rounds up when lsb is 1", ((8 shl 10) + 2).toShort(), fpUp)
+    }
+
+    @Test
     fun testSmoothStepBoundsAndMonotonicity() {
         val length = 32
         assertEquals(0f, smoothStep(0, length), 0.001f)

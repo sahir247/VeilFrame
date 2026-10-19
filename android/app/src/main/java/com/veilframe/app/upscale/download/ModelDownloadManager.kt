@@ -5,8 +5,10 @@ import android.util.Log
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModelRepository
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -193,37 +195,44 @@ class ModelDownloadManager(
             }
 
             val connection = activeConnection ?: throw IllegalStateException("No active connection")
+            val cancelHandler = currentCoroutineContext().job.invokeOnCompletion {
+                runCatching { connection.disconnect() }
+            }
             val totalBytes = if (connection.contentLengthLong > 0) connection.contentLengthLong else model.sizeBytes
             val maxAllowedBytes = if (model.sizeBytes > 0L) (model.sizeBytes * 1.15).toLong().coerceAtLeast(10 * 1024 * 1024L) else 150 * 1024 * 1024L
 
-            connection.inputStream.use { input ->
-                FileOutputStream(partFile).use { output ->
-                    val buffer = ByteArray(32768)
-                    var bytesRead: Int
-                    var totalDownloaded = 0L
-                    var lastTime = System.currentTimeMillis()
-                    var bytesSinceLastTime = 0L
+            try {
+                connection.inputStream.use { input ->
+                    FileOutputStream(partFile).use { output ->
+                        val buffer = ByteArray(32768)
+                        var bytesRead: Int
+                        var totalDownloaded = 0L
+                        var lastTime = System.currentTimeMillis()
+                        var bytesSinceLastTime = 0L
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        ensureActive()
-                        totalDownloaded += bytesRead
-                        if (totalDownloaded > maxAllowedBytes) {
-                            throw SecurityException("Model download exceeded streaming safety limit of $maxAllowedBytes bytes")
-                        }
-                        output.write(buffer, 0, bytesRead)
-                        bytesSinceLastTime += bytesRead
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            ensureActive()
+                            totalDownloaded += bytesRead
+                            if (totalDownloaded > maxAllowedBytes) {
+                                throw SecurityException("Model download exceeded streaming safety limit of $maxAllowedBytes bytes")
+                            }
+                            output.write(buffer, 0, bytesRead)
+                            bytesSinceLastTime += bytesRead
 
-                        val now = System.currentTimeMillis()
-                        val delta = now - lastTime
-                        if (delta >= 250) {
-                            val speed = (bytesSinceLastTime * 1000L) / delta
-                            listener.onProgress(totalDownloaded, totalBytes, speed)
-                            lastTime = now
-                            bytesSinceLastTime = 0L
+                            val now = System.currentTimeMillis()
+                            val delta = now - lastTime
+                            if (delta >= 250) {
+                                val speed = (bytesSinceLastTime * 1000L) / delta
+                                listener.onProgress(totalDownloaded, totalBytes, speed)
+                                lastTime = now
+                                bytesSinceLastTime = 0L
+                            }
                         }
+                        output.flush()
                     }
-                    output.flush()
                 }
+            } finally {
+                cancelHandler.dispose()
             }
 
             // Cryptographic checksum verification

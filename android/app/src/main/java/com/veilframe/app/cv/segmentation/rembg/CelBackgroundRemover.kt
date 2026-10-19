@@ -161,21 +161,25 @@ class CelBackgroundRemover(
         if (maskedSmall.width == sourceInfo.width && maskedSmall.height == sourceInfo.height) {
             return maskedSmall
         }
-        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes)
+        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes, inMutable = true)
+        var upscaledAlpha: Bitmap? = null
+        var fullRes: Bitmap? = null
         try {
-            val upscaledAlpha = Bitmap.createScaledBitmap(
+            upscaledAlpha = Bitmap.createScaledBitmap(
                 maskedSmall,
                 sourceBitmap.width,
                 sourceBitmap.height,
                 true,
             )
-            val fullRes = applyFullResolutionColors(sourceBitmap, upscaledAlpha)
-            if (upscaledAlpha !== maskedSmall) {
-                upscaledAlpha.recycle()
-            }
+            fullRes = applyFullResolutionColors(sourceBitmap, upscaledAlpha)
             return fullRes
         } finally {
-            sourceBitmap.recycle()
+            if (upscaledAlpha != null && upscaledAlpha !== maskedSmall) {
+                upscaledAlpha.recycle()
+            }
+            if (fullRes !== sourceBitmap) {
+                sourceBitmap.recycle()
+            }
         }
     }
 

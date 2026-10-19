@@ -87,8 +87,8 @@ data class UpscaleInferenceParams(
             }
             val availableCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
 
-            if (availBytes in 1 until 1_500_000_000L) {
-                // Under ~1.5 GB available: step chunk down ~25% (snapped to 32px), single worker.
+            if (availBytes <= 0L || availBytes < 1_500_000_000L) {
+                // Unknown (probe failed) or under ~1.5 GB available: step chunk down ~25% (snapped to 32px), single worker.
                 chunk = ((chunk * 3 / 4) / 32 * 32).coerceAtLeast(128)
                 workers = 1
             } else if (availBytes >= 3_500_000_000L && heapMb >= 512) {

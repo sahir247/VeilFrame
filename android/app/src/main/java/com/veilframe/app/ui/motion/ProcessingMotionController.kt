@@ -100,11 +100,13 @@ object ProcessingMotionController {
         percent: Int
     ) {
         val clamped = percent.coerceIn(0, 100)
-        ObjectAnimator.ofInt(progressBar, "progress", progressBar.progress, clamped).apply {
+        (progressBar.getTag(com.veilframe.app.R.id.vf_tag_progress_anim) as? android.animation.Animator)?.cancel()
+        val animator = ObjectAnimator.ofInt(progressBar, "progress", progressBar.progress, clamped).apply {
             duration = 140L
             interpolator = MotionSpec.DECELERATE_SMOOTH
             start()
         }
+        progressBar.setTag(com.veilframe.app.R.id.vf_tag_progress_anim, animator)
     }
 
     /**

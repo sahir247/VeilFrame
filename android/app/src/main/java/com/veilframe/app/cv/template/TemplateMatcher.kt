@@ -130,7 +130,8 @@ class TemplateMatcher(private val defaultOptions: Options = Options()) {
                     val stdDev = org.opencv.core.MatOfDouble()
                     val mean = org.opencv.core.MatOfDouble()
                     Core.meanStdDev(scaledTemplate, mean, stdDev)
-                    val isFlat = (stdDev.toArray().firstOrNull() ?: 0.0) < 1e-4
+                    val stdDevArray = stdDev.toArray()
+                    val isFlat = stdDevArray.isEmpty() || stdDevArray.all { it < 1e-4 }
                     stdDev.release()
                     mean.release()
 

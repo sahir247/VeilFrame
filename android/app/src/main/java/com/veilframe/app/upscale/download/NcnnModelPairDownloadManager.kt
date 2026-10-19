@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
@@ -36,15 +37,17 @@ class NcnnModelPairDownloadManager(
 
     suspend fun download(
         model: UpscaleModel,
-        listener: ModelDownloadManager.DownloadListener
+        listener: ModelDownloadManager.DownloadListener,
+        force: Boolean = false
     ): Result<File> {
         val modelLock = modelLocks.getOrPut(model.id) { Mutex() }
-        return modelLock.withLock { downloadLocked(model, listener) }
+        return modelLock.withLock { downloadLocked(model, listener, force) }
     }
 
     private suspend fun downloadLocked(
         model: UpscaleModel,
-        listener: ModelDownloadManager.DownloadListener
+        listener: ModelDownloadManager.DownloadListener,
+        force: Boolean = false
     ): Result<File> = withContext(Dispatchers.IO) {
         if (model.type != ModelType.AI_NCNN) {
             val error = "NCNN pair downloader received a non-NCNN model: ${model.id}"
@@ -62,7 +65,8 @@ class NcnnModelPairDownloadManager(
         val finalParam = repository.getNcnnParamFile(model.id)
         val finalBin = repository.getNcnnBinFile(model.id)
         val marker = repository.getNcnnInstallMarkerFile(model.id)
-        if (repository.isModelInstalled(model)) {
+        val wasInstalled = repository.isModelInstalled(model)
+        if (!force && wasInstalled) {
             listener.onSuccess(model, finalBin)
             return@withContext Result.success(finalBin)
         }
@@ -84,7 +88,6 @@ class NcnnModelPairDownloadManager(
         val markerTemp = File(dir, "model.ncnn.complete.tmp")
         val paramBackup = File(dir, "model.param.backup")
         val binBackup = File(dir, "model.bin.backup")
-        val wasInstalled = repository.isModelInstalled(model)
         val hadParam = finalParam.isFile
         val hadBin = finalBin.isFile
 
@@ -238,34 +241,42 @@ class NcnnModelPairDownloadManager(
                 resolvedConnection = candidate
             }
             val connection = requireNotNull(resolvedConnection)
+            val cancelHandler = currentCoroutineContext().job.invokeOnCompletion {
+                runCatching { connection.disconnect() }
+            }
 
             var downloaded = 0L
             var sinceLastUpdate = 0L
             var lastUpdate = System.currentTimeMillis()
             val startedAt = lastUpdate
-            connection.inputStream.use { input ->
-                FileOutputStream(partFile).use { output ->
-                    val buffer = ByteArray(32 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        downloaded += count
-                        if (downloaded > expectedSize) {
-                            throw SecurityException("NCNN artifact exceeded its pinned size of ${expectedSize} bytes.")
+            try {
+                connection.inputStream.use { input ->
+                    FileOutputStream(partFile).use { output ->
+                        val buffer = ByteArray(32 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            downloaded += count
+                            if (downloaded > expectedSize) {
+                                throw SecurityException("NCNN artifact exceeded its pinned size of ${expectedSize} bytes.")
+                            }
+                            output.write(buffer, 0, count)
+                            sinceLastUpdate += count
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate >= 250L) {
+                                val speed = (sinceLastUpdate * 1000L) / (now - lastUpdate)
+                                listener.onProgress(progressOffset + downloaded, totalSize, speed)
+                                sinceLastUpdate = 0L
+                                lastUpdate = now
+                            }
                         }
-                        output.write(buffer, 0, count)
-                        sinceLastUpdate += count
-                        val now = System.currentTimeMillis()
-                        if (now - lastUpdate >= 250L) {
-                            val speed = (sinceLastUpdate * 1000L) / (now - lastUpdate)
-                            listener.onProgress(progressOffset + downloaded, totalSize, speed)
-                            sinceLastUpdate = 0L
-                            lastUpdate = now
-                        }
+                        output.flush()
                     }
-                    output.flush()
                 }
+            } finally {
+                cancelHandler.dispose()
+                connection.disconnect()
             }
 
             if (downloaded != expectedSize || partFile.length() != expectedSize) {

@@ -236,6 +236,22 @@ class VideoReframeEngineTest {
     }
 
     @Test
+    fun testGenerateFfmpegCropFilterPiecewiseIntermediatePreservation() {
+        // Subject moves left (x=200) -> right (x=1600) -> left (x=200)
+        // Naive endpoint-only implementation had x0=200, x1=200 (delta=0) and froze at stationary
+        val trajectory = listOf(
+            TrajectoryPoint(0L, 200f, 540f),
+            TrajectoryPoint(2000L, 1600f, 540f),
+            TrajectoryPoint(4000L, 200f, 540f)
+        )
+
+        val filter = VideoReframeEngine.generateFfmpegCropFilter(trajectory, 1920, 1080, targetAspect = 9f / 16f)
+        assertTrue(filter.startsWith("crop="))
+        assertTrue("Filter must contain dynamic piecewise expression", filter.contains("trunc(("))
+        assertTrue("Filter must preserve intermediate segments via piecewise conditions", filter.contains("if(lte(t,"))
+    }
+
+    @Test
     fun testTrackingPipelineWithCentroidTracker() {
         if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
             // Native OpenCV C++ library not loaded in host JVM test environment; skip JNI Mat allocation

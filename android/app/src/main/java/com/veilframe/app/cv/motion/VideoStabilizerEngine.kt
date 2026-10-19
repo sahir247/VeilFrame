@@ -434,13 +434,16 @@ class VideoStabilizerEngine(
         try {
             for (frame in frames) {
                 val currGray = Mat()
-                if (CvRuntime.isNativeAvailable) {
                     try {
-                        Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                        when (frame.channels()) {
+                            1 -> frame.copyTo(currGray)
+                            3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                            4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
+                            else -> frame.copyTo(currGray)
+                        }
                     } catch (_: Throwable) {
                         // In non-native or mocked environments, proceed with uncolored Mat
                     }
-                }
 
                 if (prevGray != null) {
                     val motion = estimator.estimateMotion(prevGray, currGray)
@@ -569,11 +572,14 @@ class VideoStabilizerEngine(
         try {
             for (frame in frames) {
                 val currGray = Mat()
-                if (CvRuntime.isNativeAvailable) {
                     try {
-                        Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                        when (frame.channels()) {
+                            1 -> frame.copyTo(currGray)
+                            3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                            4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
+                            else -> frame.copyTo(currGray)
+                        }
                     } catch (_: Throwable) {}
-                }
 
                 if (prevGray != null) {
                     val motion = estimator.estimateMotion(prevGray, currGray)
@@ -636,12 +642,12 @@ class VideoStabilizerEngine(
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
                         retriever.getScaledFrameAtTime(
                             timeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            MediaMetadataRetriever.OPTION_CLOSEST,
                             640,
                             360
-                        ) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
                     } else {
-                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
                     }
                 } catch (_: Throwable) {
                     null

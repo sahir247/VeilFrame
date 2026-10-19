@@ -417,6 +417,9 @@ class VideoStudioController(
             onSecondaryClick = {
                 val f = lastResultFile
                 if (f != null && f.exists()) onShareFileRequest(f, "video/*")
+            },
+            onCancelClick = {
+                cancelProcessing()
             }
         )
 

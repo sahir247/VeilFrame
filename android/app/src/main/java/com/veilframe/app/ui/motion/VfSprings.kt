@@ -118,22 +118,30 @@ object VfSprings {
     fun applyCardSpringMotion(view: View) = applyPressSpring(view, PRESS_SCALE_CARD)
 
     private fun applyPressSpring(view: View, pressScale: Float) {
+        var isDown = false
         view.setOnTouchListener { v, event ->
-            if (!v.isEnabled) return@setOnTouchListener false
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN ->
-                    springScaleTo(v, pressScale, fastSpatial(v.context))
+                MotionEvent.ACTION_DOWN -> {
+                    if (v.isEnabled) {
+                        isDown = true
+                        springScaleTo(v, pressScale, fastSpatial(v.context))
+                    }
+                }
 
-                MotionEvent.ACTION_UP ->
-                    springScaleTo(v, 1f, fastSpatial(v.context))
-
-                MotionEvent.ACTION_CANCEL ->
-                    springScaleTo(v, 1f, fastSpatial(v.context))
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (isDown || v.scaleX != 1f || v.scaleY != 1f) {
+                        isDown = false
+                        springScaleTo(v, 1f, fastSpatial(v.context))
+                    }
+                }
 
                 MotionEvent.ACTION_MOVE -> {
                     val outside = event.x < 0f || event.x > v.width ||
                             event.y < 0f || event.y > v.height
-                    if (outside) springScaleTo(v, 1f, fastSpatial(v.context))
+                    if (outside && isDown) {
+                        isDown = false
+                        springScaleTo(v, 1f, fastSpatial(v.context))
+                    }
                 }
             }
             false // never consume: clicks, scrolls, gestures keep working
@@ -231,16 +239,30 @@ object VfSprings {
         if (isReducedMotion(container.context)) return
         for (i in 0 until container.childCount) {
             val child = container.getChildAt(i)
+            (child.getTag(com.veilframe.app.R.id.vf_tag_stagger_runnable) as? Runnable)?.let {
+                child.removeCallbacks(it)
+                child.setTag(com.veilframe.app.R.id.vf_tag_stagger_runnable, null)
+            }
             child.alpha = 0f
             child.translationY = childOffsetPx * child.resources.displayMetrics.density
-            child.postDelayed({
-                val spatial = fastSpatial(child.context)
-                val effects = fastEffects(child.context)
-                track(child, SpringAnimation(child, DynamicAnimation.TRANSLATION_Y)
-                    .setSpring(spatial.create(0f))).start()
-                track(child, SpringAnimation(child, DynamicAnimation.ALPHA)
-                    .setSpring(effects.create(1f))).start()
-            }, i * staggerMs)
+            val runnable = object : Runnable {
+                override fun run() {
+                    child.setTag(com.veilframe.app.R.id.vf_tag_stagger_runnable, null)
+                    if (!child.isAttachedToWindow || child.visibility != View.VISIBLE) {
+                        child.alpha = 1f
+                        child.translationY = 0f
+                        return
+                    }
+                    val spatial = fastSpatial(child.context)
+                    val effects = fastEffects(child.context)
+                    track(child, SpringAnimation(child, DynamicAnimation.TRANSLATION_Y)
+                        .setSpring(spatial.create(0f))).start()
+                    track(child, SpringAnimation(child, DynamicAnimation.ALPHA)
+                        .setSpring(effects.create(1f))).start()
+                }
+            }
+            child.setTag(com.veilframe.app.R.id.vf_tag_stagger_runnable, runnable)
+            child.postDelayed(runnable, i * staggerMs)
         }
     }
 
@@ -268,6 +290,10 @@ object VfSprings {
      * ViewPropertyAnimators, then resets transforms.
      */
     fun cancel(view: View) {
+        (view.getTag(com.veilframe.app.R.id.vf_tag_stagger_runnable) as? Runnable)?.let {
+            view.removeCallbacks(it)
+            view.setTag(com.veilframe.app.R.id.vf_tag_stagger_runnable, null)
+        }
         animList(view).forEach { runCatching { if (it.isRunning) it.cancel() } }
         animList(view).clear()
         view.animate().cancel()

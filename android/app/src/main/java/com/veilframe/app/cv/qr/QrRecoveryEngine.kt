@@ -68,6 +68,7 @@ object QrRecoveryEngine {
         secondary: SecondaryDecoder? = null,
         cancellation: com.veilframe.app.cv.core.CvCancellation? = null,
     ): RecoveryResult {
+        cancelled = false
         val checkActive = {
             cancellation?.ensureActive()
             ensureActive()
@@ -98,15 +99,21 @@ object QrRecoveryEngine {
             return RecoveryResult(it, Stage.THRESHOLD, log)
         }
 
-        // Stage 3 — perspective-corrected upscale of the binary (planar photos).
+        // Stage 3 — perspective-corrected upscale (planar photos).
         checkActive()
-        log += Stage.PERSPECTIVE
-        val perspective = perspectiveCorrected(image, binary)
-        val perspectiveHit = firstMatch(wechat.decode(perspective), expected)
+        val perspective = perspectiveCorrected(image)
+        if (perspective != null) {
+            log += Stage.PERSPECTIVE
+            val perspectiveHit = firstMatch(wechat.decode(perspective), expected)
+            perspective.release()
+            if (perspectiveHit != null) {
+                grayUp.release()
+                binary.release()
+                return RecoveryResult(perspectiveHit, Stage.PERSPECTIVE, log)
+            }
+        }
         grayUp.release()
         binary.release()
-        perspective.release()
-        perspectiveHit?.let { return RecoveryResult(it, Stage.PERSPECTIVE, log) }
 
         // Stage 4 — alternative preprocessing (inverted + noise-cleaned).
         checkActive()
@@ -121,19 +128,23 @@ object QrRecoveryEngine {
             checkActive()
             log += Stage.ML_KIT_FALLBACK
             val bitmap = com.veilframe.app.cv.core.BitmapBridge.toBitmap(image)
-            val text = try {
-                secondary.decode(bitmap)
-            } catch (e: Exception) {
-                // ML Kit plugin failure: treat as no result, not a system error.
-                // Errors (OOM, etc.) propagate.
-                null
-            }
-            if (!text.isNullOrEmpty() && (expected == null || text == expected)) {
-                return RecoveryResult(
-                    QrCvDetection(text, null, QrDecodeSource.ML_KIT),
-                    Stage.ML_KIT_FALLBACK,
-                    log,
-                )
+            try {
+                val text = try {
+                    secondary.decode(bitmap)
+                } catch (e: Exception) {
+                    // ML Kit plugin failure: treat as no result, not a system error.
+                    // Errors (OOM, etc.) propagate.
+                    null
+                }
+                if (!text.isNullOrEmpty() && (expected == null || text == expected)) {
+                    return RecoveryResult(
+                        QrCvDetection(text, null, QrDecodeSource.ML_KIT),
+                        Stage.ML_KIT_FALLBACK,
+                        log,
+                    )
+                }
+            } finally {
+                bitmap.recycle()
             }
         }
 
@@ -184,9 +195,9 @@ object QrRecoveryEngine {
         return binary
     }
 
-    private fun perspectiveCorrected(original: Mat, binary: Mat): Mat {
+    private fun perspectiveCorrected(original: Mat): Mat? {
         val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(original)
-            ?: return binary.clone()
+            ?: return null
         return try {
             com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
                 original,
@@ -194,12 +205,10 @@ object QrRecoveryEngine {
                 outputSize = null,
                 interpolation = Imgproc.INTER_CUBIC,
             )
-        } catch (e: org.opencv.core.CvException) {
-            // Native warp failure: fall back to binary clone.
-            binary.clone()
-        } catch (e: IllegalArgumentException) {
-            // Degenerate corner geometry: fall back to binary clone.
-            binary.clone()
+        } catch (_: org.opencv.core.CvException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
         }
     }
 

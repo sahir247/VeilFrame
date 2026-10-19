@@ -16,8 +16,10 @@ object RembgImageUtils {
 
     const val MAX_DISPLAY_PX = 2048
 
-    fun decodeOrientedBitmap(bytes: ByteArray, maxDimension: Int? = null): Bitmap {
-        val options = BitmapFactory.Options()
+    fun decodeOrientedBitmap(bytes: ByteArray, maxDimension: Int? = null, inMutable: Boolean = false): Bitmap {
+        val options = BitmapFactory.Options().apply {
+            this.inMutable = inMutable
+        }
         if (maxDimension != null) {
             val (orientW, orientH) = orientedDimensions(bytes)
             options.inSampleSize = sampleSizeForMax(orientW, orientH, maxDimension)

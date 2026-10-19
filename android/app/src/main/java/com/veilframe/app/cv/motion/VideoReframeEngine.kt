@@ -253,33 +253,78 @@ class VideoReframeEngine(
             val lastBox = cropBoxes.last()
             val minX = cropBoxes.minOf { it.x }
             val maxX = cropBoxes.maxOf { it.x }
+            val minY = cropBoxes.minOf { it.y }
+            val maxY = cropBoxes.maxOf { it.y }
             val targetW = firstBox.width
             val targetH = firstBox.height
 
-            // If subject movement is minimal (<5% of width), use stationary center crop
-            if ((maxX - minX) <= origW * 0.05f) {
+            val dynamicX = (maxX - minX) > origW * 0.05f
+            val dynamicY = (maxY - minY) > origH * 0.05f
+
+            // If subject movement is minimal on both axes (<5%), use stationary center crop
+            if (!dynamicX && !dynamicY) {
                 val avgX = cropBoxes.map { it.x }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
                 val avgY = cropBoxes.map { it.y }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
                 return "crop=$targetW:$targetH:$avgX:$avgY"
             }
 
-            // For dynamic panning: generate a smooth time-interpolated expression
+            // For dynamic panning: generate smooth piecewise time-interpolated expressions
             val durSec = ((trajectory.last().timeMs - trajectory.first().timeMs) / 1000.0).coerceAtLeast(1.0)
-            val x0 = firstBox.x
-            val x1 = lastBox.x
-            val y0 = firstBox.y
+            val keyframePairs = mutableListOf<Pair<Double, Rect>>()
+            val maxSegments = 8
+            val step = kotlin.math.max(1, cropBoxes.size / maxSegments)
+            for (i in cropBoxes.indices step step) {
+                val timeSec = ((trajectory[i].timeMs - trajectory.first().timeMs) / 1000.0).coerceAtLeast(0.0)
+                keyframePairs.add(timeSec to cropBoxes[i])
+            }
+            if (keyframePairs.last().first < durSec || keyframePairs.last().second !== lastBox) {
+                keyframePairs.add(durSec to lastBox)
+            }
 
-            return String.format(
-                Locale.US,
-                "crop=%d:%d:trunc((%d+(%d-%d)*(t/%.3f))/2)*2:%d",
-                targetW,
-                targetH,
-                x0,
-                x1,
-                x0,
-                durSec,
-                y0
-            )
+            fun buildPiecewiseExpr(getCoord: (Rect) -> Int): String {
+                if (keyframePairs.size <= 2) {
+                    val c0 = getCoord(keyframePairs.first().second)
+                    val c1 = getCoord(keyframePairs.last().second)
+                    return String.format(Locale.US, "trunc((%d+(%d-%d)*(t/%.3f))/2)*2", c0, c1, c0, durSec)
+                }
+                val n = keyframePairs.size
+                val tPrev = keyframePairs[n - 2].first
+                val cPrev = getCoord(keyframePairs[n - 2].second)
+                val cLast = getCoord(keyframePairs[n - 1].second)
+                val dtLast = (keyframePairs[n - 1].first - tPrev).coerceAtLeast(0.1)
+                var expr = String.format(Locale.US, "%d+(%d-%d)*((t-%.3f)/%.3f)", cPrev, cLast, cPrev, tPrev, dtLast)
+
+                for (k in n - 3 downTo 0) {
+                    val tk = keyframePairs[k].first
+                    val tkNext = keyframePairs[k + 1].first
+                    val ck = getCoord(keyframePairs[k].second)
+                    val ckNext = getCoord(keyframePairs[k + 1].second)
+                    val dtk = (tkNext - tk).coerceAtLeast(0.1)
+                    val segExpr = if (tk == 0.0) {
+                        String.format(Locale.US, "%d+(%d-%d)*(t/%.3f)", ck, ckNext, ck, dtk)
+                    } else {
+                        String.format(Locale.US, "%d+(%d-%d)*((t-%.3f)/%.3f)", ck, ckNext, ck, tk, dtk)
+                    }
+                    expr = String.format(Locale.US, "if(lte(t,%.3f),%s,%s)", tkNext, segExpr, expr)
+                }
+                return String.format(Locale.US, "trunc((%s)/2)*2", expr)
+            }
+
+            val xExpr = if (dynamicX) {
+                buildPiecewiseExpr { it.x }
+            } else {
+                val avgX = cropBoxes.map { it.x }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
+                avgX.toString()
+            }
+
+            val yExpr = if (dynamicY) {
+                buildPiecewiseExpr { it.y }
+            } else {
+                val avgY = cropBoxes.map { it.y }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
+                avgY.toString()
+            }
+
+            return "crop=$targetW:$targetH:$xExpr:$yExpr"
         }
     }
 
@@ -397,7 +442,7 @@ class VideoReframeEngine(
 
         while (timeUs <= maxUs) {
             val frameBmp = try {
-                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
             } catch (ignored: Exception) {
                 null
             }

@@ -35,21 +35,61 @@ fun clamp255(value: Float): Int = value.toInt().coerceIn(0, AiExtensions.OPAQUE)
 fun floatToFloat16(value: Float): Short {
     val bits = floatToIntBits(value)
     val sign = (bits ushr 16) and 0x8000
-    val exponent = ((bits ushr 23) and 0xFF) - 127 + 15
-    var mantissa = bits and 0x7FFFFF
+    val exp32 = (bits ushr 23) and 0xFF
+    val mant32 = bits and 0x7FFFFF
 
-    if (exponent <= 0) {
-        if (exponent < -10) {
-            return sign.toShort()
+    if (exp32 == 0xFF) {
+        // NaN or Infinity
+        return if (mant32 != 0) {
+            // Quiet NaN with preserved sign
+            (sign or 0x7E00 or (mant32 ushr 13).coerceAtLeast(1)).toShort()
+        } else {
+            (sign or 0x7C00).toShort()
         }
-        mantissa = mantissa or 0x800000
-        mantissa = mantissa shr (1 - exponent)
-        return (sign or (mantissa shr 13)).toShort()
-    } else if (exponent >= 0x1F) {
+    }
+
+    if (exp32 == 0 && mant32 == 0) {
+        return sign.toShort()
+    }
+
+    val exp = exp32 - 127 + 15
+    if (exp >= 31) {
+        // Overflow to infinity
         return (sign or 0x7C00).toShort()
     }
 
-    return (sign or (exponent shl 10) or (mantissa shr 13)).toShort()
+    if (exp <= 0) {
+        // Subnormal in FP16 or zero
+        val shift = 1 - exp
+        val totalShift = shift + 13
+        if (totalShift > 25) {
+            return sign.toShort()
+        }
+        val fullMant = mant32 or 0x800000
+        val half = 1 shl (totalShift - 1)
+        val roundBit = (fullMant and half) != 0
+        val stickyBits = (fullMant and (half - 1)) != 0
+        val lsb = (fullMant and (half shl 1)) != 0
+        val add = if (roundBit && (stickyBits || lsb)) 1 else 0
+        val m10 = (fullMant ushr totalShift) + add
+        return (sign or m10).toShort()
+    }
+
+    // Normal FP16 number: round-to-nearest-even on dropped 13 bits
+    val roundBit = (mant32 and 0x1000) != 0
+    val stickyBits = (mant32 and 0x0FFF) != 0
+    val lsb = (mant32 and 0x2000) != 0
+    val add = if (roundBit && (stickyBits || lsb)) 1 else 0
+    var m10 = (mant32 ushr 13) + add
+    var e = exp
+    if (m10 == 0x400) {
+        m10 = 0
+        e++
+        if (e >= 31) {
+            return (sign or 0x7C00).toShort()
+        }
+    }
+    return (sign or (e shl 10) or m10).toShort()
 }
 
 fun float16ToFloat(fp16: Short): Float {
@@ -143,13 +183,13 @@ fun createInputTensor(
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape)
     }
 
-    val halfPrecision = ShortArray(data.size) { index ->
-        floatToFloat16(data[index])
-    }
     val storage = ByteBuffer
-        .allocateDirect(halfPrecision.size * Short.SIZE_BYTES)
+        .allocateDirect(data.size * Short.SIZE_BYTES)
         .order(ByteOrder.nativeOrder())
-    storage.asShortBuffer().put(halfPrecision)
+    val shortBuffer = storage.asShortBuffer()
+    for (i in data.indices) {
+        shortBuffer.put(floatToFloat16(data[i]))
+    }
     storage.rewind()
     return OnnxTensor.createTensor(env, storage, shape, OnnxJavaType.FLOAT16)
 }

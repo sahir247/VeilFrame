@@ -271,6 +271,9 @@ class ImageStudioController(
             onSecondaryClick = {
                 val f = lastResultFile
                 if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+            },
+            onCancelClick = {
+                cancelProcessing()
             }
         )
 

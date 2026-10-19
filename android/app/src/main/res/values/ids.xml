@@ -4,4 +4,10 @@
     <item name="vf_tag_spring_anims" type="id" />
     <!-- View tag key: initial base padding for additive WorkspaceInsets -->
     <item name="vf_tag_initial_padding" type="id" />
+    <!-- View tag key: MorphDialogController attached to dialog view -->
+    <item name="vf_tag_morph_controller" type="id" />
+    <!-- View tag key: active ObjectAnimator attached to ProgressBar -->
+    <item name="vf_tag_progress_anim" type="id" />
+    <!-- View tag key: pending staggerRise Runnable attached to child view -->
+    <item name="vf_tag_stagger_runnable" type="id" />
 </resources>

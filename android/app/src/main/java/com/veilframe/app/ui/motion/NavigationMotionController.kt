@@ -93,10 +93,14 @@ object NavigationMotionController {
             .setDuration(MotionSpec.NORMAL)
             .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             .setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    homeView.isVisible = false
-                    homeView.translationX = 0f
-                    homeView.alpha = 1f
+                    if (!isCancelled) {
+                        homeView.isVisible = false
+                        homeView.translationX = 0f
+                        homeView.alpha = 1f
+                    }
                 }
             })
             .start()
@@ -107,9 +111,13 @@ object NavigationMotionController {
             ?.setDuration(180L)
             ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             ?.setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    toolbarHome.isVisible = false
-                    toolbarHome.alpha = 1f
+                    if (!isCancelled) {
+                        toolbarHome.isVisible = false
+                        toolbarHome.alpha = 1f
+                    }
                 }
             })
             ?.start()
@@ -120,10 +128,14 @@ object NavigationMotionController {
             ?.setDuration(200L)
             ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             ?.setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    bottomNav.isVisible = false
-                    bottomNav.alpha = 1f
-                    bottomNav.translationY = 0f
+                    if (!isCancelled) {
+                        bottomNav.isVisible = false
+                        bottomNav.alpha = 1f
+                        bottomNav.translationY = 0f
+                    }
                 }
             })
             ?.start()
@@ -135,9 +147,13 @@ object NavigationMotionController {
             .setDuration(MotionSpec.NORMAL)
             .setInterpolator(MotionSpec.EMPHASIZED)
             .setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    toolView.translationZ = 0f
-                    onComplete?.invoke()
+                    if (!isCancelled) {
+                        toolView.translationZ = 0f
+                        onComplete?.invoke()
+                    }
                 }
             })
             .start()
@@ -226,11 +242,15 @@ object NavigationMotionController {
             .setDuration(240L)
             .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             .setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    toolView.isVisible = false
-                    toolView.translationX = 0f
-                    toolView.translationZ = 0f
-                    toolView.alpha = 1f
+                    if (!isCancelled) {
+                        toolView.isVisible = false
+                        toolView.translationX = 0f
+                        toolView.translationZ = 0f
+                        toolView.alpha = 1f
+                    }
                 }
             })
             .start()
@@ -242,13 +262,17 @@ object NavigationMotionController {
             .setDuration(MotionSpec.NORMAL)
             .setInterpolator(MotionSpec.EMPHASIZED)
             .setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    toolbarHome?.isVisible = true
-                    toolbarHome?.alpha = 1f
-                    bottomNav?.isVisible = true
-                    bottomNav?.alpha = 1f
-                    bottomNav?.translationY = 0f
-                    onComplete?.invoke()
+                    if (!isCancelled) {
+                        toolbarHome?.isVisible = true
+                        toolbarHome?.alpha = 1f
+                        bottomNav?.isVisible = true
+                        bottomNav?.alpha = 1f
+                        bottomNav?.translationY = 0f
+                        onComplete?.invoke()
+                    }
                 }
             })
             .start()
@@ -259,9 +283,13 @@ object NavigationMotionController {
             ?.setDuration(240L)
             ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             ?.setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    toolbarHome.isVisible = true
-                    toolbarHome.alpha = 1f
+                    if (!isCancelled) {
+                        toolbarHome.isVisible = true
+                        toolbarHome.alpha = 1f
+                    }
                 }
             })
             ?.start()
@@ -272,10 +300,14 @@ object NavigationMotionController {
             ?.setDuration(MotionSpec.NORMAL)
             ?.setInterpolator(MotionSpec.EMPHASIZED)
             ?.setListener(object : AnimatorListenerAdapter() {
+                private var isCancelled = false
+                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
                 override fun onAnimationEnd(animation: Animator) {
-                    bottomNav.isVisible = true
-                    bottomNav.alpha = 1f
-                    bottomNav.translationY = 0f
+                    if (!isCancelled) {
+                        bottomNav.isVisible = true
+                        bottomNav.alpha = 1f
+                        bottomNav.translationY = 0f
+                    }
                 }
             })
             ?.start()

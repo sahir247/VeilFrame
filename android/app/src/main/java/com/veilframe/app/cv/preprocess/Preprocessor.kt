@@ -83,36 +83,72 @@ object Preprocessor {
 
     /** CLAHE-based local contrast on the L channel (Lab) or Luma (gray). */
     fun normalize(source: Mat, clipLimit: Double = 2.0, tileGrid: Int = 8): Mat {
-        val isGray = source.channels() == 1
+        val channels = source.channels()
+        if (channels == 1) {
+            val clahe = Imgproc.createCLAHE(clipLimit, Size(tileGrid.toDouble(), tileGrid.toDouble()))
+            val out = Mat()
+            try {
+                clahe.apply(source, out)
+                return out
+            } finally {
+                clahe.collectGarbage()
+            }
+        }
+
+        val isRgba = channels == 4
         val bgr = Mat()
-        if (isGray) Imgproc.cvtColor(source, bgr, Imgproc.COLOR_GRAY2BGR) else source.copyTo(bgr)
+        val alpha = Mat()
+        if (isRgba) {
+            val bgraPlanes = ArrayList<Mat>()
+            try {
+                Core.split(source, bgraPlanes)
+                bgraPlanes[3].copyTo(alpha)
+                val bgrPlanes = arrayListOf(bgraPlanes[0], bgraPlanes[1], bgraPlanes[2])
+                Core.merge(bgrPlanes, bgr)
+            } finally {
+                bgraPlanes.forEach { it.release() }
+            }
+        } else {
+            source.copyTo(bgr)
+        }
+
         val lab = Mat()
         val planes = ArrayList<Mat>()
         val merged = Mat()
         val enhanced = Mat()
         val outBgr = Mat()
+        var clahe: org.opencv.imgproc.CLAHE? = null
         try {
             Imgproc.cvtColor(bgr, lab, Imgproc.COLOR_BGR2Lab)
             Core.split(lab, planes)
-            val clahe = Imgproc.createCLAHE(clipLimit, Size(tileGrid.toDouble(), tileGrid.toDouble()))
+            clahe = Imgproc.createCLAHE(clipLimit, Size(tileGrid.toDouble(), tileGrid.toDouble()))
             clahe.apply(planes[0], enhanced)
             enhanced.copyTo(planes[0])
             Core.merge(planes, merged)
             Imgproc.cvtColor(merged, outBgr, Imgproc.COLOR_Lab2BGR)
-            return if (isGray) {
-                val gray = Mat()
-                Imgproc.cvtColor(outBgr, gray, Imgproc.COLOR_BGR2GRAY)
-                gray
+            return if (isRgba) {
+                val outPlanes = ArrayList<Mat>()
+                val outBgra = Mat()
+                try {
+                    Core.split(outBgr, outPlanes)
+                    outPlanes.add(alpha)
+                    Core.merge(outPlanes, outBgra)
+                    outBgra
+                } finally {
+                    outPlanes.forEach { it.release() }
+                }
             } else {
                 outBgr
             }
         } finally {
+            clahe?.collectGarbage()
             bgr.release()
+            alpha.release()
             lab.release()
             planes.forEach { it.release() }
             merged.release()
             enhanced.release()
-            if (isGray) outBgr.release()
+            if (isRgba) outBgr.release()
         }
     }
 

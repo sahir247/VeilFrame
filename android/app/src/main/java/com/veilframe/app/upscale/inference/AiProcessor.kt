@@ -210,15 +210,20 @@ class AiProcessor(
         source: SourceAccess,
         info: ModelInfo
     ): UpscaleOutput = withContext(Dispatchers.Default) {
-        // runModelOnBitmap never mutates its input, so the old defensive
-        // full-size copy (up to 192 MB on 48 MP sources) is dropped.
-        UpscaleOutput.InMemory(
-            runModelOnBitmap(
-                session = session,
-                bitmap = source.full(),
-                info = info
+        val fullInput = source.full()
+        try {
+            UpscaleOutput.InMemory(
+                runModelOnBitmap(
+                    session = session,
+                    bitmap = fullInput,
+                    info = info
+                )
             )
-        )
+        } finally {
+            if (source !is BitmapSource) {
+                fullInput.recycle()
+            }
+        }
     }
 
     private suspend fun renderByTiles(
