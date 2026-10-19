@@ -178,8 +178,11 @@ object ColorEngine {
                 }
                 lFloat.put(y, 0, buffer)
             }
-            lFloat.convertTo(l, l.type())
+            val lNew = Mat()
+            lFloat.convertTo(lNew, CvType.CV_8UC1)
             lFloat.release()
+            planes[0] = lNew
+            l.release()
             val merged = Mat()
             Core.merge(planes, merged)
             val out = Mat()
@@ -222,18 +225,17 @@ object ColorEngine {
     /** Reattach the untouched alpha plane to a transformed BGR result. */
     private fun preserveAlpha(source: Mat, bgr: Mat): Mat {
         if (source.channels() != 4) return bgr
-        val out = Mat()
-        val alpha = Mat()
+        val planes = ArrayList<Mat>(4)
         try {
-            Imgproc.cvtColor(bgr, out, Imgproc.COLOR_BGR2BGRA)
+            Core.split(bgr, planes)
+            val alpha = Mat()
             Core.extractChannel(source, alpha, 3)
-            Core.insertChannel(alpha, out, 3)
+            planes.add(alpha)
+            val out = Mat()
+            Core.merge(planes, out)
             return out
-        } catch (t: Throwable) {
-            out.release()
-            throw t
         } finally {
-            alpha.release()
+            planes.forEach { it.release() }
         }
     }
 

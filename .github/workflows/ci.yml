@@ -244,7 +244,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: false
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
       - name: Verify Swift Toolchain
         run: swift --version
@@ -294,7 +294,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          cache-read-only: true
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -350,8 +350,7 @@ jobs:
             fi
 
             git fetch --no-tags --depth=1 origin "$ARTIFACT_SHA"
-            git fetch --no-tags --depth=1 origin "$REQUIRED_HEAD_SHA"
-            CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" "$REQUIRED_HEAD_SHA" | \
+            CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
               grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
             if [ -n "$CHANGED_INPUTS" ]; then
               echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
@@ -1078,7 +1077,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: false
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
