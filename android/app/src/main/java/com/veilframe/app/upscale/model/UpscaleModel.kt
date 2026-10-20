@@ -2,8 +2,7 @@ package com.veilframe.app.upscale.model
 
 /**
  * Metadata definition for image upscaling and restoration models.
- * Decouples native model scale from supported output scales (e.g., 4× neural + 2× Lanczos -> 8× output).
- * Stores comprehensive ONNX tensor and runtime compatibility metadata.
+ * Exclusively supports native NCNN Vulkan/CPU models (RealSR / Real-ESRGAN) and algorithmic sinc/spline scalers.
  */
 data class UpscaleModel(
     val id: String,
@@ -24,29 +23,16 @@ data class UpscaleModel(
     val deploymentStatus: DeploymentStatus = DeploymentStatus.ANDROID_NATIVE,
     val license: String = "Apache-2.0 / Open Source",
     val qualityFocus: String = "Balanced",
-    // ONNX Tensor & Runtime Compatibility Metadata
-    val inputTensorLayout: String = "NCHW",
-    val outputTensorLayout: String = "NCHW",
-    val inputDataType: String = "FLOAT32",
-    val outputDataType: String = "FLOAT32",
-    val channelOrder: String = "RGB",
-    val normalizationRange: String = "[0.0, 1.0]",
-    val inputChannelOrder: String = channelOrder,
-    val inputNormalizationRange: String = normalizationRange,
-    val outputChannelOrder: String = "RGB",
-    val outputNormalizationRange: String = "[0.0, 1.0]",
     val tileCompatible: Boolean = true,
     val minInputDimension: Int = 16,
     val isImported: Boolean = false,
-    // ---- F15: quantization / variant metadata (additive; defaults keep every
-    // existing entry and test valid). Populated by tools/model_pipeline output.
-    /** Weight precision of THIS artifact. FP16/INT8 variants are published separately. */
-    val precision: ModelPrecision = ModelPrecision.FP32,
-    /** Base FP32 model id when this entry is a quantized variant. */
+    /** Weight precision of THIS artifact. */
+    val precision: ModelPrecision = ModelPrecision.FP16,
+    /** Base model id when this entry is a variant. */
     val variantOf: String? = null,
     /** Approximate peak working-set bytes at the reference tile size (0 = unknown). */
     val memoryClassBytes: Long = 0L,
-    /** Pipeline-measured backend hint (legacy ONNX only); null = benchmark auto. */
+    /** Pipeline-measured backend hint; null = benchmark auto. */
     val recommendedBackend: String? = null,
     /** NCNN runtime family. Required for [ModelType.AI_NCNN]. */
     val engineKind: NcnnEngineKind? = null,
@@ -107,54 +93,11 @@ data class UpscaleModel(
      */
     val supportedScales: List<Int>
         get() = supportedOutputScales
-
-    /**
-     * Converts to a validated ModelRuntimeSpec, strictly rejecting unknown channel orders
-     * or normalization strings (fail-closed, zero silent fallbacks).
-     */
-    fun toRuntimeSpec(): ModelRuntimeSpec {
-        val inOrder = inputChannelOrder.trim().uppercase()
-        val inColor = when (inOrder) {
-            "RGB" -> ColorOrder.RGB
-            "BGR" -> ColorOrder.BGR
-            else -> throw IllegalArgumentException("Unsupported input channel order: '$inputChannelOrder' for model $id")
-        }
-        val inNorm = when (inputNormalizationRange.trim()) {
-            "[0.0, 1.0]", "[0, 1]", "ZERO_TO_ONE" -> NormalizationSpec.ZERO_TO_ONE
-            "[-1.0, 1.0]", "[-1, 1]", "NEG_ONE_TO_ONE" -> NormalizationSpec.NEG_ONE_TO_ONE
-            "[0, 255]", "ZERO_TO_255" -> NormalizationSpec.ZERO_TO_255
-            else -> throw IllegalArgumentException("Unsupported input normalization: '$inputNormalizationRange' for model $id")
-        }
-        val outOrder = outputChannelOrder.trim().uppercase()
-        val outColor = when (outOrder) {
-            "RGB" -> ColorOrder.RGB
-            "BGR" -> ColorOrder.BGR
-            else -> throw IllegalArgumentException("Unsupported output channel order: '$outputChannelOrder' for model $id")
-        }
-        val outRange = when (outputNormalizationRange.trim()) {
-            "[0.0, 1.0]", "[0, 1]", "ZERO_TO_ONE" -> OutputRangeSpec.ZERO_TO_ONE
-            "[-1.0, 1.0]", "[-1, 1]", "NEG_ONE_TO_ONE" -> OutputRangeSpec.NEG_ONE_TO_ONE
-            "[0, 255]", "ZERO_TO_255" -> OutputRangeSpec.ZERO_TO_255
-            else -> throw IllegalArgumentException("Unsupported output range: '$outputNormalizationRange' for model $id")
-        }
-        return ModelRuntimeSpec(
-            sha256 = sha256,
-            scaleFactor = nativeScale,
-            inputChannels = 3,
-            outputChannels = 3,
-            inputColorOrder = inColor,
-            inputNormalization = inNorm,
-            outputColorOrder = outColor,
-            outputRange = outRange
-        )
-    }
 }
 
 enum class ModelType {
     ALGORITHMIC,
-    /** Native NCNN inference. The remaining AI_ONNX entries are migration-only and will be retired in a later phase. */
-    AI_NCNN,
-    AI_ONNX
+    AI_NCNN
 }
 
 /** Native NCNN implementation family, kept separate from model identity and file format. */

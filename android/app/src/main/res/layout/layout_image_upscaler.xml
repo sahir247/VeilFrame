@@ -273,20 +273,20 @@
                             android:checked="true" />
 
                         <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnScale3x"
+                            style="@style/Widget.VeilFrame.Button.Utility"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="3× Scale" />
+
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnScale4x"
                             style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="4× Scale" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnScale8x"
-                            style="@style/Widget.VeilFrame.Button.Utility"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="8× Hybrid" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <TextView
@@ -342,17 +342,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:indeterminate="true"
-                        app:trackColor="@color/vf_surface"
-                        android:layout_marginBottom="10dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnUpscalerCancel"
-                        style="@style/Widget.VeilFrame.Button.Quiet"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:text="Cancel"
-                        android:textColor="@color/vf_accent_red" />
+                        app:trackColor="@color/vf_surface" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -581,7 +571,7 @@
                             android:id="@+id/tvUpscalerModelName"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Real-ESRGAN General 2×"
+                            android:text="Real-ESRGAN AnimeVideoV3 2× (NCNN)"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="15sp"
                             android:textStyle="bold"

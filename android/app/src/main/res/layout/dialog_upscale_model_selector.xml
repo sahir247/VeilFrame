@@ -77,6 +77,15 @@
                     android:textSize="13sp" />
 
                 <RadioButton
+                    android:id="@+id/rbModelRealEsrgan3x"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:text="AnimeVideoV3 3× (NCNN • 1.3 MB)\nCompact anime 3× upscaling and animation frames"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
                     android:id="@+id/rbModelRealEsrgan4x"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -6,7 +6,7 @@ import java.io.File
 /**
  * Manages local storage and installation state of upscaling models.
  * App-private storage at: context.filesDir/models/upscaler/{modelId}/
- * ONNX uses model.ort; NCNN uses model.param + model.bin and an install marker.
+ * NCNN uses model.param + model.bin and an install marker.
  */
 class UpscaleModelRepository(private val context: Context) {
 
@@ -17,9 +17,8 @@ class UpscaleModelRepository(private val context: Context) {
         return File(baseModelsDir, modelId).apply { if (!exists()) mkdirs() }
     }
 
-    /** Legacy ONNX/ORT storage location. Not used by native NCNN inference. */
     fun getModelFile(modelId: String): File {
-        return File(getModelDir(modelId), "model.ort")
+        return File(getModelDir(modelId), "model.bin")
     }
 
     fun getNcnnParamFile(modelId: String): File =
@@ -35,23 +34,25 @@ class UpscaleModelRepository(private val context: Context) {
         if (model.isBuiltIn) return true
         return when (model.type) {
             ModelType.ALGORITHMIC -> false
-            ModelType.AI_ONNX -> {
-                val file = getModelFile(model.id)
-                file.isFile && file.length() > 0L
-            }
             ModelType.AI_NCNN -> {
                 val paramFile = getNcnnParamFile(model.id)
                 val binFile = getNcnnBinFile(model.id)
-                val marker = getNcnnInstallMarkerFile(model.id)
-                if (!marker.isFile || !paramFile.isFile || !binFile.isFile) {
+                if (!paramFile.isFile || !binFile.isFile || paramFile.length() == 0L || binFile.length() == 0L) {
                     false
+                } else if (model.isImported) {
+                    true
                 } else {
-                    val markerLines = runCatching { marker.readLines() }.getOrDefault(emptyList())
-                    markerLines.size >= 2 &&
-                        markerLines[0].equals(model.paramSha256, ignoreCase = true) &&
-                        markerLines[1].equals(model.binSha256, ignoreCase = true) &&
-                        paramFile.length() == model.paramSizeBytes &&
-                        binFile.length() == model.binSizeBytes
+                    val marker = getNcnnInstallMarkerFile(model.id)
+                    if (!marker.isFile) {
+                        false
+                    } else {
+                        val markerLines = runCatching { marker.readLines() }.getOrDefault(emptyList())
+                        markerLines.size >= 2 &&
+                            markerLines[0].equals(model.paramSha256, ignoreCase = true) &&
+                            markerLines[1].equals(model.binSha256, ignoreCase = true) &&
+                            paramFile.length() == model.paramSizeBytes &&
+                            binFile.length() == model.binSizeBytes
+                    }
                 }
             }
         }
@@ -76,7 +77,7 @@ class UpscaleModelRepository(private val context: Context) {
     }
 
     /**
-     * Imports an external ONNX/ORT model file into app-private storage and registers it.
+     * Imports an external NCNN model file into app-private storage and registers it.
      */
     fun importCustomModel(
         sourceFile: File,
@@ -85,36 +86,42 @@ class UpscaleModelRepository(private val context: Context) {
     ): UpscaleModel {
         require(sourceFile.exists() && sourceFile.length() > 0) { "Source model file is empty or missing: ${sourceFile.absolutePath}" }
         val sanitized = sourceFile.nameWithoutExtension.lowercase().replace("[^a-z0-9_-]".toRegex(), "_")
-        val modelId = "custom-$sanitized"
+        val modelId = "custom-ncnn-$sanitized"
         val destFile = getModelFile(modelId)
         sourceFile.copyTo(destFile, overwrite = true)
         val sha256 = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(destFile)
         val customModel = UpscaleModel(
             id = modelId,
-            name = name.replace("_", " ").replace("-", " "),
-            description = "Custom imported ONNX/ORT model (${destFile.name})",
-            type = ModelType.AI_ONNX,
+            name = name.replace("_", " ").replace("-", " ") + " (NCNN)",
+            description = "Custom imported NCNN Vulkan model (${destFile.name})",
+            type = ModelType.AI_NCNN,
             nativeScale = nativeScale,
             sizeBytes = destFile.length(),
             sha256 = sha256,
-            supportedOutputScales = listOf(nativeScale, nativeScale * 2),
+            supportedOutputScales = listOf(nativeScale),
             isBuiltIn = false,
             genre = ModelGenre.CUSTOM_IMPORTED,
             tier = ModelTier.TIER_A_NATIVE,
-            isImported = true
+            isImported = true,
+            engineKind = NcnnEngineKind.REALSR_ESRGAN,
+            prePadding = 10
         )
         UpscaleModelRegistry.registerCustomModel(customModel)
         return customModel
     }
 
     /**
-     * Imports an external ONNX/ORT model from an Android content URI.
+     * Imports an external custom model from an Android content URI.
+     * Zip archives containing .param and .bin are imported as native NCNN models.
      */
     fun importCustomModelFromUri(
         uri: android.net.Uri,
         fileName: String,
         nativeScale: Int = 4
     ): UpscaleModel {
+        if (fileName.endsWith(".zip", ignoreCase = true)) {
+            return importCustomNcnnFromZip(uri, fileName, nativeScale)
+        }
         val tempFile = File(context.cacheDir, "import_temp_${System.currentTimeMillis()}_$fileName")
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -122,9 +129,108 @@ class UpscaleModelRepository(private val context: Context) {
                     input.copyTo(output)
                 }
             } ?: error("Failed to open input stream for URI: $uri")
-            return importCustomModel(tempFile, fileName.substringBeforeLast('.'), nativeScale)
+
+            val isZip = try {
+                tempFile.inputStream().use { stream ->
+                    val header = ByteArray(4)
+                    val read = stream.read(header)
+                    read >= 2 && header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()
+                }
+            } catch (_: Exception) { false }
+
+            return if (isZip) {
+                importCustomNcnnFromZip(uri, fileName, nativeScale)
+            } else {
+                importCustomModel(tempFile, fileName.substringBeforeLast('.'), nativeScale)
+            }
         } finally {
             if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
+    /**
+     * Imports an external NCNN .param and .bin pair into app-private storage and registers it.
+     */
+    fun importCustomNcnnModel(
+        paramFile: File,
+        binFile: File,
+        name: String,
+        nativeScale: Int = 4
+    ): UpscaleModel {
+        require(paramFile.exists() && paramFile.length() > 0) { "Missing param file: ${paramFile.absolutePath}" }
+        require(binFile.exists() && binFile.length() > 0) { "Missing bin file: ${binFile.absolutePath}" }
+        val sanitized = name.lowercase().replace("[^a-z0-9_-]".toRegex(), "_")
+        val modelId = "custom-ncnn-$sanitized"
+        val destParam = getNcnnParamFile(modelId).apply { parentFile?.mkdirs() }
+        val destBin = getNcnnBinFile(modelId)
+        paramFile.copyTo(destParam, overwrite = true)
+        binFile.copyTo(destBin, overwrite = true)
+
+        val paramSha = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(destParam)
+        val binSha = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(destBin)
+
+        val marker = getNcnnInstallMarkerFile(modelId)
+        marker.writeText("$paramSha\n$binSha\n$nativeScale\n")
+
+        val customModel = UpscaleModel(
+            id = modelId,
+            name = name.replace("_", " ").replace("-", " ") + " (NCNN)",
+            description = "Custom NCNN Model (${destParam.name})",
+            type = ModelType.AI_NCNN,
+            nativeScale = nativeScale,
+            sizeBytes = destParam.length() + destBin.length(),
+            supportedOutputScales = listOf(nativeScale),
+            isBuiltIn = false,
+            genre = ModelGenre.CUSTOM_IMPORTED,
+            tier = ModelTier.TIER_A_NATIVE,
+            isImported = true,
+            engineKind = NcnnEngineKind.REALSR_ESRGAN,
+            paramSha256 = paramSha,
+            paramSizeBytes = destParam.length(),
+            binSha256 = binSha,
+            binSizeBytes = destBin.length(),
+            prePadding = 10
+        )
+        UpscaleModelRegistry.registerCustomModel(customModel)
+        return customModel
+    }
+
+    /**
+     * Imports an NCNN model from a .zip archive containing .param and .bin files.
+     */
+    fun importCustomNcnnFromZip(
+        uri: android.net.Uri,
+        fileName: String,
+        nativeScale: Int = 4
+    ): UpscaleModel {
+        val tempExtractDir = File(context.cacheDir, "ncnn_extract_${System.currentTimeMillis()}").apply { mkdirs() }
+        try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                java.util.zip.ZipInputStream(inputStream).use { zis ->
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory) {
+                            val entryFile = File(tempExtractDir, entry.name.substringAfterLast('/'))
+                            entryFile.outputStream().use { fos ->
+                                zis.copyTo(fos)
+                            }
+                        }
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                    }
+                }
+            } ?: error("Could not open input stream for zip: $uri")
+
+            val files = tempExtractDir.listFiles() ?: emptyArray()
+            val paramFile = files.firstOrNull { it.name.endsWith(".param", ignoreCase = true) }
+                ?: error("Zip archive does not contain a .param file")
+            val binFile = files.firstOrNull { it.name.endsWith(".bin", ignoreCase = true) }
+                ?: error("Zip archive does not contain a .bin file")
+
+            val modelName = fileName.removeSuffix(".zip").removeSuffix(".ZIP")
+            return importCustomNcnnModel(paramFile, binFile, modelName, nativeScale)
+        } finally {
+            tempExtractDir.deleteRecursively()
         }
     }
 
@@ -135,28 +241,33 @@ class UpscaleModelRepository(private val context: Context) {
         val dirs = baseModelsDir.listFiles() ?: return
         for (dir in dirs) {
             if (dir.isDirectory && dir.name.startsWith("custom-")) {
-                val file = File(dir, "model.ort")
-                if (file.exists() && file.length() > 0) {
-                    val modelId = dir.name
+                val ortFile = File(dir, "model.ort")
+                val paramFile = File(dir, "model.param")
+                val binFile = File(dir, "model.bin")
+                val modelId = dir.name
+
+                if (paramFile.exists() && binFile.exists() && paramFile.length() > 0 && binFile.length() > 0) {
                     if (UpscaleModelRegistry.getModelById(modelId) == null) {
-                        val sha256 = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(file)
-                        val displayName = dir.name.removePrefix("custom-")
+                        val displayName = dir.name.removePrefix("custom-").removePrefix("ncnn-")
                             .replace("_", " ")
                             .replace("-", " ")
                             .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                         val model = UpscaleModel(
                             id = modelId,
-                            name = displayName,
-                            description = "Custom imported ONNX/ORT model",
-                            type = ModelType.AI_ONNX,
+                            name = "$displayName (NCNN)",
+                            description = "Custom imported NCNN model",
+                            type = ModelType.AI_NCNN,
                             nativeScale = 4,
-                            sizeBytes = file.length(),
-                            sha256 = sha256,
-                            supportedOutputScales = listOf(4, 8),
+                            sizeBytes = paramFile.length() + binFile.length(),
+                            supportedOutputScales = listOf(4),
                             isBuiltIn = false,
                             genre = ModelGenre.CUSTOM_IMPORTED,
                             tier = ModelTier.TIER_A_NATIVE,
-                            isImported = true
+                            isImported = true,
+                            engineKind = NcnnEngineKind.REALSR_ESRGAN,
+                            paramSizeBytes = paramFile.length(),
+                            binSizeBytes = binFile.length(),
+                            prePadding = 10
                         )
                         UpscaleModelRegistry.registerCustomModel(model)
                     }

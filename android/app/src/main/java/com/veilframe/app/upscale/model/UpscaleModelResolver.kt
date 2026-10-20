@@ -41,17 +41,6 @@ object UpscaleModelResolver {
             "Preset refers to an unregistered model. No fallback was applied."
         }
 
-        // Legacy ONNX scale fallback is migration-only. An NCNN preset must never
-        // be redirected to ONNX merely because the user selected a 2x output.
-        if (targetScale == 2 &&
-            recommended.nativeScale == 4 &&
-            !recommended.isBuiltIn &&
-            recommended.type == ModelType.AI_ONNX &&
-            repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)
-        ) {
-            return UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X
-        }
-
         return recommended
     }
 }

@@ -15,6 +15,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
@@ -30,7 +31,6 @@ import com.veilframe.app.upscale.inference.SourceAccess
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.inference.UpscaleInferenceParams
 import com.veilframe.app.upscale.inference.NcnnNative
-import com.veilframe.app.upscale.inference.OnnxSessionManager
 import com.veilframe.app.upscale.inference.UpscaleMemoryException
 import com.veilframe.app.upscale.inference.UpscaleOutput
 import com.veilframe.app.upscale.inference.UriRegionSource
@@ -100,6 +100,7 @@ class ImageUpscalerController(
     private var imageLoadGeneration: Long = 0L
     private var suppressScaleListener: Boolean = false
     private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private var isCancelling: Boolean = false
 
     var onImportCustomModelRequested: (() -> Unit)? = null
     var inferenceParams: UpscaleInferenceParams = UpscaleInferenceParams()
@@ -142,7 +143,6 @@ class ImageUpscalerController(
             upscalerBinding.btnUpscalerChangeImage,
             upscalerBinding.btnUpscalerChangeModel,
             upscalerBinding.btnUpscalerExecute,
-            upscalerBinding.btnUpscalerCancel,
             upscalerBinding.btnUpscalerSave,
             upscalerBinding.btnUpscalerShare,
             upscalerBinding.layoutAdvancedHeader
@@ -195,15 +195,11 @@ class ImageUpscalerController(
         // Execution button (morphs to required dialog if needed, or handles select / cancel)
         upscalerBinding.btnUpscalerExecute.setOnClickListener {
             when {
+                isCancelling -> { /* cancellation in progress, ignore duplicate clicks */ }
                 sourceAccess == null -> onPickImageRequested()
-                inferenceJob?.isActive == true || downloadJob?.isActive == true -> cancelActiveOperations()
+                isProcessing -> cancelActiveOperations()
                 else -> startUpscalingFlow(upscalerBinding.btnUpscalerExecute)
             }
-        }
-
-        // Cancel button
-        upscalerBinding.btnUpscalerCancel.setOnClickListener {
-            cancelActiveOperations()
         }
 
         // Save & Share buttons
@@ -220,16 +216,20 @@ class ImageUpscalerController(
 
     private fun syncScaleToggleWithModel(model: UpscaleModel) {
         val supported = model.supportedOutputScales
+        upscalerBinding.btnScale2x.visibility = if (2 in supported) View.VISIBLE else View.GONE
+        upscalerBinding.btnScale3x.visibility = if (3 in supported) View.VISIBLE else View.GONE
+        upscalerBinding.btnScale4x.visibility = if (4 in supported) View.VISIBLE else View.GONE
+
         upscalerBinding.btnScale2x.isEnabled = 2 in supported
+        upscalerBinding.btnScale3x.isEnabled = 3 in supported
         upscalerBinding.btnScale4x.isEnabled = 4 in supported
-        upscalerBinding.btnScale8x.isEnabled = 8 in supported
 
         if (targetScale !in supported) {
-            targetScale = supported.minByOrNull { kotlin.math.abs(it - targetScale) } ?: model.nativeScale
+            targetScale = supported.firstOrNull() ?: model.nativeScale
         }
         val targetButtonId = when (targetScale) {
+            3 -> R.id.btnScale3x
             4 -> R.id.btnScale4x
-            8 -> R.id.btnScale8x
             else -> R.id.btnScale2x
         }
         if (upscalerBinding.toggleGroupUpscalerScale.checkedButtonId != targetButtonId) {
@@ -384,9 +384,13 @@ class ImageUpscalerController(
     fun handleCustomModelImport(uri: Uri) {
         scope.launch {
             try {
-                val fileName = getFileName(uri) ?: "custom_model.ort"
+                val fileName = getFileName(uri) ?: "custom_model.zip"
                 val model = withContext(Dispatchers.IO) {
-                    repository.importCustomModelFromUri(uri, fileName)
+                    if (fileName.endsWith(".zip", ignoreCase = true)) {
+                        repository.importCustomNcnnFromZip(uri, fileName)
+                    } else {
+                        repository.importCustomModelFromUri(uri, fileName)
+                    }
                 }
                 explicitModel = model
                 updateModelDisplay()
@@ -453,8 +457,8 @@ class ImageUpscalerController(
         upscalerBinding.toggleGroupUpscalerScale.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked || suppressScaleListener) return@addOnButtonCheckedListener
             val requestedScale = when (checkedId) {
+                R.id.btnScale3x -> 3
                 R.id.btnScale4x -> 4
-                R.id.btnScale8x -> 8
                 else -> 2
             }
             val model = runCatching { getResolvedModel() }.getOrNull()
@@ -499,9 +503,9 @@ class ImageUpscalerController(
                 "Engine: NCNN Native Tile Pipeline (${activeModel.nativeScale}×) • thermal: ${com.veilframe.app.runtime.ThermalGovernor.statusName()}"
         } else {
             upscalerBinding.tvDiagBackend.text =
-                "Active Backend: ONNX Runtime (XNNPACK / NNAPI / CPU) • last: ${OnnxSessionManager.lastBackend}"
+                "Active Backend: CPU (Algorithmic Scaler - ${activeModel.name})"
             upscalerBinding.tvDiagExecutionProfile.text =
-                "Engine: ONNX (region-streamed dynamic tiling) • thermal: ${com.veilframe.app.runtime.ThermalGovernor.statusName()}"
+                "Engine: Mathematical Reconstruction (${activeModel.name}) • thermal: ${com.veilframe.app.runtime.ThermalGovernor.statusName()}"
         }
     }
 
@@ -543,26 +547,8 @@ class ImageUpscalerController(
                         }
                     }
                 } else {
-                    val modelFile = repository.getModelFile(model.id)
-                    withContext(Dispatchers.Default) {
-                        try {
-                            val session = com.veilframe.app.upscale.inference.OnnxSessionManager.createSession(modelFile)
-                            try {
-                                val info = com.veilframe.app.upscale.inference.ModelInfo(
-                                    session = session,
-                                    modelName = modelFile.name,
-                                    explicitScale = model.nativeScale
-                                )
-                                val prec = if (info.isFp16) "FP16" else "FP32"
-                                val dims = if (info.expectedWidth != null) "${info.expectedWidth}x${info.expectedHeight}" else "Dynamic"
-                                "Loaded ${model.name} in ${System.currentTimeMillis() - startTime}ms ($prec, $dims)"
-                            } finally {
-                                session.close()
-                            }
-                        } catch (e: Exception) {
-                            "Model check failed: ${e.message ?: e.javaClass.simpleName}"
-                        }
-                    }
+                    val elapsed = System.currentTimeMillis() - startTime
+                    "Built-in Algorithmic filter (${model.name}): Instant CPU execution (${elapsed}ms)."
                 }
                 withContext(Dispatchers.Main) {
                     upscalerBinding.btnRunUpscaleBenchmark.isEnabled = true
@@ -625,12 +611,20 @@ class ImageUpscalerController(
 
     private fun updateUIState() {
         val hasImage = (sourceAccess != null)
-        val isProcessing = (inferenceJob?.isActive == true || downloadJob?.isActive == true)
         val hasResult = (resultOutput != null)
         val model = getResolvedModel()
         val isInstalled = repository.isModelInstalled(model)
 
         when {
+            isCancelling -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+                upscalerBinding.btnUpscalerExecute.text = "Cancelling…"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_close)
+                upscalerBinding.btnUpscalerExecute.isEnabled = false
+                upscalerBinding.btnUpscalerExecute.alpha = 0.6f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_accent_red)
+            }
             isProcessing -> {
                 upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
                 upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
@@ -638,6 +632,7 @@ class ImageUpscalerController(
                 upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_close)
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
                 upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_accent_red)
             }
             !hasImage -> {
                 upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
@@ -646,6 +641,7 @@ class ImageUpscalerController(
                 upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_file_pick)
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
                 upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             }
             !isInstalled -> {
                 upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
@@ -654,6 +650,7 @@ class ImageUpscalerController(
                 upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_system_update)
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
                 upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             }
             hasResult -> {
                 upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
@@ -662,6 +659,7 @@ class ImageUpscalerController(
                 upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_resize)
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
                 upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             }
             else -> {
                 upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
@@ -670,6 +668,7 @@ class ImageUpscalerController(
                 upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_resize)
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
                 upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+                upscalerBinding.btnUpscalerExecute.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             }
         }
         updateTargetDimensions()
@@ -836,171 +835,181 @@ class ImageUpscalerController(
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
         upscalerBinding.progressUpscaler.isIndeterminate = true
         upscalerBinding.tvUpscalerProgressStatus.text = "Preparing ${model.name} pipeline..."
-        updateUIState()
 
-        inferenceJob = scope.launch {
-            onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
+        val job = scope.launch {
+            try {
+                onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
 
-            // F2 gate + F3/F11 profile — computed off the main thread (reads
-            // /proc/meminfo, thermal status, battery state).
-            val prep = withContext(Dispatchers.IO) {
-                val gate = evaluateExecutionGate(model, scale)
-                var p = UpscaleInferenceParams.forDevice(activity, scale)
-                var note: String? = null
-                if (gate == null) {
-                    when {
-                        com.veilframe.app.runtime.ThermalGovernor.isThrottled -> {
-                            p = p.copy(
-                                parallelWorkers = 1,
-                                chunkSize = (p.chunkSize / 2).coerceAtLeast(128)
-                            )
-                            note = "[UPSCALER] Thermal ${com.veilframe.app.runtime.ThermalGovernor.statusName()}" +
-                                " — efficiency profile chunk=${p.chunkSize} workers=1"
-                        }
-                        com.veilframe.app.runtime.ThermalGovernor.batteryConstrained(activity) -> {
-                            p = p.copy(parallelWorkers = 1)
-                            note = "[UPSCALER] Battery constrained — efficiency profile workers=1"
-                        }
-                    }
-                }
-                Triple(gate, p, note)
-            }
-            if (prep.first != null) {
-                upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
-                showRefusalDialog(prep.first!!, scale > 2)
-                updateUIState()
-                return@launch
-            }
-            prep.third?.let { onLog(it) }
-            val jobParams = prep.second
-
-            // F6: foreground service — the job survives navigation & OEM
-            // phantom-process killers, with a cancellable notification.
-            com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = { inferenceJob?.cancel() }
-            com.veilframe.app.upscale.UpscaleForegroundService.start(activity, "${model.name} • ${scale}×")
-
-            val startTime = System.currentTimeMillis()
-            val result = inferenceEngine.upscale(
-                source = src,
-                model = model,
-                targetScale = scale,
-                params = jobParams,
-                listener = object : UpscaleInferenceEngine.InferenceProgressListener {
-                    override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
-                        scope.launch(Dispatchers.Main) {
-                            upscalerBinding.progressUpscaler.isIndeterminate = false
-                            com.veilframe.app.ui.motion.ProcessingMotionController.updateProgress(
-                                upscalerBinding.progressUpscaler,
-                                percent,
-                                true
-                            )
-                        }
-                    }
-
-                    override fun onStatus(message: String) {
-                        scope.launch(Dispatchers.Main) {
-                            upscalerBinding.tvUpscalerProgressStatus.text = message
-                            onLog("[UPSCALER] $message")
-                        }
-                    }
-
-                    override fun onStage(stage: String, currentTile: Int, totalTiles: Int) {
-                        scope.launch(Dispatchers.Main) {
-                            if (totalTiles > 1) {
-                                upscalerBinding.tvUpscalerProgressStatus.text = "$stage: Tile $currentTile of $totalTiles"
+                // F2 gate + F3/F11 profile — computed off the main thread (reads
+                // /proc/meminfo, thermal status, battery state).
+                val prep = withContext(Dispatchers.IO) {
+                    val gate = evaluateExecutionGate(model, scale)
+                    var p = UpscaleInferenceParams.forDevice(activity, scale)
+                    var note: String? = null
+                    if (gate == null) {
+                        when {
+                            com.veilframe.app.runtime.ThermalGovernor.isThrottled -> {
+                                p = p.copy(
+                                    parallelWorkers = 1,
+                                    chunkSize = (p.chunkSize / 2).coerceAtLeast(128)
+                                )
+                                note = "[UPSCALER] Thermal ${com.veilframe.app.runtime.ThermalGovernor.statusName()}" +
+                                    " — efficiency profile chunk=${p.chunkSize} workers=1"
+                            }
+                            com.veilframe.app.runtime.ThermalGovernor.batteryConstrained(activity) -> {
+                                p = p.copy(parallelWorkers = 1)
+                                note = "[UPSCALER] Battery constrained — efficiency profile workers=1"
                             }
                         }
                     }
+                    Triple(gate, p, note)
                 }
-            )
+                if (prep.first != null) {
+                    upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+                    showRefusalDialog(prep.first!!, scale > 2)
+                    updateUIState()
+                    return@launch
+                }
+                prep.third?.let { onLog(it) }
+                val jobParams = prep.second
 
-            val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
+                // F6: foreground service — the job survives navigation & OEM
+                // phantom-process killers, with a cancellable notification.
+                com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = { cancelActiveOperations() }
+                com.veilframe.app.upscale.UpscaleForegroundService.start(activity, "${model.name} • ${scale}×")
 
-            withContext(Dispatchers.Main) {
-                com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
-                com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
-                upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
-                upscalerBinding.btnUpscalerExecute.isEnabled = true
-
-                result.fold(
-                    onSuccess = { output ->
-                        (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
-                            safelyDeleteResultFile(prev.file)
+                val startTime = System.currentTimeMillis()
+                val result = inferenceEngine.upscale(
+                    source = src,
+                    model = model,
+                    targetScale = scale,
+                    params = jobParams,
+                    listener = object : UpscaleInferenceEngine.InferenceProgressListener {
+                        override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
+                            scope.launch(Dispatchers.Main) {
+                                upscalerBinding.progressUpscaler.isIndeterminate = false
+                                com.veilframe.app.ui.motion.ProcessingMotionController.updateProgress(
+                                    upscalerBinding.progressUpscaler,
+                                    percent,
+                                    true
+                                )
+                            }
                         }
-                        resultOutput = output
-                        resultFile = (output as? UpscaleOutput.Streamed)?.file
-                        upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
-                        val resolvedModel = getResolvedModel()
-                        val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
-                        val badgeText = if (resolvedModel.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
-                            "${scale}× OUTPUT (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× REFINEMENT)"
-                        } else {
-                            "UPSCALED (${scale}×)"
-                        }
-                        upscalerBinding.tvUpscalerBadge.text = badgeText
-                        upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                        upscalerBinding.layoutUpscalerResults.visibility = View.VISIBLE
-                        com.veilframe.app.ui.motion.ProcessingMotionController.confirmCompletion(upscalerBinding.layoutUpscalerResults)
 
-                        val mp = (output.width.toLong() * output.height) / 1_000_000.0
-                        val throughput = if (elapsedSec > 0.0) mp / elapsedSec else 0.0
-                        val formatText = if (output is UpscaleOutput.Streamed) "Streaming PNG" else "Lossless PNG"
-                        upscalerBinding.tvUpscalerResultDetails.text = String.format(
-                            Locale.US,
-                            "Upscaled %d×%d (~%.1f MP) • %s • %.1fs elapsed • Ready to save or share",
-                            output.width,
-                            output.height,
-                            mp,
-                            formatText,
-                            elapsedSec
-                        )
-                        upscalerBinding.tvDiagThroughput.text = String.format(
-                            Locale.US,
-                            "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)%s",
-                            throughput,
-                            elapsedSec,
-                            mp,
-                            if (output is UpscaleOutput.Streamed) " • streamed" else ""
-                        )
-                        onLog(
-                            String.format(
-                                Locale.US,
-                                "[UPSCALER] Upscale completed in %.1fs (~%.1f MP/s): %d×%d (~%.1f MP, streamed=%b)",
-                                elapsedSec,
-                                throughput,
-                                output.width,
-                                output.height,
-                                mp,
-                                output is UpscaleOutput.Streamed
-                            )
-                        )
-                        Toast.makeText(
-                            activity,
-                            String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", output.width, output.height, throughput, elapsedSec),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
-                    onFailure = { err ->
-                        Log.e(TAG, "Upscale failed: ${err.message}", err)
-                        onLog("[UPSCALER] Error: ${err.message}")
-                        if (err is UpscaleMemoryException) {
-                            // F4: honest degrade offer instead of a crash or a silent no-op.
-                            showMemoryDegradeDialog()
-                        } else if (err is com.veilframe.app.upscale.inference.ThermalShutdownException) {
-                            // F11: honest thermal stop — user decides when to retry.
-                            Toast.makeText(
-                                activity,
-                                "Stopped — device temperature is critical. Let it cool down, then retry.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
+                        override fun onStatus(message: String) {
+                            scope.launch(Dispatchers.Main) {
+                                upscalerBinding.tvUpscalerProgressStatus.text = message
+                                onLog("[UPSCALER] $message")
+                            }
+                        }
+
+                        override fun onStage(stage: String, currentTile: Int, totalTiles: Int) {
+                            scope.launch(Dispatchers.Main) {
+                                if (totalTiles > 1) {
+                                    upscalerBinding.tvUpscalerProgressStatus.text = "$stage: Tile $currentTile of $totalTiles"
+                                }
+                            }
                         }
                     }
                 )
-                updateUIState()
+
+                val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
+
+                withContext(Dispatchers.Main) {
+                    result.fold(
+                        onSuccess = { output ->
+                            (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
+                                safelyDeleteResultFile(prev.file)
+                            }
+                            resultOutput = output
+                            resultFile = (output as? UpscaleOutput.Streamed)?.file
+                            upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
+                            val resolvedModel = getResolvedModel()
+                            val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
+                            val badgeText = if (resolvedModel.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
+                                "${scale}× OUTPUT (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× REFINEMENT)"
+                            } else {
+                                "UPSCALED (${scale}×)"
+                            }
+                            upscalerBinding.tvUpscalerBadge.text = badgeText
+                            upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                            upscalerBinding.layoutUpscalerResults.visibility = View.VISIBLE
+                            com.veilframe.app.ui.motion.ProcessingMotionController.confirmCompletion(upscalerBinding.layoutUpscalerResults)
+
+                            val mp = (output.width.toLong() * output.height) / 1_000_000.0
+                            val throughput = if (elapsedSec > 0.0) mp / elapsedSec else 0.0
+                            val formatText = if (output is UpscaleOutput.Streamed) "Streaming PNG" else "Lossless PNG"
+                            upscalerBinding.tvUpscalerResultDetails.text = String.format(
+                                Locale.US,
+                                "Upscaled %d×%d (~%.1f MP) • %s • %.1fs elapsed • Ready to save or share",
+                                output.width,
+                                output.height,
+                                mp,
+                                formatText,
+                                elapsedSec
+                            )
+                            upscalerBinding.tvDiagThroughput.text = String.format(
+                                Locale.US,
+                                "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)%s",
+                                throughput,
+                                elapsedSec,
+                                mp,
+                                if (output is UpscaleOutput.Streamed) " • streamed" else ""
+                            )
+                            onLog(
+                                String.format(
+                                    Locale.US,
+                                    "[UPSCALER] Upscale completed in %.1fs (~%.1f MP/s): %d×%d (~%.1f MP, streamed=%b)",
+                                    elapsedSec,
+                                    throughput,
+                                    output.width,
+                                    output.height,
+                                    mp,
+                                    output is UpscaleOutput.Streamed
+                                )
+                            )
+                            Toast.makeText(
+                                activity,
+                                String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", output.width, output.height, throughput, elapsedSec),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onFailure = { err ->
+                            Log.e(TAG, "Upscale failed: ${err.message}", err)
+                            onLog("[UPSCALER] Error: ${err.message}")
+                            if (err is UpscaleMemoryException) {
+                                // F4: honest degrade offer instead of a crash or a silent no-op.
+                                showMemoryDegradeDialog()
+                            } else if (err is com.veilframe.app.upscale.inference.ThermalShutdownException) {
+                                // F11: honest thermal stop — user decides when to retry.
+                                Toast.makeText(
+                                    activity,
+                                    "Stopped — device temperature is critical. Let it cool down, then retry.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                }
+            } catch (ce: CancellationException) {
+                onLog("[UPSCALER] Upscaling job cancelled.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Unhandled exception in upscale job: ${e.message}", e)
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main) {
+                    com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
+                    com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
+                    upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+                    isCancelling = false
+                    inferenceJob = null
+                    updateUIState()
+                }
             }
         }
+        inferenceJob = job
+        updateUIState()
     }
 
     private fun showMemoryDegradeDialog() {
@@ -1038,23 +1047,32 @@ class ImageUpscalerController(
     }
 
     val isProcessing: Boolean
-        get() = inferenceJob?.isActive == true || downloadJob?.isActive == true
+        get() = (inferenceJob?.isActive == true || downloadJob?.isActive == true) || isCancelling
 
     fun cancelProcessing() {
         cancelActiveOperations()
     }
 
     private fun cancelActiveOperations() {
-        inferenceJob?.cancel()
-        inferenceJob = null
-        downloadJob?.cancel()
-        downloadJob = null
+        if (isCancelling) return
+        isCancelling = true
+        onLog("[UPSCALER] Active operation cancellation requested.")
+        upscalerBinding.tvUpscalerProgressStatus.text = "Cancelling upscale..."
+        upscalerBinding.btnUpscalerExecute.isEnabled = false
+        upscalerBinding.btnUpscalerExecute.text = "Cancelling…"
+        upscalerBinding.btnUpscalerExecute.alpha = 0.6f
+
         com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
-        upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
-        onLog("[UPSCALER] Active operation cancelled by user.")
-        Toast.makeText(activity, "Cancelled", Toast.LENGTH_SHORT).show()
-        updateUIState()
+
+        inferenceJob?.cancel()
+        downloadJob?.cancel()
+
+        if (inferenceJob == null && downloadJob == null) {
+            isCancelling = false
+            upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+            updateUIState()
+        }
     }
 
     fun showModelSelectorDialog(originView: View? = null) {
@@ -1071,6 +1089,7 @@ class ImageUpscalerController(
         // Select current option
         when (explicitModel?.id) {
             "ncnn-realesr-animevideov3-x2" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
+            "ncnn-realesr-animevideov3-x3" -> dialogBinding.rbModelRealEsrgan3x.isChecked = true
             "ncnn-realesrgan-x4plus" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
             "ncnn-realesr-animevideov3-x4" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
             "lanczos-3" -> dialogBinding.rbModelLanczos.isChecked = true
@@ -1079,14 +1098,58 @@ class ImageUpscalerController(
             else -> dialogBinding.rbModelAuto.isChecked = true
         }
 
+        val dynamicModelMap = mutableMapOf<Int, UpscaleModel>()
+        val staticIds = setOf(
+            "ncnn-realesr-animevideov3-x2",
+            "ncnn-realesr-animevideov3-x3",
+            "ncnn-realesrgan-x4plus",
+            "ncnn-realesr-animevideov3-x4",
+            "lanczos-3",
+            "bicubic",
+            "nearest"
+        )
+        val additionalModels = UpscaleModelRegistry.ALL_MODELS.filter { it.id !in staticIds }
+        if (additionalModels.isNotEmpty()) {
+            val divider = View(activity).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    (1 * activity.resources.displayMetrics.density).toInt()
+                ).apply {
+                    val m = (6 * activity.resources.displayMetrics.density).toInt()
+                    setMargins(0, m, 0, m)
+                }
+                setBackgroundColor(activity.getColor(R.color.vf_surface_stroke))
+            }
+            dialogBinding.rgModelSelector.addView(divider)
+
+            for (m in additionalModels) {
+                val rb = android.widget.RadioButton(activity).apply {
+                    id = View.generateViewId()
+                    val mb = if (m.sizeBytes > 0) String.format(Locale.US, "%.1f MB", m.sizeBytes / (1024.0 * 1024.0)) else ""
+                    val info = if (mb.isNotEmpty()) " (${m.nativeScale}× • $mb)" else " (${m.nativeScale}×)"
+                    text = "${m.name}$info\n${m.description}"
+                    setTextColor(activity.getColor(R.color.vf_text_primary))
+                    textSize = 13f
+                    setPadding(0, (8 * activity.resources.displayMetrics.density).toInt(), 0, (8 * activity.resources.displayMetrics.density).toInt())
+                }
+                dialogBinding.rgModelSelector.addView(rb)
+                dynamicModelMap[rb.id] = m
+                if (explicitModel?.id == m.id) {
+                    rb.isChecked = true
+                }
+            }
+        }
+
         dialogBinding.btnModelSelectorApply.setOnClickListener {
-            val selectedModel: UpscaleModel? = when (dialogBinding.rgModelSelector.checkedRadioButtonId) {
-                R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
-                R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
-                R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4
-                R.id.rbModelLanczos -> UpscaleModelRegistry.LANCZOS
-                R.id.rbModelBicubic -> UpscaleModelRegistry.BICUBIC
-                R.id.rbModelNearest -> UpscaleModelRegistry.NEAREST
+            val selectedModel: UpscaleModel? = when {
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan3x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelLanczos -> UpscaleModelRegistry.LANCZOS
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelBicubic -> UpscaleModelRegistry.BICUBIC
+                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelNearest -> UpscaleModelRegistry.NEAREST
+                dynamicModelMap.containsKey(dialogBinding.rgModelSelector.checkedRadioButtonId) -> dynamicModelMap[dialogBinding.rgModelSelector.checkedRadioButtonId]
                 else -> null // Auto
             }
             explicitModel = selectedModel
@@ -1100,8 +1163,8 @@ class ImageUpscalerController(
                 if (correctedScale != null) {
                     targetScale = correctedScale
                     val correctedButton = when (correctedScale) {
+                        3 -> R.id.btnScale3x
                         4 -> R.id.btnScale4x
-                        8 -> R.id.btnScale8x
                         else -> R.id.btnScale2x
                     }
                     upscalerBinding.toggleGroupUpscalerScale.check(correctedButton)
@@ -1118,6 +1181,33 @@ class ImageUpscalerController(
         }
 
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
+    }
+
+    fun showCustomModelImportInstructionsDialog() {
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Import Custom NCNN Model")
+            .setMessage(
+                "VeilFrame's high-performance neural upscaler is accelerated on GPU using Vulkan and NCNN (RealSR / Real-ESRGAN / Waifu2x). It runs purely native models and does NOT use ONNX/ORT.\n\n" +
+                "Archive Requirements (.zip):\n" +
+                "• Must be a .zip file containing both model files:\n" +
+                "  1. <model_name>.param (Layer & network graph)\n" +
+                "  2. <model_name>.bin (Binary model weights)\n\n" +
+                "Compatible Model Architectures:\n" +
+                "• RealSR (models-DF2K, models-DF2K_JPEG)\n" +
+                "• Real-ESRGAN (x4plus, x4plus-anime, animevideov3, x4v3)\n" +
+                "• Real-ESRNet (x4plus)\n" +
+                "• Waifu2x (cunet, upconv_7)\n" +
+                "• Real-CUGAN (pro, se, nose)\n" +
+                "• SPAN / Compact SR\n\n" +
+                "Scale Factor:\n" +
+                "• Model will be imported at its native scale factor (e.g. 4× or 2×).\n\n" +
+                "Tap 'Select Model (.zip)' to browse your device files."
+            )
+            .setPositiveButton("Select Model (.zip)") { _, _ ->
+                onImportCustomModelRequested?.invoke()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     fun showModelManagerDialog(originView: View? = null) {
@@ -1138,7 +1228,8 @@ class ImageUpscalerController(
         }
 
         dialogBinding.btnImportCustomModel.setOnClickListener {
-            Toast.makeText(activity, "Custom NCNN pair import is not implemented yet.", Toast.LENGTH_LONG).show()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+            showCustomModelImportInstructionsDialog()
         }
 
         fun refreshCards() {
@@ -1149,7 +1240,8 @@ class ImageUpscalerController(
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
             val installedNcnn = UpscaleModelRegistry.NCNN_MODELS.count { repository.isModelInstalled(it) }
-            dialogBinding.tvModelCountSummary.text = "${installedNcnn} of 3 NCNN Models Installed"
+            val customCount = UpscaleModelRegistry.ALL_MODELS.count { it.isImported }
+            dialogBinding.tvModelCountSummary.text = "${installedNcnn} NCNN Models Installed" + (if (customCount > 0) " • $customCount Custom" else "")
 
             // 2x Card
             val is2x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2)
@@ -1163,6 +1255,20 @@ class ImageUpscalerController(
                 dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_text_muted))
                 dialogBinding.btnDownloadModel2x.visibility = View.VISIBLE
                 dialogBinding.btnDeleteModel2x.visibility = View.GONE
+            }
+
+            // 3x Card
+            val is3x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3)
+            if (is3x) {
+                dialogBinding.tvModelStatus3x.text = "Installed"
+                dialogBinding.tvModelStatus3x.setTextColor(activity.getColor(R.color.vf_accent_green))
+                dialogBinding.btnDownloadModel3x.visibility = View.GONE
+                dialogBinding.btnDeleteModel3x.visibility = View.VISIBLE
+            } else {
+                dialogBinding.tvModelStatus3x.text = "Not Installed"
+                dialogBinding.tvModelStatus3x.setTextColor(activity.getColor(R.color.vf_text_muted))
+                dialogBinding.btnDownloadModel3x.visibility = View.VISIBLE
+                dialogBinding.btnDeleteModel3x.visibility = View.GONE
             }
 
             // 4x Card
@@ -1244,6 +1350,58 @@ class ImageUpscalerController(
             dialogDownloadJobs["2x"]?.cancel()
             dialogDownloadJobs.remove("2x")
             repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2.id)
+            refreshCards()
+            updateModelDisplay()
+        }
+
+        // 3x Actions
+        dialogBinding.btnDownloadModel3x.setOnClickListener {
+            dialogBinding.progressModel3x.visibility = View.VISIBLE
+            dialogBinding.btnDownloadModel3x.isEnabled = false
+            dialogDownloadJobs["3x"]?.cancel()
+            val job = scope.launch {
+                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3, object : ModelDownloadManager.DownloadListener {
+                    override fun onProgress(d: Long, t: Long, s: Long) {
+                        scope.launch(Dispatchers.Main) {
+                            if (dialog.isShowing && t > 0) {
+                                dialogBinding.progressModel3x.isIndeterminate = false
+                                dialogBinding.progressModel3x.progress = ((d * 100) / t).toInt()
+                            }
+                        }
+                    }
+                    override fun onVerifying() {
+                        scope.launch(Dispatchers.Main) {
+                            if (dialog.isShowing) dialogBinding.progressModel3x.isIndeterminate = true
+                        }
+                    }
+                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
+                        scope.launch(Dispatchers.Main) {
+                            dialogDownloadJobs.remove("3x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel3x.visibility = View.GONE
+                                refreshCards()
+                            }
+                            updateModelDisplay()
+                        }
+                    }
+                    override fun onError(error: String) {
+                        scope.launch(Dispatchers.Main) {
+                            dialogDownloadJobs.remove("3x")
+                            if (dialog.isShowing) {
+                                dialogBinding.progressModel3x.visibility = View.GONE
+                                dialogBinding.btnDownloadModel3x.isEnabled = true
+                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                })
+            }
+            dialogDownloadJobs["3x"] = job
+        }
+        dialogBinding.btnDeleteModel3x.setOnClickListener {
+            dialogDownloadJobs["3x"]?.cancel()
+            dialogDownloadJobs.remove("3x")
+            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3.id)
             refreshCards()
             updateModelDisplay()
         }

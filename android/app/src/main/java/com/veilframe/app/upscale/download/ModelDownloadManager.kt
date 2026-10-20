@@ -85,8 +85,7 @@ class ModelDownloadManager(
         model: UpscaleModel,
         listener: DownloadListener
     ): Result<File> = withContext(Dispatchers.IO) {
-        // Native NCNN weights are a paired artifact; never pass them through the
-        // legacy single-file model.ort downloader.
+        // Native NCNN weights are a paired artifact.
         if (model.type == ModelType.AI_NCNN) {
             return@withContext NcnnModelPairDownloadManager(repository)
                 .download(model, listener)
@@ -120,8 +119,8 @@ class ModelDownloadManager(
 
         val modelDir = repository.getModelDir(model.id)
         val finalFile = repository.getModelFile(model.id)
-        val partFile = File(modelDir, "model.ort.part")
-        val tempFinal = File(modelDir, "model.ort.tmp")
+        val partFile = File(modelDir, "model.part")
+        val tempFinal = File(modelDir, "model.tmp")
 
         if (partFile.exists()) {
             partFile.delete()
@@ -146,7 +145,7 @@ class ModelDownloadManager(
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
                     instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", "VeilFrame-Android/1.0")
+                    setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent(context))
                 }
                 activeConnection = conn
 
@@ -307,6 +306,10 @@ class ModelDownloadManager(
                 }
                 throw t
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (partFile.exists()) partFile.delete()
+            if (tempFinal.exists()) tempFinal.delete()
+            throw cancelled
         } catch (e: Exception) {
             if (partFile.exists()) {
                 partFile.delete()

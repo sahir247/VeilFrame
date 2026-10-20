@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
  * Downloads and activates an NCNN model as a verified .param/.bin pair.
  *
  * Pair install marker is written last, so an interrupted update cannot expose a
- * half-installed model as usable. The existing ONNX downloader remains separate.
+ * half-installed model as usable.
  */
 class NcnnModelPairDownloadManager(
     private val repository: UpscaleModelRepository
@@ -205,7 +205,7 @@ class NcnnModelPairDownloadManager(
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
                     instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", "VeilFrame-Android/1.0")
+                    setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent())
                 }
                 activeConnection = candidate
                 val status = candidate.responseCode
@@ -230,7 +230,10 @@ class NcnnModelPairDownloadManager(
                     continue
                 }
                 if (status != HttpURLConnection.HTTP_OK) {
-                    throw IllegalStateException("NCNN model server returned HTTP ${status}: ${candidate.responseMessage}")
+                    val msg = candidate.responseMessage
+                    candidate.disconnect()
+                    activeConnection = null
+                    throw IllegalStateException("NCNN model server returned HTTP ${status}: $msg")
                 }
                 if (candidate.contentLengthLong > 0L && candidate.contentLengthLong != expectedSize) {
                     throw SecurityException(

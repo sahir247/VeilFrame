@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * High-level coordinator for image upscaling inference.
- * Unifies Algorithmic models and ONNX neural models behind a single execution pipeline.
+ * Coordinates Algorithmic models and native NCNN neural models behind a unified execution pipeline.
  */
 class UpscaleInferenceEngine(
     private val context: Context,
@@ -169,157 +169,11 @@ class UpscaleInferenceEngine(
                         }
                     }
                 }
-                ModelType.AI_ONNX -> {
-                    val modelFile = repository.getModelFile(model.id)
-                    if (!modelFile.exists() || modelFile.length() == 0L) {
-                        return@withContext Result.failure(
-                            IllegalStateException("Model ${model.name} is not installed on this device.")
-                        )
-                    }
-
-                    // Cryptographic model SHA-256 verification
-                    if (model.sha256.isNotEmpty()) {
-                        val cacheKey = "${modelFile.absolutePath}:${modelFile.length()}:${modelFile.lastModified()}"
-                        val actualSha = verifiedShaCache.getOrPut(cacheKey) {
-                            com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(modelFile)
-                        }
-                        if (!actualSha.equals(model.sha256, ignoreCase = true)) {
-                            verifiedShaCache.remove(cacheKey)
-                            return@withContext Result.failure(
-                                IllegalStateException("Model ${model.name} SHA-256 mismatch: expected ${model.sha256}, actual $actualSha")
-                            )
-                        }
-                    }
-
-                    listener?.onStatus("Initializing neural session...")
-                    listener?.onStage("Loading Model", 0, 1)
-
-                    val session = withContext(Dispatchers.IO) {
-                        // F7: EP ladder (NNAPI -> XNNPACK -> CPU), cached per model.
-                        OnnxSessionManager.createSession(modelFile, context)
-                    }
-
-                    try {
-                        ensureActive()
-                        val processor = AiProcessor(context)
-                        val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
-
-                        // F2/F4: hybrid refinement needs BOTH the AI output and the
-                        // refined output in RAM — refuse honestly up front when the
-                        // dynamic budget cannot hold them (suggests 4x / smaller source).
-                        if (scalePlan.requiresRefinement) {
-                            val budget = processor.inRamOutputBudget()
-                            val aiPixels = srcW.toLong() * model.nativeScale *
-                                (srcH.toLong() * model.nativeScale)
-                            val aiBytes = aiPixels * 4L
-                            val finalBytes = srcW.toLong() * targetScale *
-                                (srcH.toLong() * targetScale) * 4L
-                            // Audit fix: the scalar Lanczos pass peaks at
-                            // intermediate FloatArray(aiW·refine × aiH × 4) plus
-                            // src/dst IntArrays — budget that too, or the job
-                            // burns minutes before dying with OOM.
-                            val lanczosPeak = aiPixels * scalePlan.refinementScale * 16L +
-                                aiPixels * 8L + finalBytes
-                            val heap = Runtime.getRuntime().maxMemory()
-                            if (aiBytes > budget || finalBytes > budget || lanczosPeak > heap * 80 / 100) {
-                                return@withContext Result.failure(
-                                    UpscaleMemoryException(
-                                        "Hybrid ${targetScale}× refinement needs ~${finalBytes / (1024 * 1024)} MB output " +
-                                            "with ~${lanczosPeak / (1024 * 1024)} MB peak working set " +
-                                            "(budget ${budget / (1024 * 1024)} MB, heap ${heap / (1024 * 1024)} MB). " +
-                                            "Use ${model.nativeScale}× or a smaller source."
-                                    )
-                                )
-                            }
-                        }
-
-                        listener?.onStatus("Running ${model.name} via ${OnnxSessionManager.lastBackend}...")
-                        listener?.onStage("Neural Inference", 0, 1)
-
-                        // F4: bounded OOM retry with halved tiles, then typed failure.
-                        var attemptParams = params
-                        var aiOutput: UpscaleOutput? = null
-                        var lastOom: Throwable? = null
-                        var attempt = 0
-                        while (attempt < 2 && aiOutput == null) {
-                            try {
-                                aiOutput = processor.processImage(
-                                    session = session,
-                                    source = source,
-                                    modelName = modelFile.name,
-                                    scaleFactor = model.nativeScale,
-                                    params = attemptParams,
-                                    onProgress = { current, total ->
-                                        val pct = if (total > 0) (current * 100) / total else 0
-                                        listener?.onProgress(current, total, pct)
-                                        listener?.onStage("Neural Inference", current, total)
-                                    },
-                                    onStatus = { msg ->
-                                        listener?.onStatus(msg)
-                                    }
-                                )
-                            } catch (e: Throwable) {
-                                if (e is OutOfMemoryError || e is UpscaleMemoryException) {
-                                    lastOom = e
-                                    attempt++
-                                    if (attemptParams.chunkSize <= 128) break
-                                    attemptParams = attemptParams.copy(
-                                        chunkSize = (attemptParams.chunkSize / 2).coerceAtLeast(128),
-                                        parallelWorkers = 1
-                                    )
-                                    Log.w(TAG, "Inference memory pressure (${e.message}); retrying with chunk=${attemptParams.chunkSize}")
-                                    listener?.onStatus("Memory pressure — retrying with ${attemptParams.chunkSize}px tiles")
-                                    listener?.onStage("Neural Inference (reduced tiles)", 0, 1)
-                                } else {
-                                    throw e
-                                }
-                            }
-                        }
-                        if (aiOutput == null) {
-                            return@withContext Result.failure(
-                                UpscaleMemoryException(
-                                    "Neural inference exceeded this device's memory budget " +
-                                        "(tiles reduced to ${attemptParams.chunkSize}px)",
-                                    lastOom
-                                )
-                            )
-                        }
-
-                        if (scalePlan.requiresRefinement) {
-                            val inMemory = aiOutput as? UpscaleOutput.InMemory
-                                ?: return@withContext Result.failure(
-                                    UpscaleMemoryException("Hybrid refinement requires an in-memory AI pass")
-                                )
-                            val aiBitmap = inMemory.bitmap
-                            listener?.onStatus("Applying Lanczos refinement (${scalePlan.refinementScale}×)...")
-                            listener?.onStage("Refinement", 1, 1)
-                            val refinedW = aiBitmap.width * scalePlan.refinementScale
-                            val refinedH = aiBitmap.height * scalePlan.refinementScale
-                            val refinedBitmap = try {
-                                val ccRefine = coroutineContext
-                                AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH) { ccRefine.ensureActive() }
-                            } catch (oom: OutOfMemoryError) {
-                                return@withContext Result.failure(
-                                    UpscaleMemoryException("Lanczos refinement exceeded the memory budget", oom)
-                                )
-                            }
-                            if (!aiBitmap.isRecycled) {
-                                aiBitmap.recycle()
-                            }
-                            UpscaleOutput.InMemory(refinedBitmap)
-                        } else {
-                            aiOutput
-                        }
-                    } finally {
-                        session.close()
-                    }
-                }
             }
 
             val currentBackend = when (model.type) {
                 ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
                 ModelType.ALGORITHMIC -> "ALGORITHMIC"
-                ModelType.AI_ONNX -> OnnxSessionManager.lastBackend.name
             }
 
             com.veilframe.app.cv.core.CvTelemetry.record(
@@ -341,7 +195,6 @@ class UpscaleInferenceEngine(
             val currentBackend = when (model.type) {
                 ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
                 ModelType.ALGORITHMIC -> "ALGORITHMIC"
-                ModelType.AI_ONNX -> OnnxSessionManager.lastBackend.name
             }
             com.veilframe.app.cv.core.CvTelemetry.record(
                 linkedMapOf(
