@@ -44,11 +44,11 @@ VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sover
 
 | Workspace | Domain | Key Technology | Core Capabilities |
 |---|---|---|---|
-| **1. AI Image Upscaler** | Creative / AI | ONNX Runtime, Band Streamer | Real-ESRGAN, Anime 4B, UltraSharp, FBCNN deblocking, SCUNet denoising, smoothstep tile blending, disk streaming, dynamic memory governor. |
-| **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, EFQRCode 7.0.3 parity, Vector & Animated SVG export, live camera scanning, decode-first validation, 2×2 action grid. |
+| **1. AI Image Upscaler** | Creative / AI | NCNN C++, Vulkan, RealSR | Native Real-ESRGAN & RealSR NCNN super-resolution (2×, 3×, 4×), Vulkan GPU compute, streaming disk sinks, dynamic memory governor, zero ONNX. |
+| **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, EFQRCode 7.0.3 parity, Vector & Animated SVG export, live camera scanning, clean Scanability validation. |
 | **3. Document Scanner** | Vision / Docs | QuadStabilizer, OpenCV 4.14 | Real-time EMA corner stabilization, per-page exposure/contrast/saturation Adjust dialog, perspective correction, progressive PDF export. |
 | **4. Motion Lab** | Video / Vision | DIS & Farnebäck Optical Flow | Pairwise dense optical flow frame synthesis, 2× and 4× FPS interpolation, flat pairwise Mat management, direct MediaStore gallery output. |
-| **5. Background Remover** | Vision / Utility | GrabCut, MediaStore | Interactive foreground extraction, transparent PNG export directly to device gallery (`Pictures/VeilFrame`), persistent Library mirror. |
+| **5. Background Remover** | Vision / Utility | ONNX Runtime, BiRefNet, MediaStore | Neural foreground extraction (IsNet / BiRefNet), transparent PNG export directly to device gallery (`Pictures/VeilFrame`), persistent Library mirror. |
 | **6. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Sub-100ms instant preview via direct URI, universal YUV420p output encoding, timeline range trimming, target size ceilings, rotation, crop. |
 | **7. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing, passport 600×600 preset. |
 | **8. Video Privacy Sanitizer** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate audit. |
@@ -74,21 +74,24 @@ VeilFrame adheres to a permanent architectural invariant:
 
 ## Workspace Deep-Dives
 
-### 1. <img src="docs/images/icons/upscale.svg" width="20" height="20" alt="" /> AI Image Super-Resolution & Restoration
+### 1. <img src="docs/images/icons/upscale.svg" width="20" height="20" alt="" /> AI Image Super-Resolution & Restoration (Native NCNN / RealSR)
 
-VeilFrame provides 100% offline, on-device neural super-resolution and image restoration powered by ONNX Runtime with tiled inference and streaming disk sinks:
+VeilFrame delivers 100% offline, on-device neural super-resolution powered exclusively by **native Tencent NCNN C++ binaries (`realsr_jni.cpp`)** accelerated via Vulkan GPU compute with multi-threaded CPU fallbacks, completely free of ONNX Runtime dependencies:
 
-- **State-of-the-Art Neural Models:**
-  - `Real-ESRGAN x4plus`: High-fidelity universal restoration for blind real-world degradation.
-  - `Real-ESRGAN Anime 4B / 6B`: Edge-preserving anti-aliasing for illustrations and animation frames.
-  - `UltraSharp x4 V2 Lite`: Micro-texture synthesis and sharp high-frequency reconstruction.
-  - `FBCNN Color`: Adjustable JPEG deblocking with dynamic strength conditioning (`[1, 1]` tensor inputs).
-  - `SCUNet Color GAN`: Deep image denoising and color noise neutralization.
-- **Tiled Inference with Seam-Free Blending:**
-  - Configurable tile dimensions (`chunkSize` default 512px) with edge overlap (`overlap` default 32px).
-  - Smoothstep cubic Hermite easing curve ($3x^2 - 2x^3$) for pixel-perfect tile stitching without visible seams.
-  - Disk-backed memory streaming for ultra-high-resolution images (supporting images exceeding physical RAM).
-- **Mathematical Fallbacks:** Native multi-lobe Lanczos-3, Bicubic, and Nearest Neighbor resampling for zero-hallucination mathematical fidelity.
+- **Verified NCNN Neural Models (Pinned SHA-256 & Exact Byte Sizes):**
+  - `Real-ESRGAN x4plus (NCNN)`: 4× high-fidelity universal restoration for blind real-world degradation (33.5 MB, BSD-3-Clause).
+  - `Real-ESRGAN AnimeVideoV3 (NCNN)`: Compact 2×, 3×, and 4× super-resolution models specifically optimized for anime, manga, and animation frames (1.25 MB each, BSD-3-Clause).
+  - `RealSR DF2K 4× (NCNN)`: High-fidelity photo restoration model trained on DIV2K and Flickr2K datasets (33.5 MB, BSD-3-Clause).
+  - `RealSR DF2K JPEG 4× (NCNN)`: Specialized RealSR model with deep JPEG compression artifact suppression and edge recovery (33.5 MB, BSD-3-Clause).
+  - `Real-ESRGAN HFA2k 4× (NCNN)`: High-frequency-aware portrait and texture synthesis model for facial details and fine fabrics (33.5 MB, BSD-3-Clause).
+- **Model-Aware Honest Output Scales (2×, 3×, 4×):**
+  - Dynamic scale toggle UI (`2×`, `3×`, `4×`) that enables only the native scales supported by the active model without artificial multi-pass Lanczos upscaling.
+- **Fail-Closed Download Architecture:**
+  - Strict SHA-256 digest verification, Content-Length checks, redirect domain allowlisting (`.github.com`, `.githubusercontent.com`, `.huggingface.co`, `.hf.co`), and atomic backup/rollback on failure.
+- **Tiled Streaming & Memory Governor:**
+  - Configurable tile dimensions with smoothstep Hermite blending to eliminate tile boundary seams.
+  - Disk-backed memory streaming for ultra-high-resolution images exceeding physical RAM.
+- **Mathematical Fallbacks:** Native multi-lobe Lanczos-3, Bicubic spline, and Nearest Neighbor resampling for zero-hallucination mathematical fidelity.
 
 ---
 
@@ -143,9 +146,11 @@ Zero-trust, on-device video frame interpolation powered by native OpenCV optical
 
 ### 5. <img src="docs/images/icons/crop.svg" width="20" height="20" alt="" /> Background Remover & Segmentation
 
-Interactive foreground extraction with transparent alpha output:
+Foreground extraction and portrait matting with transparent alpha output:
 
-- **GrabCut Classical Segmentation:** Fast 640px bounding box matting with morphological mask refinement, hole filling, edge feathering, and alpha compositing.
+- **Neural & Classical Segmentation Modes:**
+  - **Neural Models (ONNX Runtime):** State-of-the-art salient object detection using `BiRefNet-general` (tiny epoch 232) and `ISNet-general` with floating-point mask alpha compositing.
+  - **GrabCut Classical Segmentation:** Fast bounding-box guided matting with morphological refinement, hole filling, and edge feathering.
 - **Direct Gallery & Library Sync:** Direct export to device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, and persistent mirror to app storage for immediate Library visibility.
 
 ---

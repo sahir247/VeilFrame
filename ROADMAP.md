@@ -28,8 +28,10 @@
   - Parity normalization (`effectiveDesignForMode()`), pure XML Vector SVG and Animated SVG export, on-device decode-first fallback, and 2×2 responsive action grid.
 - **Document Scanner QuadStabilizer & Adjust Dialog ([ADR 0008](docs/adr/0008-insets-contract-and-camera-stabilization.md))**:
   - Real-time EMA corner smoothing (α=0.4) with 48px tolerance, and per-page interactive Adjust dialog (`ColorEngine`).
-- **AI Image Upscaler Streaming & Zero-QNN Governance ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
-  - Disk-backed band streaming (`StreamingPngWriter`), live `MemAvailable` memory governor, benchmark-gated EP selection, and quantization pipeline.
+- **AI Image Upscaler Native NCNN / RealSR Engine & Model-Aware UI ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
+  - Native Tencent NCNN Vulkan C++ engine (`realsr_jni.cpp`) with multi-threaded CPU fallback and zero ONNX runtime in upscale.
+  - Pinned verified models (`Real-ESRGAN x4plus`, `AnimeVideoV3` 2×/3×/4×, `RealSR DF2K 4×`, `RealSR DF2K JPEG 4×`, `Real-ESRGAN HFA2k 4×`).
+  - Model-aware honest scale factors (2×, 3×, 4×), fail-closed downloads, and SHA-256 verification.
 - **AI Context Bundler Depth Bounds & Markdown Multi-Format Export**:
   - Explicit `--max-depth` controls bounding recursive directory traversal.
   - Unified "Save As" menu (MD/PDF/DOCX) and light/dark PDF theming.

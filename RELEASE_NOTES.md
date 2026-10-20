@@ -44,22 +44,31 @@
    - **CameraX Lifecycle Discipline:** Single-flight capture lock (`isCapturing`) and OOM-guarded bitmap decoding preventing camera executor race conditions.
    - **Progressive Export Sheet:** Redesigned document export bottom sheet with progressive disclosure ("More options ⇄ Fewer options").
 
-8. **AI Image Upscaler Streaming & Memory Governor ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
-   - **Streaming Band Processing:** `StreamingPngWriter` and `UpscaleForegroundService` stream output bands directly to disk, enabling massive multi-megapixel upscaling without OOM crashes.
-   - **Dynamic Memory Governor:** Allocates tile sizes and execution paths based on live `MemAvailable`, dynamically tuning performance across 6–16 GB devices.
-   - **Zero-QNN Standard Inference:** Stable NNAPI and multi-threaded CPU / XNNPACK adaptive inference with synthetic benchmark gating.
-   - **Mathematical Resampling:** Precomputed Lanczos-3 weight kernels and bicubic fallbacks for zero-hallucination processing.
-   - **Quantized Model Pipeline:** Production tool (`tools/model_pipeline/quantize_upscale_models.py`) with PSNR validation gates (FP16 $\ge$ 55 dB, INT8 $\ge$ 35 dB).
+8. **AI Image Upscaler Native NCNN / RealSR Architecture & Model-Aware UI ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
+   - **Native NCNN Vulkan Engine:** Powered exclusively by native C++ Tencent NCNN binaries (`realsr_jni.cpp`) with Vulkan GPU compute acceleration and multi-threaded CPU fallback; zero ONNX runtime overhead in upscaling.
+   - **Verified Pinned Models:** Pinned SHA-256 digests and exact byte sizes for `Real-ESRGAN x4plus`, `AnimeVideoV3` (2×, 3×, 4×), `RealSR DF2K 4×`, `RealSR DF2K JPEG 4×`, and `Real-ESRGAN HFA2k 4×`.
+   - **Model-Aware Honest Scale Controls:** Dynamically binds UI toggles (`2×`, `3×`, `4×`) to legitimate model capabilities, eliminating artificial multi-pass 6× and 8× scalers.
+   - **Harden Download & Rollback:** Fail-closed HTTP 200 verification, approved origin policy enforcement, Content-Length checks, and atomic file commitment with rollback.
+   - **Mathematical Resampling:** Precomputed Lanczos-3 weight kernels, Bicubic spline, and Nearest Neighbor fallbacks for zero-hallucination processing.
 
-9. **Background Remover Gallery Export**:
-   - **Direct MediaStore Save:** Saves transparent PNG exports directly to the device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, fixing previous SAF handoff failures.
-   - **Persistent Mirror:** Synchronously mirrors exports to `filesDir/exports` for immediate Library visibility.
+9. **Native Standard Navigation & System Insets**:
+   - **Native Transitions:** Replaced legacy manual coordinate translation controllers with native Android `TransitionManager`, `AutoTransition`, and standard window crossfades.
+   - **Android 15 Predictive Back:** Full native back-gesture support without card origin leaks or activity context retention.
+   - **Centralized Versioning:** Integrated `AppVersionProvider` sourcing dynamically from `BuildConfig.VERSION_NAME` (`v2.2.9`).
 
-10. **Cryptographic Provenance & Neutral Audit State**:
+10. **Production ProGuard & R8 Minification**:
+    - **Dead Code Stripping:** Removed universal keep rules to enable R8 tree-shaking, method inlining, and class minification.
+    - **Granular Keep Surface:** Dedicated keep rules for JNI native boundaries (`NcnnNative`), OpenCV, TensorFlow Lite, ONNX Runtime (Rembg), ZXing, ML Kit, FFmpegKit, Media3, and layout custom views.
+
+11. **Background Remover Gallery Export**:
+    - **Direct MediaStore Save:** Saves transparent PNG exports directly to the device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, fixing previous SAF handoff failures.
+    - **Persistent Mirror:** Synchronously mirrors exports to `filesDir/exports` for immediate Library visibility.
+
+12. **Cryptographic Provenance & Neutral Audit State**:
     - **Neutral Initial State:** Clean initial verification dashboard without pre-populated failure markers.
     - **Ed25519-SHA512 Verification Card:** Instant validation of RFC 8785 JCS canonical JSON manifests and SHA-256 bitstream digests.
 
-11. **OpenCV 4.14.0 SDK & Computer Vision Reliability**:
+13. **OpenCV 4.14.0 SDK & Computer Vision Reliability**:
     - **In-Tree Custom SDK:** Complete custom OpenCV 4.14.0 SDK with WeChatQRCode and native ABIs (`arm64-v8a`, `x86_64`).
     - **Phase B6 Cancellation Checkpoints:** 34 granular cancellation checkpoints across GrabCut, quality metrics, contour detection, and Lanczos loops for instant abort responsiveness.
     - **Unified Library Synchronization:** Merges MediaStore query results (`DATA LIKE '%/VeilFrame/%'`) with app-internal directory exports.
