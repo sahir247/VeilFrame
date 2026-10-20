@@ -146,7 +146,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: connected-android-test-reports
-          path: android/app/build/reports/androidTests/
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
 
       - name: Upload Custom OpenCV SDK Artifacts
         if: always()
@@ -160,3 +163,4 @@ jobs:
             android/opencv-sdk/src/main/.opencv-sdk-complete
             android/opencv-sdk/build/outputs/aar/
           include-hidden-files: true
+          if-no-files-found: ignore
