@@ -361,7 +361,27 @@ jobs:
           fi
 
           echo "Waiting for verified OpenCV SDK build $RUN_ID at $ARTIFACT_SHA..."
-          gh run watch "$RUN_ID" --repo "${{ github.repository }}" --exit-status
+          STATUS=""
+          CONCLUSION=""
+          for i in $(seq 1 90); do
+            RUN_INFO=$(gh run view "$RUN_ID" --repo "${{ github.repository }}" --json status,conclusion 2>/dev/null || true)
+            STATUS=$(printf '%s' "$RUN_INFO" | jq -r '.status // empty' 2>/dev/null || true)
+            CONCLUSION=$(printf '%s' "$RUN_INFO" | jq -r '.conclusion // empty' 2>/dev/null || true)
+            echo "[$i/90] OpenCV SDK build $RUN_ID status: ${STATUS:-unknown} (conclusion: ${CONCLUSION:-none})"
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" != "success" ]; then
+                echo "::error::OpenCV SDK build $RUN_ID finished with conclusion: $CONCLUSION"
+                exit 1
+              fi
+              break
+            fi
+            sleep 30
+          done
+
+          if [ "$STATUS" != "completed" ] || [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Timed out or failed waiting for OpenCV SDK build $RUN_ID."
+            exit 1
+          fi
 
           mkdir -p /tmp/opencv_artifact
           gh run download "$RUN_ID" --repo "${{ github.repository }}" \
