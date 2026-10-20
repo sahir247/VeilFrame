@@ -346,14 +346,14 @@ static bool initialize_callback_method(
 ) {
     jclass local_class = env->FindClass(class_name);
     if (!local_class) {
-        // This API reports initialization errors by status code; do not leave a
-        // pending exception that would make the status contract ambiguous.
+        LOGE("initialize_callback_method: FindClass failed for %s", class_name);
         if (env->ExceptionCheck()) env->ExceptionClear();
         return false;
     }
 
     *global_class = static_cast<jclass>(env->NewGlobalRef(local_class));
     if (!*global_class) {
+        LOGE("initialize_callback_method: NewGlobalRef failed for %s", class_name);
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteLocalRef(local_class);
         return false;
@@ -362,6 +362,7 @@ static bool initialize_callback_method(
     *method_id = env->GetMethodID(local_class, method_name, signature);
     env->DeleteLocalRef(local_class);
     if (!*method_id) {
+        LOGE("initialize_callback_method: GetMethodID failed for %s.%s %s", class_name, method_name, signature);
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteGlobalRef(*global_class);
         *global_class = nullptr;
@@ -407,33 +408,50 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
     bool gpu_instance_created = false;
     int error_code = 0;
     try {
-        ncnn::create_gpu_instance();
-        gpu_instance_created = true;
+        try {
+            ncnn::create_gpu_instance();
+            gpu_instance_created = true;
+        } catch (const std::exception& eg) {
+            LOGW("ncnn::create_gpu_instance failed: %s; falling back to CPU", eg.what());
+        } catch (...) {
+            LOGW("ncnn::create_gpu_instance failed with unknown exception; falling back to CPU");
+        }
 
         if (!initialize_callback_method(
                 env,
                 "com/veilframe/app/upscale/inference/NcnnRowCallback",
                 "onRow", "(Ljava/nio/ByteBuffer;III)I",
                 &g_row_callback_class, &g_on_row_method)) {
+            LOGE("nativeGlobalInit: failed to initialize NcnnRowCallback.onRow");
             error_code = -1;
         } else if (!initialize_callback_method(
                 env,
                 "com/veilframe/app/upscale/inference/NcnnProgressCallback",
                 "onProgress", "(III)V",
                 &g_progress_callback_class, &g_on_progress_method)) {
+            LOGE("nativeGlobalInit: failed to initialize NcnnProgressCallback.onProgress");
             error_code = -2;
         } else if (!initialize_callback_method(
                 env,
                 "com/veilframe/app/upscale/inference/NcnnStripCallback",
                 "onFetchStrip", "(Ljava/nio/ByteBuffer;II)I",
                 &g_strip_callback_class, &g_on_strip_method)) {
+            LOGE("nativeGlobalInit: failed to initialize NcnnStripCallback.onFetchStrip");
             error_code = -3;
         } else if (!initialize_callback_method(
                 env,
                 "java/nio/Buffer",
                 "clear", "()Ljava/nio/Buffer;",
                 &g_buffer_class, &g_buffer_clear_method)) {
-            error_code = -4;
+            // Covariant fallback: on Android ART bytecode, ByteBuffer overrides clear() returning ByteBuffer
+            if (!initialize_callback_method(
+                    env,
+                    "java/nio/ByteBuffer",
+                    "clear", "()Ljava/nio/ByteBuffer;",
+                    &g_buffer_class, &g_buffer_clear_method)) {
+                LOGE("nativeGlobalInit: failed to initialize Buffer.clear");
+                error_code = -4;
+            }
         }
     } catch (const std::bad_alloc&) {
         LOGE("nativeGlobalInit: out of memory");

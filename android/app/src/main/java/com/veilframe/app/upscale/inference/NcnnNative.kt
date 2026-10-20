@@ -26,7 +26,14 @@ object NcnnNative {
 
     private val libraryLoaded: Boolean = try {
         System.loadLibrary("veilframe_ncnn")
-        nativeGlobalInit() == 0
+        val initResult = nativeGlobalInit()
+        if (initResult == 0) {
+            Log.i(TAG, "Native NCNN library loaded and initialized successfully (code 0).")
+            true
+        } else {
+            Log.e(TAG, "nativeGlobalInit failed with code $initResult.")
+            false
+        }
     } catch (t: Throwable) {
         Log.w(TAG, "Native NCNN library not loaded (expected on host JVM unit tests): ${t.message}")
         false

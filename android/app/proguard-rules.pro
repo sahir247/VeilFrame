@@ -8,8 +8,9 @@
     native <methods>;
 }
 
-# Preserve NCNN RealSR / Real-ESRGAN JNI bridge
--keep class com.veilframe.app.upscale.inference.NcnnNative { *; }
+# Preserve NCNN RealSR / Real-ESRGAN JNI bridge and callbacks
+-keep class com.veilframe.app.upscale.inference.** { *; }
+-keep interface com.veilframe.app.upscale.inference.** { *; }
 
 # =========================================================================
 # Computer Vision & Machine Learning Engines
