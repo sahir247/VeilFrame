@@ -209,7 +209,7 @@
             htmlContent = text;
           }
           // Restore or clean math placeholders in TOC title
-          let cleanText = text.replace(/<[^>]*>/g, '').trim();
+          let cleanText = extractPlainText(text);
           cleanText = cleanText.replace(/%%%KATEX_(?:DISPLAY|INLINE)_(\d+)%%%/g, function(m, idx) {
             const item = mathPlaceholders[parseInt(idx, 10)];
             return item ? item.math : '';
@@ -684,6 +684,21 @@
         current = after;
       }
     });
+  }
+
+  function extractPlainText(htmlOrText) {
+    if (!htmlOrText) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlOrText, 'text/html');
+      const dangerousTags = doc.querySelectorAll('script, style, noscript');
+      for (let i = 0; i < dangerousTags.length; i++) {
+        dangerousTags[i].remove();
+      }
+      return (doc.body.textContent || '').trim();
+    } catch (e) {
+      return '';
+    }
   }
 
   function escapeHtml(str) {
