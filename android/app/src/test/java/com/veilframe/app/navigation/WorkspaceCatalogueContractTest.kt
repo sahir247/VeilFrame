@@ -78,7 +78,19 @@ class WorkspaceCatalogueContractTest {
         val targetFile = if (actFile.exists()) actFile else altActFile
         assertTrue("MainActivity.kt must exist", targetFile.exists())
 
+        val coordinatorFile = File("src/main/java/com/veilframe/app/ui/tools/ToolsCatalogueCoordinator.kt")
+        val altCoordinatorFile = File("android/app/src/main/java/com/veilframe/app/ui/tools/ToolsCatalogueCoordinator.kt")
+        val coordFile = if (coordinatorFile.exists()) coordinatorFile else altCoordinatorFile
+        assertTrue("ToolsCatalogueCoordinator.kt must exist", coordFile.exists())
+
         val actContent = targetFile.readText()
+        val coordContent = coordFile.readText()
+
+        assertTrue(
+            "MainActivity must initialize ToolsCatalogueCoordinator",
+            actContent.contains("toolsCatalogueCoordinator = ToolsCatalogueCoordinator") &&
+                actContent.contains("toolsCatalogueCoordinator.init()")
+        )
 
         val expectedCards = listOf(
             "cardToolImageStudio",
@@ -99,12 +111,12 @@ class WorkspaceCatalogueContractTest {
 
         expectedCards.forEach { cardId ->
             assertTrue(
-                "MainActivity.kt must wire click listener for $cardId",
-                actContent.contains("layoutToolsCatalogue.$cardId.setOnClickListener")
+                "ToolsCatalogueCoordinator must wire click listener for $cardId",
+                coordContent.contains("binding.$cardId") && coordContent.contains("card.setOnClickListener")
             )
             assertTrue(
-                "MainActivity.kt must include $cardId in search filter map",
-                actContent.contains("layoutToolsCatalogue.$cardId")
+                "ToolsCatalogueCoordinator must include $cardId in search filter map",
+                coordContent.contains("binding.$cardId")
             )
         }
     }
@@ -189,10 +201,15 @@ class WorkspaceCatalogueContractTest {
         val targetFile = if (actFile.exists()) actFile else altActFile
         assertTrue("MainActivity.kt must exist", targetFile.exists())
 
-        val actContent = targetFile.readText()
+        val coordinatorFile = File("src/main/java/com/veilframe/app/ui/tools/ToolsCatalogueCoordinator.kt")
+        val altCoordinatorFile = File("android/app/src/main/java/com/veilframe/app/ui/tools/ToolsCatalogueCoordinator.kt")
+        val coordFile = if (coordinatorFile.exists()) coordinatorFile else altCoordinatorFile
+        assertTrue("ToolsCatalogueCoordinator.kt must exist", coordFile.exists())
+
+        val combinedContent = targetFile.readText() + "\n" + coordFile.readText()
         assertTrue(
-            "MainActivity.kt must bind dynamic TalkBack contentDescription for catalogue cards",
-            actContent.contains("contentDescription = \"\${route.title}, \${route.status.label}. \${route.description}\"")
+            "ToolsCatalogueCoordinator must bind dynamic TalkBack contentDescription for catalogue cards",
+            combinedContent.contains("contentDescription = \"\${route.title}, \${route.status.label}. \${route.description}\"")
         )
     }
 

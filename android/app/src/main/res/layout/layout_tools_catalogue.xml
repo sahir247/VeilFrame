@@ -50,10 +50,10 @@
             app:boxCornerRadiusBottomStart="16dp"
             app:boxCornerRadiusTopEnd="16dp"
             app:boxCornerRadiusTopStart="16dp"
-            app:boxStrokeColor="@color/vf_primary"
+            app:boxStrokeColor="?attr/colorPrimary"
             app:endIconMode="clear_text"
             app:startIconDrawable="@drawable/ic_search"
-            app:startIconTint="@color/vf_primary">
+            app:startIconTint="?attr/colorPrimary">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etToolSearch"
@@ -217,25 +217,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Image Studio"
                                 android:src="@drawable/ic_tab_image"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -293,25 +280,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Video Studio"
                                 android:src="@drawable/ic_tab_video"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -379,25 +353,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="QR Code Studio"
                                 android:src="@drawable/ic_tool_qr"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -455,25 +416,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Document Scanner"
                                 android:src="@drawable/ic_camera"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Beta"
-                                android:textColor="@color/vf_accent_amber"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -541,25 +489,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Background Remover"
                                 android:src="@drawable/ic_crop"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Alpha"
-                                android:textColor="@color/vf_accent_amber"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -617,25 +552,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="AI Image Upscaler"
                                 android:src="@drawable/ic_resize"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -718,25 +640,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Image Cleaner"
                                 android:src="@drawable/ic_exif"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -794,25 +703,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Video Cleaner"
                                 android:src="@drawable/ic_action_clear"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -895,7 +791,7 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Image Quality"
                                 android:src="@drawable/ic_visibility"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
@@ -971,25 +867,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Folder Scanner"
                                 android:src="@drawable/ic_tab_folder"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1072,25 +955,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="AI Context Bundler"
                                 android:src="@drawable/ic_tab_bundle"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1148,25 +1018,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Markdown Studio"
                                 android:src="@drawable/ic_toc"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1233,25 +1090,12 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Provenance &amp; Verify"
                                 android:src="@drawable/ic_check_circle"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1309,7 +1153,7 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Motion Lab"
                                 android:src="@drawable/ic_speed"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"

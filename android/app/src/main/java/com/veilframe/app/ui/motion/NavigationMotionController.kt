@@ -1,41 +1,36 @@
 package com.veilframe.app.ui.motion
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
 import android.content.Context
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
+import androidx.transition.Fade
+import androidx.transition.Slide
+import androidx.transition.Transition
+import androidx.transition.TransitionListenerAdapter
+import androidx.transition.TransitionManager
+import androidx.transition.TransitionSet
 import kotlin.math.abs
 
 /**
- * Orchestrates top-level screen and overlay transitions adhering to Material 3 Expressive motion physics.
+ * Orchestrates top-level screen and overlay transitions using native standard Android transitions.
  *
  * Capabilities:
- * 1. Home <-> Tool screen transitions (directional slide + crossfade).
- * 2. Dedicated slide-over Settings overlay (slides from right edge, left-to-right swipe-to-dismiss).
+ * 1. Home <-> Tool screen transitions (native slide + fade transitions via TransitionManager).
+ * 2. Dedicated slide-over Settings overlay (native slide transition + swipe-to-dismiss gesture).
  * 3. Reduced motion accessibility check for all transitions.
  */
 object NavigationMotionController {
 
-    private const val SLIDE_OFFSET_DP = 28f
     private const val SETTINGS_DURATION_MS = 280L
 
     /**
-     * Hero-polish: the card that triggered a workspace open, consumed by the
-     * next [showTool] as the container-transform origin. Set by click sites
-     * right before navigation; always cleared on consume and on [hideTool],
-     * so a stale value can never fire on an unrelated transition.
-     */
-    @Volatile
-    var nextOriginView: View? = null
-
-    /**
-     * Navigates from Home screen to a Tool container with buttery smooth M3 expressive transition.
-     * Keeps home chrome (toolbarHome and bottomNav) stable and gracefully fades them out
-     * without instantaneous height collapse or shutter jump.
+     * Navigates from Home screen to a Tool container using standard Android Transitions.
      */
     fun showTool(
         homeView: View,
@@ -45,13 +40,9 @@ object NavigationMotionController {
         onComplete: (() -> Unit)? = null
     ) {
         val context = toolView.context
-        val origin = nextOriginView
-        nextOriginView = null
-        if (origin != null) {
-            VfSprings.cancel(origin)
-        }
+        val parent = (homeView.parent as? ViewGroup) ?: (toolView.parent as? ViewGroup)
 
-        if (ExpressiveMotion.isReducedMotion(context)) {
+        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
             homeView.isVisible = false
             toolbarHome?.isVisible = false
             bottomNav?.isVisible = false
@@ -63,123 +54,40 @@ object NavigationMotionController {
             return
         }
 
-        if (origin != null && tryContainerTransform(homeView, toolView, origin, toolbarHome, bottomNav, onComplete)) {
-            return
+        // Reset manual transforms
+        homeView.animate().cancel()
+        toolView.animate().cancel()
+        toolbarHome?.animate()?.cancel()
+        bottomNav?.animate()?.cancel()
+        homeView.translationX = 0f
+        toolView.translationX = 0f
+        toolView.translationZ = 0f
+
+        val transition = TransitionSet().apply {
+            ordering = TransitionSet.ORDERING_TOGETHER
+            addTransition(Fade(Fade.OUT).addTarget(homeView))
+            toolbarHome?.let { addTransition(Fade(Fade.OUT).addTarget(it)) }
+            bottomNav?.let { addTransition(Slide(Gravity.BOTTOM).addTarget(it)) }
+            addTransition(Fade(Fade.IN).addTarget(toolView))
+            addTransition(Slide(Gravity.END).addTarget(toolView))
+            duration = 240L
+            interpolator = FastOutSlowInInterpolator()
+            addListener(object : TransitionListenerAdapter() {
+                override fun onTransitionEnd(transition: Transition) {
+                    onComplete?.invoke()
+                }
+            })
         }
 
-        val density = context.resources.displayMetrics.density
-        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
-        val slideOffset = (screenWidth * 0.28f).coerceIn(80f * density, 180f * density)
-
-        // Elevate incoming tool view above home chrome during the transition
-        toolView.translationZ = 16f * density
+        TransitionManager.beginDelayedTransition(parent, transition)
+        homeView.isVisible = false
+        toolbarHome?.isVisible = false
+        bottomNav?.isVisible = false
         toolView.isVisible = true
-        toolView.alpha = 0f
-        toolView.translationX = slideOffset
-
-        homeView.animate().cancel()
-        homeView.animate().setListener(null)
-        toolView.animate().cancel()
-        toolView.animate().setListener(null)
-        toolbarHome?.animate()?.cancel()
-        toolbarHome?.animate()?.setListener(null)
-        bottomNav?.animate()?.cancel()
-        bottomNav?.animate()?.setListener(null)
-
-        // Home view glides slightly left and fades
-        homeView.animate()
-            .alpha(0f)
-            .translationX(-slideOffset * 0.35f)
-            .setDuration(MotionSpec.NORMAL)
-            .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            .setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        homeView.isVisible = false
-                        homeView.translationX = 0f
-                        homeView.alpha = 1f
-                    }
-                }
-            })
-            .start()
-
-        // Home chrome fades out gracefully without layout jump
-        toolbarHome?.animate()
-            ?.alpha(0f)
-            ?.setDuration(180L)
-            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            ?.setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        toolbarHome.isVisible = false
-                        toolbarHome.alpha = 1f
-                    }
-                }
-            })
-            ?.start()
-
-        bottomNav?.animate()
-            ?.alpha(0f)
-            ?.translationY(bottomNav.height.toFloat().takeIf { it > 0 } ?: (80f * density))
-            ?.setDuration(200L)
-            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            ?.setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        bottomNav.isVisible = false
-                        bottomNav.alpha = 1f
-                        bottomNav.translationY = 0f
-                    }
-                }
-            })
-            ?.start()
-
-        // Tool slides in smoothly from right and settles into place
-        toolView.animate()
-            .alpha(1f)
-            .translationX(0f)
-            .setDuration(MotionSpec.NORMAL)
-            .setInterpolator(MotionSpec.EMPHASIZED)
-            .setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        toolView.translationZ = 0f
-                        onComplete?.invoke()
-                    }
-                }
-            })
-            .start()
     }
 
     /**
-     * Material container transform: the clicked card morphs into the workspace
-     * surface (theme easing/duration, scrim, corner interpolation handled by
-     * the Material library). Returns false on ANY problem so showTool falls
-     * back to the classic directional slide.
-     */
-    private fun tryContainerTransform(
-        homeView: View,
-        toolView: View,
-        origin: View,
-        toolbarHome: View? = null,
-        bottomNav: View? = null,
-        onComplete: (() -> Unit)?
-    ): Boolean {
-        // Disabled in favor of buttery-smooth, hardware-accelerated slide/crossfade
-        return false
-    }
-
-    /**
-     * Navigates from a Tool container back to Home with buttery smooth M3 expressive transition.
-     * Restores home chrome without sudden jumping.
+     * Navigates from a Tool container back to Home using standard Android Transitions.
      */
     fun hideTool(
         homeView: View,
@@ -188,9 +96,10 @@ object NavigationMotionController {
         bottomNav: View? = null,
         onComplete: (() -> Unit)? = null
     ) {
-        nextOriginView = null
         val context = homeView.context
-        if (ExpressiveMotion.isReducedMotion(context)) {
+        val parent = (homeView.parent as? ViewGroup) ?: (toolView.parent as? ViewGroup)
+
+        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
             toolView.isVisible = false
             homeView.isVisible = true
             homeView.alpha = 1f
@@ -204,117 +113,41 @@ object NavigationMotionController {
             return
         }
 
-        val density = context.resources.displayMetrics.density
-        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
-        val slideOffset = (screenWidth * 0.28f).coerceIn(80f * density, 180f * density)
-
-        // Prepare home view and chrome in advance without layout snap
-        homeView.isVisible = true
-        homeView.alpha = 0f
-        homeView.translationX = -slideOffset * 0.35f
-
-        if (toolbarHome != null) {
-            toolbarHome.isVisible = true
-            toolbarHome.alpha = 0f
-        }
-
-        if (bottomNav != null) {
-            bottomNav.isVisible = true
-            bottomNav.alpha = 0f
-            bottomNav.translationY = bottomNav.height.toFloat().takeIf { it > 0 } ?: (80f * density)
-        }
-
-        toolView.translationZ = 16f * density
-
         homeView.animate().cancel()
-        homeView.animate().setListener(null)
         toolView.animate().cancel()
-        toolView.animate().setListener(null)
         toolbarHome?.animate()?.cancel()
-        toolbarHome?.animate()?.setListener(null)
         bottomNav?.animate()?.cancel()
-        bottomNav?.animate()?.setListener(null)
+        homeView.translationX = 0f
+        toolView.translationX = 0f
+        toolView.translationZ = 0f
 
-        // Tool slides out gracefully to the right
-        toolView.animate()
-            .alpha(0f)
-            .translationX(slideOffset)
-            .setDuration(240L)
-            .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            .setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        toolView.isVisible = false
-                        toolView.translationX = 0f
-                        toolView.translationZ = 0f
-                        toolView.alpha = 1f
-                    }
+        val transition = TransitionSet().apply {
+            ordering = TransitionSet.ORDERING_TOGETHER
+            addTransition(Fade(Fade.OUT).addTarget(toolView))
+            addTransition(Slide(Gravity.END).addTarget(toolView))
+            addTransition(Fade(Fade.IN).addTarget(homeView))
+            toolbarHome?.let { addTransition(Fade(Fade.IN).addTarget(it)) }
+            bottomNav?.let { addTransition(Slide(Gravity.BOTTOM).addTarget(it)) }
+            duration = 200L
+            interpolator = FastOutSlowInInterpolator()
+            addListener(object : TransitionListenerAdapter() {
+                override fun onTransitionEnd(transition: Transition) {
+                    toolbarHome?.isVisible = true
+                    bottomNav?.isVisible = true
+                    onComplete?.invoke()
                 }
             })
-            .start()
+        }
 
-        // Home smoothly returns from left
-        homeView.animate()
-            .alpha(1f)
-            .translationX(0f)
-            .setDuration(MotionSpec.NORMAL)
-            .setInterpolator(MotionSpec.EMPHASIZED)
-            .setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        toolbarHome?.isVisible = true
-                        toolbarHome?.alpha = 1f
-                        bottomNav?.isVisible = true
-                        bottomNav?.alpha = 1f
-                        bottomNav?.translationY = 0f
-                        onComplete?.invoke()
-                    }
-                }
-            })
-            .start()
-
-        // Home chrome returns smoothly into place
-        toolbarHome?.animate()
-            ?.alpha(1f)
-            ?.setDuration(240L)
-            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            ?.setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        toolbarHome.isVisible = true
-                        toolbarHome.alpha = 1f
-                    }
-                }
-            })
-            ?.start()
-
-        bottomNav?.animate()
-            ?.alpha(1f)
-            ?.translationY(0f)
-            ?.setDuration(MotionSpec.NORMAL)
-            ?.setInterpolator(MotionSpec.EMPHASIZED)
-            ?.setListener(object : AnimatorListenerAdapter() {
-                private var isCancelled = false
-                override fun onAnimationCancel(animation: Animator) { isCancelled = true }
-                override fun onAnimationEnd(animation: Animator) {
-                    if (!isCancelled) {
-                        bottomNav.isVisible = true
-                        bottomNav.alpha = 1f
-                        bottomNav.translationY = 0f
-                    }
-                }
-            })
-            ?.start()
+        TransitionManager.beginDelayedTransition(parent, transition)
+        toolView.isVisible = false
+        homeView.isVisible = true
+        toolbarHome?.isVisible = true
+        bottomNav?.isVisible = true
     }
 
     /**
-     * Slides in the Settings overlay from the right edge.
+     * Slides in the Settings overlay using native standard Android transition.
      */
     fun openSettings(
         settingsContainer: View,
@@ -322,9 +155,9 @@ object NavigationMotionController {
         onComplete: (() -> Unit)? = null
     ) {
         val context = settingsContainer.context
-        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
+        val parent = settingsContainer.parent as? ViewGroup
 
-        if (ExpressiveMotion.isReducedMotion(context)) {
+        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
             scrimView?.isVisible = true
             scrimView?.alpha = 0.6f
             settingsContainer.isVisible = true
@@ -333,31 +166,27 @@ object NavigationMotionController {
             return
         }
 
-        scrimView?.isVisible = true
-        scrimView?.alpha = 0f
-        scrimView?.animate()
-            ?.alpha(0.6f)
-            ?.setDuration(SETTINGS_DURATION_MS)
-            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            ?.start()
-
-        settingsContainer.isVisible = true
-        settingsContainer.translationX = screenWidth
-        settingsContainer.animate().cancel()
-        settingsContainer.animate()
-            .translationX(0f)
-            .setDuration(SETTINGS_DURATION_MS)
-            .setInterpolator(MotionSpec.EMPHASIZED)
-            .setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
+        val transition = TransitionSet().apply {
+            ordering = TransitionSet.ORDERING_TOGETHER
+            scrimView?.let { addTransition(Fade(Fade.IN).addTarget(it)) }
+            addTransition(Slide(Gravity.END).addTarget(settingsContainer))
+            duration = SETTINGS_DURATION_MS
+            interpolator = FastOutSlowInInterpolator()
+            addListener(object : TransitionListenerAdapter() {
+                override fun onTransitionEnd(transition: Transition) {
                     onComplete?.invoke()
                 }
             })
-            .start()
+        }
+
+        TransitionManager.beginDelayedTransition(parent, transition)
+        scrimView?.isVisible = true
+        settingsContainer.isVisible = true
+        settingsContainer.translationX = 0f
     }
 
     /**
-     * Slides out the Settings overlay to the right edge.
+     * Slides out the Settings overlay using native standard Android transition.
      */
     fun closeSettings(
         settingsContainer: View,
@@ -365,39 +194,33 @@ object NavigationMotionController {
         onComplete: (() -> Unit)? = null
     ) {
         val context = settingsContainer.context
-        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
+        val parent = settingsContainer.parent as? ViewGroup
 
-        if (ExpressiveMotion.isReducedMotion(context)) {
+        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
             settingsContainer.isVisible = false
             scrimView?.isVisible = false
+            settingsContainer.translationX = 0f
             onComplete?.invoke()
             return
         }
 
-        scrimView?.animate()
-            ?.alpha(0f)
-            ?.setDuration(SETTINGS_DURATION_MS)
-            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            ?.setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    scrimView.isVisible = false
-                }
-            })
-            ?.start()
-
-        settingsContainer.animate().cancel()
-        settingsContainer.animate()
-            .translationX(screenWidth)
-            .setDuration(SETTINGS_DURATION_MS)
-            .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
-            .setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    settingsContainer.isVisible = false
+        val transition = TransitionSet().apply {
+            ordering = TransitionSet.ORDERING_TOGETHER
+            scrimView?.let { addTransition(Fade(Fade.OUT).addTarget(it)) }
+            addTransition(Slide(Gravity.END).addTarget(settingsContainer))
+            duration = SETTINGS_DURATION_MS
+            interpolator = FastOutSlowInInterpolator()
+            addListener(object : TransitionListenerAdapter() {
+                override fun onTransitionEnd(transition: Transition) {
                     settingsContainer.translationX = 0f
                     onComplete?.invoke()
                 }
             })
-            .start()
+        }
+
+        TransitionManager.beginDelayedTransition(parent, transition)
+        settingsContainer.isVisible = false
+        scrimView?.isVisible = false
     }
 
     /**
@@ -460,11 +283,10 @@ object NavigationMotionController {
                         if (shouldDismiss) {
                             closeSettings(settingsContainer, scrimView, onDismiss)
                         } else {
-                            // Snap back to 0
                             v.animate()
                                 .translationX(0f)
                                 .setDuration(180L)
-                                .setInterpolator(MotionSpec.EMPHASIZED)
+                                .setInterpolator(FastOutSlowInInterpolator())
                                 .start()
                             scrimView?.animate()
                                 ?.alpha(0.6f)

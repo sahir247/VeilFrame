@@ -8,7 +8,7 @@
     android:paddingEnd="24dp"
     android:paddingTop="16dp"
     android:paddingBottom="24dp"
-    android:background="@color/vf_surface">
+    android:background="?attr/colorSurfaceContainer">
 
     <!-- Drag Handle Indicator -->
     <View
@@ -16,7 +16,7 @@
         android:layout_height="4dp"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="16dp"
-        android:background="@color/vf_surface_stroke" />
+        android:background="?attr/colorOutlineVariant" />
 
     <!-- Sheet Title -->
     <TextView
@@ -24,7 +24,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Choose Media Source"
-        android:textColor="@color/vf_text_primary"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="18sp"
         android:textStyle="bold"
         android:layout_marginBottom="16dp" />
@@ -48,7 +48,7 @@
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorOutlineVariant"
-            app:cardBackgroundColor="@color/vf_surface_variant"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             android:clickable="true"
             android:focusable="true">
 
@@ -62,7 +62,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:src="@drawable/ic_camera"
-                    app:tint="@color/vf_text_primary"
+                    app:tint="?attr/colorOnSurface"
                     android:contentDescription="Camera" />
 
                 <TextView
@@ -71,7 +71,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="Camera"
-                    android:textColor="@color/vf_text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -89,7 +89,7 @@
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorOutlineVariant"
-            app:cardBackgroundColor="@color/vf_surface_variant"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             android:clickable="true"
             android:focusable="true">
 
@@ -103,7 +103,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:src="@drawable/ic_tab_image"
-                    app:tint="@color/vf_text_primary"
+                    app:tint="?attr/colorOnSurface"
                     android:contentDescription="Photos" />
 
                 <TextView
@@ -112,7 +112,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="Photos"
-                    android:textColor="@color/vf_text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -129,7 +129,7 @@
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorOutlineVariant"
-            app:cardBackgroundColor="@color/vf_surface_variant"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             android:clickable="true"
             android:focusable="true">
 
@@ -143,7 +143,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:src="@drawable/ic_file_pick"
-                    app:tint="@color/vf_text_primary"
+                    app:tint="?attr/colorOnSurface"
                     android:contentDescription="Files" />
 
                 <TextView
@@ -152,7 +152,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="Files"
-                    android:textColor="@color/vf_text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -166,5 +166,5 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Cancel"
-        android:textColor="@color/vf_text_secondary" />
+        android:textColor="?attr/colorOnSurfaceVariant" />
 </LinearLayout>

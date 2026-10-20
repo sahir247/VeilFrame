@@ -75,7 +75,7 @@
                         android:paddingEnd="10dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
-                        android:text="v2.2.9"
+                        tools:text="v2.2.9"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="11sp"
                         android:textStyle="bold" />
@@ -1400,7 +1400,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Installed: v2.2.9 • Local Engine"
+                            tools:text="Installed: v2.2.9 • Local Engine"
                             android:textAppearance="?attr/textAppearanceBodySmall"
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
@@ -1476,7 +1476,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="What's new in v2.2.9"
+                    android:text="What's New"
+                    tools:text="What's new in v2.2.9"
                     android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 

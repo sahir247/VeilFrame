@@ -67,7 +67,7 @@ enum class WorkspaceRoute(
         title = "Document Scanner",
         description = "Multi-page scan, automatic corner detection, perspective fix, and PDF export",
         category = WorkspaceCategory.CREATE_EDIT,
-        status = WorkspaceStatus.BETA,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("pdf", "document", "scan", "page", "book", "receipt", "contract", "paper"),
         iconRes = R.drawable.ic_camera
     ),
@@ -76,7 +76,7 @@ enum class WorkspaceRoute(
         title = "Background Remover",
         description = "Offline subject segmentation, transparent cutout, and interactive compare",
         category = WorkspaceCategory.CREATE_EDIT,
-        status = WorkspaceStatus.ALPHA,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("remove bg", "background", "cutout", "transparent", "segmentation", "matting", "isolate"),
         iconRes = R.drawable.ic_crop
     ),

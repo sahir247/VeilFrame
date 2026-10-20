@@ -400,7 +400,7 @@ class AppUpdateManager(
                         val manifestConn = (URL(manifestUrlStr).openConnection() as HttpURLConnection).apply {
                             connectTimeout = 10000
                             readTimeout = 10000
-                            setRequestProperty("User-Agent", "VeilFrame-Android")
+                            setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent(activity))
                         }
                         if (manifestConn.responseCode in 200..299) {
                             val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
@@ -432,7 +432,7 @@ class AppUpdateManager(
                 val releaseApiUrl = "https://api.github.com/repos/sahir247/VeilFrame/releases/latest"
                 if (isAllowedUpdateUrl(releaseApiUrl)) {
                     val releaseConn = (URL(releaseApiUrl).openConnection() as HttpURLConnection).apply {
-                        setRequestProperty("User-Agent", "VeilFrame-Android")
+                        setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent(activity))
                         setRequestProperty("Accept", "application/vnd.github.v3+json")
                         connectTimeout = 10000
                         readTimeout = 10000
@@ -620,11 +620,11 @@ class AppUpdateManager(
                     } else if (isRepairMode) {
                         Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
-                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.9" } catch (_: Exception) { "2.2.9" }
-                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Up to date"
+                        val currentDisplayVersion = com.veilframe.app.util.AppVersionProvider.getDisplayVersion(activity)
+                        binding.tvUpdateStatus.text = "Installed: $currentDisplayVersion • Up to date"
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
-                            Toast.makeText(activity, "You have the latest version (v$currentVersionName)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "You have the latest version ($currentDisplayVersion)", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -636,8 +636,8 @@ class AppUpdateManager(
                         if (isUserInitiated) {
                             Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
-                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.9" } catch (_: Exception) { "2.2.9" }
-                            binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
+                            val currentDisplayVersion = com.veilframe.app.util.AppVersionProvider.getDisplayVersion(activity)
+                            binding.tvUpdateStatus.text = "Installed: $currentDisplayVersion • Local Engine"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_text_secondary))
                         }
                     }
@@ -794,7 +794,7 @@ class AppUpdateManager(
                         connectTimeout = 15000
                         readTimeout = 30000
                         instanceFollowRedirects = false
-                        setRequestProperty("User-Agent", "VeilFrame-Android-Updater")
+                        setRequestProperty("User-Agent", "${com.veilframe.app.util.AppVersionProvider.getUserAgent(activity)}-Updater")
                     }
                     val status = conn.responseCode
                     if (status in 300..399) {
