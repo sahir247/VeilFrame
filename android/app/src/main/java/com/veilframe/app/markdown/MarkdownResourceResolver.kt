@@ -35,9 +35,19 @@ class MarkdownResourceResolver(private val context: Context?) {
     )
 
     fun isPathTraversal(relativePath: String): Boolean {
-        val decodedPath = try { URLDecoder.decode(relativePath, "UTF-8").trim() } catch (_: Exception) { relativePath.trim() }
-        val normalizedPath = File(decodedPath).normalize().path.replace('\\', '/')
-        return normalizedPath.startsWith("../") || normalizedPath.contains("/../") || normalizedPath.startsWith("/")
+        var current = relativePath.trim()
+        for (i in 0..2) {
+            val decoded = try {
+                URLDecoder.decode(current, "UTF-8")
+            } catch (_: Exception) {
+                current
+            }
+            if (decoded == current) break
+            current = decoded
+        }
+        val normalizedPath = File(current).normalize().path.replace('\\', '/')
+        return normalizedPath.startsWith("../") || normalizedPath.contains("/../") || normalizedPath.startsWith("/") ||
+               normalizedPath == ".." || current.startsWith("..") || current.contains("/..")
     }
 
     /**
@@ -45,14 +55,23 @@ class MarkdownResourceResolver(private val context: Context?) {
      */
     fun resolveResource(relativeRelPath: String, baseUriString: String?): WebResourceResponse? {
         try {
-            val decodedPath = URLDecoder.decode(relativeRelPath, "UTF-8").trim()
-            val normalizedPath = File(decodedPath).normalize().path.replace('\\', '/')
-
             // Path traversal guard: block paths that start with or navigate above root
             if (isPathTraversal(relativeRelPath)) {
                 Log.w(TAG, "Blocked path traversal attempt: $relativeRelPath")
                 return createErrorResponse("Path traversal forbidden")
             }
+
+            var current = relativeRelPath.trim()
+            for (i in 0..2) {
+                val decoded = try {
+                    URLDecoder.decode(current, "UTF-8")
+                } catch (_: Exception) {
+                    current
+                }
+                if (decoded == current) break
+                current = decoded
+            }
+            val normalizedPath = File(current).normalize().path.replace('\\', '/')
 
             val ext = normalizedPath.substringAfterLast('.', "").lowercase(Locale.US)
             val mimeType = supportedImageMimes[ext] ?: return null
@@ -65,9 +84,13 @@ class MarkdownResourceResolver(private val context: Context?) {
                     val baseFile = File(baseUri.path ?: "")
                     val parentDir = if (baseFile.isDirectory) baseFile else baseFile.parentFile
                     if (parentDir == null) null else {
-                        val targetFile = File(parentDir, normalizedPath).canonicalFile
+                        val parentCanonical = parentDir.canonicalFile
+                        val targetFile = File(parentCanonical, normalizedPath).canonicalFile
+                        val parentPath = parentCanonical.toPath().normalize()
+                        val targetPath = targetFile.toPath().normalize()
+
                         // Verify target is strictly within parent directory tree
-                        if (targetFile.canonicalPath.startsWith(parentDir.canonicalPath) && targetFile.exists() && targetFile.isFile) {
+                        if (targetPath.startsWith(parentPath) && targetFile.exists() && targetFile.isFile) {
                             targetFile.inputStream()
                         } else {
                             Log.w(TAG, "Target file outside permitted directory: ${targetFile.canonicalPath}")

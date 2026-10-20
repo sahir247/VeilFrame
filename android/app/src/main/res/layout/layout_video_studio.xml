@@ -1015,6 +1015,41 @@
                             android:text="WhatsApp Status" />
 
                         <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetInstagram"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Instagram Story" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetTikTok"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="TikTok (72 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetYouTubeShorts"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="YouTube Shorts" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetTwitter"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Twitter / X" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetTelegram"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Telegram HD" />
+
+                        <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetDiscord"
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"

@@ -45,7 +45,9 @@ object DocumentPostProcessor {
      * Preserves chrominance (a and b channels) while flattening harsh shadows and balancing contrast.
      */
     fun multiScaleRetinexOnL(src: Mat): Mat {
-        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || src.nativeObj == 0L) return src
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || src.nativeObj == 0L) {
+            return if (src.nativeObj != 0L) src.clone() else src
+        }
 
         val is4Channel = src.channels() == 4
         val bgr = Mat()
@@ -138,9 +140,8 @@ object DocumentPostProcessor {
         Core.addWeighted(lOriginalFloat, 1.0 - alpha, correctedL, alpha, 0.0, correctedL)
 
         // Contrast restoration with percentiles
-        val pLowOrig = percentileL(lOriginalFloat, 0.001)
-        val pLow = percentileL(correctedL, 0.001)
-        val pHigh = percentileL(correctedL, 0.995)
+        val (pLowOrig, _) = percentiles(lOriginalFloat, 0.001, 0.995)
+        val (pLow, pHigh) = percentiles(correctedL, 0.001, 0.995)
         lOriginalFloat.release()
 
         val targetLow = min(pLow, pLowOrig)
@@ -178,7 +179,9 @@ object DocumentPostProcessor {
      * bright tone exp() compensation, mode white stretching, and bilateral smoothing.
      */
     fun enhanceGrayscaleImage(img: Mat): Mat {
-        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || img.nativeObj == 0L) return img
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || img.nativeObj == 0L) {
+            return if (img.nativeObj != 0L) img.clone() else img
+        }
         val gray = flattenedGrayscale(img)
         val is4Channel = img.channels() == 4
         val result = Mat()
@@ -198,7 +201,9 @@ object DocumentPostProcessor {
      * with flatFill protection for large ink blocks and hole filling.
      */
     fun binarizeDocument(img: Mat, upscaleTo: Long = 0L): Mat {
-        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || img.nativeObj == 0L) return img
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || img.nativeObj == 0L) {
+            return if (img.nativeObj != 0L) img.clone() else img
+        }
 
         val flattened = flattenedGrayscale(img)
         val gray = upscaleToPixels(flattened, upscaleTo)
@@ -500,19 +505,8 @@ object DocumentPostProcessor {
     }
 
     fun percentileL(l: Mat, p: Double): Double {
-        val hist = Mat()
-        Imgproc.calcHist(listOf(l), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-        val total = l.total()
-        var sum = 0.0
-        for (i in 0 until 256) {
-            sum += hist.get(i, 0)[0]
-            if (sum / total >= p) {
-                hist.release()
-                return i.toDouble()
-            }
-        }
-        hist.release()
-        return 255.0
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || l.nativeObj == 0L) return 255.0
+        return percentiles(l, p, p).first
     }
 
     private fun percentiles(src: Mat, low: Double, high: Double): Pair<Double, Double> {

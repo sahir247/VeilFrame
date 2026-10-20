@@ -138,7 +138,7 @@ class RembgModelDownloadManager(
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
                     instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", "VeilFrame-Android/1.0")
+                    setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent(context))
                     if (existingBytes > 0) {
                         setRequestProperty("Range", "bytes=$existingBytes-")
                     }
@@ -293,6 +293,11 @@ class RembgModelDownloadManager(
             )
             listener?.onSuccess(model, destFile)
             Result.success(destFile)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (partFile.exists()) partFile.delete()
+            if (tempFinal.exists()) tempFinal.delete()
+            _state.value = _state.value.copy(isDownloading = false)
+            throw cancelled
         } catch (e: Exception) {
             if (partFile.exists()) {
                 partFile.delete()

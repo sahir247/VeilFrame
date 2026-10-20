@@ -73,6 +73,9 @@ object WhatsappStatusCommandBuilder {
         filterGraph: String,
         baseMaxRateKbps: Int,
         bufSizeKbps: Int,
+        crf: Int = WhatsappStatusConstants.CRF,
+        preset: String = WhatsappStatusConstants.PRESET,
+        x264Params: String = WhatsappStatusConstants.X264_PARAMS,
         isMuted: Boolean = false,
         trimStartSec: Double = 0.0,
         trimDurationSec: Double = 0.0,
@@ -115,8 +118,14 @@ object WhatsappStatusCommandBuilder {
         args.add("-c:v")
         args.add(WhatsappStatusConstants.CODEC)
 
+        args.add("-preset")
+        args.add(preset)
+
         args.add("-crf")
-        args.add(WhatsappStatusConstants.CRF.toString())
+        args.add(crf.toString())
+
+        args.add("-x264-params")
+        args.add(x264Params)
 
         args.add("-maxrate")
         args.add("${baseMaxRateKbps}k")
@@ -180,8 +189,14 @@ object WhatsappStatusCommandBuilder {
         args.add("-c:v")
         args.add(WhatsappStatusConstants.CODEC)
 
+        args.add("-preset")
+        args.add(WhatsappStatusConstants.PRESET)
+
         args.add("-crf")
         args.add(WhatsappStatusConstants.CRF.toString())
+
+        args.add("-x264-params")
+        args.add(WhatsappStatusConstants.X264_PARAMS)
 
         args.add("-maxrate")
         args.add("${WhatsappStatusConstants.PHOTO_STATUS_MAXRATE_KBPS}k")

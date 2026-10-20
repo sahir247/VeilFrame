@@ -314,12 +314,12 @@
                 android:text="Landscape" />
         </com.google.android.material.chip.ChipGroup>
 
-        <!-- 5. Page Fit & Margins Row -->
+        <!-- 5. Page Fit -->
         <TextView
             android:id="@+id/tvExportFitHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Page fitting &amp; margins"
+            android:text="Page fitting"
             android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:layout_marginBottom="6dp"
@@ -354,12 +354,41 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Fill (Crop)" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- 5b. Margins Row -->
+        <TextView
+            android:id="@+id/tvExportMarginsHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Margins"
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
+
+        <HorizontalScrollView
+            android:id="@+id/hsvExportMargins"
+            android:visibility="gone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupExportMargins"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleLine="true"
+                app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipMarginNormal"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:checked="true"
                     android:text="Normal Margins" />
 
                 <com.google.android.material.chip.Chip

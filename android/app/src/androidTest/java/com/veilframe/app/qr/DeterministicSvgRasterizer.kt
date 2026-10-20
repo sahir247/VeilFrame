@@ -1,14 +1,7 @@
 package com.veilframe.app.qr
 
-import android.graphics.Bitmap
-
 /**
- * Deterministic SVG rasterizer androidTest facade.
- * Delegates directly to the canonical production rasterizer [com.veilframe.app.qr.raster.DeterministicSvgRasterizer]
- * to prevent duplicate divergence and ensure instrumented on-device tests exercise production code.
+ * Canonical androidTest mapping to production rasterizer [com.veilframe.app.qr.raster.DeterministicSvgRasterizer].
+ * Eliminates duplicate class definitions across source sets.
  */
-object DeterministicSvgRasterizer {
-    fun rasterize(svgString: String, targetWidth: Int, targetHeight: Int): Bitmap {
-        return com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(svgString, targetWidth, targetHeight)
-    }
-}
+typealias DeterministicSvgRasterizer = com.veilframe.app.qr.raster.DeterministicSvgRasterizer

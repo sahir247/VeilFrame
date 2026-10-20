@@ -211,7 +211,7 @@ class QrColorPickerDialog(
         // Slider listeners
         hueSlider.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
-                activeHue = value.coerceIn(0f, 360f)
+                activeHue = if (value >= 360f) 0f else value.coerceIn(0f, 359.9f)
                 updateUi(updateSliders = false, updateHex = true)
             }
         }
@@ -237,19 +237,41 @@ class QrColorPickerDialog(
             }
         }
 
+        // Hex Input Filter (strips leading # and enforces 8 hex characters maximum)
+        hexInput.filters = arrayOf(
+            android.text.InputFilter { source, start, end, dest, dstart, dend ->
+                val sb = StringBuilder()
+                for (i in start until end) {
+                    val c = source[i]
+                    if (c == '#') continue
+                    if (c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F') {
+                        sb.append(c.uppercaseChar())
+                    }
+                }
+                val filtered = sb.toString()
+                val resultingLength = dest.length - (dend - dstart) + filtered.length
+                if (resultingLength > 8) {
+                    val keep = 8 - (dest.length - (dend - dstart))
+                    if (keep <= 0) "" else filtered.substring(0, keep)
+                } else {
+                    filtered
+                }
+            }
+        )
+
         // Hex Input TextWatcher (supports #RRGGBB and #AARRGGBB)
         hexInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (isUpdatingFromInput) return
-                val text = s?.toString()?.trim().orEmpty()
+                val text = s?.toString()?.trim()?.removePrefix("#").orEmpty()
                 if (text.length == 6) {
                     try {
                         val parsed = Color.parseColor("#$text")
                         val newHsv = FloatArray(3)
                         Color.colorToHSV(parsed, newHsv)
-                        activeHue = newHsv[0]
+                        activeHue = (newHsv[0] % 360f).coerceIn(0f, 359.9f)
                         activeSat = newHsv[1]
                         activeVal = newHsv[2]
                         updateUi(updateSliders = true, updateHex = false)
@@ -259,7 +281,7 @@ class QrColorPickerDialog(
                         val parsed = Color.parseColor("#$text")
                         val newHsv = FloatArray(3)
                         Color.colorToHSV(parsed, newHsv)
-                        activeHue = newHsv[0]
+                        activeHue = (newHsv[0] % 360f).coerceIn(0f, 359.9f)
                         activeSat = newHsv[1]
                         activeVal = newHsv[2]
                         activeAlpha = Color.alpha(parsed)

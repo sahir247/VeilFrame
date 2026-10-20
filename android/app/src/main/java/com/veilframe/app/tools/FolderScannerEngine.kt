@@ -61,7 +61,10 @@ object FolderScannerEngine {
         val isTruncated: Boolean = false,
         val statusReason: String? = null,
         val files: List<ScannedFileRecord>
-    )
+    ) {
+        val duplicateGroups: Map<String, List<ScannedFileRecord>>
+            get() = files.filter { !it.sha256.isNullOrEmpty() }.groupBy { it.sha256!! }.filter { it.value.size > 1 }
+    }
 
     private val SECRET_PATTERNS = listOf(
         Pattern.compile("(?i)(?:api_key|apikey|secret|token|password|auth|bearer)\\s*[:=]\\s*[\"']?([a-zA-Z0-9_\\-\\.]{16,})"),
@@ -259,6 +262,21 @@ object FolderScannerEngine {
     fun exportReport(result: ScanResult, outputFile: File, format: String) {
         outputFile.parentFile?.mkdirs()
         when (format.lowercase(Locale.ROOT)) {
+            "zip" -> {
+                java.util.zip.ZipOutputStream(java.io.FileOutputStream(outputFile)).use { zos ->
+                    val entries = listOf(
+                        "report.html" to buildHtmlReport(result).toByteArray(Charsets.UTF_8),
+                        "report.json" to buildJsonReport(result).toByteArray(Charsets.UTF_8),
+                        "report.csv" to buildCsvReport(result).toByteArray(Charsets.UTF_8),
+                        "report.md" to buildMarkdownReport(result).toByteArray(Charsets.UTF_8)
+                    )
+                    for ((name, data) in entries) {
+                        zos.putNextEntry(java.util.zip.ZipEntry(name))
+                        zos.write(data)
+                        zos.closeEntry()
+                    }
+                }
+            }
             "json" -> outputFile.writeText(buildJsonReport(result), Charsets.UTF_8)
             "md", "markdown" -> outputFile.writeText(buildMarkdownReport(result), Charsets.UTF_8)
             "csv" -> outputFile.writeText(buildCsvReport(result), Charsets.UTF_8)
@@ -299,6 +317,27 @@ object FolderScannerEngine {
             """.trimIndent()
         }
 
+        val duplicatesHtml = if (r.duplicateGroups.isNotEmpty()) {
+            val dupRows = r.duplicateGroups.entries.joinToString("\n") { (hash, dups) ->
+                val filesList = dups.joinToString("<br>") { TextUtils.htmlEncode(it.relativePath) + " (" + formatBytes(it.sizeBytes) + ")" }
+                """
+                <tr>
+                    <td style="padding:8px;border-bottom:1px solid #27272A;font-family:monospace;font-size:11px;">${TextUtils.htmlEncode(hash)}</td>
+                    <td style="padding:8px;border-bottom:1px solid #27272A;">$filesList</td>
+                </tr>
+                """.trimIndent()
+            }
+            """
+            <div class="card">
+                <h2 style="color:#F59E0B;font-size:16px;margin-top:0;">Duplicate Files Detected (${r.duplicateGroups.size} groups)</h2>
+                <table>
+                    <thead><tr><th>SHA-256 Checksum</th><th>Matching Files</th></tr></thead>
+                    <tbody>$dupRows</tbody>
+                </table>
+            </div>
+            """.trimIndent()
+        } else ""
+
         return """
         <!DOCTYPE html>
         <html lang="en">
@@ -327,6 +366,7 @@ object FolderScannerEngine {
                 $reasonHtml
                 <p style="margin-top:16px;color:#A1A1AA;font-size:12px;">Target: $safeRoot • Generated: $safeTime • Engine: VeilFrame Native Kotlin</p>
             </div>
+            $duplicatesHtml
             <div class="card">
                 <table>
                     <thead>
@@ -354,6 +394,18 @@ object FolderScannerEngine {
         sb.append("- **Files Analyzed:** ${r.totalFiles}\n")
         sb.append("- **Total Volume:** ${formatBytes(r.totalBytes)}\n")
         sb.append("- **Secrets Detected:** ${r.totalSecretsFound}\n\n")
+
+        if (r.duplicateGroups.isNotEmpty()) {
+            sb.append("## Duplicate Files Detected (${r.duplicateGroups.size} groups)\n\n")
+            sb.append("| SHA-256 Checksum | Matching Files |\n")
+            sb.append("| :--- | :--- |\n")
+            for ((hash, dups) in r.duplicateGroups) {
+                val filesList = dups.joinToString("<br>") { it.relativePath.replace("|", "\\|") + " (${formatBytes(it.sizeBytes)})" }
+                sb.append("| `$hash` | $filesList |\n")
+            }
+            sb.append("\n")
+        }
+
         sb.append("| Relative Path | Size | SHA-256 | Status |\n")
         sb.append("| :--- | :--- | :--- | :--- |\n")
         for (f in r.files) {
@@ -377,6 +429,16 @@ object FolderScannerEngine {
             put("total_bytes", r.totalBytes)
             put("total_secrets", r.totalSecretsFound)
             put("engine", "VeilFrame Native Kotlin")
+
+            val dupObj = JSONObject()
+            for ((hash, dups) in r.duplicateGroups) {
+                val dupArr = JSONArray()
+                for (d in dups) {
+                    dupArr.put(d.relativePath)
+                }
+                dupObj.put(hash, dupArr)
+            }
+            put("duplicate_groups", dupObj)
 
             val filesArray = JSONArray()
             for (f in r.files) {

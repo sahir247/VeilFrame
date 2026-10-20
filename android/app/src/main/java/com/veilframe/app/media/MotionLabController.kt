@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.imgcodecs.Imgcodecs
 import java.io.File
+import java.util.Locale
 
 /**
- * Motion Lab — optical-flow frame interpolation as a first-class tool (v2.3.0).
+ * Motion Lab — optical-flow frame interpolation as a first-class tool (v2.2.9).
  *
  * Device feedback promoted the dormant cv/motion stack (built in the CV hardening
  * round, previously zero production consumers) into its own workspace:
@@ -54,6 +55,7 @@ class MotionLabController(
     private var multiplier = 2
     private var qualityMode = false
     private var job: Job? = null
+    val isProcessing: Boolean get() = job?.isActive == true
     @Volatile private var cancelRequested = false
     private var outputFile: File? = null
 
@@ -79,8 +81,6 @@ class MotionLabController(
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
 
-    val isProcessing: Boolean
-        get() = job?.isActive == true
 
     fun cancel() {
         cancelRequested = true
@@ -163,7 +163,14 @@ class MotionLabController(
                 runCatching { retriever.release() } // release() is API 29+; minSdk 26
 
                 setStatus("Extracting frames…")
-                var session = FFmpegKit.execute("-y -i ${inFile.absolutePath} -t $MAX_DURATION_S ${framesDir.absolutePath}/f_%05d.png")
+                var session = FFmpegKit.executeWithArguments(
+                    arrayOf(
+                        "-y",
+                        "-i", inFile.absolutePath,
+                        "-t", MAX_DURATION_S.toString(),
+                        "${framesDir.absolutePath}/f_%05d.png"
+                    )
+                )
                 if (!ReturnCode.isSuccess(session.returnCode)) {
                     throw IllegalStateException("Frame extraction failed (ffmpeg rc=${session.returnCode})")
                 }
@@ -220,14 +227,26 @@ class MotionLabController(
                 }
                 prev.release()
 
-                setStatus("Encoding ${"%.2f".format(fps * multiplier)} fps video…")
+                setStatus("Encoding ${String.format(Locale.US, "%.2f", fps * multiplier)} fps video…")
                 val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
                 val resultFile = File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-                session = FFmpegKit.execute(
-                    "-y -framerate ${"%.3f".format(fps * multiplier)} -i ${outDir.absolutePath}/o_%05d.png " +
-                        "-i ${inFile.absolutePath} -map 0:v -map 1:a? -c:v libx264 -preset veryfast " +
-                        "-crf 21 -pix_fmt yuv420p -c:a copy -shortest ${resultFile.absolutePath}"
+                val framerateStr = String.format(Locale.US, "%.3f", fps * multiplier)
+                val encodeArgs = arrayOf(
+                    "-y",
+                    "-framerate", framerateStr,
+                    "-i", "${outDir.absolutePath}/o_%05d.png",
+                    "-i", inFile.absolutePath,
+                    "-map", "0:v",
+                    "-map", "1:a?",
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "21",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "copy",
+                    "-shortest",
+                    resultFile.absolutePath
                 )
+                session = FFmpegKit.executeWithArguments(encodeArgs)
                 if (!ReturnCode.isSuccess(session.returnCode)) {
                     throw IllegalStateException("Encoding failed (ffmpeg rc=${session.returnCode})")
                 }
@@ -241,7 +260,7 @@ class MotionLabController(
                     binding.containerMotionLabProgress.visibility = View.GONE
                     binding.cardMotionLabResult.visibility = View.VISIBLE
                     binding.tvMotionLabResultInfo.text =
-                        "${frames.size} → $outIdx frames · ${"%.1f".format(fps)} → ${"%.1f".format(fps * multiplier)} fps · ${"%.1f".format(mb)} MB · saved to Library exports"
+                        "${frames.size} → $outIdx frames · ${String.format(Locale.US, "%.1f", fps)} → ${String.format(Locale.US, "%.1f", fps * multiplier)} fps · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
                     binding.btnMotionLabRun.isEnabled = true
                 }
             } catch (e: InterruptedException) {

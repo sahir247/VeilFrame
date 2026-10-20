@@ -125,7 +125,7 @@ object NoiseReducer {
             }
             else -> {
                 val out = Mat()
-                Imgproc.bilateralFilter(source, out, 0, 50.0, 50.0)
+                bilateralFilterSafe(source, out, 0, 50.0, 50.0)
                 out
             }
         }
@@ -147,12 +147,17 @@ object NoiseReducer {
                 }
                 4 -> {
                     val bgr = Mat()
+                    val denoisedBgr = Mat()
                     try {
                         Imgproc.cvtColor(source, bgr, Imgproc.COLOR_BGRA2BGR)
                         val method = clazz.getMethod("fastNlMeansDenoisingColored", Mat::class.java, Mat::class.java, Float::class.javaPrimitiveType, Float::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                        method.invoke(null, bgr, out, strength.toFloat(), strength.toFloat(), 7, 21)
+                        method.invoke(null, bgr, denoisedBgr, strength.toFloat(), strength.toFloat(), 7, 21)
+                        val withAlpha = preserveAlpha(source, denoisedBgr)
+                        withAlpha.copyTo(out)
+                        withAlpha.release()
                     } finally {
                         bgr.release()
+                        denoisedBgr.release()
                     }
                 }
                 else -> throw UnsupportedOperationException("unsupported channel count ${source.channels()}")
@@ -161,7 +166,7 @@ object NoiseReducer {
         } catch (e: java.lang.reflect.InvocationTargetException) {
             val target = e.targetException
             if (target is org.opencv.core.CvException) {
-                Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
+                bilateralFilterSafe(source, out, 9, 75.0, 75.0)
                 out
             } else if (target is RuntimeException) {
                 throw target
@@ -171,11 +176,46 @@ object NoiseReducer {
                 throw RuntimeException("Photo.fastNlMeansDenoising invocation failed", target)
             }
         } catch (e: ReflectiveOperationException) {
-            Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
+            bilateralFilterSafe(source, out, 9, 75.0, 75.0)
             out
         } catch (e: org.opencv.core.CvException) {
-            Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
+            bilateralFilterSafe(source, out, 9, 75.0, 75.0)
             out
+        }
+    }
+
+    private fun bilateralFilterSafe(source: Mat, out: Mat, d: Int, sigmaColor: Double, sigmaSpace: Double) {
+        if (source.channels() == 4) {
+            val bgr = Mat()
+            val denoisedBgr = Mat()
+            try {
+                Imgproc.cvtColor(source, bgr, Imgproc.COLOR_BGRA2BGR)
+                Imgproc.bilateralFilter(bgr, denoisedBgr, d, sigmaColor, sigmaSpace)
+                val withAlpha = preserveAlpha(source, denoisedBgr)
+                withAlpha.copyTo(out)
+                withAlpha.release()
+            } finally {
+                bgr.release()
+                denoisedBgr.release()
+            }
+        } else {
+            Imgproc.bilateralFilter(source, out, d, sigmaColor, sigmaSpace)
+        }
+    }
+
+    private fun preserveAlpha(source: Mat, bgr: Mat): Mat {
+        if (source.channels() != 4) return bgr
+        val planes = ArrayList<Mat>(4)
+        try {
+            Core.split(bgr, planes)
+            val alpha = Mat()
+            Core.extractChannel(source, alpha, 3)
+            planes.add(alpha)
+            val out = Mat()
+            Core.merge(planes, out)
+            return out
+        } finally {
+            planes.forEach { it.release() }
         }
     }
 

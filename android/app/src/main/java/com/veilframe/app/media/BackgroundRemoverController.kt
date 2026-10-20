@@ -18,7 +18,7 @@ import com.veilframe.app.R
 import com.veilframe.app.cv.core.CvPriority
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.rembg.CelBackgroundRemover
-import com.veilframe.app.cv.segmentation.rembg.OnnxSessionManager
+import com.veilframe.app.cv.segmentation.rembg.RembgOnnxSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
@@ -29,9 +29,12 @@ import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
 import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.ui.views.BeforeAfterSplitView
+import androidx.core.content.ContextCompat
+import android.content.res.ColorStateList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -62,6 +65,17 @@ class BackgroundRemoverController(
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
     private var sourceFileName: String = "image"
+    var currentSourceUri: Uri? = null
+
+    enum class SaveCutoutState {
+        IDLE,
+        SAVING,
+        SAVED,
+        SAVE_AGAIN
+    }
+
+    private var currentSaveCutoutState: SaveCutoutState = SaveCutoutState.IDLE
+    private var saveStateJob: Job? = null
 
     /** Selected AI model (defaults to recommended BiRefNet Lite) */
     private var currentModel: RembgModel = RembgModel.DEFAULT
@@ -72,7 +86,7 @@ class BackgroundRemoverController(
     /** Model storage and execution subsystems */
     private val repository = RembgModelRepository(activity)
     private val downloadManager = RembgModelDownloadManager(activity, repository)
-    private val sessionManager = OnnxSessionManager(repository)
+    private val sessionManager = RembgOnnxSessionManager(repository)
     private val remover = CelBackgroundRemover(sessionManager)
 
     private companion object {
@@ -128,20 +142,23 @@ class BackgroundRemoverController(
             binding.splitViewBgCompare.backgroundMode = mode
         }
 
-        // Re-execute when edge options change if an image is loaded and already processed
+        // Reset cutout when edge options change so user can re-run with new parameters
         binding.switchTightenEdges.setOnCheckedChangeListener { _, _ ->
             if (sourceBytes != null && resultBitmap != null) {
-                executeRemoval()
+                resultBitmap = null
+                updateUi()
             }
         }
         binding.switchFeatherEdges.setOnCheckedChangeListener { _, _ ->
             if (sourceBytes != null && resultBitmap != null) {
-                executeRemoval()
+                resultBitmap = null
+                updateUi()
             }
         }
         binding.switchTrimTransparent.setOnCheckedChangeListener { _, _ ->
             if (sourceBytes != null && resultBitmap != null) {
-                executeRemoval()
+                resultBitmap = null
+                updateUi()
             }
         }
 
@@ -159,10 +176,12 @@ class BackgroundRemoverController(
             resultBitmap?.recycle()
             resultBitmap = null
             sourceBytes = null
+            currentSourceUri = null
         } catch (ignored: Throwable) {}
     }
 
     fun handleImageSelected(uri: Uri) {
+        currentSourceUri = uri
         scope.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { stream ->
@@ -201,10 +220,8 @@ class BackgroundRemoverController(
                     sourceFileName = rawName.substringBeforeLast('.', rawName)
                     updateUi()
 
-                    // Automatically begin removal if model is installed; otherwise open manager
-                    if (repository.isModelReady(currentModel)) {
-                        executeRemoval()
-                    } else {
+                    // Inform user if model needs to be downloaded before they tap Remove Background
+                    if (!repository.isModelReady(currentModel)) {
                         Toast.makeText(
                             activity,
                             "AI model ${currentModel.displayName} needs to be downloaded first",
@@ -470,7 +487,10 @@ class BackgroundRemoverController(
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (sourceBytes != null) executeRemoval()
+            if (resultBitmap != null) {
+                resultBitmap = null
+            }
+            updateUi()
         }
 
         // ISNet General listeners
@@ -496,7 +516,10 @@ class BackgroundRemoverController(
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (sourceBytes != null) executeRemoval()
+            if (resultBitmap != null) {
+                resultBitmap = null
+            }
+            updateUi()
         }
 
         // U2Net Human listeners
@@ -522,7 +545,10 @@ class BackgroundRemoverController(
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (sourceBytes != null) executeRemoval()
+            if (resultBitmap != null) {
+                resultBitmap = null
+            }
+            updateUi()
         }
 
         refreshCards()
@@ -543,6 +569,51 @@ class BackgroundRemoverController(
         }
     }
 
+    private fun updateSaveCutoutButton() {
+        if (resultBitmap == null) {
+            binding.btnBgExecuteRemoval.text = "Remove Background"
+            binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_crop)
+            binding.btnBgExecuteRemoval.isEnabled = true
+            binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+            binding.btnBgSavePng.visibility = View.GONE
+            binding.btnBgSavePng.isEnabled = false
+            return
+        }
+
+        binding.btnBgExecuteRemoval.text = "Re-process"
+        binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_crop)
+        binding.btnBgExecuteRemoval.isEnabled = true
+        binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_surface_variant)
+
+        binding.btnBgSavePng.visibility = View.VISIBLE
+        when (currentSaveCutoutState) {
+            SaveCutoutState.IDLE -> {
+                binding.btnBgSavePng.text = "Save Cutout"
+                binding.btnBgSavePng.setIconResource(R.drawable.ic_action_save)
+                binding.btnBgSavePng.isEnabled = true
+                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+            }
+            SaveCutoutState.SAVING -> {
+                binding.btnBgSavePng.text = "Saving…"
+                binding.btnBgSavePng.setIconResource(R.drawable.ic_loading_spinner)
+                binding.btnBgSavePng.isEnabled = false
+                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+            }
+            SaveCutoutState.SAVED -> {
+                binding.btnBgSavePng.text = "Saved"
+                binding.btnBgSavePng.setIconResource(R.drawable.ic_done)
+                binding.btnBgSavePng.isEnabled = false
+                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_accent_green)
+            }
+            SaveCutoutState.SAVE_AGAIN -> {
+                binding.btnBgSavePng.text = "Save Again"
+                binding.btnBgSavePng.setIconResource(R.drawable.ic_action_save)
+                binding.btnBgSavePng.isEnabled = true
+                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+            }
+        }
+    }
+
     private fun exportImage() {
         val bmp = resultBitmap ?: run {
             Toast.makeText(
@@ -553,6 +624,10 @@ class BackgroundRemoverController(
             ).show()
             return
         }
+
+        saveStateJob?.cancel()
+        currentSaveCutoutState = SaveCutoutState.SAVING
+        updateSaveCutoutButton()
 
         val isJpg = binding.chipFormatJpg.isChecked
         scope.launch(Dispatchers.IO) {
@@ -592,6 +667,7 @@ class BackgroundRemoverController(
             }
 
             var savedToGallery = false
+            var saveErrorMessage: String? = null
             try {
                 FileOutputStream(outFile).use { fos ->
                     if (isJpg) {
@@ -629,6 +705,7 @@ class BackgroundRemoverController(
                 savedToGallery = true
             } catch (e: Exception) {
                 Log.e(TAG, "Gallery save failed, falling back to SAF", e)
+                saveErrorMessage = e.message
             } finally {
                 if (finalExportBmp !== bmp) {
                     finalExportBmp.recycle()
@@ -638,8 +715,26 @@ class BackgroundRemoverController(
             withContext(Dispatchers.Main) {
                 if (savedToGallery) {
                     Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
-                } else {
+                    currentSaveCutoutState = SaveCutoutState.SAVED
+                    updateSaveCutoutButton()
+                    saveStateJob = scope.launch {
+                        delay(2000)
+                        currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
+                        updateSaveCutoutButton()
+                    }
+                } else if (outFile.exists() && outFile.length() > 0) {
                     onExportPngRequest(outFile)
+                    currentSaveCutoutState = SaveCutoutState.SAVED
+                    updateSaveCutoutButton()
+                    saveStateJob = scope.launch {
+                        delay(2000)
+                        currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
+                        updateSaveCutoutButton()
+                    }
+                } else {
+                    Toast.makeText(activity, "Save failed: ${saveErrorMessage ?: "Unknown error"}", Toast.LENGTH_SHORT).show()
+                    currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
+                    updateSaveCutoutButton()
                 }
             }
         }
@@ -648,12 +743,15 @@ class BackgroundRemoverController(
     private fun updateUi() {
         updateActiveModelBadge()
         if (sourceBitmap == null) {
+            currentSaveCutoutState = SaveCutoutState.IDLE
+            saveStateJob?.cancel()
             binding.containerBgEmptyState.visibility = View.VISIBLE
             binding.splitViewBgCompare.visibility = View.GONE
             binding.cardBgActionDock.visibility = View.GONE
             binding.containerBgControls.visibility = View.GONE
             binding.btnBgResetCompare.visibility = View.GONE
             binding.btnBgToolbarExport.visibility = View.GONE
+            binding.btnBgSavePng.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
             binding.btnBgToolbarExport.isEnabled = false
         } else {
@@ -662,12 +760,12 @@ class BackgroundRemoverController(
             binding.cardBgActionDock.visibility = View.VISIBLE
             binding.containerBgControls.visibility = View.VISIBLE
             binding.btnBgResetCompare.visibility = if (resultBitmap != null) View.VISIBLE else View.GONE
-            binding.btnBgToolbarExport.visibility = View.VISIBLE
-            binding.btnBgToolbarExport.isEnabled = (resultBitmap != null)
-            binding.btnBgSavePng.isEnabled = (resultBitmap != null)
+            binding.btnBgToolbarExport.visibility = View.GONE
+            binding.btnBgToolbarExport.isEnabled = false
 
-            val displayCutout = resultBitmap ?: sourceBitmap
-            binding.splitViewBgCompare.setBitmaps(sourceBitmap, displayCutout)
+            updateSaveCutoutButton()
+
+            binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
         }
     }
 

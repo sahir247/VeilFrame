@@ -235,10 +235,11 @@
         </FrameLayout>
 
         <!-- Controls Strip (Visible when image is loaded) -->
-        <androidx.core.widget.NestedScrollView
+        <com.veilframe.app.ui.MaxHeightNestedScrollView
             android:id="@+id/containerBgControls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:maxHeight="220dp"
             android:visibility="gone"
             android:fillViewport="true">
 
@@ -540,7 +541,7 @@
                     </com.google.android.material.chip.ChipGroup>
                 </LinearLayout>
             </LinearLayout>
-        </androidx.core.widget.NestedScrollView>
+        </com.veilframe.app.ui.MaxHeightNestedScrollView>
 
         <!-- Action Dock -->
         <com.google.android.material.card.MaterialCardView
@@ -578,13 +579,13 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBgExecuteRemoval"
-                    style="@style/Widget.VeilFrame.Button.Quiet"
+                    style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:text="Re-run"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="0dp"
+                    android:text="Remove Background"
                     app:icon="@drawable/ic_crop"
                     app:iconSize="18dp" />
 
@@ -593,7 +594,8 @@
                     style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1.2"
+                    android:layout_weight="1"
+                    android:visibility="gone"
                     android:text="Save Cutout"
                     app:icon="@drawable/ic_action_save"
                     app:iconSize="18dp" />

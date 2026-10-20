@@ -196,33 +196,21 @@
                         android:text="On-device barcode validator ready" />
                 </LinearLayout>
 
-                <!-- Actions: Auto-Repair and Test with Camera -->
-                <LinearLayout
+                <!-- Actions: Auto-Repair -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_auto_repair_btn"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="8dp">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/qr_auto_repair_btn"
-                        style="@style/Widget.VeilFrame.Button.Action"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_reset"
-                        android:text="Auto-Repair Design" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/qr_test_with_camera_btn"
-                        style="@style/Widget.VeilFrame.Button.Utility"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        app:icon="@drawable/ic_camera"
-                        android:text="Test with Camera" />
-                </LinearLayout>
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="4dp"
+                    android:textSize="12sp"
+                    app:iconPadding="4dp"
+                    app:icon="@drawable/ic_reset"
+                    android:text="Auto-Repair" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -1148,9 +1136,13 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="6dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 app:icon="@drawable/ic_tool_qr"
                 android:text="Logo" />
@@ -1162,12 +1154,16 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="6dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 app:icon="@drawable/ic_tab_image"
-                android:text="Source Media" />
+                android:text="Source" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_bg_image_btn"
@@ -1175,12 +1171,16 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 app:icon="@drawable/ic_tab_image"
-                android:text="Background" />
+                android:text="BG" />
         </LinearLayout>
 
             </LinearLayout>
@@ -1363,6 +1363,7 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
                         android:text="Finder Outer" />
 
                     <com.google.android.material.button.MaterialButton
@@ -1374,6 +1375,7 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
                         android:text="Finder Inner" />
                 </LinearLayout>
 
@@ -1659,7 +1661,8 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
-                        android:text="Start Color" />
+                        android:textSize="12sp"
+                        android:text="Start" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_gradient_end_color_btn"
@@ -1671,7 +1674,8 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
-                        android:text="End Color" />
+                        android:textSize="12sp"
+                        android:text="End" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_gradient_clear_btn"
@@ -1777,6 +1781,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Top Face" />
 
                         <com.google.android.material.button.MaterialButton
@@ -1789,6 +1794,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Left Face" />
 
                         <com.google.android.material.button.MaterialButton
@@ -1800,6 +1806,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Right Face" />
                     </LinearLayout>
 
@@ -2437,6 +2444,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Data Color" />
 
                         <com.google.android.material.button.MaterialButton
@@ -2448,6 +2456,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Ring Color" />
                     </LinearLayout>
                 </LinearLayout>
@@ -2567,6 +2576,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Fill BG Color" />
 
                         <com.google.android.material.button.MaterialButton
@@ -2578,6 +2588,7 @@
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            android:textSize="12sp"
                             android:text="Fill Mask Color" />
                     </LinearLayout>
                 </LinearLayout>
@@ -3371,7 +3382,8 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
-                        android:text="Backdrop Color" />
+                        android:textSize="12sp"
+                        android:text="Backdrop" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_backdrop_image_btn"
@@ -3386,8 +3398,9 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
                         app:icon="@drawable/ic_tab_image"
-                        android:text="Frame Image" />
+                        android:text="Frame" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_backdrop_image_remove_btn"
@@ -3669,8 +3682,10 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        app:iconPadding="4dp"
                         app:icon="@drawable/ic_tab_image"
-                        android:text="Source Media" />
+                        android:text="Source" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_btn_pick_animated_logo"
@@ -3685,6 +3700,8 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
+                        android:textSize="12sp"
+                        app:iconPadding="4dp"
                         app:icon="@drawable/ic_tool_qr"
                         android:text="Anim Logo" />
 
@@ -3736,6 +3753,7 @@
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 android:text="GIF"
                 app:icon="@drawable/ic_action_save" />
@@ -3750,6 +3768,7 @@
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 android:text="MP4"
                 app:icon="@drawable/ic_tab_video" />
@@ -3763,6 +3782,7 @@
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
+                android:textSize="12sp"
                 app:iconPadding="4dp"
                 android:text="Anim SVG"
                 app:icon="@drawable/ic_action_save" />

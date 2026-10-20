@@ -55,7 +55,9 @@ data class StudioVideoItem(
     val durationMs: Long,
     val width: Int,
     val height: Int,
-    var thumbnailBitmap: Bitmap? = null
+    var thumbnailBitmap: Bitmap? = null,
+    val editState: VideoEditState = VideoEditState(),
+    var copyJob: Job? = null
 )
 
 class VideoStudioController(
@@ -222,6 +224,101 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.VISIBLE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(true)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
+                    }
+                    R.id.chipVidPresetInstagram -> {
+                        outputConfig.targetPreset = "Instagram Story"
+                        outputConfig.targetMb = 50f
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "1080p (Full HD)"
+                        binding.chipVidRes1080p.isChecked = true
+                        outputConfig.crf = 20
+                        binding.sliderVidQuality.value = 20f
+                        binding.tvVidQualityValue.text = "CRF 20"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
+                    }
+                    R.id.chipVidPresetTikTok -> {
+                        outputConfig.targetPreset = "TikTok (72 MB)"
+                        outputConfig.targetMb = 72f
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "1080p (Full HD)"
+                        binding.chipVidRes1080p.isChecked = true
+                        outputConfig.crf = 21
+                        binding.sliderVidQuality.value = 21f
+                        binding.tvVidQualityValue.text = "CRF 21"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
+                    }
+                    R.id.chipVidPresetYouTubeShorts -> {
+                        outputConfig.targetPreset = "YouTube Shorts"
+                        outputConfig.targetMb = 100f
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "1080p (Full HD)"
+                        binding.chipVidRes1080p.isChecked = true
+                        outputConfig.crf = 18
+                        binding.sliderVidQuality.value = 18f
+                        binding.tvVidQualityValue.text = "CRF 18"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
+                    }
+                    R.id.chipVidPresetTwitter -> {
+                        outputConfig.targetPreset = "Twitter / X"
+                        outputConfig.targetMb = 120f
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "1080p (Full HD)"
+                        binding.chipVidRes1080p.isChecked = true
+                        outputConfig.crf = 21
+                        binding.sliderVidQuality.value = 21f
+                        binding.tvVidQualityValue.text = "CRF 21"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
+                    }
+                    R.id.chipVidPresetTelegram -> {
+                        outputConfig.targetPreset = "Telegram HD"
+                        outputConfig.targetMb = 200f
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "1080p (Full HD)"
+                        binding.chipVidRes1080p.isChecked = true
+                        outputConfig.crf = 22
+                        binding.sliderVidQuality.value = 22f
+                        binding.tvVidQualityValue.text = "CRF 22"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                         updateUiForOutputMode()
                         updateOutputFilenameExtension()
                     }
@@ -640,7 +737,7 @@ class VideoStudioController(
                 }
 
                 // Asynchronously copy URI to cache file for background encoding needs
-                scope.launch(Dispatchers.IO) {
+                val copyJob = scope.launch(Dispatchers.IO) {
                     try {
                         if (!cacheFile.exists() || cacheFile.length() == 0L) {
                             copyUriToFile(uri, cacheFile)
@@ -654,6 +751,11 @@ class VideoStudioController(
                 if (width <= 0) width = 1280
                 if (height <= 0) height = 720
 
+                val initialItemEditState = VideoEditState()
+                initialItemEditState.reset(duration)
+                initialItemEditState.originalWidth = width
+                initialItemEditState.originalHeight = height
+
                 newItems.add(
                     StudioVideoItem(
                         uri = uri,
@@ -663,7 +765,9 @@ class VideoStudioController(
                         durationMs = duration,
                         width = width,
                         height = height,
-                        thumbnailBitmap = thumbFrame
+                        thumbnailBitmap = thumbFrame,
+                        editState = initialItemEditState,
+                        copyJob = copyJob
                     )
                 )
             }
@@ -736,12 +840,21 @@ class VideoStudioController(
         compressionJob?.cancel()
         compressionJob = null
         lastResultFile = null
+
+        // Save current edits into currently selected item
+        currentItem?.editState?.copyFrom(editState)
+
         currentMediaIndex = index
         val item = selectedMediaList[index]
 
-        editState.reset(item.durationMs)
-        editState.originalWidth = item.width
-        editState.originalHeight = item.height
+        // Restore target item's edit state
+        editState.copyFrom(item.editState)
+        if (editState.durationMs == 0L && item.durationMs > 0L) {
+            editState.reset(item.durationMs)
+            editState.originalWidth = item.width
+            editState.originalHeight = item.height
+            item.editState.copyFrom(editState)
+        }
 
         val durSec = (item.durationMs / 1000.0).toFloat().coerceAtLeast(1f)
         updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
@@ -1059,6 +1172,31 @@ class VideoStudioController(
                 val rawEst = ((totalKbps * 1024L / 8L) * durationSec).toLong()
                 minOf(rawEst, com.veilframe.app.media.whatsapp.WhatsappStatusRateControl.WHATSAPP_STATUS_SIZE_CEILING_BYTES)
             }
+            "Instagram Story" -> {
+                val maxAllowedBytes = (49.0 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "TikTok (72 MB)" -> {
+                val maxAllowedBytes = (70.5 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "YouTube Shorts" -> {
+                val maxAllowedBytes = (98.0 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "Twitter / X" -> {
+                val maxAllowedBytes = (118.0 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "Telegram HD" -> {
+                val maxAllowedBytes = (196.0 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
             "Discord (25 MB)" -> {
                 val maxAllowedBytes = (24.5 * 1024 * 1024).toLong()
                 val normalEst = calculateEstimatedBytes(durationSec)
@@ -1356,10 +1494,47 @@ class VideoStudioController(
                 var totalCompressedBytes = 0L
                 val destUri = safManager.videoDestinationUri
 
+                // Persist current editState back into currently active item
+                currentItem?.editState?.copyFrom(editState)
+
                 for ((idx, item) in itemsToProcess.withIndex()) {
                     if (!isActive) break
 
-                    val totalDurSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(1.0)
+                    if (item.copyJob?.isActive == true) {
+                        item.copyJob?.join()
+                    }
+                    if (!item.file.exists() || item.file.length() == 0L) {
+                        copyUriToFile(item.uri, item.file)
+                    }
+
+                    val itemEditState = if (item == currentItem) {
+                        editState.copy()
+                    } else {
+                        item.editState.copy().apply {
+                            originalWidth = item.width
+                            originalHeight = item.height
+                            if (trimEndMs <= 0L || trimEndMs > item.durationMs) {
+                                trimEndMs = item.durationMs
+                            }
+                            if (durationMs <= 0L) {
+                                durationMs = item.durationMs
+                            }
+                            if (editState.scalePreset != "Original (No scaling)" && scalePreset == "Original (No scaling)") {
+                                scalePreset = editState.scalePreset
+                            }
+                            if (editState.speed != 1.0f && speed == 1.0f) {
+                                speed = editState.speed
+                            }
+                            if (editState.colorProfile != "Original" && colorProfile == "Original") {
+                                colorProfile = editState.colorProfile
+                            }
+                            if (editState.audioMode != AudioMode.KEEP && audioMode == AudioMode.KEEP) {
+                                audioMode = editState.audioMode
+                            }
+                        }
+                    }
+
+                    val totalDurSec = (itemEditState.trimmedDurationSeconds / itemEditState.speed).coerceAtLeast(1.0)
                     val outFilename = if (total == 1) "$base.$ext" else "${base}_${idx + 1}.$ext"
                     val outFile = File(outDir, outFilename)
 
@@ -1367,14 +1542,10 @@ class VideoStudioController(
                         binding.tvVidProgressStatus.text = "Encoding [${idx + 1}/$total]: ${item.displayName}…"
                     }
 
-                    if (!item.file.exists() || item.file.length() == 0L) {
-                        copyUriToFile(item.uri, item.file)
-                    }
-
                     val result = MediaProcessor.video.process(
                         srcFile = item.file,
                         outFile = outFile,
-                        editState = editState,
+                        editState = itemEditState,
                         outputConfig = outputConfig,
                         onStatistics = { encMs ->
                             val encSec = encMs / 1000.0
@@ -1837,7 +2008,21 @@ class VideoStudioController(
             dialogBinding.chipColorBwDramatic to "B&W Dramatic"
         )
 
+        val allChipGroups = listOf(
+            dialogBinding.chipGroupColorNatural,
+            dialogBinding.chipGroupColorCinematic,
+            dialogBinding.chipGroupColorVintage,
+            dialogBinding.chipGroupColorMonochrome
+        )
+
         fun selectChipForProfile(profileId: String) {
+            val matchingEntry = allChips.find { it.second.equals(profileId, ignoreCase = true) }
+            val targetChip = matchingEntry?.first
+            for (group in allChipGroups) {
+                if (targetChip == null || targetChip.parent != group) {
+                    group.clearCheck()
+                }
+            }
             for ((chip, id) in allChips) {
                 chip.isChecked = id.equals(profileId, ignoreCase = true)
             }
@@ -2248,9 +2433,27 @@ class VideoStudioController(
     }
 
     private fun copyUriToFile(uri: Uri, target: File) {
-        activity.contentResolver.openInputStream(uri)?.use { inStream ->
-            FileOutputStream(target).use { outStream ->
-                inStream.copyTo(outStream)
+        val partFile = File(target.parentFile ?: activity.cacheDir, "${target.name}.part.${System.currentTimeMillis()}")
+        try {
+            activity.contentResolver.openInputStream(uri)?.use { inStream ->
+                FileOutputStream(partFile).use { outStream ->
+                    inStream.copyTo(outStream)
+                    outStream.flush()
+                    try {
+                        outStream.fd.sync()
+                    } catch (_: Exception) {}
+                }
+            }
+            if (partFile.exists() && partFile.length() > 0L) {
+                if (target.exists()) target.delete()
+                if (!partFile.renameTo(target)) {
+                    partFile.copyTo(target, overwrite = true)
+                    partFile.delete()
+                }
+            }
+        } finally {
+            if (partFile.exists()) {
+                partFile.delete()
             }
         }
     }

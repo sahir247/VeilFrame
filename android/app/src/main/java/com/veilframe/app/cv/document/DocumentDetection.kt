@@ -26,26 +26,32 @@ enum class Mode {
 
 fun detectDocumentQuad(mask: Mask, originalSize: ImageSize, mode: Mode): Quad? {
     val mat = mask.toMat()
-    if (mat.empty()) return null
-    // Best thresholds on test dataset: {0.95=146, 0.85=39, 0.75=35, 0.90=8, 0.70=1, 0.35=1}
-    val thresholds =
-        if (mode != Mode.CAPTURE) listOf(0.9) else listOf(0.5, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95)
-    var vertices = findQuadFromOrientationWithAdaptiveThreshold(mat, originalSize, thresholds)
-        ?.map { Point(it.x, it.y) }
-
-    if (vertices == null && mode == Mode.CAPTURE) {
-        // Fallback: bounding rectangle
-        val biggest = biggestContour(mat)
-        if (biggest != null) {
-            val polygon = biggest.toList()
-            biggest.release()
-            vertices = MinAreaRect.minAreaRect(polygon, mask.width, mask.height)?.map { Point(it.x, it.y) }
+    try {
+        if (mat.empty()) {
+            return null
         }
+        // Best thresholds on test dataset: {0.95=146, 0.85=39, 0.75=35, 0.90=8, 0.70=1, 0.35=1}
+        val thresholds =
+            if (mode != Mode.CAPTURE) listOf(0.9) else listOf(0.5, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95)
+        var vertices = findQuadFromOrientationWithAdaptiveThreshold(mat, originalSize, thresholds)
+            ?.map { Point(it.x, it.y) }
+
+        if (vertices == null && mode == Mode.CAPTURE) {
+            // Fallback: bounding rectangle
+            val biggest = biggestContour(mat)
+            if (biggest != null) {
+                val polygon = biggest.toList()
+                biggest.release()
+                vertices = MinAreaRect.minAreaRect(polygon, mask.width, mask.height)?.map { Point(it.x, it.y) }
+            }
+        }
+        val maskSize = ImageSize(mask.width, mask.height)
+        return if (vertices?.size == 4 && vertices.all { isInsideImage(it, maskSize) })
+            createQuad(vertices)
+        else null
+    } finally {
+        mat.release()
     }
-    val maskSize = ImageSize(mask.width, mask.height)
-    return if (vertices?.size == 4 && vertices.all { isInsideImage(it, maskSize) })
-        createQuad(vertices)
-    else null
 }
 
 fun findQuadFromOrientationWithAdaptiveThreshold(
@@ -182,8 +188,14 @@ fun scoreQuadAgainstProbmap(quad: List<Point>, probmap: Mat, minQuadAreaRatio: D
 
     val masked = Mat()
     Core.multiply(probmap, maskFloat, masked)
-    val meanProb = Core.sumElems(masked).`val`[0] / Core.sumElems(maskFloat).`val`[0]
-    val areaRatio = Core.sumElems(maskFloat).`val`[0] / (probmap.rows() * probmap.cols())
+    val maskSum = Core.sumElems(maskFloat).`val`[0]
+    if (maskSum <= 0.0) {
+        masked.release()
+        maskFloat.release()
+        return 0.0
+    }
+    val meanProb = Core.sumElems(masked).`val`[0] / maskSum
+    val areaRatio = maskSum / (probmap.rows() * probmap.cols())
     masked.release()
     maskFloat.release()
 

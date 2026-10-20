@@ -54,15 +54,47 @@
         // 1. Parse YAML Front Matter
         let content = markdownText;
         const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+        let hasValidFrontMatter = false;
         if (frontMatterMatch) {
-          content = content.substring(frontMatterMatch[0].length);
           const yamlStr = frontMatterMatch[1];
-          renderFrontMatter(yamlStr, frontMatterEl);
-        } else {
+          const lines = yamlStr.split(/\r?\n/);
+          let keyCount = 0;
+          let invalidLine = false;
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line || line.startsWith('#')) continue;
+            if (/^[A-Za-z0-9_-]+\s*:/.test(line)) {
+              keyCount++;
+            } else {
+              invalidLine = true;
+              break;
+            }
+          }
+          if (keyCount > 0 && !invalidLine) {
+            hasValidFrontMatter = true;
+            content = content.substring(frontMatterMatch[0].length);
+            renderFrontMatter(yamlStr, frontMatterEl);
+          }
+        }
+        if (!hasValidFrontMatter) {
           frontMatterEl.style.display = 'none';
         }
 
-        // 2. Protect LaTeX Math from Marked parser
+        // 2. Protect Code Blocks and LaTeX Math
+        const codePlaceholders = [];
+        // Stash fenced code blocks (```...``` or ~~~...~~~)
+        content = content.replace(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g, function(match) {
+          const id = '%%%CODE_BLOCK_' + codePlaceholders.length + '%%%';
+          codePlaceholders.push({ id: id, raw: match });
+          return id;
+        });
+        // Stash inline code (`...`)
+        content = content.replace(/(`+)([\s\S]*?)\1/g, function(match) {
+          const id = '%%%CODE_INLINE_' + codePlaceholders.length + '%%%';
+          codePlaceholders.push({ id: id, raw: match });
+          return id;
+        });
+
         const mathPlaceholders = [];
         // Display math: $$ ... $$ or \[ ... \]
         content = content.replace(/\$\$([\s\S]*?)\$\$/g, function(match, math) {
@@ -75,8 +107,8 @@
           mathPlaceholders.push({ id: id, math: math.trim(), display: true });
           return id;
         });
-        // Inline math: $ ... $ or \( ... \) (avoid matching currency like $10)
-        content = content.replace(/(^|[^\$])\$([^\$\n]+?)\$(?!\$)/g, function(match, prefix, math) {
+        // Inline math: $ ... $ (closing $ not preceded by space, not followed by digit) or \( ... \)
+        content = content.replace(/(^|[^\$])\$([^\s\$](?:[\s\S]*?[^\s\$])?)\$(?!\d|\$)/g, function(match, prefix, math) {
           const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
           mathPlaceholders.push({ id: id, math: math.trim(), display: false });
           return prefix + id;
@@ -86,6 +118,11 @@
           mathPlaceholders.push({ id: id, math: math.trim(), display: false });
           return id;
         });
+
+        // Restore stashed code blocks before Marked parsing
+        for (let i = 0; i < codePlaceholders.length; i++) {
+          content = content.split(codePlaceholders[i].id).join(codePlaceholders[i].raw);
+        }
 
         // 3. Configure Marked.js 15 token-based Renderer
         const renderer = new marked.Renderer();
@@ -111,7 +148,7 @@
                        '</div>' +
                      '</div>' +
                      '<div class="mermaid-actions">' +
-                       '<button class="mermaid-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encoded.replace(/'/g, "\\'") + '\'), this)">Copy Diagram</button>' +
+                       '<button type="button" class="mermaid-copy-btn" data-code="' + encoded + '">Copy Diagram</button>' +
                      '</div>' +
                    '</div>';
           }
@@ -140,7 +177,7 @@
           return '<div class="code-block-wrapper">' +
                    '<div class="code-block-header">' +
                      '<span>' + escapeHtml(displayLang.toUpperCase()) + '</span>' +
-                     '<button class="code-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encodedCode.replace(/'/g, "\\'") + '\'), this)">Copy</button>' +
+                     '<button type="button" class="code-copy-btn" data-code="' + encodedCode + '">Copy</button>' +
                    '</div>' +
                    '<pre><code class="hljs ' + (safeLang ? 'language-' + safeLang : '') + '">' + highlighted + '</code></pre>' +
                  '</div>';
@@ -171,7 +208,12 @@
             level = legacyLevel || 1;
             htmlContent = text;
           }
-          const cleanText = text.replace(/<[^>]*>/g, '').trim();
+          // Restore or clean math placeholders in TOC title
+          let cleanText = text.replace(/<[^>]*>/g, '').trim();
+          cleanText = cleanText.replace(/%%%KATEX_(?:DISPLAY|INLINE)_(\d+)%%%/g, function(m, idx) {
+            const item = mathPlaceholders[parseInt(idx, 10)];
+            return item ? item.math : '';
+          });
           const slug = 'heading-' + currentToc.length + '-' + cleanText.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '');
           if (level >= 1 && level <= 4) {
             currentToc.push({ id: slug, title: cleanText, level: level });
@@ -198,7 +240,7 @@
             }
           }
           const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-          return '<img src="' + resolvedHref + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy" style="max-width: 100%; height: auto; border-radius: 6px;">';
+          return '<img src="' + escapeHtml(resolvedHref) + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy" style="max-width: 100%; height: auto; border-radius: 6px;">';
         };
 
         // Custom Link Renderer (Marked 15 token API + security sandbox)
@@ -214,7 +256,7 @@
             content = legacyText || '';
           }
           const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-          return '<a href="' + href + '"' + titleAttr + ' target="_blank" rel="noopener noreferrer">' + content + '</a>';
+          return '<a href="' + escapeHtml(href) + '"' + titleAttr + ' target="_blank" rel="noopener noreferrer">' + content + '</a>';
         };
 
         // 4. Parse Markdown into HTML
@@ -418,19 +460,21 @@
     }
   };
 
-  // Asynchronous non-blocking Mermaid loader
+  // Asynchronous non-blocking Mermaid loader with callback queue (no interval leak)
+  let mermaidCallbacks = [];
+  let mermaidLoadError = null;
+
   function loadMermaidAsync(callback) {
     if (typeof mermaid !== 'undefined' && isMermaidLoaded) {
       callback(null);
       return;
     }
+    if (mermaidLoadError) {
+      callback(mermaidLoadError);
+      return;
+    }
+    mermaidCallbacks.push(callback);
     if (isMermaidLoading) {
-      const checkInterval = setInterval(function() {
-        if (isMermaidLoaded) {
-          clearInterval(checkInterval);
-          callback(null);
-        }
-      }, 50);
       return;
     }
     isMermaidLoading = true;
@@ -443,6 +487,7 @@
     script.onload = function() {
       isMermaidLoaded = true;
       isMermaidLoading = false;
+      mermaidLoadError = null;
       try {
         mermaid.initialize({
           startOnLoad: false,
@@ -456,15 +501,20 @@
       if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onStageChanged === 'function') {
         window.VeilFrameBridge.onStageChanged('MERMAID_RENDERING');
       }
-      callback(null);
+      const cbs = mermaidCallbacks.slice();
+      mermaidCallbacks = [];
+      cbs.forEach(function(cb) { cb(null); });
     };
     script.onerror = function(err) {
       isMermaidLoading = false;
+      mermaidLoadError = new Error('Failed to load local mermaid asset');
       console.error('[MARKDOWN] Failed to load local mermaid asset:', err);
       if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderError === 'function') {
         window.VeilFrameBridge.onRenderError('MERMAID_LOADING', 'Failed to load local mermaid asset');
       }
-      callback(new Error('Failed to load local mermaid asset'));
+      const cbs = mermaidCallbacks.slice();
+      mermaidCallbacks = [];
+      cbs.forEach(function(cb) { cb(mermaidLoadError); });
     };
     document.head.appendChild(script);
   }
@@ -589,26 +639,51 @@
     } catch (e) {}
   }
 
-  function highlightTextNodes(node, query) {
-    if (node.nodeType === 3) { // Text node
-      const val = node.nodeValue;
-      const lower = val.toLowerCase();
-      const pos = lower.indexOf(query);
-      if (pos >= 0) {
+  function highlightTextNodes(rootNode, query) {
+    if (!rootNode || !query) return;
+    const walker = document.createTreeWalker(
+      rootNode,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function(node) {
+          let parent = node.parentElement;
+          while (parent && parent !== rootNode) {
+            const tag = parent.tagName.toLowerCase();
+            if (tag === 'script' || tag === 'style' || tag === 'mark' || tag === 'textarea' ||
+                tag === 'svg' || tag === 'math' ||
+                parent.classList.contains('katex') || parent.classList.contains('mermaid')) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            parent = parent.parentElement;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    const textNodes = [];
+    while (walker.nextNode()) {
+      textNodes.push(walker.currentNode);
+    }
+
+    const qLen = query.length;
+    textNodes.forEach(function(node) {
+      let current = node;
+      while (current && current.nodeValue) {
+        const val = current.nodeValue;
+        const pos = val.toLowerCase().indexOf(query);
+        if (pos < 0) break;
+
         const mark = document.createElement('mark');
         mark.className = 'vf-search-highlight';
-        mark.appendChild(document.createTextNode(val.substring(pos, pos + query.length)));
+        mark.appendChild(document.createTextNode(val.substring(pos, pos + qLen)));
 
-        const after = node.splitText(pos);
-        after.nodeValue = after.nodeValue.substring(query.length);
-        node.parentNode.insertBefore(mark, after);
-        highlightTextNodes(after, query);
+        const after = current.splitText(pos);
+        after.nodeValue = after.nodeValue.substring(qLen);
+        after.parentNode.insertBefore(mark, after);
+        current = after;
       }
-    } else if (node.nodeType === 1 && node.childNodes && !/(script|style|mark|textarea)/i.test(node.tagName)) {
-      for (let i = 0; i < node.childNodes.length; i++) {
-        highlightTextNodes(node.childNodes[i], query);
-      }
-    }
+    });
   }
 
   function escapeHtml(str) {
@@ -680,6 +755,15 @@
       return escapeHtml(rawHtml);
     }
   }
+
+  // Delegated click listener for Copy Code and Copy Diagram buttons
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.code-copy-btn, .mermaid-copy-btn');
+    if (btn && btn.hasAttribute('data-code')) {
+      const code = decodeURIComponent(btn.getAttribute('data-code') || '');
+      window.VeilFrameMarkdown.copyCode(code, btn);
+    }
+  });
 
   // Signal renderer readiness immediately
   window.VeilFrameMarkdownReady = true;

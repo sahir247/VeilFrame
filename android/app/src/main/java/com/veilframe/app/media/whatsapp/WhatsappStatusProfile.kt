@@ -10,11 +10,12 @@ enum class WhatsappStatusResolution(
     val width: Int,
     val height: Int,
     val baseMaxRateKbps: Int,
+    val crf: Int = 23,
     val maxLongSide: Int = if (width > height) width else height,
     val maxShortSide: Int = if (width < height) width else height
 ) {
-    HD_720P("HD 720p", 720, 1280, 1900, maxLongSide = 1280, maxShortSide = 720),
-    FHD_1080P("FHD 1080p", 1080, 1920, 3800, maxLongSide = 1920, maxShortSide = 1080);
+    HD_720P("HD 720p", 720, 1280, 1900, crf = 23, maxLongSide = 1280, maxShortSide = 720),
+    FHD_1080P("FHD 1080p", 1080, 1920, 3800, crf = 20, maxLongSide = 1920, maxShortSide = 1080);
 
     /**
      * Deterministically calculates output pixel dimensions bounded by HD/FHD targets.
@@ -114,6 +115,8 @@ enum class WhatsappStatusResolution(
  */
 object WhatsappStatusConstants {
     const val CRF = 23
+    const val PRESET = "veryfast"
+    const val X264_PARAMS = "no-mbtree=1"
     const val FPS = 29.97
     const val AUDIO_SAMPLE_RATE = 44100
     const val AUDIO_BITRATE_KBPS = 128

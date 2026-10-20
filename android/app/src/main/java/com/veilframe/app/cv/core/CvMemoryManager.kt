@@ -14,7 +14,7 @@ import java.io.File
  */
 class CvMemoryManager(
     private val probe: MemoryProbe,
-    private val pool: MatPool = MatPool(),
+    private val pool: MatPool = MatPool.default,
     private val safetyFactor: Double = 0.25,
 ) {
     val matPool: MatPool get() = pool

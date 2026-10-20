@@ -102,7 +102,7 @@ object DocumentExportEngine {
         session: DocumentSession,
         options: ExportOptions = ExportOptions()
     ): ExportResult {
-        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
 
         val effectiveFormat = if (options.format == OutputFormat.IMAGES && options.isZipArchive) {
@@ -142,7 +142,7 @@ object DocumentExportEngine {
         title: String,
         options: ExportOptions = ExportOptions()
     ): ExportResult {
-        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
         val bmp = page.getDisplayBitmap(context) ?: throw IllegalStateException("Page bitmap could not be decoded")
 

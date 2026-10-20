@@ -28,17 +28,34 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
+    import os
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts=false;qt.text.font.db=false;qt.text.font=false")
+
     from pathlib import Path
-    from PySide6.QtGui import QIcon
+    from PySide6.QtGui import QIcon, QFont
+    from PySide6.QtCore import QLoggingCategory, qInstallMessageHandler
+
+    QLoggingCategory.setFilterRules("qt.qpa.fonts=false\nqt.text.font.db=false\nqt.text.font=false\n")
+
+    def _qt_message_filter(msg_type, context, message):
+        if "DirectWrite: CreateFontFaceFromHDC() failed" in message:
+            return
+        if "OpenType support missing" in message:
+            return
+        if "QFont::setPointSize" in message:
+            return
+        if context and context.category in ("qt.qpa.fonts", "qt.text.font.db", "qt.text.font"):
+            return
+        sys.stderr.write(f"{message}\n")
+
+    qInstallMessageHandler(_qt_message_filter)
 
     app = QApplication(sys.argv)
     app.setApplicationName("VeilFrame")
     app.setOrganizationName("VeilFrame")
 
-    # Set explicit font point size to prevent QFont::setPointSize <= 0 warning
-    app_font = app.font()
-    if app_font.pointSize() <= 0:
-        app_font.setPointSize(10)
+    # Set clean explicit application font with positive point size
+    app_font = QFont("Segoe UI", 10)
     app.setFont(app_font)
 
     app.setStyleSheet(DARK_THEME_QSS)

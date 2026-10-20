@@ -112,14 +112,18 @@ class StorageGovernorTest {
         val userExportFile2 = File(cvExportsDir, "saved_doc.pdf").apply { writeBytes(ByteArray(2048)) }
 
         val cacheFile = File(context.cacheDir, "temp.tmp").apply { writeBytes(ByteArray(512)) }
+        val cacheExportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val cacheExportFile = File(cacheExportDir, "old_doc.pdf").apply { writeBytes(ByteArray(1024)) }
 
         val managedFiles = StorageGovernor.getManagedFiles(context)
         assertFalse("files/exports must not be managed for FIFO deletion", managedFiles.contains(userExportFile1))
         assertFalse("files/cv/exports must not be managed for FIFO deletion", managedFiles.contains(userExportFile2))
+        assertFalse("cacheDir/exports must not be managed for FIFO deletion", managedFiles.contains(cacheExportFile))
         assertTrue("cacheDir files should be managed", managedFiles.contains(cacheFile))
 
         userExportFile1.delete()
         userExportFile2.delete()
+        cacheExportFile.delete()
         cacheFile.delete()
     }
 }

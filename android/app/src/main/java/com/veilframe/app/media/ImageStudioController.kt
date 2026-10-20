@@ -48,7 +48,8 @@ data class StudioImageItem(
     val originalBytes: Long,
     val origWidth: Int,
     val origHeight: Int,
-    var previewBitmap: Bitmap? = null
+    var previewBitmap: Bitmap? = null,
+    val editState: ImageEditState = ImageEditState()
 )
 
 class ImageStudioController(
@@ -84,6 +85,7 @@ class ImageStudioController(
         private set
     private var compressionJob: Job? = null
     private var piiJob: Job? = null
+    private var estimateJob: Job? = null
     private var activeGeneration: Long = 0L
     private lateinit var floatingDockController: FloatingDockStateController
 
@@ -193,7 +195,7 @@ class ImageStudioController(
             if (fromUser) {
                 outputConfig.quality = value.toInt()
                 binding.tvImgQualityValue.text = "${outputConfig.quality}%"
-                refreshPreview()
+                updateSizeEstimate()
             }
         }
 
@@ -203,7 +205,7 @@ class ImageStudioController(
                 val kb = value.toInt()
                 outputConfig.targetSizeKb = kb
                 binding.tvImgTargetSizeValue.text = "$kb KB"
-                refreshPreview()
+                updateSizeEstimate()
             }
         }
 
@@ -212,31 +214,31 @@ class ImageStudioController(
             binding.sliderImgTargetSize.value = 50f
             outputConfig.targetSizeKb = 50
             binding.tvImgTargetSizeValue.text = "50 KB"
-            refreshPreview()
+            updateSizeEstimate()
         }
         binding.chipTarget100k.setOnClickListener {
             binding.sliderImgTargetSize.value = 100f
             outputConfig.targetSizeKb = 100
             binding.tvImgTargetSizeValue.text = "100 KB"
-            refreshPreview()
+            updateSizeEstimate()
         }
         binding.chipTarget250k.setOnClickListener {
             binding.sliderImgTargetSize.value = 250f
             outputConfig.targetSizeKb = 250
             binding.tvImgTargetSizeValue.text = "250 KB"
-            refreshPreview()
+            updateSizeEstimate()
         }
         binding.chipTarget500k.setOnClickListener {
             binding.sliderImgTargetSize.value = 500f
             outputConfig.targetSizeKb = 500
             binding.tvImgTargetSizeValue.text = "500 KB"
-            refreshPreview()
+            updateSizeEstimate()
         }
         binding.chipTarget1m.setOnClickListener {
             binding.sliderImgTargetSize.value = 1000f
             outputConfig.targetSizeKb = 1000
             binding.tvImgTargetSizeValue.text = "1000 KB"
-            refreshPreview()
+            updateSizeEstimate()
         }
 
         // Tool modal triggers with origin views for transformational morphing
@@ -459,9 +461,16 @@ class ImageStudioController(
         lastResultFile = null
         currentResultPreviewBitmap?.recycle()
         currentResultPreviewBitmap = null
+
+        // Save current edits into currently active item
+        currentItem?.editState?.copyFrom(editState)
+
         currentMediaIndex = index
         val item = selectedMediaList[index]
         previewSourceBitmap = item.previewBitmap
+
+        // Restore target item's edit state
+        editState.copyFrom(item.editState)
 
         binding.tvImgFileName.text = item.displayName
         binding.tvImgFileSize.text = "${formatBytes(item.originalBytes)} • ${item.origWidth}x${item.origHeight}"
@@ -558,15 +567,23 @@ class ImageStudioController(
     }
 
     fun refreshPreview() {
+        updatePreviewBitmap()
+    }
+
+    fun updatePreviewBitmap() {
         val previewBmp = renderLivePreview(editState) ?: return
         binding.imgAfterPreview.setImageBitmap(previewBmp)
         val visualScale = (editState.resizeScale.toFloat() / 100f).coerceIn(0.2f, 2.5f)
         binding.imgAfterPreview.scaleX = visualScale
         binding.imgAfterPreview.scaleY = visualScale
+        updateSizeEstimate()
+    }
 
+    fun updateSizeEstimate() {
         val item = currentItem
-        val origFullW = item?.origWidth ?: previewBmp.width
-        val origFullH = item?.origHeight ?: previewBmp.height
+        val previewBmp = previewSourceBitmap
+        val origFullW = item?.origWidth ?: previewBmp?.width ?: 1920
+        val origFullH = item?.origHeight ?: previewBmp?.height ?: 1080
 
         val plan = ImageTransformEngine.calculateTransformPlan(origFullW, origFullH, editState, outputConfig)
         val targetW = plan.targetWidth
@@ -576,15 +593,27 @@ class ImageStudioController(
         val isPng = plan.outputFormat.equals("PNG", ignoreCase = true)
 
         if (isPassport) {
-            val probeBytes = ImageCompressionEngine.probeEncodeBytes(previewBmp, outputConfig)
-            val displayBytes = if (probeBytes > 0) probeBytes else (targetW * targetH * 0.22).toLong()
+            val fallbackBytes = (targetW * targetH * 0.22).toLong()
             binding.tvImgQualityLabel.text = "Preset:"
             binding.tvImgQualityValue.text = "Passport Photo"
-            binding.tvImgAfterSize.text = "~${formatBytes(displayBytes)} ($targetW × $targetH px • JPG)"
-            val ratio = if (originalBytes > 0) {
-                (100.0 - (displayBytes.toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
-            } else 0
-            binding.tvImgComparisonRatio.text = "Total: ${formatBytes(originalBytes)} → ~${formatBytes(displayBytes)} (-$ratio%)"
+            binding.tvImgAfterSize.text = "~${formatBytes(fallbackBytes)} ($targetW × $targetH px • JPG)"
+            estimateJob?.cancel()
+            val bmp = previewSourceBitmap
+            if (bmp != null) {
+                estimateJob = scope.launch(Dispatchers.Default) {
+                    kotlinx.coroutines.delay(100)
+                    val probeBytes = ImageCompressionEngine.probeEncodeBytes(bmp, outputConfig)
+                    if (probeBytes > 0) {
+                        withContext(Dispatchers.Main) {
+                            binding.tvImgAfterSize.text = "~${formatBytes(probeBytes)} ($targetW × $targetH px • JPG)"
+                            val ratio = if (originalBytes > 0) {
+                                (100.0 - (probeBytes.toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
+                            } else 0
+                            binding.tvImgComparisonRatio.text = "Total: ${formatBytes(originalBytes)} → ~${formatBytes(probeBytes)} (-$ratio%)"
+                        }
+                    }
+                }
+            }
         } else if (outputConfig.compressionMode == "target_size") {
             val targetKb = outputConfig.targetSizeKb ?: 250
             val targetBytes = targetKb.toLong() * 1024L
@@ -858,6 +887,9 @@ class ImageStudioController(
                 var totalCompressedBytes = 0L
                 val destUri = safManager.imageDestinationUri
 
+                // Save current edits into currently selected item
+                currentItem?.editState?.copyFrom(editState)
+
                 for ((idx, item) in itemsToProcess.withIndex()) {
                     if (!isActive) break
 
@@ -867,6 +899,24 @@ class ImageStudioController(
 
                     val outFilename = if (total == 1) "$safeBase.$ext" else "${safeBase}_${idx + 1}.$ext"
                     val outFile = File(outDir, outFilename)
+
+                    val itemEditState = if (itemsToProcess.size > 1 && item != currentItem) {
+                        item.editState.copy(
+                            piiDetections = emptyList(),
+                            cropAspect = if (editState.cropAspect == "Free") "Free" else editState.cropAspect,
+                            filter = editState.filter,
+                            bgType = editState.bgType,
+                            watermarkText = editState.watermarkText,
+                            watermarkPosition = editState.watermarkPosition,
+                            watermarkSize = editState.watermarkSize,
+                            watermarkColor = editState.watermarkColor,
+                            watermarkOpacity = editState.watermarkOpacity,
+                            watermarkFont = editState.watermarkFont,
+                            stripExif = editState.stripExif
+                        )
+                    } else {
+                        editState.copy()
+                    }
 
                     var fullResBmp: Bitmap? = null
                     var transformedBmp: Bitmap? = null
@@ -884,7 +934,7 @@ class ImageStudioController(
                         // Apply non-destructive transforms to full-res bitmap
                         transformedBmp = ImageTransformEngine.transform(
                             src = fullResBmp,
-                            state = editState,
+                            state = itemEditState,
                             origFullW = item.origWidth,
                             origFullH = item.origHeight,
                             useFullRes = true
@@ -893,7 +943,7 @@ class ImageStudioController(
                         val result = ImageCompressionEngine.compress(
                             srcFile = item.file,
                             outFile = outFile,
-                            editState = editState,
+                            editState = itemEditState,
                             outputConfig = outputConfig,
                             processedBitmap = transformedBmp ?: fullResBmp
                         )
@@ -1056,9 +1106,27 @@ class ImageStudioController(
     }
 
     private fun copyUriToFile(uri: Uri, target: File) {
-        activity.contentResolver.openInputStream(uri)?.use { inStream ->
-            FileOutputStream(target).use { outStream ->
-                inStream.copyTo(outStream)
+        val partFile = File(target.parentFile ?: activity.cacheDir, "${target.name}.part.${System.currentTimeMillis()}")
+        try {
+            activity.contentResolver.openInputStream(uri)?.use { inStream ->
+                FileOutputStream(partFile).use { outStream ->
+                    inStream.copyTo(outStream)
+                    outStream.flush()
+                    try {
+                        outStream.fd.sync()
+                    } catch (_: Exception) {}
+                }
+            }
+            if (partFile.exists() && partFile.length() > 0L) {
+                if (target.exists()) target.delete()
+                if (!partFile.renameTo(target)) {
+                    partFile.copyTo(target, overwrite = true)
+                    partFile.delete()
+                }
+            }
+        } finally {
+            if (partFile.exists()) {
+                partFile.delete()
             }
         }
     }

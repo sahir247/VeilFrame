@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MOTION LAB — optical-flow frame interpolation workspace (v2.3.0, Alpha).
+  MOTION LAB — optical-flow frame interpolation workspace (v2.2.9, Alpha).
   Device feedback: "make optical flow another tool." Wires the previously dormant
   cv/motion stack (FlowEstimator + FrameSynthesizer, ADR 0006-governed) behind a
   dedicated workspace: pick a video → synthesize intermediate frames → re-encode

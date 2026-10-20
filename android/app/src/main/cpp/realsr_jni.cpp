@@ -13,6 +13,7 @@
 
 #define TAG "VeilFrame.NcnnJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 static jclass g_row_callback_class = nullptr;
@@ -51,20 +52,46 @@ static bool valid_output_dimensions(jint width, jint height, int scale) {
     return out_width * out_height <= 100000000ULL;
 }
 
+static bool valid_strip_output_dimensions(jint width, jint height, int scale) {
+    if (scale != 2 && scale != 3 && scale != 4) return false;
+    const uint64_t out_width = static_cast<uint64_t>(width) * static_cast<uint64_t>(scale);
+    const uint64_t out_height = static_cast<uint64_t>(height) * static_cast<uint64_t>(scale);
+    if (out_width > 32768ULL || out_height > 32768ULL) return false;
+    // Strip streaming memory scales with out_width * tile_height rather than full frame.
+    // Allow up to 32768x32768 output dimensions (standard 12MP/48MP/108MP phone photos upscaled 4x).
+    return (out_width * out_height) <= 1073741824ULL;
+}
+
 struct CallbackUserData {
-    JNIEnv* env;
-    jobject strip_callback;
-    jobject row_callback;
-    jobject progress_callback;
-    int w;
-    int channels;
-    bool has_exception;
-    bool cancelled;
-    bool callback_failed;
+    JNIEnv* env = nullptr;
+    jobject strip_callback = nullptr;
+    jobject row_callback = nullptr;
+    jobject progress_callback = nullptr;
+    int w = 0;
+    int channels = 0;
+    bool has_exception = false;
+    bool cancelled = false;
+    bool callback_failed = false;
     // One reusable row buffer and one DirectByteBuffer object per inference call.
-    // The native callback copies the current row here before invoking Kotlin.
     std::vector<unsigned char> row_buffer;
-    jobject row_direct_buffer;
+    jobject row_direct_buffer = nullptr;
+    // Reusable strip direct buffer caching
+    unsigned char* last_strip_data = nullptr;
+    uint64_t last_strip_capacity = 0;
+    jobject strip_direct_buffer = nullptr;
+
+    ~CallbackUserData() {
+        if (env) {
+            if (row_direct_buffer) {
+                env->DeleteLocalRef(row_direct_buffer);
+                row_direct_buffer = nullptr;
+            }
+            if (strip_direct_buffer) {
+                env->DeleteLocalRef(strip_direct_buffer);
+                strip_direct_buffer = nullptr;
+            }
+        }
+    }
 };
 
 static bool prepare_reusable_row_buffer(
@@ -109,15 +136,34 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
         LOGE("Rejected out-of-range strip buffer size");
         return -1;
     }
-    jobject direct_buf = cb->env->NewDirectByteBuffer(strip_data, static_cast<jlong>(capacity64));
-    if (!direct_buf) {
-        cb->has_exception = true;
-        LOGE("Failed to allocate DirectByteBuffer for input strip y0=%d h=%d", y0, height);
-        return -1;
+
+    jobject direct_buf = nullptr;
+    if (cb->strip_direct_buffer && cb->last_strip_data == strip_data && cb->last_strip_capacity == capacity64) {
+        direct_buf = cb->strip_direct_buffer;
+    } else {
+        if (cb->strip_direct_buffer) {
+            cb->env->DeleteLocalRef(cb->strip_direct_buffer);
+            cb->strip_direct_buffer = nullptr;
+        }
+        direct_buf = cb->env->NewDirectByteBuffer(strip_data, static_cast<jlong>(capacity64));
+        if (!direct_buf) {
+            cb->has_exception = true;
+            LOGE("Failed to allocate DirectByteBuffer for input strip y0=%d h=%d", y0, height);
+            return -1;
+        }
+        cb->strip_direct_buffer = direct_buf;
+        cb->last_strip_data = strip_data;
+        cb->last_strip_capacity = capacity64;
     }
 
+    jobject cleared_buffer = cb->env->CallObjectMethod(direct_buf, g_buffer_clear_method);
+    if (cb->env->ExceptionCheck()) {
+        cb->has_exception = true;
+        return -1;
+    }
+    if (cleared_buffer) cb->env->DeleteLocalRef(cleared_buffer);
+
     jint ret = cb->env->CallIntMethod(cb->strip_callback, g_on_strip_method, direct_buf, y0, height);
-    cb->env->DeleteLocalRef(direct_buf);
 
     if (cb->env->ExceptionCheck()) {
         cb->has_exception = true;
@@ -427,8 +473,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* 
         });
         if (g_runtime_state != RuntimeState::READY) return;
         if (!g_instance_registry.empty()) {
-            LOGE("Refusing NCNN global teardown: %zu instance handle(s) remain", g_instance_registry.size());
-            return;
+            LOGW("Draining %zu orphaned instance handle(s) during NCNN global teardown", g_instance_registry.size());
+            g_instance_registry.clear();
         }
 
         // Prevent new operations first, then wait for every operation lease.
@@ -715,7 +761,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
     if (!valid_image_dimensions(width, height, channels) ||
-        !valid_output_dimensions(width, height, lease.instance->engine->scale) ||
+        !valid_strip_output_dimensions(width, height, lease.instance->engine->scale) ||
         !stripCallback || !rowCallback || !g_on_strip_method || !g_on_row_method) {
         LOGE("nativeProcessStripStreaming: invalid dimensions or callbacks");
         return -3;

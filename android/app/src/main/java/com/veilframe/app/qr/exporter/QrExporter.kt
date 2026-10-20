@@ -413,22 +413,28 @@ object QrExporter {
     /**
      * Saves animated GIF bytes to the device Pictures/VeilFrame gallery returning typed [QrOutputResult].
      */
-    suspend fun saveGifTyped(
+    /**
+     * Saves raw image bytes (GIF, JPEG) to the device Pictures/VeilFrame gallery returning typed [QrOutputResult].
+     */
+    internal suspend fun saveImageBytesTyped(
         context: Context,
-        gifBytes: ByteArray
+        bytes: ByteArray,
+        ext: String,
+        mime: String
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
-        if (gifBytes.isEmpty()) {
+        if (bytes.isEmpty()) {
             return@withContext QrOutputResult.Failure(
-                QrError.Output.GifEncodingFailed("GIF byte array is empty")
+                if (ext == "gif") QrError.Output.GifEncodingFailed("GIF byte array is empty")
+                else QrError.Output.JpegEncodingFailed("Image byte array is empty for $ext export")
             )
         }
-        val name = timestampName("gif")
+        val name = timestampName(ext)
         var pendingUri: Uri? = null
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val cv = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/gif")
+                    put(MediaStore.Images.Media.MIME_TYPE, mime)
                     put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
@@ -446,7 +452,7 @@ object QrExporter {
                     )
                 }
                 stream.use { out ->
-                    out.write(gifBytes)
+                    out.write(bytes)
                 }
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -462,8 +468,8 @@ object QrExporter {
                     )
                 }
                 val file = File(dir, name)
-                FileOutputStream(file).use { out -> out.write(gifBytes) }
-                android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("image/gif"), null)
+                FileOutputStream(file).use { out -> out.write(bytes) }
+                android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mime), null)
                 val uri = try {
                     androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
                 } catch (_: Exception) {
@@ -478,6 +484,14 @@ object QrExporter {
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
+
+    /**
+     * Saves animated GIF bytes to the device Pictures/VeilFrame gallery returning typed [QrOutputResult].
+     */
+    suspend fun saveGifTyped(
+        context: Context,
+        gifBytes: ByteArray
+    ): QrOutputResult<Uri> = saveImageBytesTyped(context, gifBytes, "gif", "image/gif")
 
     /**
      * Saves animated GIF bytes to the device Pictures/VeilFrame gallery.
@@ -619,6 +633,7 @@ object QrExporter {
         }
         val name = timestampName(if (ext.isNotEmpty()) ext else "mp4")
 
+        var pendingUri: Uri? = null
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val cv = ContentValues().apply {
@@ -631,9 +646,11 @@ object QrExporter {
                     ?: return@withContext QrOutputResult.Failure(
                         QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
                     )
+                pendingUri = uri
                 val stream = context.contentResolver.openOutputStream(uri)
                 if (stream == null) {
                     context.contentResolver.delete(uri, null, null)
+                    pendingUri = null
                     return@withContext QrOutputResult.Failure(
                         QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
                     )
@@ -644,6 +661,7 @@ object QrExporter {
                 cv.clear()
                 cv.put(MediaStore.Video.Media.IS_PENDING, 0)
                 context.contentResolver.update(uri, cv, null, null)
+                pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
                 @Suppress("DEPRECATION")
@@ -663,6 +681,9 @@ object QrExporter {
                 QrOutputResult.Success(uri)
             }
         } catch (t: Throwable) {
+            pendingUri?.let { uri ->
+                try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
+            }
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -875,6 +896,7 @@ object QrExporter {
             )
         }
         val name = timestampName("png")
+        var pendingUri: Uri? = null
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val cv = ContentValues().apply {
@@ -887,9 +909,11 @@ object QrExporter {
                     ?: return@withContext QrOutputResult.Failure(
                         QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
                     )
+                pendingUri = uri
                 val stream = context.contentResolver.openOutputStream(uri)
                 if (stream == null) {
                     context.contentResolver.delete(uri, null, null)
+                    pendingUri = null
                     return@withContext QrOutputResult.Failure(
                         QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
                     )
@@ -900,6 +924,7 @@ object QrExporter {
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
                 context.contentResolver.update(uri, cv, null, null)
+                pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
                 @Suppress("DEPRECATION")
@@ -919,6 +944,9 @@ object QrExporter {
                 QrOutputResult.Success(uri)
             }
         } catch (t: Throwable) {
+            pendingUri?.let { uri ->
+                try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
+            }
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -977,7 +1005,11 @@ object QrExporter {
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
-                saveBitmapTyped(context, bmp, Bitmap.CompressFormat.PNG, 100)
+                try {
+                    saveBitmapTyped(context, bmp, Bitmap.CompressFormat.PNG, 100)
+                } finally {
+                    bmp.recycle()
+                }
             }
             is QrOutputFormat.Jpeg -> {
                 val renderResult = QrGenerator.generateStrictWithResultSuspend(content, effectiveDesign, mode = mode)
@@ -998,36 +1030,40 @@ object QrExporter {
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
 
-                // Verify post-compression JPEG scanability strictly before exporting
-                val baos = java.io.ByteArrayOutputStream()
-                val compressed = bmp.compress(Bitmap.CompressFormat.JPEG, format.quality, baos)
-                if (!compressed) {
-                    return QrOutputResult.Failure(QrError.Output.JpegEncodingFailed("JPEG compression returned false"))
-                }
-                val jpegBytes = baos.toByteArray()
-                val decodedBmp = android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-                if (decodedBmp != null) {
-                    try {
-                        val postCompressReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                            decodedBmp,
-                            effectiveDesign,
-                            matrix,
-                            content
-                        )
-                        if (!postCompressReport.isScanReady && !postCompressReport.validationSkipped) {
-                            return QrOutputResult.Failure(
-                                QrError.Validation.ScanabilityFailed(
-                                    "JPEG compression at quality ${format.quality} degraded scanability below decode threshold",
-                                    postCompressReport.warnings
-                                )
-                            )
-                        }
-                    } finally {
-                        decodedBmp.recycle()
+                try {
+                    // Verify post-compression JPEG scanability strictly before exporting
+                    val baos = java.io.ByteArrayOutputStream()
+                    val compressed = bmp.compress(Bitmap.CompressFormat.JPEG, format.quality, baos)
+                    if (!compressed) {
+                        return QrOutputResult.Failure(QrError.Output.JpegEncodingFailed("JPEG compression returned false"))
                     }
-                }
+                    val jpegBytes = baos.toByteArray()
+                    val decodedBmp = android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+                    if (decodedBmp != null) {
+                        try {
+                            val postCompressReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                                decodedBmp,
+                                effectiveDesign,
+                                matrix,
+                                content
+                            )
+                            if (!postCompressReport.isScanReady && !postCompressReport.validationSkipped) {
+                                return QrOutputResult.Failure(
+                                    QrError.Validation.ScanabilityFailed(
+                                        "JPEG compression at quality ${format.quality} degraded scanability below decode threshold",
+                                        postCompressReport.warnings
+                                    )
+                                )
+                            }
+                        } finally {
+                            decodedBmp.recycle()
+                        }
+                    }
 
-                saveBitmapTyped(context, bmp, Bitmap.CompressFormat.JPEG, format.quality)
+                    saveImageBytesTyped(context, jpegBytes, "jpg", "image/jpeg")
+                } finally {
+                    bmp.recycle()
+                }
             }
             is QrOutputFormat.Svg -> {
                 if (AnimatedQrGenerator.isDesignAnimated(effectiveDesign)) {
@@ -1065,7 +1101,11 @@ object QrExporter {
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
-                savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints, content, effectiveDesign, matrix)
+                try {
+                    savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints, content, effectiveDesign, matrix)
+                } finally {
+                    bmp.recycle()
+                }
             }
             is QrOutputFormat.Gif -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)

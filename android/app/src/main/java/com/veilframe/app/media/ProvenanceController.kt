@@ -33,6 +33,7 @@ class ProvenanceController(
     private val onNavigateBack: () -> Unit
 ) {
     private var currentSha256: String = ""
+    var currentSourceUri: Uri? = null
 
     fun init() {
         binding.toolbarProvenance.setNavigationOnClickListener {
@@ -59,6 +60,7 @@ class ProvenanceController(
 
     fun reset() {
         currentSha256 = ""
+        currentSourceUri = null
         binding.btnProvenanceCopyHash.isEnabled = false
         binding.tvProvenanceFileName.text = "No file selected"
         binding.tvProvenanceFileSize.text = "Select any file or archive to compute hash and verify signature"
@@ -74,6 +76,7 @@ class ProvenanceController(
     }
 
     fun handleFileSelected(uri: Uri) {
+        currentSourceUri = uri
         val name = safStorageManager.getDisplayName(uri)
         val sizeBytes = safStorageManager.queryFileSize(uri)
 

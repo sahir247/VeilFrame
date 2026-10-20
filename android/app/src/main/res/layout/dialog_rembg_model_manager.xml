@@ -38,7 +38,7 @@
     </LinearLayout>
 
     <!-- Scrollable Content -->
-    <androidx.core.widget.NestedScrollView
+    <com.veilframe.app.ui.MaxHeightNestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:maxHeight="540dp"
@@ -181,7 +181,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:layout_marginBottom="4dp"
-                        android:indeterminate="true"
+                        android:indeterminate="false"
+                        android:max="100"
                         android:visibility="gone" />
 
                     <LinearLayout
@@ -190,6 +191,16 @@
                         android:orientation="horizontal"
                         android:gravity="end"
                         android:layout_marginTop="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCancelModelBiRefNet"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
+                            android:text="Cancel"
+                            android:textColor="@color/vf_accent_red"
+                            android:visibility="gone" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSelectModelBiRefNet"
@@ -294,7 +305,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:layout_marginBottom="4dp"
-                        android:indeterminate="true"
+                        android:indeterminate="false"
+                        android:max="100"
                         android:visibility="gone" />
 
                     <LinearLayout
@@ -303,6 +315,16 @@
                         android:orientation="horizontal"
                         android:gravity="end"
                         android:layout_marginTop="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCancelModelIsNet"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
+                            android:text="Cancel"
+                            android:textColor="@color/vf_accent_red"
+                            android:visibility="gone" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSelectModelIsNet"
@@ -407,7 +429,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:layout_marginBottom="4dp"
-                        android:indeterminate="true"
+                        android:indeterminate="false"
+                        android:max="100"
                         android:visibility="gone" />
 
                     <LinearLayout
@@ -416,6 +439,16 @@
                         android:orientation="horizontal"
                         android:gravity="end"
                         android:layout_marginTop="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCancelModelU2Net"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
+                            android:text="Cancel"
+                            android:textColor="@color/vf_accent_red"
+                            android:visibility="gone" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSelectModelU2Net"
@@ -458,5 +491,5 @@
             </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+    </com.veilframe.app.ui.MaxHeightNestedScrollView>
 </LinearLayout>

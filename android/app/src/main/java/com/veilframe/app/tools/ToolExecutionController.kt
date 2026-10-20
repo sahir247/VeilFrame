@@ -112,11 +112,12 @@ class ToolExecutionController(
         val state = sessionManager.currentState
         val tokenIndex = sessionManager.getSelectedOptionIndex()
         val tokenBudget = when (tokenIndex) {
-            0 -> 32_000
-            1 -> 64_000
-            2 -> 128_000
-            3 -> 200_000
-            else -> 64_000
+            0 -> 32_000L
+            1 -> 64_000L
+            2 -> 128_000L
+            3 -> 200_000L
+            4 -> 0L // Unlimited
+            else -> 64_000L
         }
 
         val formatIndex = sessionManager.getSelectedFormatIndex()
@@ -128,7 +129,7 @@ class ToolExecutionController(
 
         withContext(Dispatchers.Main) {
             sessionManager.updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
-            onLog("[AI] Packaging context directly from target: ${state.selectedPathDisplay} (Budget: ${if (tokenBudget == 0) "Unlimited" else "$tokenBudget tokens"})...")
+            onLog("[AI] Packaging context directly from target: ${state.selectedPathDisplay} (Budget: ${if (tokenBudget == 0L) "Unlimited" else "$tokenBudget tokens"})...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -164,12 +165,31 @@ class ToolExecutionController(
                 )
             } else {
                 val name = safStorageManager.getDisplayName(uri)
-                val content = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
-                outputFile.writeText("# Context: $name\n\n```\n$content\n```", Charsets.UTF_8)
+                val raw = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                val content = if (bundleConfig.maskSecrets) AiBundleEngine.maskSecrets(raw) else raw
+                val finalDocument = when (formatKey.lowercase(Locale.US)) {
+                    "json" -> """
+                        {
+                            "project": "${name.replace("\\", "\\\\")}",
+                            "generated": "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}",
+                            "included_files": 1,
+                            "estimated_tokens": ${content.length / 4},
+                            "files": {
+                                "${name.replace("\\", "\\\\")}": ${org.json.JSONObject.quote(content)}
+                            }
+                        }
+                    """.trimIndent()
+                    "aibundle" -> {
+                        val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
+                        "@VEILFRAME_BUNDLE\nversion=1\nproject=$name\ntimestamp=${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\ntotal_tokens=${content.length / 4}\nincluded_files=1\n\n@FILES\n@FILE id=\"F001\" path=\"$name\" language=\"$ext\"\n<<<\n$content\n>>>\n\n@END\n"
+                    }
+                    else -> "# Context: $name\n\n```\n$content\n```"
+                }
+                outputFile.writeText(finalDocument, Charsets.UTF_8)
                 AiBundleEngine.BundleResult(
                     totalFiles = 1,
                     includedFiles = 1,
-                    totalTokens = content.length / 4,
+                    totalTokens = (content.length / 4).toLong(),
                     outputPath = outputFile.absolutePath
                 )
             }
@@ -207,9 +227,17 @@ class ToolExecutionController(
             0 -> "low"
             1 -> "medium"
             2 -> "high"
-            3 -> "aggressive"
             else -> "none"
         }
+        val crf = state.sliderValue.toInt().takeIf { it in 15..40 } ?: when (noiseLevel) {
+            "low" -> 20
+            "medium" -> 22
+            "high" -> 23
+            else -> 24
+        }
+        val stripExif = binding.switchOption1.isChecked
+        val scrubAudio = binding.switchOption2.isChecked
+        val reencodeBitstream = binding.switchOption3.isChecked
 
         val formatIndex = sessionManager.getSelectedFormatIndex()
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -223,7 +251,8 @@ class ToolExecutionController(
 
             val stagingDir = File(activity.cacheDir, "batch_video_staging_$timeStamp")
             val outputBatchDir = File(activity.cacheDir, "batch_video_sanitized_$timeStamp").apply { mkdirs() }
-            val copiedCount = safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+            safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+            val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
 
             val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "wmv", "3gp")
             val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in videoExtensions }.toList()
@@ -233,7 +262,7 @@ class ToolExecutionController(
                 outputBatchDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
                     sessionManager.updateJobState(JobState.FAILED, "No supported video files found in folder.")
-                    onLog("[WARN] No video files (.mp4, .mkv, .webm, .mov, etc.) found in selected folder ($copiedCount files inspected).")
+                    onLog("[WARN] No video files (.mp4, .mkv, .webm, .mov, etc.) found in selected folder ($inspectedCount files inspected).")
                     sessionManager.updatePrimaryActionDock(state)
                 }
                 return
@@ -267,7 +296,10 @@ class ToolExecutionController(
                         inputFile.absolutePath,
                         outputFile.absolutePath,
                         noiseLevel = noiseLevel,
-                        scrubAudio = binding.switchOption2.isChecked
+                        scrubAudio = scrubAudio,
+                        crf = crf,
+                        stripExif = stripExif,
+                        reencodeBitstream = reencodeBitstream
                     )
                 }
                 if (ok && outputFile.exists() && outputFile.length() > 0) {
@@ -357,7 +389,10 @@ class ToolExecutionController(
                     tempInput.absolutePath,
                     outputFile.absolutePath,
                     noiseLevel = noiseLevel,
-                    scrubAudio = binding.switchOption2.isChecked
+                    scrubAudio = scrubAudio,
+                    crf = crf,
+                    stripExif = stripExif,
+                    reencodeBitstream = reencodeBitstream
                 )
             }
 
@@ -399,6 +434,15 @@ class ToolExecutionController(
     private suspend fun runImageSanitization(uri: Uri) {
         val state = sessionManager.currentState
         val formatIndex = sessionManager.getSelectedFormatIndex()
+        val quality = when (sessionManager.getSelectedOptionIndex()) {
+            0 -> 95
+            1 -> 90
+            2 -> 85
+            else -> state.sliderValue.toInt().coerceIn(50, 100)
+        }
+        val stripExif = binding.switchOption1.isChecked
+        val stripThumbnails = binding.switchOption2.isChecked
+        val sanitizeIcc = binding.switchOption3.isChecked
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backend = AndroidMediaBackend(activity)
 
@@ -410,7 +454,8 @@ class ToolExecutionController(
 
             val stagingDir = File(activity.cacheDir, "batch_img_staging_$timeStamp")
             val outputBatchDir = File(activity.cacheDir, "batch_img_sanitized_$timeStamp").apply { mkdirs() }
-            val copiedCount = safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+            safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+            val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
 
             val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "gif")
             val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList()
@@ -420,14 +465,14 @@ class ToolExecutionController(
                 outputBatchDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
                     sessionManager.updateJobState(JobState.FAILED, "No supported image files found in folder.")
-                    onLog("[WARN] No image files (.jpg, .png, .webp, .bmp, .heic, etc.) found in selected folder ($copiedCount files inspected).")
+                    onLog("[WARN] No image files (.jpg, .png, .webp, .bmp, .heic, etc.) found in selected folder ($inspectedCount files inspected).")
                     sessionManager.updatePrimaryActionDock(state)
                 }
                 return
             }
 
             withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing ${candidateFiles.size} images...")
+                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing ${candidateFiles.size} images (Quality: $quality%)...")
                 onLog("[BATCH] Found ${candidateFiles.size} images with mixed formats. Beginning batch scrubbing...")
             }
 
@@ -457,7 +502,11 @@ class ToolExecutionController(
                     backend.cleanImage(
                         inputFile.absolutePath,
                         outputFile.absolutePath,
-                        stripExif = binding.switchOption1.isChecked
+                        stripExif = stripExif,
+                        quality = quality,
+                        targetExtension = targetExt,
+                        stripThumbnails = stripThumbnails,
+                        sanitizeIcc = sanitizeIcc
                     )
                 }
                 if (ok && outputFile.exists() && outputFile.length() > 0) {
@@ -542,7 +591,7 @@ class ToolExecutionController(
             val outputFile = File(activity.cacheDir, "Cleaned_$timeStamp.$targetExt")
 
             withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels...")
+                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels (Quality: $quality%)...")
                 onLog("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
             }
 
@@ -550,7 +599,11 @@ class ToolExecutionController(
                 backend.cleanImage(
                     tempInput.absolutePath,
                     outputFile.absolutePath,
-                    stripExif = binding.switchOption1.isChecked
+                    stripExif = stripExif,
+                    quality = quality,
+                    targetExtension = targetExt,
+                    stripThumbnails = stripThumbnails,
+                    sanitizeIcc = sanitizeIcc
                 )
             }
 
@@ -598,6 +651,7 @@ class ToolExecutionController(
             2 -> "md"
             3 -> "csv"
             4 -> "txt"
+            5 -> "zip"
             else -> "html"
         }
 
@@ -609,7 +663,7 @@ class ToolExecutionController(
         }
 
         val recursive = binding.switchOption1.isChecked
-        val computeHashes = binding.switchOption2.isChecked
+        val computeHashes = binding.switchOption2.isChecked || profileIndex == 2
         val detectSecrets = binding.switchOption3.isChecked
 
         withContext(Dispatchers.Main) {
@@ -683,6 +737,9 @@ class ToolExecutionController(
             onLog("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
             if (scanResult.totalSecretsFound > 0) {
                 onLog("[WARN] Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
+            }
+            if (scanResult.duplicateGroups.isNotEmpty()) {
+                onLog("[DUP] Found ${scanResult.duplicateGroups.size} duplicate file groups based on SHA-256 hashing.")
             }
             onLog("[EXPORT] Output ready for saving or sharing.")
             sessionManager.updatePrimaryActionDock(state)

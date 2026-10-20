@@ -154,7 +154,10 @@ object PerspectiveMetrology {
 
         val d1 = Vector3D(v1.x, v1.y, f)
         val d2 = Vector3D(v2.x, v2.y, f)
-        val n = d1.crossProduct(d2)
+        val rawN = d1.crossProduct(d2)
+        val nNorm = rawN.norm()
+        if (nNorm < 1e-6) return averageSides()
+        val n = rawN * (1.0 / nNorm)
 
         fun ray(p: Point) = Vector3D((p.x - cx) / f, (p.y - cy) / f, 1.0)
 
@@ -283,8 +286,8 @@ fun rotate(input: Mat, degrees: Int): Mat {
 }
 
 fun resizeForMaxPixels(img: Mat, maxPixels: Double, interpolation: Int = Imgproc.INTER_AREA): Mat {
-    val origPixels = img.width() * img.height()
-    if (origPixels <= maxPixels) {
+    val origPixels = img.width().toDouble() * img.height().toDouble()
+    if (maxPixels <= 0.0 || origPixels <= maxPixels) {
         return img.clone()
     }
     val scale = sqrt(maxPixels / origPixels)

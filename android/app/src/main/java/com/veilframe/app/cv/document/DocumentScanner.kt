@@ -63,10 +63,12 @@ object DocumentScanner {
      */
     fun scan(source: Mat, options: Options = Options()): ScanResult? {
         require(!source.empty()) { "source is empty" }
-        val corners = findCorners(
+        val (corners, confidence) = findCornersWithConfidence(
             source = source,
             segmentationService = options.segmentationService,
             isCaptureMode = true,
+            workingMaxEdge = options.workingMaxEdge,
+            minCoverage = options.minCoverage,
         )
         if (corners.size != 4) return null
 
@@ -89,7 +91,7 @@ object DocumentScanner {
             return ScanResult(
                 warped = enhanced,
                 corners = corners,
-                confidence = 1.0,
+                confidence = confidence,
                 mode = options.mode,
             )
         } finally {
@@ -114,24 +116,30 @@ object DocumentScanner {
         DocumentMode.GRAYSCALE -> {
             context?.ensureActive()
             val enhanced = DocumentPostProcessor.enhanceGrayscaleImage(image)
-            enhanced.copyTo(image)
-            enhanced.release()
+            if (enhanced !== image) {
+                enhanced.copyTo(image)
+                enhanced.release()
+            }
             image
         }
 
         DocumentMode.BLACK_AND_WHITE -> {
             context?.ensureActive()
             val binary = DocumentPostProcessor.binarizeDocument(image)
-            binary.copyTo(image)
-            binary.release()
+            if (binary !== image) {
+                binary.copyTo(image)
+                binary.release()
+            }
             image
         }
 
         DocumentMode.ENHANCED -> {
             context?.ensureActive()
             val enhanced = DocumentPostProcessor.multiScaleRetinexOnL(image)
-            enhanced.copyTo(image)
-            enhanced.release()
+            if (enhanced !== image) {
+                enhanced.copyTo(image)
+                enhanced.release()
+            }
             image
         }
 
@@ -142,10 +150,16 @@ object DocumentScanner {
             val normalized = Preprocessor.normalize(retinex, clipLimit = 2.4)
             context?.ensureActive()
             val sharpened = Preprocessor.sharpen(normalized, amount = 0.6, radius = 1.0)
-            sharpened.copyTo(image)
-            retinex.release()
-            normalized.release()
-            sharpened.release()
+            if (sharpened !== image) {
+                sharpened.copyTo(image)
+                sharpened.release()
+            }
+            if (retinex !== image) {
+                retinex.release()
+            }
+            if (normalized !== retinex && normalized !== image) {
+                normalized.release()
+            }
             image
         }
 
@@ -157,9 +171,13 @@ object DocumentScanner {
                 retinex,
                 com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.6, radius = 1.0, threshold = 2.0),
             )
-            sharpened.copyTo(image)
-            retinex.release()
-            sharpened.release()
+            if (sharpened !== image) {
+                sharpened.copyTo(image)
+                sharpened.release()
+            }
+            if (retinex !== image) {
+                retinex.release()
+            }
             image
         }
 
@@ -168,12 +186,16 @@ object DocumentScanner {
             val detected = ColorDetector.autoColorMode(image, emptyList())
             if (detected == DocumentColorMode.COLOR) {
                 val enhanced = DocumentPostProcessor.multiScaleRetinexOnL(image)
-                enhanced.copyTo(image)
-                enhanced.release()
+                if (enhanced !== image) {
+                    enhanced.copyTo(image)
+                    enhanced.release()
+                }
             } else {
                 val enhanced = DocumentPostProcessor.enhanceGrayscaleImage(image)
-                enhanced.copyTo(image)
-                enhanced.release()
+                if (enhanced !== image) {
+                    enhanced.copyTo(image)
+                    enhanced.release()
+                }
             }
             image
         }
@@ -184,14 +206,16 @@ object DocumentScanner {
      * When [segmentationService] is provided and available, evaluates the FairScan neural model
      * first, falling back cleanly to the classical OpenCV contour cascade.
      */
-    fun findCorners(
+    fun findCornersWithConfidence(
         source: Mat,
         blurredMat: Mat? = null,
         edgesMat: Mat? = null,
         segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
         isCaptureMode: Boolean = false,
+        workingMaxEdge: Int = 1280,
+        minCoverage: Double = 0.08,
         context: com.veilframe.app.cv.core.CvContext? = null,
-    ): List<org.opencv.core.Point> {
+    ): Pair<List<org.opencv.core.Point>, Double> {
         if (segmentationService != null && segmentationService.isModelAvailable) {
             val segResult = try {
                 segmentationService.runSegmentationDirect(source)
@@ -206,7 +230,7 @@ object DocumentScanner {
                     isCaptureMode = isCaptureMode
                 )
                 if (neuralCorners != null && neuralCorners.size == 4) {
-                    return neuralCorners
+                    return neuralCorners to 0.95
                 }
             }
         }
@@ -215,10 +239,36 @@ object DocumentScanner {
             source = source,
             blurredMat = blurredMat,
             edgesMat = edgesMat,
+            workingMaxEdge = workingMaxEdge,
+            minCoverage = minCoverage,
             context = context,
         )
-        return detection?.corners ?: emptyList()
+        return if (detection != null) {
+            detection.corners to detection.confidence
+        } else {
+            emptyList<org.opencv.core.Point>() to 0.0
+        }
     }
+
+    fun findCorners(
+        source: Mat,
+        blurredMat: Mat? = null,
+        edgesMat: Mat? = null,
+        segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
+        isCaptureMode: Boolean = false,
+        workingMaxEdge: Int = 1280,
+        minCoverage: Double = 0.08,
+        context: com.veilframe.app.cv.core.CvContext? = null,
+    ): List<org.opencv.core.Point> = findCornersWithConfidence(
+        source = source,
+        blurredMat = blurredMat,
+        edgesMat = edgesMat,
+        segmentationService = segmentationService,
+        isCaptureMode = isCaptureMode,
+        workingMaxEdge = workingMaxEdge,
+        minCoverage = minCoverage,
+        context = context,
+    ).first
 
     /**
      * Suspend version of corner detection for coroutines.

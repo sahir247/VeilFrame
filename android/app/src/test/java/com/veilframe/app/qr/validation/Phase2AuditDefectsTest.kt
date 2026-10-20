@@ -396,4 +396,34 @@ class Phase2AuditDefectsTest {
             singleThreadDispatcher.close()
         }
     }
+
+    @Test
+    fun testPngExport_SucceedsAndCleansUpBitmap() = runBlocking {
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            correction = ErrorCorrectionChoice.H,
+            outputSize = 512
+        )
+        val result = QrExporter.exportTyped(
+            context = app,
+            content = payload,
+            design = design,
+            format = QrOutputFormat.Png
+        )
+        assertTrue("PNG export should succeed", result is QrOutputResult.Success)
+    }
+
+    @Test
+    fun testSaveVideoTyped_FailsSafelyForNonExistentFile() = runBlocking {
+        val emptyFile = java.io.File(app.cacheDir, "non_existent.mp4")
+        val result = QrExporter.saveVideoTyped(app, emptyFile)
+        assertTrue("saveVideoTyped must fail for non-existent file", result is QrOutputResult.Failure)
+    }
+
+    @Test
+    fun testSaveApngTyped_FailsSafelyForNonExistentFile() = runBlocking {
+        val emptyFile = java.io.File(app.cacheDir, "non_existent.png")
+        val result = QrExporter.saveApngTyped(app, emptyFile)
+        assertTrue("saveApngTyped must fail for non-existent file", result is QrOutputResult.Failure)
+    }
 }

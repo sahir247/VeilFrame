@@ -101,7 +101,9 @@ class WhatsappStatusPipelineTest {
 
         // Standard properties
         assertTrue(joined.contains("-c:v libx264"))
+        assertTrue(joined.contains("-preset veryfast"))
         assertTrue(joined.contains("-crf 23"))
+        assertTrue(joined.contains("-x264-params no-mbtree=1"))
         assertTrue(joined.contains("-r 29.97"))
         assertTrue(joined.contains("-c:a aac"))
         assertTrue(joined.contains("-ar 44100"))
@@ -112,6 +114,40 @@ class WhatsappStatusPipelineTest {
         assertTrue(joined.contains("-movflags +faststart"))
         assertTrue(joined.contains("-map [vout]"))
         assertTrue(joined.contains("-map 0:a?"))
+    }
+
+    @Test
+    fun testResolutionCrfAndPureStatusTuning() {
+        assertEquals(23, WhatsappStatusResolution.HD_720P.crf)
+        assertEquals(20, WhatsappStatusResolution.FHD_1080P.crf)
+        assertEquals("veryfast", WhatsappStatusConstants.PRESET)
+        assertEquals("no-mbtree=1", WhatsappStatusConstants.X264_PARAMS)
+
+        val temp = File("temp_inter.mp4")
+        val out = File("final_fhd_status.mp4")
+        val filterGraph = "[0:v]format=yuv420p[vout]"
+
+        val fhdArgs = WhatsappStatusCommandBuilder.buildStage2Arguments(
+            tempIntermediateFile = temp,
+            outFile = out,
+            filterGraph = filterGraph,
+            baseMaxRateKbps = 3800,
+            bufSizeKbps = 5700,
+            crf = WhatsappStatusResolution.FHD_1080P.crf
+        )
+        val fhdJoined = fhdArgs.joinToString(" ")
+        assertTrue(fhdJoined.contains("-crf 20"))
+        assertTrue(fhdJoined.contains("-preset veryfast"))
+        assertTrue(fhdJoined.contains("-x264-params no-mbtree=1"))
+
+        val photoArgs = WhatsappStatusCommandBuilder.buildPhotoStatusArguments(
+            inputImageFile = File("photo.jpg"),
+            outFile = File("photo_out.mp4"),
+            filterGraph = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,format=yuv420p"
+        )
+        val photoJoined = photoArgs.joinToString(" ")
+        assertTrue(photoJoined.contains("-preset veryfast"))
+        assertTrue(photoJoined.contains("-x264-params no-mbtree=1"))
     }
 
     @Test

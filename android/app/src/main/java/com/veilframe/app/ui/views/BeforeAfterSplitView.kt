@@ -215,6 +215,10 @@ class BeforeAfterSplitView @JvmOverloads constructor(
         scaleDetector.onTouchEvent(event)
         gestureDetector.onTouchEvent(event)
 
+        if (afterBitmap == null) {
+            return true
+        }
+
         val splitX = width * splitFraction
         val handleY = height / 2f
 
@@ -291,6 +295,13 @@ class BeforeAfterSplitView @JvmOverloads constructor(
             val left = (w - drawW) / 2f + translationX
             val top = (h - drawH) / 2f + translationY
             val dstRect = RectF(left, top, left + drawW, top + drawH)
+
+            if (afterBitmap == null) {
+                if (beforeBitmap != null) {
+                    canvas.drawBitmap(beforeBitmap!!, null, dstRect, bitmapPaint)
+                }
+                return
+            }
 
             // 1. Draw Checkerboard background for transparent areas on the After side (splitX to w)
             canvas.save()

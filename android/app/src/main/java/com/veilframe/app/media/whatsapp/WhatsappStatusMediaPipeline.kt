@@ -201,6 +201,7 @@ object WhatsappStatusMediaPipeline {
                     filterGraph = filterGraph,
                     baseMaxRateKbps = currentRate,
                     bufSizeKbps = currentBufSize,
+                    crf = resolution.crf,
                     isMuted = effectiveMute,
                     trimStartSec = stage2TrimStart,
                     trimDurationSec = stage2TrimDuration

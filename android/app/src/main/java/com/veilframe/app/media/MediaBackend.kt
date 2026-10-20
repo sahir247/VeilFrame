@@ -16,13 +16,20 @@ interface IMediaBackend {
         inputPath: String,
         outputPath: String,
         noiseLevel: String = "medium",
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
     ): Boolean
 
     fun cleanImage(
         inputPath: String,
         outputPath: String,
-        stripExif: Boolean = true
+        stripExif: Boolean = true,
+        quality: Int = 95,
+        targetExtension: String? = null,
+        stripThumbnails: Boolean = true,
+        sanitizeIcc: Boolean = true
     ): Boolean
 
     fun getBackendDiagnostics(): String
@@ -36,13 +43,19 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         inputPath: String,
         outputPath: String,
         noiseLevel: String,
-        scrubAudio: Boolean
+        scrubAudio: Boolean,
+        crf: Int?,
+        stripExif: Boolean,
+        reencodeBitstream: Boolean
     ): Boolean {
         return VideoMetadataSanitizer.cleanVideo(
             inputPath = inputPath,
             outputPath = outputPath,
             noiseLevel = noiseLevel,
-            scrubAudio = scrubAudio
+            scrubAudio = scrubAudio,
+            crf = crf,
+            stripExif = stripExif,
+            reencodeBitstream = reencodeBitstream
         )
     }
 
@@ -50,28 +63,48 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         inputPath: String,
         outputPath: String,
         noiseLevel: String = "medium",
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
     ): Boolean {
         return VideoMetadataSanitizer.cleanVideoCancellable(
             inputPath = inputPath,
             outputPath = outputPath,
             noiseLevel = noiseLevel,
-            scrubAudio = scrubAudio
+            scrubAudio = scrubAudio,
+            crf = crf,
+            stripExif = stripExif,
+            reencodeBitstream = reencodeBitstream
         )
     }
 
     override fun cleanImage(
         inputPath: String,
         outputPath: String,
-        stripExif: Boolean
+        stripExif: Boolean,
+        quality: Int,
+        targetExtension: String?,
+        stripThumbnails: Boolean,
+        sanitizeIcc: Boolean
     ): Boolean {
         val inFile = File(inputPath)
         val outFile = File(outputPath)
-        return if (stripExif) {
-            ImageMetadataSanitizer.stripExifLossless(inFile, outFile)
+        val inExt = inFile.extension.lowercase(java.util.Locale.US)
+        val outExt = (targetExtension ?: outFile.extension).lowercase(java.util.Locale.US)
+
+        val needsTranscode = (inExt != outExt && outExt.isNotEmpty()) || quality < 98 || !stripExif
+
+        val success = if (needsTranscode) {
+            ImageMetadataSanitizer.reencodePixels(inFile, outFile, format = outExt, quality = quality)
         } else {
-            ImageMetadataSanitizer.reencodePixels(inFile, outFile)
+            ImageMetadataSanitizer.stripExifLossless(inFile, outFile)
         }
+
+        if (success && stripExif && outFile.exists()) {
+            ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
+        }
+        return success && outFile.exists() && outFile.length() > 0L
     }
 
     override fun getBackendDiagnostics(): String {

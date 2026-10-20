@@ -399,14 +399,7 @@ class QrGenerateTabFragment : Fragment() {
         val scanabilityTechContainer = view.findViewById<LinearLayout>(R.id.container_scanability_tech_details)
         val scanabilityTechText = view.findViewById<TextView>(R.id.qr_scanability_tech_text)
         val autoRepairBtn      = view.findViewById<MaterialButton>(R.id.qr_auto_repair_btn)
-        val testWithCameraBtn  = view.findViewById<MaterialButton>(R.id.qr_test_with_camera_btn)
         val previewAnimationBadge = view.findViewById<View>(R.id.qr_preview_animation_badge)
-
-        testWithCameraBtn?.setOnClickListener {
-            val pager = parentFragment?.view?.findViewById<ViewPager2>(R.id.qr_pager)
-                ?: requireActivity().findViewById<ViewPager2>(R.id.qr_pager)
-            pager?.currentItem = 1
-        }
 
         val headerAdvanced = view.findViewById<View>(R.id.qr_header_advanced_settings)
         val containerAdvanced = view.findViewById<LinearLayout>(R.id.container_advanced_settings_body)
@@ -2045,12 +2038,11 @@ class QrGenerateTabFragment : Fragment() {
                     saveVideoBtn?.isEnabled = canExport && hasAnimationSource
                     saveAnimatedSvgBtn?.isEnabled = canExport && hasAnimationSource
                     shareBtn.isEnabled = canExport
-                    testWithCameraBtn?.isEnabled = hasContent && state.bitmap != null
 
                     // Contextual photo button label and alpha: Static short label to avoid wrapping
                     val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
                     sourceImgBtn.alpha = if (usesSourceImage) 1.0f else 0.55f
-                    sourceImgBtn.text = "Source Media"
+                    sourceImgBtn.text = "Source"
 
                     // Reveal animation export buttons only when animation source media is present
                     containerAnimatedExport?.visibility = if (hasAnimationSource) View.VISIBLE else View.GONE
@@ -2196,24 +2188,26 @@ class QrGenerateTabFragment : Fragment() {
                             scanabilityCard?.strokeColor = 0x4016A34A
                             scanabilityIcon?.setImageResource(R.drawable.ic_check_circle)
                             scanabilityIcon?.setColorFilter(0xFF16A34A.toInt())
-                            scanabilityStatus.text = "Preview Scanability: Verified"
+                            scanabilityStatus.text = "Scanability: Verified"
                             scanabilityStatus.setTextColor(0xFF16A34A.toInt())
-                            scanabilityDetails.text = "Passed on-device QR validation at preview scale. High-res export will undergo full strict verification."
+                            scanabilityDetails.text = ""
+                            scanabilityDetails.visibility = View.GONE
                             val engine = if (report.decodeResult.decoderId.contains("ML Kit", ignoreCase = true) || report.decodeResult.decoderId.contains("mlkit", ignoreCase = true)) "Google ML Kit" else "ZXing"
                             val qz = state.design?.quietZoneModules ?: if (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_RESAMPLE || state.style == QrStyle.IMAGE_FILL) 1 else 4
                             scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: $qz module${if (qz == 1) "" else "s"}"
                             autoRepairBtn.visibility = View.GONE
                             if (lastAnnouncedScanReady != true) {
                                 lastAnnouncedScanReady = true
-                                view?.announceForAccessibility("QR code preview passed on-device scanability validation. Ready for export.")
+                                view?.announceForAccessibility("QR code passed on-device scanability validation. Ready for export.")
                             }
                         } else {
                             scanabilityCard?.setCardBackgroundColor(0x18D97706)
                             scanabilityCard?.strokeColor = 0x50D97706
                             scanabilityIcon?.setImageResource(R.drawable.ic_info_outline)
                             scanabilityIcon?.setColorFilter(0xFFD97706.toInt())
-                            scanabilityStatus.text = "Preview Scanability: Unverified"
+                            scanabilityStatus.text = "Scanability: Unverified"
                             scanabilityStatus.setTextColor(0xFFD97706.toInt())
+                            scanabilityDetails.visibility = View.VISIBLE
                             scanabilityDetails.text = "Preview could not be verified on-device. Export requires strict verification; adjust contrast or try Auto-Repair."
                             val errorMsg = report.decodeResult.error ?: "Decoder could not resolve patterns"
                             val warningText = if (report.warnings.isNotEmpty()) " | Warnings: " + report.warnings.joinToString("; ") else ""
@@ -2222,10 +2216,11 @@ class QrGenerateTabFragment : Fragment() {
                             if (lastAnnouncedScanReady != false) {
                                 lastAnnouncedScanReady = false
                                 val warn = report.warnings.firstOrNull() ?: "Contrast or patterns unverified"
-                                view?.announceForAccessibility("QR code preview needs adjustment: $warn. Auto-Repair is available.")
+                                view?.announceForAccessibility("QR code needs adjustment: $warn. Auto-Repair is available.")
                             }
                         }
-                        scanabilityCard?.contentDescription = "Scanability status: ${scanabilityStatus.text}. ${scanabilityDetails.text}"
+                        val detailsText = if (scanabilityDetails.text.isNullOrBlank()) "" else " ${scanabilityDetails.text}"
+                        scanabilityCard?.contentDescription = "Scanability status: ${scanabilityStatus.text}.$detailsText"
                     } ?: run {
                         scanabilityCard?.setCardBackgroundColor(0x00000000)
                         scanabilityCard?.strokeColor = 0x20888888
@@ -2233,6 +2228,7 @@ class QrGenerateTabFragment : Fragment() {
                         scanabilityIcon?.setColorFilter(0xFF6B7280.toInt())
                         scanabilityStatus.text = "Validating..."
                         scanabilityStatus.setTextColor(0xFF6B7280.toInt())
+                        scanabilityDetails.visibility = View.VISIBLE
                         scanabilityDetails.text = "Running on-device barcode validator..."
                         scanabilityTechText?.text = "Validating barcode scanability on device..."
                         autoRepairBtn.visibility = View.GONE

@@ -19,7 +19,7 @@ import kotlin.math.max
  * - Handles NNAPI/delegate errors with graceful CPU fallback and retry
  */
 class CelBackgroundRemover(
-    private val sessionManager: OnnxSessionManager,
+    private val sessionManager: RembgOnnxSessionManager,
 ) {
     private val ortEnv = OrtEnvironment.getEnvironment()
 

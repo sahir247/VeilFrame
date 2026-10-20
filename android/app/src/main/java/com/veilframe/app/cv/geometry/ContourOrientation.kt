@@ -25,7 +25,11 @@ object ContourOrientation {
         if (contour.size < 20) return null
 
         val angles = computeSmoothedAngles(contour, smoothWindow)
-        val perimeter = contour.zipWithNext { a, b -> hypot(b.x - a.x, b.y - a.y) }.sum()
+        val perimeter = contour.indices.sumOf { i ->
+            val a = contour[i]
+            val b = contour[(i + 1) % contour.size]
+            hypot(b.x - a.x, b.y - a.y)
+        }
         val minLength = perimeter * minSideLengthRatio
         val segments = extractSegments(contour, angles, maxAngleVar, minLength)
         val mergedSegments = mergeSegments(segments, mergeAngle)

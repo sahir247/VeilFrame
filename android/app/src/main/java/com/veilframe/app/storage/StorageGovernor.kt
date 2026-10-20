@@ -82,12 +82,17 @@ object StorageGovernor {
         for (dir in dirs) {
             if (!dir.exists() || !dir.isDirectory) continue
             dir.walkTopDown().filter { file ->
-                file.isFile && !isProtectedModelFile(file)
+                file.isFile && !isProtectedModelFile(file) && !isProtectedExportFile(file)
             }.forEach {
                 result.add(it)
             }
         }
         return result
+    }
+
+    internal fun isProtectedExportFile(file: File): Boolean {
+        val path = file.absolutePath.replace('\\', '/')
+        return path.contains("/exports/") || path.contains("/studio_exports/")
     }
 
     internal fun isProtectedModelFile(file: File): Boolean {

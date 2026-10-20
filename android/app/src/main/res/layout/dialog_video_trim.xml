@@ -40,7 +40,7 @@
     </LinearLayout>
 
     <!-- Scrollable Content -->
-    <androidx.core.widget.NestedScrollView
+    <com.veilframe.app.ui.MaxHeightNestedScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -269,7 +269,7 @@
                 </com.google.android.material.chip.ChipGroup>
             </HorizontalScrollView>
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+    </com.veilframe.app.ui.MaxHeightNestedScrollView>
 
     <!-- Fixed Bottom Action Area -->
     <LinearLayout

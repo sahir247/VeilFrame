@@ -19,7 +19,10 @@ object VideoMetadataSanitizer {
         inputPath: String,
         outputPath: String,
         noiseLevel: String = "medium",
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
     ): List<String> {
         val isWebm = outputPath.endsWith(".webm", ignoreCase = true)
         val isInputWebm = inputPath.endsWith(".webm", ignoreCase = true)
@@ -28,10 +31,12 @@ object VideoMetadataSanitizer {
         cmd.add("-y")
         cmd.add("-i")
         cmd.add(inputPath)
-        cmd.add("-map_metadata")
-        cmd.add("-1")
-        cmd.add("-map_chapters")
-        cmd.add("-1")
+        if (stripExif) {
+            cmd.add("-map_metadata")
+            cmd.add("-1")
+            cmd.add("-map_chapters")
+            cmd.add("-1")
+        }
 
         if (scrubAudio) {
             cmd.add("-an")
@@ -57,12 +62,12 @@ object VideoMetadataSanitizer {
                     cmd.add("-b:v")
                     cmd.add("0")
                     cmd.add("-crf")
-                    cmd.add("32")
+                    cmd.add((crf ?: 32).toString())
                 } else {
                     cmd.add("-preset")
                     cmd.add("veryfast")
                     cmd.add("-crf")
-                    cmd.add("23")
+                    cmd.add((crf ?: 23).toString())
                 }
             }
             "medium" -> {
@@ -74,12 +79,12 @@ object VideoMetadataSanitizer {
                     cmd.add("-b:v")
                     cmd.add("0")
                     cmd.add("-crf")
-                    cmd.add("30")
+                    cmd.add((crf ?: 30).toString())
                 } else {
                     cmd.add("-preset")
                     cmd.add("veryfast")
                     cmd.add("-crf")
-                    cmd.add("22")
+                    cmd.add((crf ?: 22).toString())
                 }
             }
             "low" -> {
@@ -91,22 +96,29 @@ object VideoMetadataSanitizer {
                     cmd.add("-b:v")
                     cmd.add("0")
                     cmd.add("-crf")
-                    cmd.add("28")
+                    cmd.add((crf ?: 28).toString())
                 } else {
                     cmd.add("-preset")
                     cmd.add("veryfast")
                     cmd.add("-crf")
-                    cmd.add("20")
+                    cmd.add((crf ?: 20).toString())
                 }
             }
             else -> {
-                if (isWebm && !isInputWebm) {
+                if (reencodeBitstream || (isWebm && !isInputWebm)) {
                     cmd.add("-c:v")
-                    cmd.add("libvpx-vp9")
-                    cmd.add("-b:v")
-                    cmd.add("0")
-                    cmd.add("-crf")
-                    cmd.add("30")
+                    cmd.add(vCodec)
+                    if (isWebm) {
+                        cmd.add("-b:v")
+                        cmd.add("0")
+                        cmd.add("-crf")
+                        cmd.add((crf ?: 30).toString())
+                    } else {
+                        cmd.add("-preset")
+                        cmd.add("veryfast")
+                        cmd.add("-crf")
+                        cmd.add((crf ?: 24).toString())
+                    }
                 } else {
                     cmd.add("-c:v")
                     cmd.add("copy")
@@ -165,10 +177,13 @@ object VideoMetadataSanitizer {
         inputPath: String,
         outputPath: String,
         noiseLevel: String = "medium",
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
     ): Boolean {
         return try {
-            val primaryArgs = buildArguments(inputPath, outputPath, noiseLevel, scrubAudio)
+            val primaryArgs = buildArguments(inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream)
             Log.d(TAG, "Executing video sanitization with arguments: $primaryArgs")
 
             val session = FFmpegKit.executeWithArguments(primaryArgs.toTypedArray())
@@ -195,10 +210,13 @@ object VideoMetadataSanitizer {
         inputPath: String,
         outputPath: String,
         noiseLevel: String = "medium",
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
     ): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         try {
-            val primaryArgs = buildArguments(inputPath, outputPath, noiseLevel, scrubAudio)
+            val primaryArgs = buildArguments(inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream)
             Log.d(TAG, "Executing video sanitization async with arguments: $primaryArgs")
 
             val session = FFmpegKit.executeWithArgumentsAsync(primaryArgs.toTypedArray()) { completedSession ->

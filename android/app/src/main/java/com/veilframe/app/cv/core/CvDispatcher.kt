@@ -18,7 +18,7 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * CvDispatcher — the governed executor for heavy CV work.
  *
- * Reality (v2.3.0): the heavy one-shot chains (background removal, image
+ * Reality (v2.2.9): the heavy one-shot chains (background removal, image
  * quality, document warp/enhance) submit here through CvEngine. The camera
  * viewfinder path runs on CvRuntime.cameraExecutor by design (per-frame lane
  * churn is not worth it), and QR decode keeps its own frame-token pipeline.
@@ -90,7 +90,7 @@ class CvDispatcher(
         // B1: watchdog. Cooperative — a blocked native call cannot be preempted,
         // but every primitive hits ctx.ensureActive() checkpoints, so a wedged
         // job is cancelled at its next checkpoint and the lane permit freed.
-        if (timeoutMs > 0L) {
+        val watchdog = if (timeoutMs > 0L) {
             scope.launch {
                 delay(timeoutMs)
                 if (!deferred.isCompleted && !cancellation.isCancelled) {
@@ -105,6 +105,12 @@ class CvDispatcher(
                     cancellation.cancel("watchdog timeout after ${timeoutMs}ms")
                 }
             }
+        } else {
+            null
+        }
+
+        deferred.invokeOnCompletion {
+            watchdog?.cancel()
         }
 
         // Keep the engine's result and the coroutine result in sync.
@@ -281,7 +287,6 @@ class CvJob<T> internal constructor(
         // immediately instead of waiting for a free permit. In-flight blocks are
         // non-suspending, so their cooperative checks (ensureActive) still apply.
         coroutine?.cancel(CancellationException(reason))
-        reservation?.close()
     }
 
     suspend fun await(): CvResult<T> = result.await()

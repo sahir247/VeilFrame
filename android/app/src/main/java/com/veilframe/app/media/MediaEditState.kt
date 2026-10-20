@@ -176,6 +176,36 @@ data class ImageEditState(
     fun deepCopy(): ImageEditState {
         return this.copy()
     }
+
+    fun copyFrom(other: ImageEditState) {
+        cropAspect = other.cropAspect
+        cropLeft = other.cropLeft
+        cropTop = other.cropTop
+        cropRight = other.cropRight
+        cropBottom = other.cropBottom
+        resizeScale = other.resizeScale
+        resizeWidth = other.resizeWidth
+        resizeHeight = other.resizeHeight
+        keepAspect = other.keepAspect
+        rotationAngle = other.rotationAngle
+        flipH = other.flipH
+        flipV = other.flipV
+        filter = other.filter
+        bgType = other.bgType
+        watermarkText = other.watermarkText
+        watermarkPosition = other.watermarkPosition
+        watermarkSize = other.watermarkSize
+        watermarkColor = other.watermarkColor
+        watermarkOpacity = other.watermarkOpacity
+        watermarkFont = other.watermarkFont
+        stripExif = other.stripExif
+        exifMake = other.exifMake
+        exifModel = other.exifModel
+        exifSoftware = other.exifSoftware
+        exifDateTime = other.exifDateTime
+        exifGps = other.exifGps
+        piiDetections = other.piiDetections
+    }
 }
 
 /**
@@ -276,6 +306,29 @@ data class VideoEditState(
         dynamicCropFilter = null
         isStabilized = false
         stabilizationMarginPercent = 5
+    }
+
+    fun copyFrom(other: VideoEditState) {
+        trimStartMs = other.trimStartMs
+        trimEndMs = other.trimEndMs
+        durationMs = other.durationMs
+        originalWidth = other.originalWidth
+        originalHeight = other.originalHeight
+        scalePreset = other.scalePreset
+        aspect = other.aspect
+        speed = other.speed
+        audioMode = other.audioMode
+        audioVolume = other.audioVolume
+        audioChannels = other.audioChannels
+        flipH = other.flipH
+        flipV = other.flipV
+        rotationAngle = other.rotationAngle
+        customCropPercent = other.customCropPercent
+        fps = other.fps
+        colorProfile = other.colorProfile
+        dynamicCropFilter = other.dynamicCropFilter
+        isStabilized = other.isStabilized
+        stabilizationMarginPercent = other.stabilizationMarginPercent
     }
 }
 

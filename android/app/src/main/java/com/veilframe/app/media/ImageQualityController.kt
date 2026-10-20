@@ -40,6 +40,7 @@ class ImageQualityController(
 ) {
     private var selectedBitmap: Bitmap? = null
     private var lastReportSummary: String = ""
+    var currentSourceUri: Uri? = null
 
     /** Original source dimensions (before working-resolution sampling). */
     private var sourceWidth: Int = 0
@@ -80,6 +81,7 @@ class ImageQualityController(
     }
 
     fun handleImageSelected(uri: Uri) {
+        currentSourceUri = uri
         scope.launch(Dispatchers.IO) {
             // B5: shared sampled-decode policy (MediaDecoder) — the ONE place
             // working-resolution decisions are made. Downsampled metrics are

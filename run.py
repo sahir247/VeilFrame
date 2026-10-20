@@ -7,6 +7,7 @@ import sys
 # Ensure UTF-8 decoding across all subprocess and thread pipes on Windows
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
+os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts=false;qt.text.font.db=false;qt.text.font=false")
 
 if hasattr(sys.stdout, "reconfigure"):
     try:

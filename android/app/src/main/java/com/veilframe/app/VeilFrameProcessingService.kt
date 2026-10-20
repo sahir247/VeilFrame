@@ -33,6 +33,7 @@ class VeilFrameProcessingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var currentExecutionJob: kotlinx.coroutines.Job? = null
     private lateinit var mediaBackend: AndroidMediaBackend
+    private var isForegroundStarted = false
 
     companion object {
         const val CHANNEL_ID = "veilframe_media_processing"
@@ -52,11 +53,31 @@ class VeilFrameProcessingService : Service() {
             internal set
 
         fun cancelProcessing(context: Context, jobId: UUID? = null) {
+            val current = activeJob
+            if (current == null || current.state != JobState.RUNNING) {
+                try {
+                    context.stopService(Intent(context, VeilFrameProcessingService::class.java))
+                } catch (_: Exception) {}
+                return
+            }
+
+            if (jobId != null && current.id != jobId) {
+                return
+            }
+
+            activeJob = current.copy(state = JobState.CANCELLED)
+
             val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
                 action = ACTION_CANCEL_JOB
                 if (jobId != null) putExtra(EXTRA_JOB_ID, jobId.toString())
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+                try {
+                    context.stopService(Intent(context, VeilFrameProcessingService::class.java))
+                } catch (_: Exception) {}
+            }
         }
 
         fun startVideoCleaning(context: Context, inputPath: String, outputPath: String, jobId: UUID = UUID.randomUUID()) {
@@ -91,17 +112,51 @@ class VeilFrameProcessingService : Service() {
         createNotificationChannel()
     }
 
+    private fun promoteToForeground(message: String): Boolean {
+        if (isForegroundStarted) return true
+        return try {
+            val notification = buildForegroundNotification(message)
+            if (Build.VERSION.SDK_INT >= 35) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+                )
+            } else if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            isForegroundStarted = true
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("VeilFrameProcessing", "startForeground failed: ${e.message}", e)
+            false
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL_JOB) {
             val targetJobIdStr = intent.getStringExtra(EXTRA_JOB_ID)
+            var isTargetJob = false
             synchronized(this) {
                 if (targetJobIdStr == null || activeJob?.id.toString() == targetJobIdStr) {
+                    isTargetJob = true
                     if (activeJob?.state == JobState.RUNNING) {
                         activeJob = activeJob?.copy(state = JobState.CANCELLED)
                     }
                     currentExecutionJob?.cancel()
                 }
             }
+            if (!isTargetJob) {
+                // Ignore mismatched cancel intent — do not cancel or stop foreground for an unrelated active job!
+                return START_NOT_STICKY
+            }
+            promoteToForeground("Cancelling processing...")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -112,6 +167,9 @@ class VeilFrameProcessingService : Service() {
             val current = activeJob
             if (current != null && current.state == JobState.RUNNING) {
                 android.util.Log.w("VeilFrameProcessing", "Refusing duplicate start: job ${current.id} is already RUNNING")
+                if (!isForegroundStarted) {
+                    promoteToForeground("Processing media with VeilFrame...")
+                }
                 return START_NOT_STICKY
             }
         }
@@ -160,30 +218,8 @@ class VeilFrameProcessingService : Service() {
             JobType.VIDEO_COMPRESSION
         }
 
-        val notification = buildForegroundNotification("Processing media with VeilFrame...")
-
         // Android 15 (API 35+) mediaProcessing FGS type compliance
-        val promotionSuccess = try {
-            if (Build.VERSION.SDK_INT >= 35) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
-                )
-            } else if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("VeilFrameProcessing", "startForeground failed: ${e.message}", e)
-            false
-        }
+        val promotionSuccess = promoteToForeground("Processing media with VeilFrame...")
 
         if (!promotionSuccess) {
             // Fail closed: do NOT begin background processing if foreground promotion fails
@@ -288,6 +324,7 @@ class VeilFrameProcessingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isForegroundStarted = false
         currentExecutionJob?.cancel()
         serviceScope.cancel()
         if (activeJob?.state == JobState.RUNNING) {

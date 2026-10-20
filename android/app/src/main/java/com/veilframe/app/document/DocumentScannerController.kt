@@ -18,10 +18,12 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.recyclerview.widget.RecyclerView
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraMetadata
@@ -103,7 +105,8 @@ class DocumentScannerController(
     private val onTakePhotoRequest: () -> Unit,
     private val onChoosePhotosRequest: () -> Unit,
     private val onExportFileRequest: (File, String) -> Unit,
-    private val onNavigateBack: () -> Unit
+    private val onNavigateBack: () -> Unit,
+    private val onRequestCameraPermission: () -> Unit = {}
 ) {
     val session = DocumentSession()
 
@@ -132,11 +135,10 @@ class DocumentScannerController(
     private var isBackCamera = true
     private var currentZoomRatio = 1.0f
     private var scaleGestureDetector: ScaleGestureDetector? = null
-    // App-scoped shared executor (CV-7): per-controller executors leaked a
-    // non-daemon thread on every activity recreate (e.g. theme change).
     private val cameraExecutor: java.util.concurrent.ExecutorService =
         com.veilframe.app.cv.core.CvRuntime.cameraExecutor
     private var isSyncingFilterChips = false
+    private var isSyncingAdjustments = false
 
     // FairScan optical measures & camera intrinsics
     private var cameraIntrinsics: CameraIntrinsics? = null
@@ -218,8 +220,12 @@ class DocumentScannerController(
             renderCurrentPage()
         }
 
-        binding.btnDocPageAdjust.setOnClickListener {
-            showPageAdjustDialog()
+        binding.btnDocPageCrop.setOnClickListener {
+            showCropEditorDialog()
+        }
+
+        binding.ivDocPagePreview.setOnClickListener {
+            showCropEditorDialog()
         }
 
         binding.btnDocPageDuplicate.setOnClickListener {
@@ -297,20 +303,133 @@ class DocumentScannerController(
             true
         }
 
-        // Filter chips
+        // Filter & Palette chips
         binding.chipGroupDocFilters.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (isSyncingFilterChips) return@setOnCheckedStateChangeListener
+            if (isSyncingFilterChips || isSyncingAdjustments) return@setOnCheckedStateChangeListener
             if (checkedIds.isNotEmpty()) {
-                val mode = when (checkedIds[0]) {
-                    R.id.chipFilterOriginal -> DocumentScanner.DocumentMode.ORIGINAL
-                    R.id.chipFilterEnhanced -> DocumentScanner.DocumentMode.ENHANCED
-                    R.id.chipFilterBw -> DocumentScanner.DocumentMode.BLACK_AND_WHITE
-                    R.id.chipFilterGrayscale -> DocumentScanner.DocumentMode.GRAYSCALE
-                    R.id.chipFilterReceipt -> DocumentScanner.DocumentMode.RECEIPT
-                    R.id.chipFilterIdDoc -> DocumentScanner.DocumentMode.ID_DOCUMENT
-                    else -> DocumentScanner.DocumentMode.ENHANCED
+                val (mode, preset) = when (checkedIds[0]) {
+                    R.id.chipFilterOriginal -> DocumentScanner.DocumentMode.ORIGINAL to "None"
+                    R.id.chipFilterEnhanced -> DocumentScanner.DocumentMode.ENHANCED to "None"
+                    R.id.chipFilterBw -> DocumentScanner.DocumentMode.BLACK_AND_WHITE to "None"
+                    R.id.chipFilterGrayscale -> DocumentScanner.DocumentMode.GRAYSCALE to "None"
+                    R.id.chipFilterReceipt -> DocumentScanner.DocumentMode.RECEIPT to "None"
+                    R.id.chipFilterIdDoc -> DocumentScanner.DocumentMode.ID_DOCUMENT to "None"
+                    R.id.chipFilterSepia -> DocumentScanner.DocumentMode.ORIGINAL to "Sepia"
+                    R.id.chipFilterVintage -> DocumentScanner.DocumentMode.ORIGINAL to "Vintage"
+                    R.id.chipFilterCool -> DocumentScanner.DocumentMode.ORIGINAL to "Cool"
+                    R.id.chipFilterWarm -> DocumentScanner.DocumentMode.ORIGINAL to "Warm"
+                    else -> DocumentScanner.DocumentMode.ENHANCED to "None"
                 }
-                applyFilterToCurrentPage(mode)
+                applyFilterToCurrentPage(mode, preset)
+            }
+        }
+
+        // Inline Image Studio: Fine Tuning Sliders
+        val applySlidersToPage = {
+            val page = session.currentPage
+            if (page != null && !isSyncingAdjustments) {
+                page.exposureStops = binding.sliderDocExposure.value.toDouble()
+                page.contrast = binding.sliderDocContrast.value.toDouble()
+                page.saturation = binding.sliderDocSaturation.value.toDouble()
+                page.warmth = binding.sliderDocWarmth.value.toDouble()
+                page.adjustSharpen = binding.sliderDocSharpen.value.toDouble()
+                page.adjustDenoise = binding.sliderDocDenoise.value.toDouble()
+                renderCurrentPage()
+            }
+        }
+
+        val sliderTouchListener = object : com.google.android.material.slider.Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: com.google.android.material.slider.Slider) {}
+            override fun onStopTrackingTouch(slider: com.google.android.material.slider.Slider) {
+                applySlidersToPage()
+            }
+        }
+
+        binding.sliderDocExposure.addOnSliderTouchListener(sliderTouchListener)
+        binding.sliderDocContrast.addOnSliderTouchListener(sliderTouchListener)
+        binding.sliderDocSaturation.addOnSliderTouchListener(sliderTouchListener)
+        binding.sliderDocWarmth.addOnSliderTouchListener(sliderTouchListener)
+        binding.sliderDocSharpen.addOnSliderTouchListener(sliderTouchListener)
+        binding.sliderDocDenoise.addOnSliderTouchListener(sliderTouchListener)
+
+        // Inline Image Studio: Watermark & Stamp Controls
+        val applyWatermarkToPage = {
+            val page = session.currentPage
+            if (page != null && !isSyncingAdjustments) {
+                page.watermarkText = binding.etDocWatermarkText.text?.toString()?.trim() ?: ""
+                val resolvedPosition = when (binding.chipGroupDocWmPosition.checkedChipId) {
+                    R.id.chipDocPosCenter -> "center"
+                    R.id.chipDocPosTopRight -> "top-right"
+                    R.id.chipDocPosTopLeft -> "top-left"
+                    R.id.chipDocPosBottomLeft -> "bottom-left"
+                    else -> "bottom-right"
+                }
+                page.watermarkPosition = resolvedPosition
+                page.watermarkSize = binding.sliderDocWmSize.value.toInt()
+                page.watermarkOpacity = binding.sliderDocWmOpacity.value / 100f
+                renderCurrentPage()
+            }
+        }
+
+        val wmSliderTouchListener = object : com.google.android.material.slider.Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: com.google.android.material.slider.Slider) {}
+            override fun onStopTrackingTouch(slider: com.google.android.material.slider.Slider) {
+                applyWatermarkToPage()
+            }
+        }
+        binding.sliderDocWmSize.addOnSliderTouchListener(wmSliderTouchListener)
+        binding.sliderDocWmOpacity.addOnSliderTouchListener(wmSliderTouchListener)
+
+        binding.chipGroupDocWmPosition.setOnCheckedStateChangeListener { _, _ ->
+            if (!isSyncingAdjustments) applyWatermarkToPage()
+        }
+
+        binding.chipDocWmConfidential.setOnClickListener {
+            binding.etDocWatermarkText.setText("CONFIDENTIAL")
+            applyWatermarkToPage()
+        }
+        binding.chipDocWmCopy.setOnClickListener {
+            binding.etDocWatermarkText.setText("COPY")
+            applyWatermarkToPage()
+        }
+        binding.chipDocWmDraft.setOnClickListener {
+            binding.etDocWatermarkText.setText("DRAFT")
+            applyWatermarkToPage()
+        }
+        binding.chipDocWmDoNotShare.setOnClickListener {
+            binding.etDocWatermarkText.setText("DO NOT SHARE")
+            applyWatermarkToPage()
+        }
+
+        binding.etDocWatermarkText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                applyWatermarkToPage()
+                true
+            } else false
+        }
+        binding.etDocWatermarkText.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus && !isSyncingAdjustments) {
+                applyWatermarkToPage()
+            }
+        }
+
+        binding.btnDocResetAdjustments.setOnClickListener {
+            val page = session.currentPage ?: return@setOnClickListener
+            page.mode = DocumentScanner.DocumentMode.ENHANCED
+            page.filterPreset = "None"
+            page.exposureStops = 0.0
+            page.contrast = 1.0
+            page.saturation = 1.0
+            page.warmth = 0.0
+            page.adjustSharpen = 0.0
+            page.adjustDenoise = 0.0
+            page.watermarkText = ""
+            page.watermarkPosition = "bottom-right"
+            page.watermarkSize = 28
+            page.watermarkOpacity = 0.6f
+            updateUi()
+            renderCurrentPage {
+                Toast.makeText(activity, "Adjustments reset", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -325,6 +444,10 @@ class DocumentScannerController(
     // =========================================================================
 
     fun openCameraViewfinder() {
+        if (ContextCompat.checkSelfPermission(activity, android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            onRequestCameraPermission()
+            return
+        }
         registerThermalGovernor()
         viewfinderSessionId.incrementAndGet()
         binding.containerDocMainFlow.visibility = View.GONE
@@ -912,8 +1035,8 @@ class DocumentScannerController(
                 persistSession()
                 updateUi()
                 updateCameraDoneBadge()
-                if (loadedPages.isNotEmpty()) {
-                    runAutoCropOnCurrentPage()
+                for (p in loadedPages) {
+                    runAutoCropOnPage(p)
                 }
             }
         }
@@ -950,13 +1073,15 @@ class DocumentScannerController(
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()
-                page.render(activity, ctx)
+                page.render(activity, ctx, updateCaches = false)
             }
 
             job.await().fold(
                 onOk = { renderedBmp ->
                     if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
-                        page.processedBitmapCache = renderedBmp
+                        if (renderedBmp != null) {
+                            page.updateCaches(renderedBmp)
+                        }
                         persistSession()
                         updateUi()
                         onComplete?.invoke()
@@ -972,13 +1097,50 @@ class DocumentScannerController(
         }
     }
 
-    private fun runAutoCropOnCurrentPage() {
-        val page = session.currentPage ?: return
+    private suspend fun detectCornersFromBitmap(origBmp: Bitmap): List<Point>? {
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(origBmp.width, origBmp.height, 3)
+        return try {
+            val segResult = segmentationService.runSegmentation(origBmp)
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "doc-detect-corners",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+                timeoutMs = 15_000L
+            ) { ctx ->
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
+                val corners = if (segResult != null) {
+                    com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                        segmentation = segResult.segmentation,
+                        originalWidth = origBmp.width,
+                        originalHeight = origBmp.height,
+                        isCaptureMode = true
+                    )
+                } else null
+
+                if (corners != null && corners.size == 4) {
+                    corners
+                } else {
+                    val srcMat = BitmapBridge.toMat(origBmp)
+                    try {
+                        com.veilframe.app.cv.geometry.QuadDetector.detect(srcMat, context = ctx)?.corners
+                    } finally {
+                        srcMat.release()
+                    }
+                }
+            }
+            job.await().getOrNull()
+        } catch (e: Throwable) {
+            android.util.Log.w("VeilFrame.DocScanner", "detectCornersFromBitmap failed", e)
+            null
+        }
+    }
+
+    private fun runAutoCropOnPage(page: ScannedPage) {
         val origBmp = page.getOriginalBitmap(activity) ?: return
         val targetVersion = ++page.editVersion
         val pageId = page.id
 
-        // A2: governed execution — INTERACTIVE lane + memory admission.
         val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(origBmp.width, origBmp.height, 3)
         scope.launch {
             val segResult = segmentationService.runSegmentation(origBmp)
@@ -987,7 +1149,7 @@ class DocumentScannerController(
                 name = "doc-auto-crop",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
                 memoryEstimate = estimate,
-                timeoutMs = 15_000L, // B1 watchdog
+                timeoutMs = 15_000L,
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()
@@ -1014,13 +1176,13 @@ class DocumentScannerController(
                         null
                     }
                 } finally {
-                    srcMat.release() // CV-4: released on every path
+                    srcMat.release()
                 }
             }
 
             job.await().fold(
                 onOk = { result ->
-                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
+                    if (page.editVersion == targetVersion) {
                         if (result != null) {
                             page.corners = result.first
                             if (page.mode == DocumentScanner.DocumentMode.AUTO) {
@@ -1032,20 +1194,32 @@ class DocumentScannerController(
                             }
                         } else {
                             page.corners = null
-                            Toast.makeText(activity, "Document boundaries uncertain — full photo retained", Toast.LENGTH_SHORT).show()
                         }
-                        renderCurrentPage()
+                        if (session.currentPage?.id == pageId) {
+                            renderCurrentPage()
+                        } else {
+                            scope.launch(Dispatchers.IO) {
+                                page.render(activity)
+                                withContext(Dispatchers.Main) {
+                                    updateUi()
+                                }
+                            }
+                        }
                     }
                 },
                 onErr = { err ->
                     android.util.Log.w("VeilFrame.DocScanner", "Auto-crop failed for page ${page.id} [${err.code}]: ${err.message}")
-                    Toast.makeText(activity, "Auto-crop unavailable — page kept as captured", Toast.LENGTH_SHORT).show()
                     if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
                         renderCurrentPage()
                     }
                 }
             )
         }
+    }
+
+    private fun runAutoCropOnCurrentPage() {
+        val page = session.currentPage ?: return
+        runAutoCropOnPage(page)
     }
 
     private fun resetCropOnCurrentPage() {
@@ -1056,75 +1230,96 @@ class DocumentScannerController(
         }
     }
 
-    private fun applyFilterToCurrentPage(mode: DocumentScanner.DocumentMode) {
-        val page = session.currentPage ?: return
-        if (page.mode == mode) return
-        page.mode = mode
-        renderCurrentPage()
-    }
-
     /**
-     * v2.3.0: per-page Adjust (exposure/contrast/saturation) — wires dormant ColorEngine.
+     * FairScan-style interactive document crop & perspective boundary editor.
+     * Displays the full uncropped source photo with draggable corners and darkened scrim.
      */
-    private fun showPageAdjustDialog() {
+    private fun showCropEditorDialog() {
         val page = session.currentPage ?: run {
             Toast.makeText(activity, "No page selected", Toast.LENGTH_SHORT).show()
             return
         }
-        val dlgBinding = com.veilframe.app.databinding.DialogPageAdjustBinding
+        val origBmp = page.getOriginalBitmap(activity) ?: run {
+            Toast.makeText(activity, "Original image unavailable", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dlgBinding = com.veilframe.app.databinding.DialogDocumentCropEditorBinding
             .inflate(activity.layoutInflater)
         val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(
             activity,
             com.veilframe.app.R.style.ThemeOverlay_VeilFrame_MaterialAlertDialog
         )
-            .setTitle("Adjust Page ${session.activePageIndex + 1}")
             .setView(dlgBinding.root)
             .create()
 
-        fun resetSliders() {
-            dlgBinding.sliderAdjustExposure.value = 0f
-            dlgBinding.sliderAdjustContrast.value = 1f
-            dlgBinding.sliderAdjustSaturation.value = 1f
-            dlgBinding.sliderAdjustSharpen.value = 0f
-            dlgBinding.sliderAdjustDenoise.value = 0f
-        }
-        dlgBinding.sliderAdjustExposure.value = page.exposureStops.toFloat().coerceIn(-2f, 2f)
-        dlgBinding.sliderAdjustContrast.value = page.contrast.toFloat().coerceIn(0.5f, 2f)
-        dlgBinding.sliderAdjustSaturation.value = page.saturation.toFloat().coerceIn(0f, 2f)
-        dlgBinding.sliderAdjustSharpen.value = page.adjustSharpen.toFloat().coerceIn(0f, 2f)
-        dlgBinding.sliderAdjustDenoise.value = page.adjustDenoise.toFloat().coerceIn(0f, 10f)
+        val initialCorners = page.corners?.map { PointF(it.x.toFloat(), it.y.toFloat()) }
+        dlgBinding.docInteractiveCropView.setSource(origBmp, initialCorners)
 
-        dlgBinding.btnAdjustReset.setOnClickListener { resetSliders() }
-        dlgBinding.btnAdjustApply.setOnClickListener {
-            dialog.dismiss()
-            applyPageAdjust(
-                exposureStops = dlgBinding.sliderAdjustExposure.value.toDouble(),
-                contrast = dlgBinding.sliderAdjustContrast.value.toDouble(),
-                saturation = dlgBinding.sliderAdjustSaturation.value.toDouble(),
-                sharpen = dlgBinding.sliderAdjustSharpen.value.toDouble(),
-                denoise = dlgBinding.sliderAdjustDenoise.value.toDouble(),
-            )
+        // If corners were not yet detected, run model detection automatically
+        if (initialCorners == null) {
+            scope.launch {
+                val detected = detectCornersFromBitmap(origBmp)
+                if (detected != null && detected.size == 4) {
+                    dlgBinding.docInteractiveCropView.setCorners(
+                        detected.map { PointF(it.x.toFloat(), it.y.toFloat()) }
+                    )
+                }
+            }
         }
+
+        dlgBinding.btnCropAutoDetect.setOnClickListener {
+            dlgBinding.btnCropAutoDetect.isEnabled = false
+            dlgBinding.btnCropAutoDetect.text = "Detecting…"
+            scope.launch {
+                val detected = detectCornersFromBitmap(origBmp)
+                if (detected != null && detected.size == 4) {
+                    dlgBinding.docInteractiveCropView.setCorners(
+                        detected.map { PointF(it.x.toFloat(), it.y.toFloat()) }
+                    )
+                    Toast.makeText(activity, "Document corners auto-detected", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(activity, "Could not detect document boundaries", Toast.LENGTH_SHORT).show()
+                }
+                dlgBinding.btnCropAutoDetect.isEnabled = true
+                dlgBinding.btnCropAutoDetect.text = "Auto Detect"
+            }
+        }
+
+        dlgBinding.btnCropResetFull.setOnClickListener {
+            dlgBinding.docInteractiveCropView.resetToFullImage()
+        }
+
+        dlgBinding.btnCropCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dlgBinding.btnCropApply.setOnClickListener {
+            val sourceCorners = dlgBinding.docInteractiveCropView.getCornersInSource()
+            if (sourceCorners.size == 4) {
+                val cvCorners = sourceCorners.map { Point(it.x.toDouble(), it.y.toDouble()) }
+                page.corners = cvCorners
+                renderCurrentPage {
+                    Toast.makeText(activity, "Crop adjusted", Toast.LENGTH_SHORT).show()
+                }
+                persistSession()
+                updateUi()
+            }
+            dialog.dismiss()
+        }
+
         dialog.show()
     }
 
-    private fun applyPageAdjust(
-        exposureStops: Double,
-        contrast: Double,
-        saturation: Double,
-        sharpen: Double = 0.0,
-        denoise: Double = 0.0
-    ) {
+    private fun applyFilterToCurrentPage(mode: DocumentScanner.DocumentMode, preset: String = "None") {
         val page = session.currentPage ?: return
-        page.exposureStops = exposureStops
-        page.contrast = contrast
-        page.saturation = saturation
-        page.adjustSharpen = sharpen
-        page.adjustDenoise = denoise
-        renderCurrentPage {
-            Toast.makeText(activity, "Adjustments applied", Toast.LENGTH_SHORT).show()
-        }
+        if (page.mode == mode && page.filterPreset == preset) return
+        page.mode = mode
+        page.filterPreset = preset
+        renderCurrentPage()
     }
+
+
 
     private fun persistSession() {
         scope.launch(Dispatchers.IO) {
@@ -1170,6 +1365,7 @@ class DocumentScannerController(
             sheetBinding.tvExportPaperHeader, sheetBinding.hsvExportPaper,
             sheetBinding.tvExportOrientationHeader, sheetBinding.chipGroupExportOrientation,
             sheetBinding.tvExportFitHeader, sheetBinding.hsvExportFit,
+            sheetBinding.tvExportMarginsHeader, sheetBinding.hsvExportMargins,
             sheetBinding.tvExportQualityHeader, sheetBinding.chipGroupExportQuality
         )
         sheetBinding.btnExportAdvancedToggle.setOnClickListener {
@@ -1348,21 +1544,53 @@ class DocumentScannerController(
             binding.ivDocPagePreview.setImageBitmap(bmp)
             binding.tvDocPageIndicator.text = "Page ${session.activePageIndex + 1} of ${session.pageCount}"
 
-            // Sync filter chip selection to active page mode
+            // Sync inline Image Studio controls
             isSyncingFilterChips = true
+            isSyncingAdjustments = true
             try {
-                when (currentPage?.mode) {
-                    DocumentScanner.DocumentMode.ORIGINAL -> binding.chipFilterOriginal.isChecked = true
-                    DocumentScanner.DocumentMode.ENHANCED -> binding.chipFilterEnhanced.isChecked = true
-                    DocumentScanner.DocumentMode.BLACK_AND_WHITE -> binding.chipFilterBw.isChecked = true
-                    DocumentScanner.DocumentMode.GRAYSCALE -> binding.chipFilterGrayscale.isChecked = true
-                    DocumentScanner.DocumentMode.RECEIPT -> binding.chipFilterReceipt.isChecked = true
-                    DocumentScanner.DocumentMode.ID_DOCUMENT -> binding.chipFilterIdDoc.isChecked = true
-                    DocumentScanner.DocumentMode.AUTO -> binding.chipFilterEnhanced.isChecked = true
-                    else -> {}
+                if (currentPage != null) {
+                    when (currentPage.filterPreset) {
+                        "Sepia" -> binding.chipFilterSepia.isChecked = true
+                        "Vintage" -> binding.chipFilterVintage.isChecked = true
+                        "Cool" -> binding.chipFilterCool.isChecked = true
+                        "Warm" -> binding.chipFilterWarm.isChecked = true
+                        else -> {
+                            when (currentPage.mode) {
+                                DocumentScanner.DocumentMode.ORIGINAL -> binding.chipFilterOriginal.isChecked = true
+                                DocumentScanner.DocumentMode.BLACK_AND_WHITE -> binding.chipFilterBw.isChecked = true
+                                DocumentScanner.DocumentMode.GRAYSCALE -> binding.chipFilterGrayscale.isChecked = true
+                                DocumentScanner.DocumentMode.RECEIPT -> binding.chipFilterReceipt.isChecked = true
+                                DocumentScanner.DocumentMode.ID_DOCUMENT -> binding.chipFilterIdDoc.isChecked = true
+                                else -> binding.chipFilterEnhanced.isChecked = true
+                            }
+                        }
+                    }
+
+                    // Sync sliders
+                    binding.sliderDocExposure.value = currentPage.exposureStops.toFloat().coerceIn(-2f, 2f)
+                    binding.sliderDocContrast.value = currentPage.contrast.toFloat().coerceIn(0.5f, 2f)
+                    binding.sliderDocSaturation.value = currentPage.saturation.toFloat().coerceIn(0f, 2f)
+                    binding.sliderDocWarmth.value = currentPage.warmth.toFloat().coerceIn(-1f, 1f)
+                    binding.sliderDocSharpen.value = currentPage.adjustSharpen.toFloat().coerceIn(0f, 2f)
+                    binding.sliderDocDenoise.value = currentPage.adjustDenoise.toFloat().coerceIn(0f, 10f)
+
+                    // Sync watermark
+                    if (binding.etDocWatermarkText.text?.toString() != currentPage.watermarkText) {
+                        binding.etDocWatermarkText.setText(currentPage.watermarkText)
+                    }
+                    when (currentPage.watermarkPosition.lowercase()) {
+                        "center" -> binding.chipDocPosCenter.isChecked = true
+                        "top-right" -> binding.chipDocPosTopRight.isChecked = true
+                        "top-left" -> binding.chipDocPosTopLeft.isChecked = true
+                        "bottom-left" -> binding.chipDocPosBottomLeft.isChecked = true
+                        else -> binding.chipDocPosBottomRight.isChecked = true
+                    }
+                    binding.sliderDocWmSize.value = currentPage.watermarkSize.toFloat().coerceIn(12f, 72f)
+                    binding.sliderDocWmOpacity.value = (currentPage.watermarkOpacity * 100f).coerceIn(10f, 100f)
                 }
             } finally {
                 isSyncingFilterChips = false
+                isSyncingAdjustments = false
             }
 
             // Enable/disable navigation buttons based on current index
@@ -1374,123 +1602,155 @@ class DocumentScannerController(
         }
     }
 
+    private var thumbnailAdapter: DocumentThumbnailAdapter? = null
+
     private fun renderThumbnailStrip() {
-        val density = activity.resources.displayMetrics.density
-        val container = binding.containerDocThumbnails
-        container.removeAllViews()
-
-        for (i in 0 until session.pageCount) {
-            val page = session.pages[i]
-            val isSelected = (i == session.activePageIndex)
-
-            val card = MaterialCardView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    (62 * density).toInt(),
-                    (82 * density).toInt()
-                ).apply {
-                    setMargins(0, 0, (8 * density).toInt(), 0)
-                }
-                radius = 10 * density
-                strokeWidth = if (isSelected) (2.5f * density).toInt() else (1 * density).toInt()
-                strokeColor = if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_surface_stroke)
-                setCardBackgroundColor(activity.getColor(R.color.vf_surface_variant))
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    session.selectPage(i)
+        if (thumbnailAdapter == null) {
+            thumbnailAdapter = DocumentThumbnailAdapter(
+                onPageClick = { index ->
+                    session.selectPage(index)
                     updateUi()
+                },
+                onAddClick = {
+                    openCameraViewfinder()
                 }
-            }
-
-            val cardInner = LinearLayout(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT
-                )
-                orientation = LinearLayout.VERTICAL
-            }
-
-            val ivThumb = ImageView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    (58 * density).toInt()
-                )
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "Page ${i + 1}"
-                val thumbBmp = page.thumbnailBitmapCache ?: page.getDisplayBitmap(activity)
-                setImageBitmap(thumbBmp)
-            }
-
-            val tvBadge = TextView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    (24 * density).toInt()
-                )
-                gravity = android.view.Gravity.CENTER
-                text = "%02d".format(i + 1)
-                textSize = 11f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                setTextColor(if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_primary))
-            }
-
-            cardInner.addView(ivThumb)
-            cardInner.addView(tvBadge)
-            card.addView(cardInner)
-            container.addView(card)
-        }
-
-        // Add trailing "+ Add Page" card
-        val addCard = MaterialCardView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                (62 * density).toInt(),
-                (82 * density).toInt()
             )
-            radius = 10 * density
-            strokeWidth = (1 * density).toInt()
-            strokeColor = activity.getColor(R.color.vf_surface_stroke)
-            setCardBackgroundColor(activity.getColor(R.color.vf_surface))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                openCameraViewfinder()
-            }
+            binding.rvDocThumbnails.adapter = thumbnailAdapter
         }
-
-        val addInner = LinearLayout(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            gravity = android.view.Gravity.CENTER
-            orientation = LinearLayout.VERTICAL
+        thumbnailAdapter?.notifyDataSetChanged()
+        if (session.activePageIndex in 0 until session.pageCount) {
+            binding.rvDocThumbnails.scrollToPosition(session.activePageIndex)
         }
-
-        val addIcon = ImageView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                (24 * density).toInt(),
-                (24 * density).toInt()
-            )
-            setImageResource(R.drawable.ic_camera)
-            imageTintList = android.content.res.ColorStateList.valueOf(activity.getColor(R.color.vf_primary))
-            contentDescription = "Add Page"
-        }
-
-        val addText = TextView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            text = "+ Add"
-            textSize = 10f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setTextColor(activity.getColor(R.color.vf_primary))
-        }
-
-        addInner.addView(addIcon)
-        addInner.addView(addText)
-        addCard.addView(addInner)
-        container.addView(addCard)
     }
+
+    private inner class DocumentThumbnailAdapter(
+        private val onPageClick: (Int) -> Unit,
+        private val onAddClick: () -> Unit
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+        private val density = activity.resources.displayMetrics.density
+
+        override fun getItemViewType(position: Int): Int {
+            return if (position < session.pageCount) 0 else 1
+        }
+
+        override fun getItemCount(): Int = session.pageCount + 1
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            return if (viewType == 0) {
+                val card = MaterialCardView(parent.context).apply {
+                    layoutParams = ViewGroup.MarginLayoutParams(
+                        (62 * density).toInt(),
+                        (82 * density).toInt()
+                    ).apply {
+                        setMargins(0, 0, (8 * density).toInt(), 0)
+                    }
+                    radius = 10 * density
+                    setCardBackgroundColor(activity.getColor(R.color.vf_surface_variant))
+                    isClickable = true
+                    isFocusable = true
+                }
+                val cardInner = LinearLayout(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    orientation = LinearLayout.VERTICAL
+                }
+                val ivThumb = ImageView(parent.context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        (58 * density).toInt()
+                    )
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                }
+                val tvBadge = TextView(parent.context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        (24 * density).toInt()
+                    )
+                    gravity = android.view.Gravity.CENTER
+                    textSize = 11f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+                cardInner.addView(ivThumb)
+                cardInner.addView(tvBadge)
+                card.addView(cardInner)
+                PageViewHolder(card, ivThumb, tvBadge)
+            } else {
+                val addCard = MaterialCardView(parent.context).apply {
+                    layoutParams = ViewGroup.MarginLayoutParams(
+                        (62 * density).toInt(),
+                        (82 * density).toInt()
+                    )
+                    radius = 10 * density
+                    strokeWidth = (1 * density).toInt()
+                    strokeColor = activity.getColor(R.color.vf_surface_stroke)
+                    setCardBackgroundColor(activity.getColor(R.color.vf_surface))
+                    isClickable = true
+                    isFocusable = true
+                }
+                val addInner = LinearLayout(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    gravity = android.view.Gravity.CENTER
+                    orientation = LinearLayout.VERTICAL
+                }
+                val addIcon = ImageView(parent.context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        (24 * density).toInt(),
+                        (24 * density).toInt()
+                    )
+                    setImageResource(R.drawable.ic_camera)
+                    imageTintList = android.content.res.ColorStateList.valueOf(activity.getColor(R.color.vf_primary))
+                    contentDescription = "Add Page"
+                }
+                val addText = TextView(parent.context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    text = "+ Add"
+                    textSize = 10f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(activity.getColor(R.color.vf_primary))
+                }
+                addInner.addView(addIcon)
+                addInner.addView(addText)
+                addCard.addView(addInner)
+                AddViewHolder(addCard)
+            }
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            if (holder is PageViewHolder) {
+                val page = session.pages[position]
+                val isSelected = (position == session.activePageIndex)
+                holder.card.strokeWidth = if (isSelected) (2.5f * density).toInt() else (1 * density).toInt()
+                holder.card.strokeColor = if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_surface_stroke)
+                holder.ivThumb.contentDescription = "Page ${position + 1}"
+                val thumbBmp = page.thumbnailBitmapCache ?: page.getDisplayBitmap(activity)
+                holder.ivThumb.setImageBitmap(thumbBmp)
+                holder.tvBadge.text = "%02d".format(position + 1)
+                holder.tvBadge.setTextColor(if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_primary))
+                holder.card.setOnClickListener { onPageClick(position) }
+            } else if (holder is AddViewHolder) {
+                holder.card.setOnClickListener { onAddClick() }
+            }
+        }
+    }
+
+    private class PageViewHolder(
+        val card: MaterialCardView,
+        val ivThumb: ImageView,
+        val tvBadge: TextView
+    ) : RecyclerView.ViewHolder(card)
+
+    private class AddViewHolder(
+        val card: MaterialCardView
+    ) : RecyclerView.ViewHolder(card)
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
         val planes = image.planes

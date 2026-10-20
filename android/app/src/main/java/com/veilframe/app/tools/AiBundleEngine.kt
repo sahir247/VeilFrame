@@ -20,7 +20,7 @@ import java.util.regex.Pattern
 object AiBundleEngine {
 
     data class BundleConfig(
-        val tokenBudget: Int = 64_000,
+        val tokenBudget: Long = 64_000L,
         val outputFormat: String = "md",
         val maskSecrets: Boolean = true,
         val excludeTests: Boolean = false,
@@ -31,7 +31,7 @@ object AiBundleEngine {
     data class BundleResult(
         val totalFiles: Int,
         val includedFiles: Int,
-        val totalTokens: Int,
+        val totalTokens: Long,
         val outputPath: String
     )
 
@@ -53,6 +53,28 @@ object AiBundleEngine {
         Pattern.compile("(?i)AKIA[0-9A-Z]{16}")
     )
 
+    private val MANIFEST_LOCK_FILES = setOf(
+        "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
+        "cargo.lock", "pipfile.lock", "composer.lock", "packages.lock.json"
+    )
+
+    fun maskSecrets(raw: String): String {
+        var masked = raw
+        for (pattern in SECRET_PATTERNS) {
+            val matcher = pattern.matcher(masked)
+            masked = matcher.replaceAll("[REDACTED_SECRET]")
+        }
+        return masked
+    }
+
+    private fun condenseManifest(content: String): String {
+        val lines = content.lines()
+        if (lines.size <= 40) return content
+        val head = lines.take(25).joinToString("\n")
+        val tail = lines.takeLast(10).joinToString("\n")
+        return "$head\n\n// ... [Dependency Manifest Condensed: ${lines.size} lines total] ...\n\n$tail"
+    }
+
     fun buildBundleFromSaf(
         context: Context,
         treeUri: Uri,
@@ -64,8 +86,8 @@ object AiBundleEngine {
         val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
         val rootName = rootDoc?.name ?: treeUri.lastPathSegment ?: "Project"
 
-        val charsBudget = config.tokenBudget * 4
-        var currentChars = 0
+        val charsBudget = if (config.tokenBudget <= 0L) Long.MAX_VALUE else config.tokenBudget * 4L
+        var currentChars = 0L
         var totalFilesSeen = 0
         var includedFiles = 0
 
@@ -94,11 +116,14 @@ object AiBundleEngine {
                     if (config.excludeTests && isTestFile(childName, relativePath)) continue
                     if (child.length() > 500 * 1024) continue // Skip individual files > 500KB
 
-                    val content = readFileContent(resolver, child.uri, config.maskSecrets)
+                    var content = readFileContent(resolver, child.uri, config.maskSecrets)
                     if (content.isNullOrBlank()) continue
+                    if (config.compressManifests && childName.lowercase(Locale.US) in MANIFEST_LOCK_FILES) {
+                        content = condenseManifest(content)
+                    }
 
                     val fileSection = buildFileSection(relativePath, content, config.outputFormat, includedFiles + 1)
-                    val sectionLen = fileSection.length
+                    val sectionLen = fileSection.length.toLong()
 
                     if (currentChars + sectionLen <= charsBudget) {
                         sections.add(fileSection)
@@ -191,7 +216,7 @@ object AiBundleEngine {
         rootName: String,
         timestamp: String,
         fileCount: Int,
-        totalTokens: Int,
+        totalTokens: Long,
         totalFilesSeen: Int,
         sections: List<String>,
         maxDepth: Int? = null
@@ -232,7 +257,7 @@ object AiBundleEngine {
         return sb.toString()
     }
 
-    private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Int, sections: List<String>, maxDepth: Int? = null): String {
+    private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Long, sections: List<String>, maxDepth: Int? = null): String {
         val sb = StringBuilder()
         sb.append("# VeilFrame AI Context Bundle: $rootName\n\n")
         sb.append("- **Generated:** $timestamp\n")
@@ -247,7 +272,7 @@ object AiBundleEngine {
         return sb.toString()
     }
 
-    private fun buildJsonBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Int, sections: List<String>): String {
+    private fun buildJsonBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Long, sections: List<String>): String {
         return """
         {
             "project": "${rootName.replace("\\", "\\\\")}",

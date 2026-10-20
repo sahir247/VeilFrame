@@ -21,8 +21,6 @@
 
 #include "realsr_preproc.comp.hex.h"
 #include "realsr_postproc.comp.hex.h"
-#include "realsr_preproc_tta.comp.hex.h"
-#include "realsr_postproc_tta.comp.hex.h"
 
 RealSR::RealSR(int gpuid, bool _tta_mode, int num_threads)
 {
@@ -76,20 +74,21 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
         return -9;
     }
 
-    // Repeated load() must release custom pipelines/layers before rebuilding them.
+    // Repeated load() must release custom pipelines/layers and clear network before rebuilding them.
     delete realsr_preproc; realsr_preproc = nullptr;
     delete realsr_postproc; realsr_postproc = nullptr;
     if (bicubic_2x) { bicubic_2x->destroy_pipeline(net.opt); delete bicubic_2x; bicubic_2x = nullptr; }
     if (bicubic_3x) { bicubic_3x->destroy_pipeline(net.opt); delete bicubic_3x; bicubic_3x = nullptr; }
     if (bicubic_4x) { bicubic_4x->destroy_pipeline(net.opt); delete bicubic_4x; bicubic_4x = nullptr; }
+    net.clear();
 
     net.opt.use_vulkan_compute = (vkdev != nullptr);
-    net.opt.use_fp16_packed = false;
-    net.opt.use_fp16_storage = false;
+    net.opt.use_fp16_packed = true;
+    net.opt.use_fp16_storage = true;
     net.opt.use_fp16_arithmetic = false;
     net.opt.use_int8_storage = false;
     net.opt.use_int8_arithmetic = false;
-    net.opt.use_winograd_convolution = false;
+    net.opt.use_winograd_convolution = true;
     net.opt.use_sgemm_convolution = true;
 
     if (vkdev) {
@@ -128,16 +127,12 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
         specializations[0].i = 0; // Android/Linux ABI
 
         {
-            static std::vector<uint32_t> spirv_by_mode[2];
+            static std::vector<uint32_t> spirv;
             static ncnn::Mutex lock;
-            std::vector<uint32_t>& spirv = spirv_by_mode[tta_mode ? 1 : 0];
             {
                 ncnn::MutexLockGuard guard(lock);
                 if (spirv.empty()) {
-                    if (tta_mode)
-                        compile_spirv_module(realsr_preproc_tta_comp_data, sizeof(realsr_preproc_tta_comp_data), net.opt, spirv);
-                    else
-                        compile_spirv_module(realsr_preproc_comp_data, sizeof(realsr_preproc_comp_data), net.opt, spirv);
+                    compile_spirv_module(realsr_preproc_comp_data, sizeof(realsr_preproc_comp_data), net.opt, spirv);
                 }
             }
             realsr_preproc = new ncnn::Pipeline(vkdev);
@@ -151,16 +146,12 @@ int RealSR::load(const std::string& parampath, const std::string& modelpath)
         }
 
         {
-            static std::vector<uint32_t> spirv_by_mode[2];
+            static std::vector<uint32_t> spirv;
             static ncnn::Mutex lock;
-            std::vector<uint32_t>& spirv = spirv_by_mode[tta_mode ? 1 : 0];
             {
                 ncnn::MutexLockGuard guard(lock);
                 if (spirv.empty()) {
-                    if (tta_mode)
-                        compile_spirv_module(realsr_postproc_tta_comp_data, sizeof(realsr_postproc_tta_comp_data), net.opt, spirv);
-                    else
-                        compile_spirv_module(realsr_postproc_comp_data, sizeof(realsr_postproc_comp_data), net.opt, spirv);
+                    compile_spirv_module(realsr_postproc_comp_data, sizeof(realsr_postproc_comp_data), net.opt, spirv);
                 }
             }
             realsr_postproc = new ncnn::Pipeline(vkdev);

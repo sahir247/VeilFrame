@@ -71,6 +71,11 @@ object VideoProcessor {
 
         val targetSizeMb: Double? = outputConfig.targetMb?.toDouble() ?: when (outputConfig.targetPreset) {
             "WhatsApp (16 MB)" -> 16.0
+            "Instagram Story" -> 50.0
+            "TikTok (72 MB)" -> 72.0
+            "YouTube Shorts" -> 100.0
+            "Twitter / X" -> 120.0
+            "Telegram HD" -> 200.0
             "Discord (25 MB)" -> 25.0
             "Discord Nitro (50 MB)" -> 50.0
             "Email Attachment (8 MB)" -> 8.0
@@ -171,6 +176,7 @@ object VideoProcessor {
                     pixelFormat = outputConfig.pixelFormat,
                     isGifMode = isGifMode,
                     bitrateReductionFactor = reduction,
+                    targetPreset = outputConfig.targetPreset,
                     onStatistics = onStatistics,
                     onSessionId = onSessionId
                 )
@@ -228,6 +234,7 @@ object VideoProcessor {
             pixelFormat = outputConfig.pixelFormat,
             isGifMode = isGifMode,
             bitrateReductionFactor = 1.0,
+            targetPreset = outputConfig.targetPreset,
             onStatistics = onStatistics,
             onSessionId = onSessionId
         )
@@ -279,6 +286,7 @@ object VideoProcessor {
         pixelFormat: String = "yuv420p",
         isGifMode: Boolean = false,
         bitrateReductionFactor: Double = 1.0,
+        targetPreset: String? = null,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
         onSessionId: ((Long) -> Unit)? = null
     ): CompressionResult {
@@ -568,6 +576,21 @@ object VideoProcessor {
                     if (!pixelFormat.equals("auto", ignoreCase = true)) {
                         cmd.add("-pix_fmt")
                         cmd.add("yuv420p")
+                    }
+
+                    if (resolvedCodec == "libx264") {
+                        val isSocialPreset = targetPreset != null && (
+                            targetPreset.contains("WhatsApp", ignoreCase = true) ||
+                            targetPreset.contains("Instagram", ignoreCase = true) ||
+                            targetPreset.contains("TikTok", ignoreCase = true) ||
+                            targetPreset.contains("Shorts", ignoreCase = true) ||
+                            targetPreset.contains("Twitter", ignoreCase = true) ||
+                            targetPreset.contains("Telegram", ignoreCase = true)
+                        )
+                        if (isSocialPreset) {
+                            cmd.add("-x264-params")
+                            cmd.add("no-mbtree=1")
+                        }
                     }
                 }
             }
