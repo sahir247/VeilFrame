@@ -22,6 +22,7 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.DialogModelRequiredBinding
 import com.veilframe.app.databinding.DialogUpscaleModelManagerBinding
 import com.veilframe.app.databinding.DialogUpscaleModelSelectorBinding
+import com.veilframe.app.databinding.ItemUpscaleModelCardBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MorphDialogController
@@ -1086,30 +1087,10 @@ class ImageUpscalerController(
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
         }
 
-        // Select current option
-        when (explicitModel?.id) {
-            "ncnn-realesr-animevideov3-x2" -> dialogBinding.rbModelRealEsrgan2x.isChecked = true
-            "ncnn-realesr-animevideov3-x3" -> dialogBinding.rbModelRealEsrgan3x.isChecked = true
-            "ncnn-realesrgan-x4plus" -> dialogBinding.rbModelRealEsrgan4x.isChecked = true
-            "ncnn-realesr-animevideov3-x4" -> dialogBinding.rbModelRealEsrganAnime.isChecked = true
-            "lanczos-3" -> dialogBinding.rbModelLanczos.isChecked = true
-            "bicubic" -> dialogBinding.rbModelBicubic.isChecked = true
-            "nearest" -> dialogBinding.rbModelNearest.isChecked = true
-            else -> dialogBinding.rbModelAuto.isChecked = true
-        }
-
         val dynamicModelMap = mutableMapOf<Int, UpscaleModel>()
-        val staticIds = setOf(
-            "ncnn-realesr-animevideov3-x2",
-            "ncnn-realesr-animevideov3-x3",
-            "ncnn-realesrgan-x4plus",
-            "ncnn-realesr-animevideov3-x4",
-            "lanczos-3",
-            "bicubic",
-            "nearest"
-        )
-        val additionalModels = UpscaleModelRegistry.ALL_MODELS.filter { it.id !in staticIds }
-        if (additionalModels.isNotEmpty()) {
+        var foundChecked = false
+
+        fun addDivider() {
             val divider = View(activity).apply {
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1121,37 +1102,59 @@ class ImageUpscalerController(
                 setBackgroundColor(activity.getColor(R.color.vf_surface_stroke))
             }
             dialogBinding.rgModelSelector.addView(divider)
+        }
 
-            for (m in additionalModels) {
-                val rb = android.widget.RadioButton(activity).apply {
-                    id = View.generateViewId()
-                    val mb = if (m.sizeBytes > 0) String.format(Locale.US, "%.1f MB", m.sizeBytes / (1024.0 * 1024.0)) else ""
-                    val info = if (mb.isNotEmpty()) " (${m.nativeScale}× • $mb)" else " (${m.nativeScale}×)"
-                    text = "${m.name}$info\n${m.description}"
-                    setTextColor(activity.getColor(R.color.vf_text_primary))
-                    textSize = 13f
-                    setPadding(0, (8 * activity.resources.displayMetrics.density).toInt(), 0, (8 * activity.resources.displayMetrics.density).toInt())
-                }
-                dialogBinding.rgModelSelector.addView(rb)
-                dynamicModelMap[rb.id] = m
-                if (explicitModel?.id == m.id) {
-                    rb.isChecked = true
-                }
+        // 1. Divider after Auto
+        addDivider()
+
+        // 2. All NCNN Models (all 7 models + custom models)
+        val allNcnnModels = (UpscaleModelRegistry.NCNN_MODELS + UpscaleModelRegistry.ALL_MODELS.filter { it.isImported }).distinctBy { it.id }
+        for (m in allNcnnModels) {
+            val rb = android.widget.RadioButton(activity).apply {
+                id = View.generateViewId()
+                val mb = if (m.sizeBytes > 0) String.format(Locale.US, "%.1f MB", m.sizeBytes / (1024.0 * 1024.0)) else ""
+                val info = if (mb.isNotEmpty()) " (${m.nativeScale}× • $mb)" else " (${m.nativeScale}×)"
+                text = "${m.name}$info\n${m.description}"
+                setTextColor(activity.getColor(R.color.vf_text_primary))
+                textSize = 13f
+                setPadding(0, (8 * activity.resources.displayMetrics.density).toInt(), 0, (8 * activity.resources.displayMetrics.density).toInt())
+            }
+            dialogBinding.rgModelSelector.addView(rb)
+            dynamicModelMap[rb.id] = m
+            if (explicitModel?.id == m.id) {
+                rb.isChecked = true
+                foundChecked = true
             }
         }
 
-        dialogBinding.btnModelSelectorApply.setOnClickListener {
-            val selectedModel: UpscaleModel? = when {
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan2x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan3x -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrgan4x -> UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelRealEsrganAnime -> UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelLanczos -> UpscaleModelRegistry.LANCZOS
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelBicubic -> UpscaleModelRegistry.BICUBIC
-                dialogBinding.rgModelSelector.checkedRadioButtonId == R.id.rbModelNearest -> UpscaleModelRegistry.NEAREST
-                dynamicModelMap.containsKey(dialogBinding.rgModelSelector.checkedRadioButtonId) -> dynamicModelMap[dialogBinding.rgModelSelector.checkedRadioButtonId]
-                else -> null // Auto
+        // 3. Divider before Algorithmic
+        addDivider()
+
+        // 4. Built-in algorithmic models
+        val algorithmicModels = listOf(UpscaleModelRegistry.LANCZOS, UpscaleModelRegistry.BICUBIC, UpscaleModelRegistry.NEAREST)
+        for (m in algorithmicModels) {
+            val rb = android.widget.RadioButton(activity).apply {
+                id = View.generateViewId()
+                text = "${m.name} (Built-in • 0 MB)\n${m.description}"
+                setTextColor(activity.getColor(R.color.vf_text_primary))
+                textSize = 13f
+                setPadding(0, (8 * activity.resources.displayMetrics.density).toInt(), 0, (8 * activity.resources.displayMetrics.density).toInt())
             }
+            dialogBinding.rgModelSelector.addView(rb)
+            dynamicModelMap[rb.id] = m
+            if (explicitModel?.id == m.id) {
+                rb.isChecked = true
+                foundChecked = true
+            }
+        }
+
+        if (!foundChecked) {
+            dialogBinding.rbModelAuto.isChecked = true
+        }
+
+        dialogBinding.btnModelSelectorApply.setOnClickListener {
+            val checkedId = dialogBinding.rgModelSelector.checkedRadioButtonId
+            val selectedModel: UpscaleModel? = if (checkedId == dialogBinding.rbModelAuto.id) null else dynamicModelMap[checkedId]
             explicitModel = selectedModel
             val modelForScale = selectedModel ?: runCatching { getResolvedModel() }.getOrNull()
             if (modelForScale?.type == com.veilframe.app.upscale.model.ModelType.AI_NCNN &&
@@ -1232,6 +1235,8 @@ class ImageUpscalerController(
             showCustomModelImportInstructionsDialog()
         }
 
+        val allNcnnModels = (UpscaleModelRegistry.NCNN_MODELS + UpscaleModelRegistry.ALL_MODELS.filter { it.isImported }).distinctBy { it.id }
+
         fun refreshCards() {
             val usedBytes = repository.getTotalStorageUsedBytes()
             val availBytes = repository.getAvailableStorageBytes()
@@ -1239,277 +1244,100 @@ class ImageUpscalerController(
             val availGb = String.format(Locale.US, "%.1f GB", availBytes / (1024.0 * 1024.0 * 1024.0))
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
-            val installedNcnn = UpscaleModelRegistry.NCNN_MODELS.count { repository.isModelInstalled(it) }
-            val customCount = UpscaleModelRegistry.ALL_MODELS.count { it.isImported }
-            dialogBinding.tvModelCountSummary.text = "${installedNcnn} NCNN Models Installed" + (if (customCount > 0) " • $customCount Custom" else "")
+            val installedNcnn = allNcnnModels.count { repository.isModelInstalled(it) }
+            val customCount = allNcnnModels.count { it.isImported }
+            dialogBinding.tvModelCountSummary.text = "${installedNcnn} of ${allNcnnModels.size} NCNN Models Installed" + (if (customCount > 0) " • $customCount Custom" else "")
 
-            // 2x Card
-            val is2x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2)
-            if (is2x) {
-                dialogBinding.tvModelStatus2x.text = "Installed"
-                dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModel2x.visibility = View.GONE
-                dialogBinding.btnDeleteModel2x.visibility = View.VISIBLE
-            } else {
-                dialogBinding.tvModelStatus2x.text = "Not Installed"
-                dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModel2x.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModel2x.visibility = View.GONE
-            }
+            dialogBinding.llModelList.removeAllViews()
+            val inflater = LayoutInflater.from(activity)
 
-            // 3x Card
-            val is3x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3)
-            if (is3x) {
-                dialogBinding.tvModelStatus3x.text = "Installed"
-                dialogBinding.tvModelStatus3x.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModel3x.visibility = View.GONE
-                dialogBinding.btnDeleteModel3x.visibility = View.VISIBLE
-            } else {
-                dialogBinding.tvModelStatus3x.text = "Not Installed"
-                dialogBinding.tvModelStatus3x.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModel3x.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModel3x.visibility = View.GONE
-            }
+            for (model in allNcnnModels) {
+                val cardBinding = ItemUpscaleModelCardBinding.inflate(inflater, dialogBinding.llModelList, false)
+                cardBinding.tvItemModelName.text = "${model.name} (${model.nativeScale}×)"
+                val sizeFormatted = String.format(Locale.US, "%.1f MB", model.sizeBytes / (1024.0 * 1024.0))
+                cardBinding.tvItemModelDescription.text = "$sizeFormatted • ${model.description}"
 
-            // 4x Card
-            val is4x = repository.isModelInstalled(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS)
-            if (is4x) {
-                dialogBinding.tvModelStatus4x.text = "Installed"
-                dialogBinding.tvModelStatus4x.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModel4x.visibility = View.GONE
-                dialogBinding.btnDeleteModel4x.visibility = View.VISIBLE
-            } else {
-                dialogBinding.tvModelStatus4x.text = "Not Installed"
-                dialogBinding.tvModelStatus4x.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModel4x.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModel4x.visibility = View.GONE
-            }
+                val isInstalled = repository.isModelInstalled(model)
+                if (isInstalled) {
+                    cardBinding.tvItemModelStatus.text = "Installed"
+                    cardBinding.tvItemModelStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
+                    cardBinding.btnItemModelDownload.visibility = View.GONE
+                    cardBinding.btnItemModelDelete.visibility = View.VISIBLE
+                } else {
+                    cardBinding.tvItemModelStatus.text = "Not Installed"
+                    cardBinding.tvItemModelStatus.setTextColor(activity.getColor(R.color.vf_text_muted))
+                    cardBinding.btnItemModelDownload.visibility = View.VISIBLE
+                    cardBinding.btnItemModelDownload.text = "Download ($sizeFormatted)"
+                    cardBinding.btnItemModelDelete.visibility = View.GONE
+                }
 
-            // Anime Card
-            val isAnime = repository.isModelInstalled(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4)
-            if (isAnime) {
-                dialogBinding.tvModelStatusAnime.text = "Installed"
-                dialogBinding.tvModelStatusAnime.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModelAnime.visibility = View.GONE
-                dialogBinding.btnDeleteModelAnime.visibility = View.VISIBLE
-            } else {
-                dialogBinding.tvModelStatusAnime.text = "Not Installed"
-                dialogBinding.tvModelStatusAnime.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModelAnime.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModelAnime.visibility = View.GONE
+                val activeJob = dialogDownloadJobs[model.id]
+                if (activeJob != null && activeJob.isActive) {
+                    cardBinding.progressItemModel.visibility = View.VISIBLE
+                    cardBinding.btnItemModelDownload.isEnabled = false
+                } else {
+                    cardBinding.progressItemModel.visibility = View.GONE
+                    cardBinding.btnItemModelDownload.isEnabled = true
+                }
+
+                cardBinding.btnItemModelDownload.setOnClickListener {
+                    cardBinding.progressItemModel.visibility = View.VISIBLE
+                    cardBinding.btnItemModelDownload.isEnabled = false
+                    dialogDownloadJobs[model.id]?.cancel()
+
+                    val job = scope.launch {
+                        downloadManager.downloadModel(model, object : ModelDownloadManager.DownloadListener {
+                            override fun onProgress(d: Long, t: Long, s: Long) {
+                                scope.launch(Dispatchers.Main) {
+                                    if (dialog.isShowing && t > 0) {
+                                        cardBinding.progressItemModel.isIndeterminate = false
+                                        cardBinding.progressItemModel.progress = ((d * 100) / t).toInt()
+                                    }
+                                }
+                            }
+                            override fun onVerifying() {
+                                scope.launch(Dispatchers.Main) {
+                                    if (dialog.isShowing) cardBinding.progressItemModel.isIndeterminate = true
+                                }
+                            }
+                            override fun onSuccess(m: UpscaleModel, destinationFile: File) {
+                                scope.launch(Dispatchers.Main) {
+                                    dialogDownloadJobs.remove(model.id)
+                                    if (dialog.isShowing) {
+                                        cardBinding.progressItemModel.visibility = View.GONE
+                                        refreshCards()
+                                    }
+                                    updateModelDisplay()
+                                }
+                            }
+                            override fun onError(error: String) {
+                                scope.launch(Dispatchers.Main) {
+                                    dialogDownloadJobs.remove(model.id)
+                                    if (dialog.isShowing) {
+                                        cardBinding.progressItemModel.visibility = View.GONE
+                                        cardBinding.btnItemModelDownload.isEnabled = true
+                                        Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        })
+                    }
+                    dialogDownloadJobs[model.id] = job
+                }
+
+                cardBinding.btnItemModelDelete.setOnClickListener {
+                    dialogDownloadJobs[model.id]?.cancel()
+                    dialogDownloadJobs.remove(model.id)
+                    repository.deleteModel(model.id)
+                    refreshCards()
+                    updateModelDisplay()
+                }
+
+                dialogBinding.llModelList.addView(cardBinding.root)
             }
         }
 
         refreshCards()
-
-        // 2x Actions
-        dialogBinding.btnDownloadModel2x.setOnClickListener {
-            dialogBinding.progressModel2x.visibility = View.VISIBLE
-            dialogBinding.btnDownloadModel2x.isEnabled = false
-            dialogDownloadJobs["2x"]?.cancel()
-            val job = scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2, object : ModelDownloadManager.DownloadListener {
-                    override fun onProgress(d: Long, t: Long, s: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing && t > 0) {
-                                dialogBinding.progressModel2x.isIndeterminate = false
-                                dialogBinding.progressModel2x.progress = ((d * 100) / t).toInt()
-                            }
-                        }
-                    }
-                    override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing) dialogBinding.progressModel2x.isIndeterminate = true
-                        }
-                    }
-                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("2x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel2x.visibility = View.GONE
-                                refreshCards()
-                            }
-                            updateModelDisplay()
-                        }
-                    }
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("2x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel2x.visibility = View.GONE
-                                dialogBinding.btnDownloadModel2x.isEnabled = true
-                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                })
-            }
-            dialogDownloadJobs["2x"] = job
-        }
-        dialogBinding.btnDeleteModel2x.setOnClickListener {
-            dialogDownloadJobs["2x"]?.cancel()
-            dialogDownloadJobs.remove("2x")
-            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X2.id)
-            refreshCards()
-            updateModelDisplay()
-        }
-
-        // 3x Actions
-        dialogBinding.btnDownloadModel3x.setOnClickListener {
-            dialogBinding.progressModel3x.visibility = View.VISIBLE
-            dialogBinding.btnDownloadModel3x.isEnabled = false
-            dialogDownloadJobs["3x"]?.cancel()
-            val job = scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3, object : ModelDownloadManager.DownloadListener {
-                    override fun onProgress(d: Long, t: Long, s: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing && t > 0) {
-                                dialogBinding.progressModel3x.isIndeterminate = false
-                                dialogBinding.progressModel3x.progress = ((d * 100) / t).toInt()
-                            }
-                        }
-                    }
-                    override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing) dialogBinding.progressModel3x.isIndeterminate = true
-                        }
-                    }
-                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("3x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel3x.visibility = View.GONE
-                                refreshCards()
-                            }
-                            updateModelDisplay()
-                        }
-                    }
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("3x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel3x.visibility = View.GONE
-                                dialogBinding.btnDownloadModel3x.isEnabled = true
-                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                })
-            }
-            dialogDownloadJobs["3x"] = job
-        }
-        dialogBinding.btnDeleteModel3x.setOnClickListener {
-            dialogDownloadJobs["3x"]?.cancel()
-            dialogDownloadJobs.remove("3x")
-            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X3.id)
-            refreshCards()
-            updateModelDisplay()
-        }
-
-        // 4x Actions
-        dialogBinding.btnDownloadModel4x.setOnClickListener {
-            dialogBinding.progressModel4x.visibility = View.VISIBLE
-            dialogBinding.btnDownloadModel4x.isEnabled = false
-            dialogDownloadJobs["4x"]?.cancel()
-            val job = scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS, object : ModelDownloadManager.DownloadListener {
-                    override fun onProgress(d: Long, t: Long, s: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing && t > 0) {
-                                dialogBinding.progressModel4x.isIndeterminate = false
-                                dialogBinding.progressModel4x.progress = ((d * 100) / t).toInt()
-                            }
-                        }
-                    }
-                    override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing) dialogBinding.progressModel4x.isIndeterminate = true
-                        }
-                    }
-                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("4x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel4x.visibility = View.GONE
-                                refreshCards()
-                            }
-                            updateModelDisplay()
-                        }
-                    }
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("4x")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModel4x.visibility = View.GONE
-                                dialogBinding.btnDownloadModel4x.isEnabled = true
-                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                })
-            }
-            dialogDownloadJobs["4x"] = job
-        }
-        dialogBinding.btnDeleteModel4x.setOnClickListener {
-            dialogDownloadJobs["4x"]?.cancel()
-            dialogDownloadJobs.remove("4x")
-            repository.deleteModel(UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS.id)
-            refreshCards()
-            updateModelDisplay()
-        }
-
-        // Anime Actions
-        dialogBinding.btnDownloadModelAnime.setOnClickListener {
-            dialogBinding.progressModelAnime.visibility = View.VISIBLE
-            dialogBinding.btnDownloadModelAnime.isEnabled = false
-            dialogDownloadJobs["anime"]?.cancel()
-            val job = scope.launch {
-                downloadManager.downloadModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4, object : ModelDownloadManager.DownloadListener {
-                    override fun onProgress(d: Long, t: Long, s: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing && t > 0) {
-                                dialogBinding.progressModelAnime.isIndeterminate = false
-                                dialogBinding.progressModelAnime.progress = ((d * 100) / t).toInt()
-                            }
-                        }
-                    }
-                    override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) {
-                            if (dialog.isShowing) dialogBinding.progressModelAnime.isIndeterminate = true
-                        }
-                    }
-                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("anime")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModelAnime.visibility = View.GONE
-                                refreshCards()
-                            }
-                            updateModelDisplay()
-                        }
-                    }
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogDownloadJobs.remove("anime")
-                            if (dialog.isShowing) {
-                                dialogBinding.progressModelAnime.visibility = View.GONE
-                                dialogBinding.btnDownloadModelAnime.isEnabled = true
-                                Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                })
-            }
-            dialogDownloadJobs["anime"] = job
-        }
-        dialogBinding.btnDeleteModelAnime.setOnClickListener {
-            dialogDownloadJobs["anime"]?.cancel()
-            dialogDownloadJobs.remove("anime")
-            repository.deleteModel(UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4.id)
-            refreshCards()
-            updateModelDisplay()
-        }
-
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
