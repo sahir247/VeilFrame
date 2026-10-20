@@ -66,19 +66,6 @@
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/tvVersionBadge"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_pill"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp"
-                        tools:text="v2.2.9"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnToggleTheme"
@@ -1440,7 +1427,7 @@
                             android:layout_marginStart="6dp"
                             android:paddingStart="4dp"
                             android:paddingEnd="4dp"
-                            android:text="Check Updates"
+                            android:text="Update"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconSize="14dp"

@@ -533,7 +533,6 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         VeilFrameInteraction.bindWorkspace(binding.root)
 
-        binding.tvVersionBadge.text = com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)
         binding.tvUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
 
         consoleLogController.log("[SYS] Initialized VeilFrame ${com.veilframe.app.util.AppVersionProvider.getVersionName(this)} Native Core Runtime")

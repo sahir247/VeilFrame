@@ -44,6 +44,7 @@
 
         <!-- 1. Scope Selection -->
         <TextView
+            android:id="@+id/tvExportScopeHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Export scope"

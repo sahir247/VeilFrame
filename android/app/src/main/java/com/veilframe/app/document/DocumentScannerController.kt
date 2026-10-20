@@ -871,7 +871,7 @@ class DocumentScannerController(
                         activity.runOnUiThread {
                             processCapturedPhotoThroughFirstPipeline(bitmap, opticalMeasures)
                             updateCameraDoneBadge()
-                            Toast.makeText(activity, "Page ${session.pageCount + 1} captured", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "Page ${session.pageCount} captured", Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         activity.runOnUiThread {
@@ -1341,9 +1341,26 @@ class DocumentScannerController(
         val dialog = BottomSheetDialog(activity)
         dialog.setContentView(sheetBinding.root)
 
+        val isSinglePage = session.pageCount <= 1
         sheetBinding.tvExportSubtitle.text = "${session.title} • ${session.pageCount} page(s)"
-        sheetBinding.chipScopeAllPages.text = "All Pages (${session.pageCount})"
-        sheetBinding.chipScopeCurrentPage.text = "Page ${session.activePageIndex + 1} Only"
+
+        if (isSinglePage) {
+            sheetBinding.tvExportScopeHeader.visibility = View.GONE
+            sheetBinding.chipGroupExportScope.visibility = View.GONE
+            sheetBinding.chipScopeAllPages.isChecked = true
+
+            sheetBinding.chipFormatSeparatePdfs.visibility = View.GONE
+            sheetBinding.chipFormatSinglePdf.text = "PDF Document"
+            sheetBinding.chipFormatSinglePdf.isChecked = true
+        } else {
+            sheetBinding.tvExportScopeHeader.visibility = View.VISIBLE
+            sheetBinding.chipGroupExportScope.visibility = View.VISIBLE
+            sheetBinding.chipScopeAllPages.text = "All Pages (${session.pageCount})"
+            sheetBinding.chipScopeCurrentPage.text = "Page ${session.activePageIndex + 1} Only"
+
+            sheetBinding.chipFormatSeparatePdfs.visibility = View.VISIBLE
+            sheetBinding.chipFormatSinglePdf.text = "Combined PDF"
+        }
 
         // Expressive export UX: format-dependent visibility
         val imageOptionsViews = listOf(

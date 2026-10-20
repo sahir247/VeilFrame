@@ -624,7 +624,7 @@ class AppUpdateManager(
                         binding.tvUpdateStatus.text = "Installed: $currentDisplayVersion • Up to date"
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
-                            Toast.makeText(activity, "You have the latest version ($currentDisplayVersion)", Toast.LENGTH_SHORT).show()
+                            showLatestVersionDialog(currentDisplayVersion)
                         }
                     }
                 }
@@ -646,6 +646,16 @@ class AppUpdateManager(
                 isCheckingUpdates = false
             }
         }
+    }
+
+    private fun showLatestVersionDialog(version: String) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("You're on the latest version")
+            .setMessage("VeilFrame $version is currently up to date. No new updates are available at this time.")
+            .setIcon(R.drawable.ic_check_circle)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun showUpdateAvailableDialog(
