@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.ui
 
 import android.Manifest
+import com.veilframe.app.MainActivity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -69,9 +70,30 @@ import java.util.concurrent.Executors
  * 1. Generate — create stylized QR codes with 12 artistic styles, Guided Presets, logos, and custom colors
  * 2. Scan — scan QR codes via CameraX or image gallery import with safe intent dispatch
  */
-class QrStudioFragment : Fragment() {
+class QrStudioFragment : Fragment(), com.veilframe.app.navigation.ToolWorkStateContract {
 
     private val vm: QrStudioViewModel by activityViewModels()
+
+    override fun hasPickedMedia(): Boolean {
+        val s = vm.state.value
+        return s.logo != null || s.backgroundImage != null || s.sourceImage != null
+    }
+
+    override fun hasUnsavedWork(): Boolean {
+        val s = vm.state.value
+        val hasCustom = s.content.isNotBlank() || hasPickedMedia()
+        return hasCustom && s.saveResult == null
+    }
+
+    override val isProcessing: Boolean
+        get() = vm.state.value.isExporting || vm.state.value.isRenderingPreview
+
+    override val supportsBackgroundExecution: Boolean
+        get() = false
+
+    override fun discardAndReleaseAllResources() {
+        vm.terminateSession()
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -101,19 +123,16 @@ class QrStudioFragment : Fragment() {
             }
         }
 
-        // Terminate session cleanly when back is pressed
+        // Intercept back via central MainNavigationController contract
         val backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                vm.terminateSession()
-                isEnabled = false
-                requireActivity().onBackPressedDispatcher.onBackPressed()
+                (requireActivity() as? MainActivity)?.navigationController?.performBackNavigation()
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
 
         toolbar.setNavigationOnClickListener {
-            vm.terminateSession()
-            requireActivity().onBackPressedDispatcher.onBackPressed()
+            (requireActivity() as? MainActivity)?.navigationController?.performBackNavigation()
         }
 
         pager.adapter = object : FragmentStateAdapter(this) {

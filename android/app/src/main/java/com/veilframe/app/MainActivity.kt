@@ -83,7 +83,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var safStorageManager: SafStorageManager
     private lateinit var consoleLogController: ConsoleLogController
     private lateinit var workspaceHost: WorkspaceHost
-    private lateinit var navigationController: MainNavigationController
+    internal lateinit var navigationController: MainNavigationController
     private lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
     private lateinit var appUpdateManager: AppUpdateManager
@@ -1952,6 +1952,7 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.IMAGE_UPSCALER -> if (::imageUpscalerController.isInitialized) imageUpscalerController else null
             com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> if (::backgroundRemoverController.isInitialized) backgroundRemoverController else null
             com.veilframe.app.navigation.ScreenState.MOTION_LAB -> if (::motionLabController.isInitialized) motionLabController else null
+            com.veilframe.app.navigation.ScreenState.QR_STUDIO -> supportFragmentManager.findFragmentById(R.id.fragmentQrStudio) as? com.veilframe.app.navigation.ToolWorkStateContract
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_ENTRY,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_CAMERA,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_PAGES,
