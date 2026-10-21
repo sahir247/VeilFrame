@@ -8,6 +8,7 @@
 #include <limits>
 #include <vector>
 #include <cstring>
+#include <atomic>
 #include <android/log.h>
 #include "realsr.h"
 
@@ -67,6 +68,7 @@ struct CallbackUserData {
     jobject strip_callback = nullptr;
     jobject row_callback = nullptr;
     jobject progress_callback = nullptr;
+    std::atomic<bool>* cancel_flag = nullptr;
     int w = 0;
     int channels = 0;
     bool has_exception = false;
@@ -121,7 +123,14 @@ static bool prepare_reusable_row_buffer(
 
 static int jni_strip_callback(unsigned char* strip_data, int y0, int height, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
-    if (!cb || !cb->env || !cb->strip_callback) {
+    if (!cb) {
+        return 0;
+    }
+    if (cb->cancel_flag && cb->cancel_flag->load()) {
+        cb->cancelled = true;
+        return -1;
+    }
+    if (!cb->env || !cb->strip_callback) {
         return 0;
     }
 
@@ -170,7 +179,7 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
         return -1; // Abort without clearing exception
     }
 
-    if (ret == 1) {
+    if (ret == 1 || (cb->cancel_flag && cb->cancel_flag->load())) {
         cb->cancelled = true;
         return -1; // Keep callback cancellation out of NCNN's status namespace.
     }
@@ -184,7 +193,14 @@ static int jni_strip_callback(unsigned char* strip_data, int y0, int height, voi
 
 static int jni_row_callback(const unsigned char* row_data, int row_index, int row_width, int channels, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
-    if (!cb || !cb->env || !cb->row_callback) {
+    if (!cb) {
+        return 0;
+    }
+    if (cb->cancel_flag && cb->cancel_flag->load()) {
+        cb->cancelled = true;
+        return -1;
+    }
+    if (!cb->env || !cb->row_callback) {
         return 0;
     }
 
@@ -224,7 +240,7 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
         return -1; // Abort on Java exception WITHOUT clearing it
     }
 
-    if (ret == 1) {
+    if (ret == 1 || (cb->cancel_flag && cb->cancel_flag->load())) {
         cb->cancelled = true;
         return -1; // Keep callback cancellation out of NCNN's status namespace.
     }
@@ -238,17 +254,33 @@ static int jni_row_callback(const unsigned char* row_data, int row_index, int ro
 
 static int jni_progress_callback(int current_tile, int total_tiles, int percent, void* user_data) {
     CallbackUserData* cb = static_cast<CallbackUserData*>(user_data);
-    if (!cb || !cb->env || !cb->progress_callback) {
+    if (!cb) {
+        return 0;
+    }
+    if (cb->cancel_flag && cb->cancel_flag->load()) {
+        cb->cancelled = true;
+        return -1;
+    }
+    if (!cb->env || !cb->progress_callback) {
         return 0;
     }
 
-    cb->env->CallVoidMethod(cb->progress_callback, g_on_progress_method, current_tile, total_tiles, percent);
+    jint ret = cb->env->CallIntMethod(cb->progress_callback, g_on_progress_method, current_tile, total_tiles, percent);
     if (cb->env->ExceptionCheck()) {
         cb->has_exception = true;
         return -1; // Abort on Java exception without clearing it
     }
+    if (ret == 1 || (cb->cancel_flag && cb->cancel_flag->load())) {
+        cb->cancelled = true;
+        return -1;
+    }
+    if (ret != 0) {
+        cb->callback_failed = true;
+        return -1;
+    }
     return 0;
 }
+
 
 #include <unordered_map>
 #include <memory>
@@ -276,6 +308,7 @@ struct NativeInstance {
 
     std::shared_ptr<RealSR> engine;
     std::mutex call_mutex; // RealSR/NCNN instance methods are not concurrently re-entrant.
+    std::atomic<bool> cancelled{false};
 };
 
 static std::unordered_map<jlong, std::shared_ptr<NativeInstance>> g_instance_registry;
@@ -427,7 +460,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
         } else if (!initialize_callback_method(
                 env,
                 "com/veilframe/app/upscale/inference/NcnnProgressCallback",
-                "onProgress", "(III)V",
+                "onProgress", "(III)I",
                 &g_progress_callback_class, &g_on_progress_method)) {
             LOGE("nativeGlobalInit: failed to initialize NcnnProgressCallback.onProgress");
             error_code = -2;
@@ -614,6 +647,19 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
     instance_to_drop.reset();
 }
 
+JNIEXPORT void JNICALL
+Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCancel(
+    JNIEnv* env, jclass clazz, jlong handle
+) {
+    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+    if (g_runtime_state != RuntimeState::READY) return;
+    auto it = g_instance_registry.find(handle);
+    if (it != g_instance_registry.end() && it->second) {
+        it->second->cancelled.store(true);
+        LOGI("nativeCancel: flagged handle %lld for immediate cancellation", (long long)handle);
+    }
+}
+
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     JNIEnv* env, jclass clazz, jlong handle,
@@ -726,10 +772,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
         return -3;
     }
 
+    lease.instance->cancelled.store(false);
     CallbackUserData udata{};
     udata.env = env;
     udata.row_callback = rowCallback;
     udata.progress_callback = progressCallback;
+    udata.cancel_flag = &lease.instance->cancelled;
     udata.w = width;
     udata.channels = channels;
     udata.has_exception = false;
@@ -785,11 +833,13 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
         return -3;
     }
 
+    lease.instance->cancelled.store(false);
     CallbackUserData udata{};
     udata.env = env;
     udata.strip_callback = stripCallback;
     udata.row_callback = rowCallback;
     udata.progress_callback = progressCallback;
+    udata.cancel_flag = &lease.instance->cancelled;
     udata.w = width;
     udata.channels = channels;
     udata.has_exception = false;

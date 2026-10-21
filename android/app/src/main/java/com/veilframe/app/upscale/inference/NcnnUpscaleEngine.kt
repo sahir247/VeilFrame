@@ -445,6 +445,11 @@ class NcnnUpscaleEngine(
                             )
                         }
 
+                        val cancelHook = coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { cause ->
+                            if (cause is kotlinx.coroutines.CancellationException) {
+                                NcnnNative.cancel(handle)
+                            }
+                        }
                         try {
                             val loadRet = NcnnNative.loadModel(
                                 handle = handle,
@@ -543,6 +548,7 @@ class NcnnUpscaleEngine(
                                 progressCallback = { current, total, pct ->
                                     listener?.onProgress(current, total, pct)
                                     listener?.onStage("Neural Inference (NCNN)", current, total)
+                                    if (!coroutineContext.isActive) 1 else 0
                                 }
                             )
 
@@ -595,6 +601,7 @@ class NcnnUpscaleEngine(
                                 throw UpscaleCancellationException("Upscaling cancelled during PNG finalization")
                             }
                         } finally {
+                            cancelHook?.dispose()
                             NcnnNative.destroyInstance(handle)
                         }
                     }

@@ -276,12 +276,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val imgUpscalerPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
+    private fun handleImageUpscalerResult(uri: Uri?, sourceName: String) {
         if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
             workspaceHost.getOrInflateImageUpscaler()
             imageUpscalerController.handleImageSelected(uri)
+        } else {
+            consoleLogController.log("[UPSCALER] $sourceName returned no image.")
+        }
+    }
+
+    private val imgUpscalerDocumentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        handleImageUpscalerResult(uri, "System document picker")
+    }
+
+    private val imgUpscalerVisualMediaLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        handleImageUpscalerResult(uri, "Visual photo picker")
+    }
+
+    private fun openImageUpscalerPicker() {
+        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
+            val options = arrayOf("Photo Gallery", "Browse Files & Storage (SAF)")
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Select Image Source")
+                .setItems(options) { _, which ->
+                    if (which == 0) {
+                        try {
+                            imgUpscalerVisualMediaLauncher.launch(
+                                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                            )
+                        } catch (e: Exception) {
+                            consoleLogController.log("[UPSCALER] PhotoPicker launch failed: ${e.message}")
+                            imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
+                        }
+                    } else {
+                        imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
         }
     }
 
@@ -894,7 +929,7 @@ class MainActivity : AppCompatActivity() {
             onBackRequested = {
                 navigationController.navigateBackFromWorkspace()
             },
-            onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
+            onPickImageRequested = { openImageUpscalerPicker() },
             onLog = { msg -> consoleLogController.log(msg) }
         ).apply {
             onImportCustomModelRequested = {
@@ -1459,33 +1494,15 @@ class MainActivity : AppCompatActivity() {
         val isMotionLabProcessing = ::motionLabController.isInitialized && motionLabController.isProcessing
         val isToolExecuting = ::toolExecutionController.isInitialized && toolExecutionController.isExecuting
 
-        if (::videoStudioController.isInitialized && !isVideoProcessing) {
-            videoStudioController.clear()
-        }
-        if (::videoPlayerController.isInitialized && !isVideoProcessing) {
-            videoPlayerController.clearMedia()
-        }
-        if (::imageStudioController.isInitialized && !isImageProcessing) {
-            imageStudioController.clear()
-        }
-        if (::imageUpscalerController.isInitialized && !isUpscalerProcessing) {
-            imageUpscalerController.release()
-        }
-        if (::docScannerController.isInitialized && !isDocScannerProcessing) {
-            docScannerController.release()
-        }
-        if (::backgroundRemoverController.isInitialized && !isBgRemoverProcessing) {
-            backgroundRemoverController.cleanup()
-        }
-        if (::motionLabController.isInitialized && !isMotionLabProcessing) {
-            motionLabController.reset()
-        }
-        if (::provenanceController.isInitialized) {
-            provenanceController.reset()
-        }
-        if (::markdownViewerController.isInitialized) {
-            markdownViewerController.clear()
-        }
+        if (::videoStudioController.isInitialized && !isVideoProcessing) videoStudioController.clear()
+        if (::videoPlayerController.isInitialized && !isVideoProcessing) videoPlayerController.clearMedia()
+        if (::imageStudioController.isInitialized && !isImageProcessing) imageStudioController.clear()
+        if (::imageUpscalerController.isInitialized && !isUpscalerProcessing) imageUpscalerController.release()
+        if (::docScannerController.isInitialized && !isDocScannerProcessing) docScannerController.release()
+        if (::backgroundRemoverController.isInitialized && !isBgRemoverProcessing) backgroundRemoverController.cleanup()
+        if (::motionLabController.isInitialized && !isMotionLabProcessing) motionLabController.reset()
+        if (::provenanceController.isInitialized) provenanceController.reset()
+        if (::markdownViewerController.isInitialized) markdownViewerController.clear()
         if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing && !isVideoProcessing && !isImageProcessing && !isMotionLabProcessing && !isToolExecuting) {
             workspaceHost.pause()
         }

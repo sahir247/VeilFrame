@@ -94,6 +94,16 @@ object NcnnNative {
     }
 
     /**
+     * Request immediate cancellation of an active native inference on [handle].
+     * Thread-safe and safe to call from any thread or coroutine.
+     */
+    fun cancel(handle: Long) {
+        if (handle != 0L && isAvailable) {
+            nativeCancel(handle)
+        }
+    }
+
+    /**
      * Load an NCNN model pair (.param and .bin).
      *
      * @return 0 on success, negative error code on failure.
@@ -171,6 +181,7 @@ object NcnnNative {
     @JvmStatic private external fun nativeGetGpuDeviceName(gpuid: Int): String?
     @JvmStatic private external fun nativeCreateInstance(gpuid: Int, ttaMode: Boolean, numThreads: Int): Long
     @JvmStatic private external fun nativeDestroyInstance(handle: Long)
+    @JvmStatic private external fun nativeCancel(handle: Long)
     @JvmStatic private external fun nativeLoadModel(
         handle: Long, paramPath: String, binPath: String, scale: Int, tilesize: Int, prepadding: Int
     ): Int

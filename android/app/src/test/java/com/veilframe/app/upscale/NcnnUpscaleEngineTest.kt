@@ -262,6 +262,13 @@ class NcnnUpscaleEngineTest {
         assertFalse(NcnnNative.isAvailable)
     }
 
+    @Test
+    fun testNcnnNative_CancelSafeWhenUnavailable() {
+        // Must never throw or crash even if native library was not loaded
+        NcnnNative.cancel(99999L)
+        assertFalse(NcnnNative.isAvailable)
+    }
+
     private fun installTestNcnnModel(model: com.veilframe.app.upscale.model.UpscaleModel) {
         val paramFile = repository.getNcnnParamFile(model.id)
         val binFile = repository.getNcnnBinFile(model.id)

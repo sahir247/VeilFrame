@@ -102,6 +102,9 @@ class ImageUpscalerController(
     private var suppressScaleListener: Boolean = false
     private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
     private var isCancelling: Boolean = false
+    private var isSharing: Boolean = false
+    private var cachedShareOutput: UpscaleOutput? = null
+    private var cachedShareFile: File? = null
 
     var onImportCustomModelRequested: (() -> Unit)? = null
     var inferenceParams: UpscaleInferenceParams = UpscaleInferenceParams()
@@ -253,6 +256,8 @@ class ImageUpscalerController(
         val oldResultFile = resultFile
         resultFile = null
         safelyDeleteResultFile(oldResultFile)
+        cachedShareOutput = null
+        cachedShareFile = null
 
         // Visually reset results and indicate loading immediately
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
@@ -274,7 +279,9 @@ class ImageUpscalerController(
                 if (origW <= 0 || origH <= 0) {
                     withContext(Dispatchers.Main) {
                         if (generation == imageLoadGeneration) {
+                            resetToEmptySelectionState()
                             Toast.makeText(activity, "Could not decode selected image dimensions", Toast.LENGTH_SHORT).show()
+                            onLog("[UPSCALER] Failed to decode selected image dimensions: ${origW}x${origH}")
                         }
                     }
                     return@launch
@@ -290,9 +297,13 @@ class ImageUpscalerController(
                 // 192 MB-class source bitmap never exists.
                 val preview = decodeSampledPreview(uri, 2048)
                 if (preview == null || generation != imageLoadGeneration || !isActive) {
-                    withContext(Dispatchers.Main) {
-                        if (generation == imageLoadGeneration) {
-                            Toast.makeText(activity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                    if (preview == null) {
+                        withContext(Dispatchers.Main) {
+                            if (generation == imageLoadGeneration) {
+                                resetToEmptySelectionState()
+                                Toast.makeText(activity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                                onLog("[UPSCALER] Failed to decode sampled preview for image")
+                            }
                         }
                     }
                     return@launch
@@ -356,11 +367,36 @@ class ImageUpscalerController(
                 Log.e(TAG, "Error loading image: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     if (generation == imageLoadGeneration) {
+                        resetToEmptySelectionState()
                         Toast.makeText(activity, "Error loading image: ${e.message}", Toast.LENGTH_SHORT).show()
+                        onLog("[UPSCALER] Error loading image: ${e.message}")
                     }
                 }
             }
         }
+    }
+
+    private fun resetToEmptySelectionState() {
+        selectedUri = null
+        val oldAccess = sourceAccess
+        sourceAccess = null
+        oldAccess?.close()
+        sourceBitmap = null
+        previewBitmap = null
+        resultOutput = null
+        val oldResult = resultFile
+        resultFile = null
+        safelyDeleteResultFile(oldResult)
+        cachedShareOutput = null
+        cachedShareFile = null
+
+        upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
+        upscalerBinding.layoutUpscalerWorkspace.visibility = View.GONE
+        upscalerBinding.layoutUpscalerResults.visibility = View.GONE
+        upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
+        upscalerBinding.tvUpscalerBadge.text = "SELECT IMAGE"
+        upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_text_secondary))
+        updateUIState()
     }
 
     /** F1/B5: sampled preview decode via the shared MediaDecoder policy. */
@@ -786,45 +822,56 @@ class ImageUpscalerController(
             dialogBinding.btnModelReqUseLanczos.isEnabled = false
 
             downloadJob = scope.launch {
-                val res = downloadManager.downloadModel(model, object : ModelDownloadManager.DownloadListener {
-                    override fun onProgress(downloadedBytes: Long, totalBytes: Long, speedBytesPerSec: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            val pct = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
-                            val speedMb = speedBytesPerSec / (1024.0 * 1024.0)
-                            dialogBinding.progressModelReq.isIndeterminate = false
-                            dialogBinding.progressModelReq.progress = pct
-                            dialogBinding.tvModelReqProgressStatus.text =
-                                String.format(Locale.US, "Downloading: %d%% (%.1f MB/s)", pct, speedMb)
+                try {
+                    val res = downloadManager.downloadModel(model, object : ModelDownloadManager.DownloadListener {
+                        override fun onProgress(downloadedBytes: Long, totalBytes: Long, speedBytesPerSec: Long) {
+                            scope.launch(Dispatchers.Main) {
+                                val pct = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
+                                val speedMb = speedBytesPerSec / (1024.0 * 1024.0)
+                                dialogBinding.progressModelReq.isIndeterminate = false
+                                dialogBinding.progressModelReq.progress = pct
+                                dialogBinding.tvModelReqProgressStatus.text =
+                                    String.format(Locale.US, "Downloading: %d%% (%.1f MB/s)", pct, speedMb)
+                            }
                         }
-                    }
 
-                    override fun onVerifying() {
-                        scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModelReq.isIndeterminate = true
-                            dialogBinding.tvModelReqProgressStatus.text = "Verifying SHA-256 integrity..."
+                        override fun onVerifying() {
+                            scope.launch(Dispatchers.Main) {
+                                dialogBinding.progressModelReq.isIndeterminate = true
+                                dialogBinding.tvModelReqProgressStatus.text = "Verifying SHA-256 integrity..."
+                            }
                         }
-                    }
 
-                    override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-                            updateModelDisplay()
-                            onLog("[UPSCALER] Model ${m.name} successfully downloaded and verified.")
-                            sourceAccess?.let { src -> executeUpscaling(src, m, targetScale) }
+                        override fun onSuccess(m: UpscaleModel, destinationFile: File) {
+                            scope.launch(Dispatchers.Main) {
+                                MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+                                updateModelDisplay()
+                                onLog("[UPSCALER] Model ${m.name} successfully downloaded and verified.")
+                                sourceAccess?.let { src -> executeUpscaling(src, m, targetScale) }
+                            }
                         }
-                    }
 
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            dialogBinding.progressModelReq.visibility = View.GONE
-                            dialogBinding.tvModelReqProgressStatus.text = "Download failed: $error"
-                            dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
-                            dialogBinding.btnModelReqDownload.isEnabled = true
-                            dialogBinding.btnModelReqUseLanczos.isEnabled = true
-                            onLog("[UPSCALER] Download error: $error")
+                        override fun onError(error: String) {
+                            scope.launch(Dispatchers.Main) {
+                                dialogBinding.progressModelReq.visibility = View.GONE
+                                dialogBinding.tvModelReqProgressStatus.text = "Download failed: $error"
+                                dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
+                                dialogBinding.btnModelReqDownload.isEnabled = true
+                                dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                                onLog("[UPSCALER] Download error: $error")
+                            }
+                        }
+                    })
+                } finally {
+                    withContext(NonCancellable + Dispatchers.Main) {
+                        downloadJob = null
+                        if (isCancelling) {
+                            isCancelling = false
+                            upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+                            updateUIState()
                         }
                     }
-                })
+                }
             }
         }
 
@@ -924,6 +971,8 @@ class ImageUpscalerController(
                             }
                             resultOutput = output
                             resultFile = (output as? UpscaleOutput.Streamed)?.file
+                            cachedShareOutput = null
+                            cachedShareFile = null
                             upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
                             val resolvedModel = getResolvedModel()
                             val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
@@ -1066,11 +1115,16 @@ class ImageUpscalerController(
         com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
 
+        val activeInference = inferenceJob?.isActive == true
+        val activeDownload = downloadJob?.isActive == true
+
         inferenceJob?.cancel()
         downloadJob?.cancel()
 
-        if (inferenceJob == null && downloadJob == null) {
+        if (!activeInference && !activeDownload) {
             isCancelling = false
+            inferenceJob = null
+            downloadJob = null
             upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
             updateUIState()
         }
@@ -1435,18 +1489,30 @@ class ImageUpscalerController(
 
     private fun shareUpscaledImage() {
         val output = resultOutput ?: return
+        if (isSharing) return
+        isSharing = true
+        upscalerBinding.btnUpscalerShare.isEnabled = false
+        upscalerBinding.btnUpscalerShare.alpha = 0.6f
         activeExportCount.incrementAndGet()
+
         scope.launch(Dispatchers.IO) {
             try {
                 val shareFile = if (output is UpscaleOutput.Streamed && output.file.isFile) {
                     output.file
+                } else if (cachedShareOutput === output && cachedShareFile?.isFile == true) {
+                    cachedShareFile!!
                 } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(activity, "Preparing image for sharing…", Toast.LENGTH_SHORT).show()
+                    }
                     val cacheDir = File(activity.cacheDir, "shared_upscaled")
                     cacheDir.mkdirs()
                     val tempFile = File(cacheDir, "upscaled_${System.currentTimeMillis()}.png")
                     FileOutputStream(tempFile).use { fos ->
                         writeOutput(output, fos)
                     }
+                    cachedShareOutput = output
+                    cachedShareFile = tempFile
                     tempFile
                 }
 
@@ -1471,6 +1537,11 @@ class ImageUpscalerController(
                 }
             } finally {
                 activeExportCount.decrementAndGet()
+                withContext(Dispatchers.Main) {
+                    isSharing = false
+                    upscalerBinding.btnUpscalerShare.isEnabled = true
+                    upscalerBinding.btnUpscalerShare.alpha = 1.0f
+                }
             }
         }
     }
@@ -1485,6 +1556,8 @@ class ImageUpscalerController(
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
         safelyDeleteResultFile(resultFile)
         resultFile = null
+        cachedShareFile = null
+        cachedShareOutput = null
         com.veilframe.app.runtime.ThermalGovernor.unregister()
     }
 }
