@@ -12,7 +12,7 @@ class UpscaleModelResolverTest {
     @Test
     fun `resolveModel routes neural presets to NCNN and standard to Lanczos`() {
         assertEquals(
-            UpscaleModelRegistry.NCNN_REAL_ESRGAN_X4PLUS,
+            UpscaleModelRegistry.NCNN_REAL_ESRGAN_GENERAL_V3_X4,
             UpscaleModelResolver.resolveModel("photo")
         )
         assertEquals(
@@ -20,7 +20,7 @@ class UpscaleModelResolverTest {
             UpscaleModelResolver.resolveModel("photo_quality")
         )
         assertEquals(
-            UpscaleModelRegistry.NCNN_ANIMEVIDEO_V3_X4,
+            UpscaleModelRegistry.NCNN_ANIMESHARP_X4,
             UpscaleModelResolver.resolveModel("anime")
         )
         assertEquals(
@@ -34,6 +34,21 @@ class UpscaleModelResolverTest {
         assertEquals(
             UpscaleModelRegistry.LANCZOS,
             UpscaleModelResolver.resolveModel("standard")
+        )
+        assertEquals(
+            UpscaleModelRegistry.NCNN_ULTRASHARP_X4,
+            UpscaleModelResolver.resolveModel("custom")
+        )
+    }
+
+    @Test
+    fun `no two presets share the same recommended model`() {
+        val recommendedModels = UpscalePresetRegistry.ALL_PRESETS.map { it.recommendedModelId }
+        val uniqueModels = recommendedModels.toSet()
+        assertEquals(
+            "Each preset must recommend a unique model without overlap",
+            recommendedModels.size,
+            uniqueModels.size
         )
     }
 

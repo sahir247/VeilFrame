@@ -28,7 +28,7 @@ class UpscaleModelRegistryTest {
     @Test
     fun testNcnnModelsHaveCompletePinnedArtifactContracts() {
         val models = UpscaleModelRegistry.NCNN_MODELS
-        assertEquals(7, models.size)
+        assertEquals(15, models.size)
 
         models.forEach { model ->
             assertEquals(ModelType.AI_NCNN, model.type)
@@ -61,6 +61,30 @@ class UpscaleModelRegistryTest {
 
         assertEquals(4, UpscaleModelRegistry.NCNN_REAL_ESRGAN_HFA2K_X4.nativeScale)
         assertEquals(listOf(4), UpscaleModelRegistry.NCNN_REAL_ESRGAN_HFA2K_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_ULTRASHARP_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_ULTRASHARP_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_ANIMESHARP_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_ANIMESHARP_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_NOMOS8KSC_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_NOMOS8KSC_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_REMACRI_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_REMACRI_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_REAL_ESRGAN_GENERAL_V3_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_REAL_ESRGAN_GENERAL_V3_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_ULTRAMIX_BALANCED_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_ULTRAMIX_BALANCED_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_ANIMESHARP_LITE_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_ANIMESHARP_LITE_X4.supportedOutputScales)
+
+        assertEquals(4, UpscaleModelRegistry.NCNN_NICKELBACK_X4.nativeScale)
+        assertEquals(listOf(4), UpscaleModelRegistry.NCNN_NICKELBACK_X4.supportedOutputScales)
     }
 
     @Test
