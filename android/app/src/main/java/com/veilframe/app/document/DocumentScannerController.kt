@@ -107,7 +107,7 @@ class DocumentScannerController(
     private val onExportFileRequest: (File, String) -> Unit,
     private val onNavigateBack: () -> Unit,
     private val onRequestCameraPermission: () -> Unit = {}
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
     val session = DocumentSession()
 
     // Decoupled live analyzer flow: 60fps UI observation without GC pressure
@@ -118,7 +118,7 @@ class DocumentScannerController(
     )
     val scannerState: SharedFlow<ScanResult> = _scannerState.asSharedFlow()
 
-    private val isProcessing = AtomicBoolean(false)
+    private val isInternalProcessing = AtomicBoolean(false)
     private val viewfinderSessionId = java.util.concurrent.atomic.AtomicLong(0L)
     private var activeAnalysisJob: Job? = null
     private var frameIdCounter = 0L
@@ -471,7 +471,7 @@ class DocumentScannerController(
         quadStabilizer.reset()
         lastStabState = QuadStabilizer.State.SEARCHING
         isCapturing = false
-        isProcessing.set(false)
+        isInternalProcessing.set(false)
         try {
             cameraProvider?.unbindAll()
         } catch (_: Exception) {}
@@ -716,7 +716,7 @@ class DocumentScannerController(
             }
         }
 
-        if (!isProcessing.compareAndSet(false, true)) {
+        if (!isInternalProcessing.compareAndSet(false, true)) {
             imageProxy.close()
             return
         }
@@ -733,7 +733,7 @@ class DocumentScannerController(
         }
 
         if (rawBitmap == null) {
-            isProcessing.set(false)
+            isInternalProcessing.set(false)
             return
         }
 
@@ -814,7 +814,7 @@ class DocumentScannerController(
                 }
             } finally {
                 frameBitmap.recycle()
-                isProcessing.set(false)
+                isInternalProcessing.set(false)
             }
         }
         activeAnalysisJob = job
@@ -1832,13 +1832,26 @@ class DocumentScannerController(
     }
 
     val isBusyProcessing: Boolean
-        get() = isProcessing.get() || scannerJob?.isActive == true || activeAnalysisJob?.isActive == true
+        get() = isInternalProcessing.get() || scannerJob?.isActive == true || activeAnalysisJob?.isActive == true
+
+    override fun hasPickedMedia(): Boolean = session.pageCount > 0
+    override fun hasUnsavedWork(): Boolean = session.pageCount > 0
+    override val isProcessing: Boolean
+        get() = isBusyProcessing
+    override val supportsBackgroundExecution: Boolean
+        get() = false
+
+    override fun discardAndReleaseAllResources() {
+        cancelProcessing()
+        session.replaceAllPages(emptyList())
+        binding.docQuadOverlayView.clear()
+    }
 
     fun cancelProcessing() {
         scannerJob?.cancel()
         scannerJob = null
         activeAnalysisJob?.cancel()
         activeAnalysisJob = null
-        isProcessing.set(false)
+        isInternalProcessing.set(false)
     }
 }

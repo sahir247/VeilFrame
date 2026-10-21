@@ -61,6 +61,11 @@ class AppUpdateManager(
         // Embedded Base64 Ed25519 public key for verifying update.json release manifests
         const val EMBEDDED_MANIFEST_ED25519_PUBLIC_KEY = "MCowBQYDK2VwAyEAm+y6kG/gWd7rU6B6z7VpW3rM5s+bL1/uP4V5mK3Q0G8="
 
+        fun sanitizeApkFilename(rawName: String): String {
+            val clean = File(rawName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            return if (clean.endsWith(".apk", ignoreCase = true) && !clean.contains("..")) clean else "VeilFrame-update.apk"
+        }
+
         /**
          * Validates that update URLs belong strictly to HTTPS GitHub domains and are pinned
          * to the sahir247/VeilFrame repository (or GitHub's authenticated release asset CDN).
@@ -244,10 +249,7 @@ class AppUpdateManager(
 
     fun isAllowedUpdateUrl(urlString: String): Boolean = Companion.isAllowedUpdateUrl(urlString)
 
-    private fun sanitizeApkFilename(rawName: String): String {
-        val clean = File(rawName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        return if (clean.endsWith(".apk", ignoreCase = true) && !clean.contains("..")) clean else "VeilFrame-update.apk"
-    }
+    fun sanitizeApkFilename(rawName: String): String = Companion.sanitizeApkFilename(rawName)
 
     fun canonicalizeJsonForSigning(json: JSONObject): ByteArray = Companion.canonicalizeJsonForSigning(json)
 
@@ -705,7 +707,7 @@ class AppUpdateManager(
             .setTitle(dialogTitle)
             .setMessage(message)
             .setPositiveButton(positiveText) { _, _ ->
-                downloadAndInstallUpdateWithProgress(downloadUrl, apkFileName, sizeBytes, expectedSha256)
+                downloadAndInstallUpdateWithProgress(downloadUrl, apkFileName, sizeBytes, expectedSha256, isRepairMode)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -715,7 +717,8 @@ class AppUpdateManager(
         downloadUrl: String,
         apkName: String,
         totalBytesExpected: Long,
-        expectedSha256: String
+        expectedSha256: String,
+        isRepairMode: Boolean = false
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
@@ -741,11 +744,9 @@ class AppUpdateManager(
         }
 
         val safeApkName = sanitizeApkFilename(apkName)
-        val targetApkFile = File(activity.cacheDir, safeApkName)
-        val stagingFile = File(activity.cacheDir, "update_staging_${System.currentTimeMillis()}.apk")
 
         val titleView = TextView(activity).apply {
-            text = "Downloading update: $safeApkName"
+            text = "Downloading: $safeApkName"
             textSize = 14f
             setTextColor(activity.getColor(R.color.vf_text_primary))
             setPadding(0, 0, 0, 20)
@@ -757,7 +758,7 @@ class AppUpdateManager(
         }
 
         val statusView = TextView(activity).apply {
-            text = "Connecting securely to GitHub Releases..."
+            text = "Connecting securely to GitHub Releases…"
             textSize = 13f
             setTextColor(activity.getColor(R.color.vf_text_secondary))
             setPadding(0, 20, 0, 0)
@@ -771,15 +772,16 @@ class AppUpdateManager(
             addView(statusView)
         }
 
-        var isCancelled = false
         activeDownloadDialog?.dismiss()
         val downloadDialog = MaterialAlertDialogBuilder(activity)
-            .setTitle("Downloading Update")
+            .setTitle(if (isRepairMode) "Repairing VeilFrame" else "Downloading Update")
             .setView(container)
+            .setPositiveButton("Run in Background") { dialog, _ ->
+                dialog.dismiss()
+                Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
+            }
             .setNegativeButton("Cancel") { _, _ ->
-                isCancelled = true
-                downloadJob?.cancel()
-                stagingFile.delete()
+                AppUpdateDownloadService.cancelDownload(activity)
                 Toast.makeText(activity, "Download cancelled", Toast.LENGTH_SHORT).show()
             }
             .setCancelable(false)
@@ -788,161 +790,59 @@ class AppUpdateManager(
         activeDownloadDialog = downloadDialog
         downloadDialog.show()
 
-        downloadJob = scope.launch(Dispatchers.IO) {
-            try {
-                var currentUrl = downloadUrl
-                var connection: HttpURLConnection? = null
-                var redirectCount = 0
-
-                while (redirectCount < 5) {
-                    if (!isAllowedUpdateUrl(currentUrl)) {
-                        throw SecurityException("Untrusted download redirect destination: $currentUrl")
-                    }
-
-                    val u = URL(currentUrl)
-                    val conn = (u.openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 15000
-                        readTimeout = 30000
-                        instanceFollowRedirects = false
-                        setRequestProperty("User-Agent", "${com.veilframe.app.util.AppVersionProvider.getUserAgent(activity)}-Updater")
-                    }
-                    val status = conn.responseCode
-                    if (status in 300..399) {
-                        val redirectLoc = conn.getHeaderField("Location")
-                        conn.disconnect()
-                        if (!redirectLoc.isNullOrEmpty()) {
-                            currentUrl = redirectLoc
-                            redirectCount++
-                            continue
-                        }
-                    }
-                    connection = conn
-                    break
-                }
-
-                val conn = connection ?: throw IOException("Failed to establish secure download connection")
-                if (conn.responseCode !in 200..299) {
-                    throw IOException("Server returned HTTP ${conn.responseCode}: ${conn.responseMessage}")
-                }
-
-                val totalLength = if (conn.contentLengthLong > 0) conn.contentLengthLong else totalBytesExpected
-                val digest = MessageDigest.getInstance("SHA-256")
-
-                conn.inputStream.use { input ->
-                    stagingFile.outputStream().use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        var downloaded = 0L
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            if (isCancelled) {
-                                stagingFile.delete()
-                                return@use
-                            }
-                            output.write(buffer, 0, bytesRead)
-                            digest.update(buffer, 0, bytesRead)
-                            downloaded += bytesRead
-
-                            if (totalLength > 0) {
-                                val percent = ((downloaded * 100) / totalLength).toInt().coerceIn(0, 100)
-                                withContext(Dispatchers.Main) {
-                                    if (!activity.isFinishing && !activity.isDestroyed) {
-                                        progressIndicator.isIndeterminate = false
-                                        progressIndicator.progress = percent
-                                        statusView.text = "${safStorageManager.formatBytes(downloaded)} / ${safStorageManager.formatBytes(totalLength)} ($percent%)"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (isCancelled) {
-                    stagingFile.delete()
-                    withContext(Dispatchers.Main) {
-                        activeDownloadDialog?.dismiss()
-                        activeDownloadDialog = null
-                    }
-                    return@launch
-                }
-
-                if (totalLength > 0 && stagingFile.length() != totalLength) {
-                    val actualLen = stagingFile.length()
-                    stagingFile.delete()
-                    throw IOException("Truncated download: received $actualLen bytes, expected $totalLength bytes")
-                }
-
-                withContext(Dispatchers.Main) {
-                    activeDownloadDialog?.dismiss()
-                    activeDownloadDialog = null
-                }
-
-                // SHA-256 verification (if digest provided by release publisher)
-                val computedSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-                if (cleanExpectedSha256.isNotEmpty()) {
-                    if (!computedSha256.equals(cleanExpectedSha256, ignoreCase = true)) {
-                        stagingFile.delete()
-                        withContext(Dispatchers.Main) {
-                            if (!activity.isFinishing && !activity.isDestroyed) {
-                                showSecurityAlertDialog(
-                                    "SHA-256 Integrity Verification Failed!\n\n" +
-                                    "Expected: $cleanExpectedSha256\n" +
-                                    "Computed: $computedSha256\n\n" +
-                                    "The downloaded package does not match the cryptographic digest. Installation aborted."
-                                )
-                            }
-                        }
-                        return@launch
-                    }
-                }
-
-                // Signature verification
-                val sigError = verifyApkSignatureAndIdentity(stagingFile)
-                if (sigError != null) {
-                    stagingFile.delete()
-                    withContext(Dispatchers.Main) {
-                        if (!activity.isFinishing && !activity.isDestroyed) {
-                            showSecurityAlertDialog(
-                                "Publisher Security Verification Failed!\n\n" +
-                                "$sigError\n\n" +
-                                "The downloaded package failed authenticity checks. Installation aborted."
-                            )
-                        }
-                    }
-                    return@launch
-                }
-
-                // Atomic rename
-                if (targetApkFile.exists()) {
-                    targetApkFile.delete()
-                }
-                val renameSuccess = stagingFile.renameTo(targetApkFile)
-                val finalApk = if (renameSuccess) {
-                    targetApkFile
-                } else {
-                    stagingFile.copyTo(targetApkFile, overwrite = true)
-                    stagingFile.delete()
-                    targetApkFile
-                }
-
-                lastVerifiedUpdateApk = finalApk
-                onLog("[SEC] Verified and finalized update package: ${finalApk.name} (${safStorageManager.formatBytes(finalApk.length())})")
-
-                withContext(Dispatchers.Main) {
+        AppUpdateDownloadService.downloadListener = object : AppUpdateDownloadService.DownloadListener {
+            override fun onProgress(downloaded: Long, total: Long, percent: Int) {
+                activity.runOnUiThread {
                     if (!activity.isFinishing && !activity.isDestroyed) {
-                        promptInstallApk(finalApk)
-                    }
-                }
-            } catch (e: Exception) {
-                stagingFile.delete()
-                withContext(Dispatchers.Main) {
-                    if (!activity.isFinishing && !activity.isDestroyed) {
-                        activeDownloadDialog?.dismiss()
-                        activeDownloadDialog = null
-                        Toast.makeText(activity, "Download error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                        progressIndicator.isIndeterminate = (total <= 0)
+                        progressIndicator.progress = percent
+                        statusView.text = if (total > 0) {
+                            "${safStorageManager.formatBytes(downloaded)} / ${safStorageManager.formatBytes(total)} ($percent%)"
+                        } else {
+                            "${safStorageManager.formatBytes(downloaded)} downloaded"
+                        }
                     }
                 }
             }
+
+            override fun onComplete(apkFile: File) {
+                lastVerifiedUpdateApk = apkFile
+                onLog("[SEC] Verified and finalized update package: ${apkFile.name} (${safStorageManager.formatBytes(apkFile.length())})")
+                activity.runOnUiThread {
+                    activeDownloadDialog?.dismiss()
+                    activeDownloadDialog = null
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        promptInstallApk(apkFile)
+                    }
+                }
+            }
+
+            override fun onError(message: String) {
+                activity.runOnUiThread {
+                    activeDownloadDialog?.dismiss()
+                    activeDownloadDialog = null
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        Toast.makeText(activity, "Download error: $message", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
+            override fun onCancelled() {
+                activity.runOnUiThread {
+                    activeDownloadDialog?.dismiss()
+                    activeDownloadDialog = null
+                }
+            }
         }
+
+        AppUpdateDownloadService.startDownload(
+            context = activity,
+            downloadUrl = downloadUrl,
+            apkName = apkName,
+            expectedSha256 = cleanExpectedSha256,
+            totalBytes = totalBytesExpected,
+            isRepair = isRepairMode
+        )
     }
 
     private fun showSecurityAlertDialog(reason: String) {

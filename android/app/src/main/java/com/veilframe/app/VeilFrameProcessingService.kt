@@ -302,7 +302,18 @@ class VeilFrameProcessingService : Service() {
                     }
                 }
             } finally {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                val wasSuccess = synchronized(this@VeilFrameProcessingService) { activeJob?.state == JobState.COMPLETED }
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(if (wasSuccess) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        stopForeground(!wasSuccess)
+                    }
+                } catch (_: Exception) {}
+                if (wasSuccess) {
+                    showCompletionNotification("Privacy Processing Finished", "Cleaned video ready")
+                }
                 stopSelf()
             }
         }
@@ -349,6 +360,13 @@ class VeilFrameProcessingService : Service() {
     }
 
     private fun buildForegroundNotification(contentText: String): Notification {
+        val cancelIntent = android.app.PendingIntent.getService(
+            this,
+            0,
+            Intent(this, VeilFrameProcessingService::class.java).setAction(ACTION_CANCEL_JOB),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("VeilFrame Privacy Shield")
             .setContentText(contentText)
@@ -356,6 +374,33 @@ class VeilFrameProcessingService : Service() {
             .setOngoing(true)
             .setProgress(100, 0, true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
             .build()
+    }
+
+    private fun showCompletionNotification(title: String, message: String) {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openPendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            10,
+            openIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText("$message • Tap Open to view.")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setContentIntent(openPendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(android.R.drawable.ic_menu_view, "Open", openPendingIntent)
+            .build()
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.notify(NOTIFICATION_ID, notification)
     }
 }

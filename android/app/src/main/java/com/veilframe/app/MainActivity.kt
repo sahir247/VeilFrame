@@ -601,6 +601,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
+        val dest = intent.getStringExtra("extra_navigate_destination")
+        if (!dest.isNullOrEmpty()) {
+            when (dest) {
+                "IMAGE_UPSCALER" -> navigationController.showImageUpscalerScreen()
+                "MOTION_LAB" -> navigationController.showMotionLabScreen()
+                "VIDEO_STUDIO" -> navigationController.showVideoStudioScreen()
+            }
+            return
+        }
         val action = intent.action
         val type = intent.type ?: ""
         val uri: Uri? = if (action == Intent.ACTION_SEND) {
@@ -1936,7 +1945,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun getActiveToolWorkContract(screen: com.veilframe.app.navigation.ScreenState = navigationController.currentScreen): com.veilframe.app.navigation.ToolWorkStateContract? {
+        return when (screen) {
+            com.veilframe.app.navigation.ScreenState.VIDEO_STUDIO -> if (::videoStudioController.isInitialized) videoStudioController else null
+            com.veilframe.app.navigation.ScreenState.IMAGE_STUDIO -> if (::imageStudioController.isInitialized) imageStudioController else null
+            com.veilframe.app.navigation.ScreenState.IMAGE_UPSCALER -> if (::imageUpscalerController.isInitialized) imageUpscalerController else null
+            com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> if (::backgroundRemoverController.isInitialized) backgroundRemoverController else null
+            com.veilframe.app.navigation.ScreenState.MOTION_LAB -> if (::motionLabController.isInitialized) motionLabController else null
+            com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_ENTRY,
+            com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_CAMERA,
+            com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_PAGES,
+            com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_EDITOR,
+            com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_EXPORT -> if (::docScannerController.isInitialized) docScannerController else null
+            com.veilframe.app.navigation.ScreenState.TOOL -> if (::toolExecutionController.isInitialized) toolExecutionController else null
+            else -> null
+        }
+    }
+
     fun hasActiveProcessing(): Boolean {
+        if (getActiveToolWorkContract()?.isProcessing == true) return true
         if (::videoStudioController.isInitialized && videoStudioController.isProcessing) return true
         if (::imageStudioController.isInitialized && imageStudioController.isProcessing) return true
         if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) return true
@@ -1949,27 +1976,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun cancelAllActiveProcessing() {
-        if (::videoStudioController.isInitialized && videoStudioController.isProcessing) {
-            videoStudioController.cancelProcessing()
-        }
-        if (::imageStudioController.isInitialized && imageStudioController.isProcessing) {
-            imageStudioController.cancelProcessing()
-        }
-        if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) {
-            imageUpscalerController.cancelProcessing()
-        }
-        if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) {
-            backgroundRemoverController.cancelProcessing()
-        }
-        if (::motionLabController.isInitialized && motionLabController.isProcessing) {
-            motionLabController.cancel()
-        }
-        if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) {
-            docScannerController.cancelProcessing()
-        }
-        if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) {
-            toolExecutionController.cancelExecution()
-        }
+        getActiveToolWorkContract()?.discardAndReleaseAllResources()
         if (VeilFrameProcessingService.activeJob?.state == com.veilframe.app.media.JobState.RUNNING) {
             VeilFrameProcessingService.cancelProcessing(this)
         }

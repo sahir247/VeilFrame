@@ -126,6 +126,24 @@
             android:exported="false"
             android:foregroundServiceType="mediaProcessing|dataSync" />
 
+        <!-- Background download and cryptographic verification for updates & repairs -->
+        <service
+            android:name=".updates.AppUpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Motion Lab optical flow frame interpolation and export -->
+        <service
+            android:name=".media.MotionLabForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
+
+        <!-- Video Studio offline encoding, compression and export -->
+        <service
+            android:name=".media.VideoStudioForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
+
         <!-- Loads the OpenCV native library before Application.onCreate (CV-2 fix) -->
         <provider
             android:name=".cv.core.OpenCVInitProvider"

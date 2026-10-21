@@ -36,11 +36,13 @@ class UpscaleForegroundService : Service() {
         const val CHANNEL_ID = "veilframe_upscale"
         const val NOTIFICATION_ID = 1101
 
-        private const val ACTION_START = "com.veilframe.action.UPSCALE_START"
-        private const val ACTION_PROGRESS = "com.veilframe.action.UPSCALE_PROGRESS"
-        private const val ACTION_CANCEL = "com.veilframe.action.UPSCALE_CANCEL"
-        private const val EXTRA_LABEL = "extra_label"
-        private const val EXTRA_PERCENT = "extra_percent"
+        const val ACTION_START = "com.veilframe.action.UPSCALE_START"
+        const val ACTION_PROGRESS = "com.veilframe.action.UPSCALE_PROGRESS"
+        const val ACTION_CANCEL = "com.veilframe.action.UPSCALE_CANCEL"
+        const val ACTION_COMPLETE = "com.veilframe.action.UPSCALE_COMPLETE"
+        const val EXTRA_LABEL = "extra_label"
+        const val EXTRA_PERCENT = "extra_percent"
+        const val EXTRA_RESULT_PATH = "extra_result_path"
 
         /**
          * Cooperative cancel hook, bound by ImageUpscalerController while a job
@@ -83,6 +85,15 @@ class UpscaleForegroundService : Service() {
             runCatching { context.startService(intent) }
         }
 
+        fun notifyComplete(context: Context, label: String, resultPath: String? = null) {
+            val intent = Intent(context, UpscaleForegroundService::class.java).apply {
+                action = ACTION_COMPLETE
+                putExtra(EXTRA_LABEL, label)
+                putExtra(EXTRA_RESULT_PATH, resultPath)
+            }
+            runCatching { context.startService(intent) }
+        }
+
         fun stop(context: Context) {
             try {
                 context.stopService(Intent(context, UpscaleForegroundService::class.java))
@@ -112,7 +123,13 @@ class UpscaleForegroundService : Service() {
             }
             ACTION_CANCEL -> {
                 cancelHook?.invoke()
-                stopSelfSafely()
+                stopSelfSafely(removeNotification = true)
+            }
+            ACTION_COMPLETE -> {
+                val label = intent.getStringExtra(EXTRA_LABEL) ?: "Image ready"
+                val resultPath = intent.getStringExtra(EXTRA_RESULT_PATH)
+                showCompletionNotification(label, resultPath)
+                stopSelfSafely(removeNotification = false)
             }
             else -> stopSelfSafely()
         }
@@ -214,13 +231,41 @@ class UpscaleForegroundService : Service() {
         }
     }
 
-    private fun stopSelfSafely() {
+    private fun showCompletionNotification(label: String, resultPath: String?) {
+        val openIntent = Intent(this, com.veilframe.app.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("extra_navigate_destination", "IMAGE_UPSCALER")
+            if (resultPath != null) putExtra("extra_media_path", resultPath)
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            this,
+            3,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Image Upscale Finished")
+            .setContentText("$label • Tap Open to view.")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setContentIntent(openPendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(android.R.drawable.ic_menu_view, "Open", openPendingIntent)
+            .build()
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun stopSelfSafely(removeNotification: Boolean = true) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForeground(if (removeNotification) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
             } else {
                 @Suppress("DEPRECATION")
-                stopForeground(true)
+                stopForeground(removeNotification)
             }
         } catch (_: Exception) {
         }

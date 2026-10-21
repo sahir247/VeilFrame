@@ -64,7 +64,7 @@ class ImageStudioController(
     private val onShareFileRequest: (File, String) -> Unit,
     private val onNavigateHome: () -> Unit,
     private val onOpenModelManager: () -> Unit = {}
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
     // Authoritative state
     val editState = ImageEditState()
     val outputConfig = ImageOutputConfig()
@@ -1179,8 +1179,16 @@ class ImageStudioController(
         }
     }
 
-    val isProcessing: Boolean
+    override fun hasPickedMedia(): Boolean = selectedMediaList.isNotEmpty()
+    override fun hasUnsavedWork(): Boolean = selectedMediaList.isNotEmpty() || lastResultFile != null
+    override val isProcessing: Boolean
         get() = compressionJob?.isActive == true || piiJob?.isActive == true
+    override val supportsBackgroundExecution: Boolean
+        get() = false
+
+    override fun discardAndReleaseAllResources() {
+        clear()
+    }
 
     fun cancelProcessing() {
         piiJob?.cancel()

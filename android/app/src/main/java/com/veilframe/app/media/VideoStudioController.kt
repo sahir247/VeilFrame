@@ -72,7 +72,7 @@ class VideoStudioController(
     private val onExportFileRequest: (File) -> Unit,
     private val onShareFileRequest: (File, String) -> Unit,
     private val onNavigateHome: () -> Unit
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
     val editState = VideoEditState()
     val outputConfig = VideoOutputConfig()
 
@@ -1484,6 +1484,9 @@ class VideoStudioController(
             floatingDockController.transitionTo(FloatingActionState.PROCESSING)
         }
 
+        VideoStudioForegroundService.cancelHook = { cancelProcessing() }
+        VideoStudioForegroundService.start(activity, "Compressing ${itemsToProcess.size} video(s)")
+
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
                 var successCount = 0
@@ -1550,6 +1553,11 @@ class VideoStudioController(
                         onStatistics = { encMs ->
                             val encSec = encMs / 1000.0
                             val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)
+                            VideoStudioForegroundService.updateProgress(
+                                activity,
+                                "[${idx + 1}/$total] ${item.displayName}",
+                                pct
+                            )
                             scope.launch(Dispatchers.Main) {
                                 binding.tvVidProgressStatus.text =
                                     "[${idx + 1}/$total] ${item.displayName} • ${String.format(Locale.US, "%.1f", encSec)}s / ${String.format(Locale.US, "%.1f", totalDurSec)}s ($pct%)"
@@ -1589,6 +1597,11 @@ class VideoStudioController(
                     binding.btnVidExecute.text = "Compress again"
 
                     if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists() && lastSavedFile.length() > 0L) {
+                        VideoStudioForegroundService.notifyComplete(
+                            activity,
+                            "Processed $successCount of $total videos",
+                            lastSavedFile.absolutePath
+                        )
                         lastResultFile = lastSavedFile
                         val durTrimmed = editState.trimmedDurationMs
                         binding.tvVidAfterStats.text = "${formatBytes(lastSavedFile.length())} • ${formatDuration(durTrimmed)} • ${outputConfig.format}"
@@ -1617,6 +1630,7 @@ class VideoStudioController(
                             }
                         }
                     } else {
+                        VideoStudioForegroundService.stop(activity)
                         Toast.makeText(activity, "Video compression failed to produce output", Toast.LENGTH_LONG).show()
                         if (::floatingDockController.isInitialized) {
                             floatingDockController.transitionTo(
@@ -1628,6 +1642,7 @@ class VideoStudioController(
                     }
                 }
             } catch (e: Exception) {
+                VideoStudioForegroundService.stop(activity)
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutVidProgress.visibility = View.GONE
@@ -1639,10 +1654,26 @@ class VideoStudioController(
         }
     }
 
-    val isProcessing: Boolean
+    override fun hasPickedMedia(): Boolean = selectedMediaList.isNotEmpty()
+    override fun hasUnsavedWork(): Boolean = selectedMediaList.isNotEmpty() || lastResultFile != null
+    override val isProcessing: Boolean
         get() = compressionJob?.isActive == true
+    override val supportsBackgroundExecution: Boolean
+        get() = true
+
+    override fun discardAndReleaseAllResources() {
+        clear()
+        VideoStudioForegroundService.stop(activity)
+    }
+
+    override fun moveToBackground() {
+        if (isProcessing) {
+            VideoStudioForegroundService.start(activity, "Video Studio compression in background")
+        }
+    }
 
     fun cancelProcessing() {
+        VideoStudioForegroundService.stop(activity)
         compressionJob?.cancel()
         compressionJob = null
         if (activeFFmpegSessionId >= 0L) {

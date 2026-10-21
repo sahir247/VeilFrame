@@ -42,7 +42,7 @@ class MotionLabController(
     private val scope: CoroutineScope,
     private val onPickVideoRequest: () -> Unit,
     private val onNavigateBack: () -> Unit,
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
 
     private companion object {
         const val TAG = "VeilFrame.MotionLab"
@@ -55,7 +55,8 @@ class MotionLabController(
     private var multiplier = 2
     private var qualityMode = false
     private var job: Job? = null
-    val isProcessing: Boolean get() = job?.isActive == true
+    override val isProcessing: Boolean get() = job?.isActive == true
+    override val supportsBackgroundExecution: Boolean get() = true
     @Volatile private var cancelRequested = false
     private var outputFile: File? = null
 
@@ -82,10 +83,26 @@ class MotionLabController(
     }
 
 
+    override fun hasPickedMedia(): Boolean = sourceUri != null
+    override fun hasUnsavedWork(): Boolean = sourceUri != null || outputFile != null
+
+    override fun discardAndReleaseAllResources() {
+        cancel()
+        reset()
+        MotionLabForegroundService.stop(activity)
+    }
+
+    override fun moveToBackground() {
+        if (isProcessing) {
+            MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x) in background")
+        }
+    }
+
     fun cancel() {
         cancelRequested = true
         job?.cancel()
         FFmpegKit.cancel()
+        MotionLabForegroundService.stop(activity)
     }
 
     fun setSource(uri: Uri) {
@@ -127,10 +144,12 @@ class MotionLabController(
     }
 
     private fun setProgress(done: Int, total: Int) {
+        val pct = if (total > 0) (done * 100 / total).coerceIn(0, 100) else 0
+        MotionLabForegroundService.updateProgress(activity, "Synthesising frames ($done/$total)", pct)
         scope.launch(Dispatchers.Main) {
             binding.progressMotionLab.isIndeterminate = false
             if (total > 0) {
-                binding.progressMotionLab.setProgressCompat((done * 100 / total).coerceIn(0, 100), true)
+                binding.progressMotionLab.setProgressCompat(pct, true)
             }
         }
     }
@@ -142,6 +161,9 @@ class MotionLabController(
         binding.containerMotionLabProgress.visibility = View.VISIBLE
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabRun.isEnabled = false
+
+        MotionLabForegroundService.cancelHook = { cancel() }
+        MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x)")
 
         job = scope.launch(Dispatchers.IO) {
             val workDir = File(activity.cacheDir, "motionlab/${System.currentTimeMillis()}")
@@ -255,6 +277,11 @@ class MotionLabController(
                 }
 
                 outputFile = resultFile
+                MotionLabForegroundService.notifyComplete(
+                    activity,
+                    "Motion Lab (${multiplier}x) finished",
+                    resultFile.absolutePath
+                )
                 val mb = resultFile.length() / (1024.0 * 1024.0)
                 withContext(Dispatchers.Main) {
                     binding.containerMotionLabProgress.visibility = View.GONE
@@ -264,13 +291,16 @@ class MotionLabController(
                     binding.btnMotionLabRun.isEnabled = true
                 }
             } catch (e: InterruptedException) {
+                MotionLabForegroundService.stop(activity)
                 withContext(Dispatchers.Main) {
                     binding.tvMotionLabStatus.text = "Cancelled"
                     binding.btnMotionLabRun.isEnabled = sourceUri != null
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                MotionLabForegroundService.stop(activity)
                 throw e
             } catch (e: Exception) {
+                MotionLabForegroundService.stop(activity)
                 Log.e(TAG, "Interpolation failed", e)
                 withContext(Dispatchers.Main) {
                     binding.tvMotionLabStatus.text = "Failed: ${e.message}"
@@ -278,6 +308,9 @@ class MotionLabController(
                     Toast.makeText(activity, "Motion Lab: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
+                if (outputFile == null) {
+                    MotionLabForegroundService.stop(activity)
+                }
                 workDir.deleteRecursively()
             }
         }

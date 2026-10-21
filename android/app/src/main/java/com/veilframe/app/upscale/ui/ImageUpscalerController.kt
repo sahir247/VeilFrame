@@ -60,7 +60,7 @@ class ImageUpscalerController(
     private val onBackRequested: () -> Unit,
     private val onPickImageRequested: () -> Unit,
     private val onLog: (String) -> Unit = {}
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
     companion object {
         private const val TAG = "VeilFrame.ImageUpscaler"
 
@@ -1018,6 +1018,12 @@ class ImageUpscalerController(
                                     output is UpscaleOutput.Streamed
                                 )
                             )
+                            var upscaleSuccess = true
+                            com.veilframe.app.upscale.UpscaleForegroundService.notifyComplete(
+                                activity,
+                                "${model.name} (${output.width}×${output.height})",
+                                resultFile?.absolutePath
+                            )
                             Toast.makeText(
                                 activity,
                                 String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", output.width, output.height, throughput, elapsedSec),
@@ -1050,7 +1056,9 @@ class ImageUpscalerController(
             } finally {
                 withContext(NonCancellable + Dispatchers.Main) {
                     com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
-                    com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
+                    if (resultOutput == null) {
+                        com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
+                    }
                     upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
                     isCancelling = false
                     inferenceJob = null
@@ -1096,8 +1104,38 @@ class ImageUpscalerController(
         onLog("[UPSCALER] Memory degrade offered (lanczos=$canLanczos)")
     }
 
-    val isProcessing: Boolean
+    override fun hasPickedMedia(): Boolean = selectedUri != null
+    override fun hasUnsavedWork(): Boolean = selectedUri != null || resultOutput != null
+    override val isProcessing: Boolean
         get() = (inferenceJob?.isActive == true || downloadJob?.isActive == true) || isCancelling
+    override val supportsBackgroundExecution: Boolean
+        get() = true
+
+    override fun discardAndReleaseAllResources() {
+        cancelProcessing()
+        sourceBitmap?.recycle()
+        sourceBitmap = null
+        previewBitmap?.recycle()
+        previewBitmap = null
+        when (val out = resultOutput) {
+            is UpscaleOutput.InMemory -> out.bitmap.recycle()
+            is UpscaleOutput.Streamed -> {
+                out.preview?.recycle()
+                out.file.delete()
+            }
+            null -> {}
+        }
+        resultOutput = null
+        resetToEmptySelectionState()
+        com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
+    }
+
+    override fun moveToBackground() {
+        if (isProcessing) {
+            val modelName = runCatching { getResolvedModel().name }.getOrDefault("Image Upscaler")
+            com.veilframe.app.upscale.UpscaleForegroundService.start(activity, "$modelName • background")
+        }
+    }
 
     fun cancelProcessing() {
         cancelActiveOperations()

@@ -38,7 +38,7 @@ class ToolExecutionController(
     private val onLog: (String) -> Unit,
     private val getImageStudioController: () -> ImageStudioController?,
     private val getVideoStudioController: () -> VideoStudioController?
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
 
     private var executionJob: Job? = null
 
@@ -49,6 +49,18 @@ class ToolExecutionController(
             JobState.PROCESSING,
             JobState.FINALIZING
         )
+
+    override fun hasPickedMedia(): Boolean = sessionManager.currentState.selectedUri != null
+    override fun hasUnsavedWork(): Boolean = sessionManager.currentState.selectedUri != null || sessionManager.currentState.jobState == JobState.COMPLETE
+    override val isProcessing: Boolean
+        get() = isExecuting
+    override val supportsBackgroundExecution: Boolean
+        get() = false
+
+    override fun discardAndReleaseAllResources() {
+        cancelExecution()
+        sessionManager.clearSelectedTarget(logMessage = false)
+    }
 
     fun cancelExecution() {
         executionJob?.cancel()

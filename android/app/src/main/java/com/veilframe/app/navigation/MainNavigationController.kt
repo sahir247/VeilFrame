@@ -138,23 +138,68 @@ class MainNavigationController(
 
     fun performBackNavigation(onProceed: () -> Unit = { doActualBackNavigation() }) {
         val mainAct = activity as? MainActivity
-        val isBusy = mainAct?.hasActiveProcessing() == true
-        if (isBusy && currentScreen != ScreenState.HOME && currentScreen != ScreenState.TOOLS && currentScreen != ScreenState.LIBRARY) {
+        val contract = mainAct?.getActiveToolWorkContract(currentScreen)
+        val isRootScreen = currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY
+
+        if (!isRootScreen && contract != null) {
+            if (contract.isProcessing) {
+                if (contract.supportsBackgroundExecution) {
+                    // Option to work in background for Image Upscale, Motion Lab, and Video Studio
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Active Task Running")
+                        .setMessage("Processing is currently active. Would you like to let it finish in the background, or cancel and discard now?")
+                        .setPositiveButton("Work in Background") { _, _ ->
+                            contract.moveToBackground()
+                            onProceed()
+                        }
+                        .setNeutralButton("Leave & Discard") { _, _ ->
+                            contract.discardAndReleaseAllResources()
+                            onProceed()
+                        }
+                        .setNegativeButton("Stay", null)
+                        .show()
+                    return
+                } else {
+                    // Non-backgroundable active processing
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Cancel Active Work?")
+                        .setMessage("A task is currently running. Leaving now will cancel the process immediately and discard unsaved results.")
+                        .setPositiveButton("Leave & Discard") { _, _ ->
+                            contract.discardAndReleaseAllResources()
+                            onProceed()
+                        }
+                        .setNegativeButton("Stay", null)
+                        .show()
+                    return
+                }
+            } else if (contract.hasPickedMedia() || contract.hasUnsavedWork()) {
+                // Media is picked or unsaved work exists
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                    .setTitle("Unsaved Work")
+                    .setMessage("You have unsaved changes or media loaded in this tool. Are you sure you want to leave?")
+                    .setPositiveButton("Leave & Discard") { _, _ ->
+                        contract.discardAndReleaseAllResources()
+                        onProceed()
+                    }
+                    .setNegativeButton("Stay", null)
+                    .show()
+                return
+            }
+        } else if (!isRootScreen && mainAct?.hasActiveProcessing() == true) {
+            // General active service fallback
             com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                 .setTitle("Active Task Running")
-                .setMessage("A task is currently running in this workspace. How would you like to proceed?")
-                .setPositiveButton("Run in Background") { _, _ ->
-                    // Task continues in foreground service; user returns to destination
-                    onProceed()
-                }
+                .setMessage("A background task is currently running. How would you like to proceed?")
+                .setPositiveButton("Run in Background") { _, _ -> onProceed() }
                 .setNeutralButton("Cancel & Leave") { _, _ ->
-                    mainAct?.cancelAllActiveProcessing()
+                    mainAct.cancelAllActiveProcessing()
                     onProceed()
                 }
                 .setNegativeButton("Stay", null)
                 .show()
             return
         }
+
         onProceed()
     }
 

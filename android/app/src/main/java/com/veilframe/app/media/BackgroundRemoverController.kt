@@ -59,7 +59,7 @@ class BackgroundRemoverController(
     private val onPickImageRequest: () -> Unit,
     private val onExportPngRequest: (File) -> Unit,
     private val onNavigateBack: () -> Unit
-) {
+) : com.veilframe.app.navigation.ToolWorkStateContract {
     private var processingJob: Job? = null
     private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
@@ -769,8 +769,23 @@ class BackgroundRemoverController(
         }
     }
 
-    val isProcessing: Boolean
+    override fun hasPickedMedia(): Boolean = currentSourceUri != null || sourceBitmap != null
+    override fun hasUnsavedWork(): Boolean = currentSourceUri != null || resultBitmap != null
+    override val isProcessing: Boolean
         get() = processingJob?.isActive == true || binding.cardBgProcessingOverlay.visibility == View.VISIBLE
+    override val supportsBackgroundExecution: Boolean get() = false
+
+    override fun discardAndReleaseAllResources() {
+        cancelProcessing()
+        sourceBitmap?.recycle()
+        sourceBitmap = null
+        resultBitmap?.recycle()
+        resultBitmap = null
+        sourceBytes = null
+        currentSourceUri = null
+        binding.splitViewBgCompare.setBitmaps(null, null)
+        updateUi()
+    }
 
     fun cancelProcessing() {
         processingJob?.cancel()
