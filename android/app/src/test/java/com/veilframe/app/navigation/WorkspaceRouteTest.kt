@@ -9,9 +9,9 @@ import org.junit.Test
 class WorkspaceRouteTest {
 
     @Test
-    fun `all 14 canonical workspaces are defined and populated`() {
+    fun `all 16 canonical workspaces are defined and populated`() {
         val routes = WorkspaceRoute.values()
-        assertEquals("Must define exactly 14 canonical workspaces", 14, routes.size)
+        assertEquals("Must define exactly 16 canonical workspaces", 16, routes.size)
 
         routes.forEach { route ->
             assertNotNull(route.id)
@@ -29,11 +29,13 @@ class WorkspaceRouteTest {
         val privacy = WorkspaceRoute.forCategory(WorkspaceCategory.PRIVACY)
         val analyze = WorkspaceRoute.forCategory(WorkspaceCategory.ANALYZE)
         val developer = WorkspaceRoute.forCategory(WorkspaceCategory.DEVELOPER)
+        val pdfOperations = WorkspaceRoute.forCategory(WorkspaceCategory.PDF_OPERATIONS)
 
         assertEquals("Create & Edit category must contain 7 studios", 7, createEdit.size)
         assertEquals("Privacy category must contain 2 sanitizers", 2, privacy.size)
         assertEquals("Analyze category must contain 2 tools", 2, analyze.size)
         assertEquals("Developer category must contain 3 tools", 3, developer.size)
+        assertEquals("PDF Operations category must contain 2 tools", 2, pdfOperations.size)
 
         assertTrue(createEdit.contains(WorkspaceRoute.IMAGE_STUDIO))
         assertTrue(createEdit.contains(WorkspaceRoute.VIDEO_STUDIO))
@@ -52,12 +54,17 @@ class WorkspaceRouteTest {
         assertTrue(developer.contains(WorkspaceRoute.AI_BUNDLE))
         assertTrue(developer.contains(WorkspaceRoute.MARKDOWN_STUDIO))
         assertTrue(developer.contains(WorkspaceRoute.PROVENANCE))
+
+        assertTrue(pdfOperations.contains(WorkspaceRoute.PDF_SIGNATURE))
+        assertTrue(pdfOperations.contains(WorkspaceRoute.PDF_UNLOCK))
     }
 
     @Test
     fun `synonym and alias search routes correctly`() {
         val pdfResults = WorkspaceRoute.search("pdf")
         assertTrue("Searching 'pdf' must return Document Scanner", pdfResults.contains(WorkspaceRoute.DOCUMENT_SCANNER))
+        assertTrue("Searching 'pdf' must return PDF Signature Validator", pdfResults.contains(WorkspaceRoute.PDF_SIGNATURE))
+        assertTrue("Searching 'pdf' must return Unlock PDF", pdfResults.contains(WorkspaceRoute.PDF_UNLOCK))
 
         val bgResults = WorkspaceRoute.search("remove bg")
         assertTrue("Searching 'remove bg' must return Background Remover", bgResults.contains(WorkspaceRoute.BACKGROUND_REMOVER))
@@ -76,7 +83,7 @@ class WorkspaceRouteTest {
         assertTrue("Searching 'optical flow' must return Motion Lab", motionResults.contains(WorkspaceRoute.MOTION_LAB))
 
         val emptyResults = WorkspaceRoute.search("")
-        assertEquals("Empty query must return all 14 workspaces", 14, emptyResults.size)
+        assertEquals("Empty query must return all 16 workspaces", 16, emptyResults.size)
     }
 
     @Test

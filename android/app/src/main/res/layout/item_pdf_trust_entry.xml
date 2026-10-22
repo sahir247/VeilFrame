@@ -16,7 +16,7 @@
         android:layout_marginEnd="12dp"
         android:contentDescription="Trust Anchor"
         android:src="@drawable/ic_certificate"
-        app:tint="@color/vf_accent_green" />
+        app:tint="?attr/colorPrimary" />
 
     <LinearLayout
         android:layout_width="0dp"

@@ -24,6 +24,8 @@ import com.veilframe.app.databinding.ItemPdfSignatureCardBinding
 import com.veilframe.app.databinding.ItemPdfTrustEntryBinding
 import com.veilframe.app.databinding.LayoutPdfSignatureBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
+import com.veilframe.app.settings.ThemeSettingsManager
+import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -258,7 +260,13 @@ class PdfSignatureController(
         } else if (report.isFullyVerified) {
             binding.cardPdfStatusBanner.setCardBackgroundColor(activity.getColor(R.color.vf_surface))
             binding.ivPdfStatusIcon.setImageResource(R.drawable.ic_signature_valid)
-            binding.ivPdfStatusIcon.clearColorFilter()
+            val isMonochrome = ThemeSettingsManager.getAccentPalette(activity) == ThemeSettingsManager.AccentPalette.MONOCHROME
+            if (isMonochrome) {
+                val primaryColor = MaterialColors.getColor(activity, androidx.appcompat.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
+                binding.ivPdfStatusIcon.setColorFilter(primaryColor)
+            } else {
+                binding.ivPdfStatusIcon.clearColorFilter()
+            }
             binding.tvPdfStatusTitle.text = "Signature Valid"
             binding.tvPdfStatusSubtitle.text = "All digital signatures are cryptographically valid and chained to a trusted root authority."
             binding.cardUntrustedPrompt.visibility = View.GONE
@@ -298,10 +306,20 @@ class PdfSignatureController(
                 itemBinding.tvItemStatusText.setTextColor(activity.getColor(R.color.vf_accent_red))
             } else if (sig.isFullyVerified) {
                 itemBinding.ivItemStatusBadge.setImageResource(R.drawable.ic_signature_valid)
-                itemBinding.ivItemStatusBadge.clearColorFilter()
+                val isMonochrome = ThemeSettingsManager.getAccentPalette(activity) == ThemeSettingsManager.AccentPalette.MONOCHROME
+                val successColor = if (isMonochrome) {
+                    MaterialColors.getColor(activity, androidx.appcompat.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
+                } else {
+                    activity.getColor(R.color.vf_accent_green)
+                }
+                if (isMonochrome) {
+                    itemBinding.ivItemStatusBadge.setColorFilter(successColor)
+                } else {
+                    itemBinding.ivItemStatusBadge.clearColorFilter()
+                }
                 val rootName = if (sig.isPinned) "User Pinned" else "CCA India Trusted"
                 itemBinding.tvItemStatusText.text = "Valid Signature • $rootName"
-                itemBinding.tvItemStatusText.setTextColor(activity.getColor(R.color.vf_accent_green))
+                itemBinding.tvItemStatusText.setTextColor(successColor)
             } else {
                 itemBinding.ivItemStatusBadge.setImageResource(R.drawable.ic_signature_valid)
                 itemBinding.ivItemStatusBadge.setColorFilter(activity.getColor(R.color.vf_accent_amber))

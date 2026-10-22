@@ -115,7 +115,11 @@ public final class BundledTrustAnchors {
             throw new SecurityException("Bundled root fingerprint mismatch for " + sourceName
                     + " expected: " + expectedFingerprint + " but got: " + actualFingerprint);
         }
-        cert.verify(cert.getPublicKey());
+        try {
+            cert.verify(cert.getPublicKey(), "BC");
+        } catch (Exception ignored) {
+            cert.verify(cert.getPublicKey());
+        }
         return cert;
     }
 

@@ -34,7 +34,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="14 offline engines for privacy, media, documents, and forensics"
+            android:text="16 offline engines for privacy, media, documents, and forensics"
             android:textColor="@color/vf_text_secondary"
             android:textSize="12sp" />
 
@@ -1260,7 +1260,8 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:contentDescription="PDF Signature Validator"
-                                android:src="@drawable/ic_signature_valid" />
+                                android:src="@drawable/ic_signature_valid"
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
@@ -1323,7 +1324,7 @@
                                 android:layout_height="28dp"
                                 android:contentDescription="Unlock PDF"
                                 android:src="@drawable/ic_lock_open"
-                                app:tint="@color/vf_accent_green" />
+                                app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
