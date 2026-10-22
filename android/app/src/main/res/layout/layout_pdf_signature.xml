@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutPdfSignatureRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Top App Bar -->
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbarPdfSignature"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:navigationIconTint="@color/vf_text_primary"
+            app:title="PDF Signature Validator"
+            app:titleTextColor="@color/vf_text_primary"
+            app:subtitle="PKIX Verification &amp; Checkmark Stamping"
+            app:subtitleTextColor="@color/vf_text_secondary">
+
+            <!-- Trust Store Management -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPdfTrustStore"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="4dp"
+                android:contentDescription="Trust Store Management"
+                app:icon="@drawable/ic_certificate"
+                app:iconTint="@color/vf_text_primary" />
+
+            <!-- Reset / Close Document -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPdfSignatureReset"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone"
+                android:contentDescription="Close PDF"
+                app:icon="@drawable/ic_close"
+                app:iconTint="@color/vf_text_secondary" />
+        </com.google.android.material.appbar.MaterialToolbar>
+
+        <!-- Main Scroller -->
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/scrollPdfSignature"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- 1. Dropzone Card (when no PDF is selected) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardPdfSignaturePick"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardBackgroundColor="@color/vf_surface"
+                    app:strokeColor="@color/vf_outline_variant"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:padding="28dp">
+
+                        <ImageView
+                            android:layout_width="56dp"
+                            android:layout_height="56dp"
+                            android:layout_marginBottom="16dp"
+                            android:contentDescription="PDF Document"
+                            android:src="@drawable/ic_pdf_file"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Select Signed PDF Document"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:layout_marginBottom="20dp"
+                            android:gravity="center"
+                            android:lineSpacingExtra="2dp"
+                            android:text="Inspect CMS digital signatures, verify PKIX certificates against bundled CCA India roots, and rectify Adobe DC checkmarks offline."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnPickSignedPdf"
+                            style="@style/Widget.VeilFrame.Button.Primary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Choose PDF Document"
+                            app:icon="@drawable/ic_folder_open" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 2. Active Document Content Container (shown when PDF loaded) -->
+                <LinearLayout
+                    android:id="@+id/containerPdfSignatureContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- PDF Preview Card at Top (Consistent with VeilFrame tools) -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardPdfPreview"
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        app:cardBackgroundColor="@color/vf_surface"
+                        app:strokeColor="@color/vf_outline_variant"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:layout_marginBottom="8dp">
+
+                                <TextView
+                                    android:id="@+id/tvPdfDocName"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:ellipsize="middle"
+                                    android:singleLine="true"
+                                    android:text="document.pdf"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tvPdfPageCount"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="1 page"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <!-- Rendered Preview Frame -->
+                            <FrameLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="260dp"
+                                android:background="#F0F2F5">
+
+                                <ImageView
+                                    android:id="@+id/ivPdfPreview"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:contentDescription="PDF Document Preview"
+                                    android:scaleType="fitCenter" />
+
+                                <com.google.android.material.progressindicator.CircularProgressIndicator
+                                    android:id="@+id/progressPdfPreview"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_gravity="center"
+                                    android:indeterminate="true"
+                                    android:visibility="gone" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- Status Banner Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardPdfStatusBanner"
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        app:cardBackgroundColor="@color/vf_surface"
+                        app:strokeColor="@color/vf_outline_variant"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:padding="16dp">
+
+                            <ImageView
+                                android:id="@+id/ivPdfStatusIcon"
+                                android:layout_width="36dp"
+                                android:layout_height="36dp"
+                                android:layout_marginEnd="16dp"
+                                android:contentDescription="Verification Status"
+                                android:src="@drawable/ic_signature_valid" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvPdfStatusTitle"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Signature Valid"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tvPdfStatusSubtitle"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:lineSpacingExtra="2dp"
+                                    android:text="All digital signatures are cryptographically valid."
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- Untrusted Signer Banner (if mathematically valid but not yet pinned) -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardUntrustedPrompt"
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        android:visibility="gone"
+                        app:cardBackgroundColor="#FFF8E1"
+                        app:strokeColor="#FFE082"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Trust Signer Certificate?"
+                                android:textColor="#B78103"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvUntrustedPromptText"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:layout_marginBottom="12dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="The digital signature is cryptographically valid, but this signer is not in your trust store yet. Would you like to trust this signer?"
+                                android:textColor="#5D4037"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnQuickTrustSigner"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Trust this Signer"
+                                app:icon="@drawable/ic_check_circle" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- Signatures Breakdown Header -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="DIGITAL SIGNATURES"
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <!-- Container for Signature Cards -->
+                    <LinearLayout
+                        android:id="@+id/containerSignaturesList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="16dp"
+                        android:orientation="vertical" />
+
+                    <!-- Actions Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="24dp"
+                        app:cardBackgroundColor="@color/vf_surface"
+                        app:strokeColor="@color/vf_outline_variant"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="DOCUMENT EXPORT"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="16dp"
+                                android:text="Rectify appearance with authentic Adobe 15w green tick mark and export."
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSaveValidatedPdf"
+                                style="@style/Widget.VeilFrame.Button.Execute"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="8dp"
+                                android:text="Save Validated Copy"
+                                app:icon="@drawable/ic_action_save" />
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnShareValidatedPdf"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="6dp"
+                                    android:text="Share PDF"
+                                    app:icon="@drawable/ic_action_share" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnPrintValidatedPdf"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="6dp"
+                                    android:text="Print"
+                                    app:icon="@drawable/ic_print" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

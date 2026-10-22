@@ -33,7 +33,9 @@ class ToolsCatalogueCoordinator(
             WorkspaceRoute.FOLDER_SCANNER to binding.cardToolFolderAnalyzer,
             WorkspaceRoute.AI_BUNDLE to binding.cardToolAiBundler,
             WorkspaceRoute.MARKDOWN_STUDIO to binding.cardToolMarkdownStudio,
-            WorkspaceRoute.PROVENANCE to binding.cardToolProvenance
+            WorkspaceRoute.PROVENANCE to binding.cardToolProvenance,
+            WorkspaceRoute.PDF_SIGNATURE to binding.cardToolPdfSignature,
+            WorkspaceRoute.PDF_UNLOCK to binding.cardToolPdfUnlock
         )
     }
 
@@ -91,6 +93,7 @@ class ToolsCatalogueCoordinator(
             R.id.chipCategoryPrivacy -> WorkspaceCategory.PRIVACY
             R.id.chipCategoryAnalyze -> WorkspaceCategory.ANALYZE
             R.id.chipCategoryDev -> WorkspaceCategory.DEVELOPER
+            R.id.chipCategoryPdf -> WorkspaceCategory.PDF_OPERATIONS
             else -> null
         }
 

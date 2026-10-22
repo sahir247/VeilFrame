@@ -21,5 +21,7 @@ enum class ScreenState {
     MOTION_LAB,
     IMAGE_UPSCALER,
     MARKDOWN_VIEWER,
-    PROVENANCE
+    PROVENANCE,
+    PDF_SIGNATURE,
+    PDF_UNLOCK
 }

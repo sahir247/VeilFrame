@@ -10,7 +10,8 @@ enum class WorkspaceCategory(val title: String) {
     CREATE_EDIT("Create & Edit"),
     PRIVACY("Privacy"),
     ANALYZE("Analyze"),
-    DEVELOPER("Developer")
+    DEVELOPER("Developer"),
+    PDF_OPERATIONS("PDF Operations")
 }
 
 /**
@@ -160,6 +161,24 @@ enum class WorkspaceRoute(
         status = WorkspaceStatus.ALPHA,
         aliases = listOf("optical flow", "motion", "interpolation", "slow motion", "frame rate", "fps", "frames", "smooth"),
         iconRes = R.drawable.ic_speed
+    ),
+    PDF_SIGNATURE(
+        id = "pdf_signature",
+        title = "PDF Signature Validator",
+        description = "Cryptographic signature validation, PKIX certificate checking, and authentic checkmark stamping",
+        category = WorkspaceCategory.PDF_OPERATIONS,
+        status = WorkspaceStatus.STABLE,
+        aliases = listOf("pdf", "signature", "verify", "validate", "sign", "certificate", "pkix", "cca", "stamp", "checkmark", "eaadhaar", "ration"),
+        iconRes = R.drawable.ic_signature_valid
+    ),
+    PDF_UNLOCK(
+        id = "pdf_unlock",
+        title = "Unlock PDF",
+        description = "Remove password protection from encrypted PDFs, decrypt offline, and export unlocked documents",
+        category = WorkspaceCategory.PDF_OPERATIONS,
+        status = WorkspaceStatus.STABLE,
+        aliases = listOf("pdf", "unlock", "decrypt", "password", "security", "remove password"),
+        iconRes = R.drawable.ic_lock_open
     );
 
     companion object {

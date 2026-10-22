@@ -235,6 +235,8 @@ class MainNavigationController(
                     ScreenState.MOTION_LAB -> showMotionLabScreen()
                     ScreenState.IMAGE_QUALITY -> showImageQualityScreen()
                     ScreenState.PROVENANCE -> showProvenanceScreen()
+                    ScreenState.PDF_SIGNATURE -> showPdfSignatureScreen()
+                    ScreenState.PDF_UNLOCK -> showPdfUnlockScreen()
                     else -> showHomeScreen()
                 }
             } finally {
@@ -348,6 +350,18 @@ class MainNavigationController(
                 view.translationX = 0f
             }
         }
+        workspaceHost.pdfSignatureRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfUnlockRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
     }
 
     fun showHomeScreen() {
@@ -373,6 +387,8 @@ class MainNavigationController(
             ScreenState.IMAGE_QUALITY -> binding.layoutImageQuality.layoutImageQualityRoot
             ScreenState.MOTION_LAB -> workspaceHost.motionLabRoot
             ScreenState.PROVENANCE -> workspaceHost.provenanceRoot
+            ScreenState.PDF_SIGNATURE -> workspaceHost.pdfSignatureRoot
+            ScreenState.PDF_UNLOCK -> workspaceHost.pdfUnlockRoot
             ScreenState.HOME -> null
         }
         if (!isNavigatingBack) {
@@ -705,5 +721,37 @@ class MainNavigationController(
 
         val provRoot = workspaceHost.activate(SecondaryWorkspace.PROVENANCE)
         transitionToTool(provRoot, wasHome)
+    }
+
+    fun showPdfSignatureScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_SIGNATURE)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val pdfSigRoot = workspaceHost.activate(SecondaryWorkspace.PDF_SIGNATURE)
+        transitionToTool(pdfSigRoot, wasHome)
+    }
+
+    fun showPdfUnlockScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_UNLOCK)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val pdfUnlockRoot = workspaceHost.activate(SecondaryWorkspace.PDF_UNLOCK)
+        transitionToTool(pdfUnlockRoot, wasHome)
     }
 }

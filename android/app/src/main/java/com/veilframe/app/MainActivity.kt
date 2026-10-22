@@ -30,6 +30,10 @@ import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.databinding.LayoutMotionLabBinding
 import com.veilframe.app.databinding.LayoutProvenanceBinding
+import com.veilframe.app.databinding.LayoutPdfSignatureBinding
+import com.veilframe.app.databinding.LayoutPdfUnlockBinding
+import com.veilframe.app.pdf.PdfSignatureController
+import com.veilframe.app.pdf.PdfUnlockController
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
@@ -103,10 +107,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var motionLabController: MotionLabController
     private lateinit var imageQualityController: ImageQualityController
     private lateinit var provenanceController: ProvenanceController
+    lateinit var pdfSignatureController: PdfSignatureController
+    lateinit var pdfUnlockController: PdfUnlockController
     private var pendingImgStudioExportFile: File? = null
     private var pendingVidStudioExportFile: File? = null
     private var pendingDocScannerExportFile: File? = null
     private var pendingBgRemoverExportFile: File? = null
+    private var pendingPdfSignatureSaveBytes: ByteArray? = null
+    private var pendingPdfUnlockSaveBytes: ByteArray? = null
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
@@ -464,8 +472,88 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Dedicated PDF Signature Activity Result Launchers
+    private val pdfSignaturePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            workspaceHost.getOrInflatePdfSignature()
+            pdfSignatureController.handlePdfSelected(uri)
+        }
+    }
+
+    private val pdfSignatureSaveLauncher = registerForActivityResult(
+        CreateDocumentWithMime()
+    ) { destUri ->
+        val bytes = pendingPdfSignatureSaveBytes
+        pendingPdfSignatureSaveBytes = null
+        if (destUri != null && bytes != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Validated PDF saved to storage", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private val pdfCaCertPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            if (::pdfSignatureController.isInitialized) {
+                pdfSignatureController.handleCaCertImported(uri)
+            }
+        }
+    }
+
+    // Dedicated PDF Unlock Activity Result Launchers
+    private val pdfUnlockPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            workspaceHost.getOrInflatePdfUnlock()
+            pdfUnlockController.handlePdfSelected(uri)
+        }
+    }
+
+    private val pdfUnlockSaveLauncher = registerForActivityResult(
+        CreateDocumentWithMime()
+    ) { destUri ->
+        val bytes = pendingPdfUnlockSaveBytes
+        pendingPdfUnlockSaveBytes = null
+        if (destUri != null && bytes != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Unlocked PDF saved to storage", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
+        try {
+            java.security.Security.removeProvider("BC")
+            java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+        } catch (ignored: Exception) {}
         com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -695,6 +783,12 @@ class MainActivity : AppCompatActivity() {
         if (::backgroundRemoverController.isInitialized) {
             backgroundRemoverController.cleanup()
         }
+        if (::pdfSignatureController.isInitialized) {
+            pdfSignatureController.discardAndReleaseAllResources()
+        }
+        if (::pdfUnlockController.isInitialized) {
+            pdfUnlockController.discardAndReleaseAllResources()
+        }
     }
 
     private fun initSubControllers() {
@@ -729,6 +823,12 @@ class MainActivity : AppCompatActivity() {
             },
             onProvenanceInflated = { provBinding ->
                 initProvenance(provBinding)
+            },
+            onPdfSignatureInflated = { pdfSigBinding ->
+                initPdfSignature(pdfSigBinding)
+            },
+            onPdfUnlockInflated = { pdfUnlockBinding ->
+                initPdfUnlock(pdfUnlockBinding)
             }
         )
 
@@ -833,6 +933,8 @@ class MainActivity : AppCompatActivity() {
                     WorkspaceRoute.AI_BUNDLE -> openTool(ToolMode.AI_BUNDLE)
                     WorkspaceRoute.MARKDOWN_STUDIO -> showMarkdownStudioEntryDialog()
                     WorkspaceRoute.PROVENANCE -> openProvenance()
+                    WorkspaceRoute.PDF_SIGNATURE -> openPdfSignature()
+                    WorkspaceRoute.PDF_UNLOCK -> openPdfUnlock()
                 }
             },
             onOpenMarkdownStudio = {
@@ -1017,6 +1119,41 @@ class MainActivity : AppCompatActivity() {
         ).apply { init() }
     }
 
+    private fun initPdfSignature(sigBinding: LayoutPdfSignatureBinding) {
+        pdfSignatureController = PdfSignatureController(
+            activity = this,
+            binding = sigBinding,
+            scope = lifecycleScope,
+            onPickPdfRequest = { pdfSignaturePickerLauncher.launch(arrayOf("application/pdf")) },
+            onSavePdfRequest = { bytes, fileName ->
+                pendingPdfSignatureSaveBytes = bytes
+                pdfSignatureSaveLauncher.launch(fileName to "application/pdf")
+            },
+            onNavigateBack = {
+                navigationController.navigateBackFromWorkspace()
+            },
+            onImportCaCertRequest = {
+                pdfCaCertPickerLauncher.launch(arrayOf("application/x-x509-ca-cert", "application/pkix-cert", "*/*"))
+            }
+        ).apply { init() }
+    }
+
+    private fun initPdfUnlock(unlockBinding: LayoutPdfUnlockBinding) {
+        pdfUnlockController = PdfUnlockController(
+            activity = this,
+            binding = unlockBinding,
+            scope = lifecycleScope,
+            onPickPdfRequest = { pdfUnlockPickerLauncher.launch(arrayOf("application/pdf")) },
+            onSavePdfRequest = { bytes, fileName ->
+                pendingPdfUnlockSaveBytes = bytes
+                pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+            },
+            onNavigateBack = {
+                navigationController.navigateBackFromWorkspace()
+            }
+        ).apply { init() }
+    }
+
     private fun setupListeners() {
         // Theme & Appearance actions
         binding.btnToggleTheme.setOnClickListener { toggleTheme() }
@@ -1060,6 +1197,7 @@ class MainActivity : AppCompatActivity() {
             binding.cardHomeMotionLab,
             binding.cardHomeImageQuality,
             binding.cardHomeProvenance,
+            binding.cardHomePdfSignature,
             binding.cardHomeDiagnostics
         )
         interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
@@ -1118,6 +1256,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.cardHomeProvenance.setOnClickListener {
             openProvenance()
+        }
+
+        binding.cardHomePdfSignature.setOnClickListener {
+            openPdfSignature()
         }
 
         binding.cardHomeDiagnostics.setOnClickListener {
@@ -1480,6 +1622,30 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Provenance & Verify workspace.")
     }
 
+    fun openPdfSignature() {
+        if (!canNavigate()) return
+        clearBackTimer()
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        workspaceHost.getOrInflatePdfSignature()
+        navigationController.showPdfSignatureScreen()
+        consoleLogController.log("[UI] Opened PDF Signature Validator workspace.")
+    }
+
+    fun openPdfUnlock() {
+        if (!canNavigate()) return
+        clearBackTimer()
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        workspaceHost.getOrInflatePdfUnlock()
+        navigationController.showPdfUnlockScreen()
+        consoleLogController.log("[UI] Opened PDF Unlock workspace.")
+    }
+
     private fun showDiagnosticsDialog() {
         MainDialogHelper.showDiagnosticsDialog(this, consoleLogController)
     }
@@ -1502,6 +1668,8 @@ class MainActivity : AppCompatActivity() {
         val isImageProcessing = ::imageStudioController.isInitialized && imageStudioController.isProcessing
         val isMotionLabProcessing = ::motionLabController.isInitialized && motionLabController.isProcessing
         val isToolExecuting = ::toolExecutionController.isInitialized && toolExecutionController.isExecuting
+        val isPdfSigProcessing = ::pdfSignatureController.isInitialized && pdfSignatureController.isProcessing
+        val isPdfUnlockProcessing = ::pdfUnlockController.isInitialized && pdfUnlockController.isProcessing
 
         if (::videoStudioController.isInitialized && !isVideoProcessing) videoStudioController.clear()
         if (::videoPlayerController.isInitialized && !isVideoProcessing) videoPlayerController.clearMedia()
@@ -1512,7 +1680,9 @@ class MainActivity : AppCompatActivity() {
         if (::motionLabController.isInitialized && !isMotionLabProcessing) motionLabController.reset()
         if (::provenanceController.isInitialized) provenanceController.reset()
         if (::markdownViewerController.isInitialized) markdownViewerController.clear()
-        if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing && !isVideoProcessing && !isImageProcessing && !isMotionLabProcessing && !isToolExecuting) {
+        if (::pdfSignatureController.isInitialized && !isPdfSigProcessing) pdfSignatureController.discardAndReleaseAllResources()
+        if (::pdfUnlockController.isInitialized && !isPdfUnlockProcessing) pdfUnlockController.discardAndReleaseAllResources()
+        if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing && !isVideoProcessing && !isImageProcessing && !isMotionLabProcessing && !isToolExecuting && !isPdfSigProcessing && !isPdfUnlockProcessing) {
             workspaceHost.pause()
         }
         if (!isToolExecuting) {
@@ -1921,6 +2091,8 @@ class MainActivity : AppCompatActivity() {
                 ScreenState.IMAGE_QUALITY -> openImageQuality()
                 ScreenState.MOTION_LAB -> openMotionLab()
                 ScreenState.PROVENANCE -> openProvenance()
+                ScreenState.PDF_SIGNATURE -> openPdfSignature()
+                ScreenState.PDF_UNLOCK -> openPdfUnlock()
                 ScreenState.MARKDOWN_VIEWER -> {
                     val mdUriStr = savedInstanceState.getString(KEY_MARKDOWN_URI)
                     val mdFilePath = savedInstanceState.getString(KEY_MARKDOWN_FILE_PATH)
@@ -1959,6 +2131,8 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_EDITOR,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_EXPORT -> if (::docScannerController.isInitialized) docScannerController else null
             com.veilframe.app.navigation.ScreenState.TOOL -> if (::toolExecutionController.isInitialized) toolExecutionController else null
+            com.veilframe.app.navigation.ScreenState.PDF_SIGNATURE -> if (::pdfSignatureController.isInitialized) pdfSignatureController else null
+            com.veilframe.app.navigation.ScreenState.PDF_UNLOCK -> if (::pdfUnlockController.isInitialized) pdfUnlockController else null
             else -> null
         }
     }
@@ -1972,6 +2146,8 @@ class MainActivity : AppCompatActivity() {
         if (::motionLabController.isInitialized && motionLabController.isProcessing) return true
         if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) return true
         if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) return true
+        if (::pdfSignatureController.isInitialized && pdfSignatureController.isProcessing) return true
+        if (::pdfUnlockController.isInitialized && pdfUnlockController.isProcessing) return true
         if (VeilFrameProcessingService.activeJob?.state == com.veilframe.app.media.JobState.RUNNING) return true
         return false
     }

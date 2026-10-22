@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Adobe Acrobat DigSig Ground Truth Vector Checkmark -->
+    <!-- Drop Shadow -->
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M 40.6,100.0 L 5.5,65.1 L 15.7,51.5 L 39.6,80.0 L 81.7,8.4 L 96.3,19.2 Z" />
+    <!-- Authentic Adobe Green Fill (#00A128) with 15w proportional perimeter stroke -->
+    <path
+        android:fillColor="#00A128"
+        android:strokeColor="#053B13"
+        android:strokeWidth="2.5"
+        android:strokeLineJoin="round"
+        android:pathData="M 37.7,95.0 L 2.5,60.1 L 12.8,46.4 L 36.7,74.9 L 78.7,3.3 L 93.4,14.1 Z" />
+</vector>

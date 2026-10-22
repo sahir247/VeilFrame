@@ -7,6 +7,8 @@ import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
 import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.databinding.LayoutMotionLabBinding
+import com.veilframe.app.databinding.LayoutPdfSignatureBinding
+import com.veilframe.app.databinding.LayoutPdfUnlockBinding
 import com.veilframe.app.databinding.LayoutProvenanceBinding
 import com.veilframe.app.ui.insets.WorkspaceInsets
 
@@ -18,7 +20,9 @@ enum class SecondaryWorkspace {
     DOCUMENT_SCANNER,
     BACKGROUND_REMOVER,
     MOTION_LAB,
-    PROVENANCE
+    PROVENANCE,
+    PDF_SIGNATURE,
+    PDF_UNLOCK
 }
 
 /**
@@ -35,7 +39,9 @@ class WorkspaceHost(
     var onDocScannerInflated: ((LayoutDocumentScannerBinding) -> Unit)? = null,
     var onBackgroundRemoverInflated: ((LayoutBackgroundRemoverBinding) -> Unit)? = null,
     var onMotionLabInflated: ((LayoutMotionLabBinding) -> Unit)? = null,
-    var onProvenanceInflated: ((LayoutProvenanceBinding) -> Unit)? = null
+    var onProvenanceInflated: ((LayoutProvenanceBinding) -> Unit)? = null,
+    var onPdfSignatureInflated: ((LayoutPdfSignatureBinding) -> Unit)? = null,
+    var onPdfUnlockInflated: ((LayoutPdfUnlockBinding) -> Unit)? = null
 ) {
     data class InsetCache(
         val statusBarTop: Int = 0,
@@ -60,18 +66,26 @@ class WorkspaceHost(
         private set
     var provenanceBinding: LayoutProvenanceBinding? = null
         private set
+    var pdfSignatureBinding: LayoutPdfSignatureBinding? = null
+        private set
+    var pdfUnlockBinding: LayoutPdfUnlockBinding? = null
+        private set
 
     val imageUpscalerRoot: View? get() = imageUpscalerBinding?.root
     val docScannerRoot: View? get() = docScannerBinding?.root
     val backgroundRemoverRoot: View? get() = backgroundRemoverBinding?.root
     val motionLabRoot: View? get() = motionLabBinding?.root
     val provenanceRoot: View? get() = provenanceBinding?.root
+    val pdfSignatureRoot: View? get() = pdfSignatureBinding?.root
+    val pdfUnlockRoot: View? get() = pdfUnlockBinding?.root
 
     val isImageUpscalerInflated: Boolean get() = imageUpscalerBinding != null
     val isDocScannerInflated: Boolean get() = docScannerBinding != null
     val isBackgroundRemoverInflated: Boolean get() = backgroundRemoverBinding != null
     val isMotionLabInflated: Boolean get() = motionLabBinding != null
     val isProvenanceInflated: Boolean get() = provenanceBinding != null
+    val isPdfSignatureInflated: Boolean get() = pdfSignatureBinding != null
+    val isPdfUnlockInflated: Boolean get() = pdfUnlockBinding != null
 
     fun isInflated(workspace: SecondaryWorkspace): Boolean = when (workspace) {
         SecondaryWorkspace.IMAGE_UPSCALER -> isImageUpscalerInflated
@@ -79,6 +93,8 @@ class WorkspaceHost(
         SecondaryWorkspace.BACKGROUND_REMOVER -> isBackgroundRemoverInflated
         SecondaryWorkspace.MOTION_LAB -> isMotionLabInflated
         SecondaryWorkspace.PROVENANCE -> isProvenanceInflated
+        SecondaryWorkspace.PDF_SIGNATURE -> isPdfSignatureInflated
+        SecondaryWorkspace.PDF_UNLOCK -> isPdfUnlockInflated
     }
 
     fun getRoot(workspace: SecondaryWorkspace): View? = when (workspace) {
@@ -87,6 +103,8 @@ class WorkspaceHost(
         SecondaryWorkspace.BACKGROUND_REMOVER -> backgroundRemoverRoot
         SecondaryWorkspace.MOTION_LAB -> motionLabRoot
         SecondaryWorkspace.PROVENANCE -> provenanceRoot
+        SecondaryWorkspace.PDF_SIGNATURE -> pdfSignatureRoot
+        SecondaryWorkspace.PDF_UNLOCK -> pdfUnlockRoot
     }
 
     @MainThread
@@ -189,12 +207,54 @@ class WorkspaceHost(
         return provenanceBinding!!
     }
 
+    @MainThread
+    fun getOrInflatePdfSignature(): LayoutPdfSignatureBinding {
+        if (pdfSignatureBinding == null) {
+            val stub = binding.stubPdfSignature
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutPdfSignatureRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutPdfSignatureBinding.bind(view)
+                pdfSignatureBinding = b
+                applyInsetsToDefault(b.root)
+                onPdfSignatureInflated?.invoke(b)
+            }
+        }
+        return pdfSignatureBinding!!
+    }
+
+    @MainThread
+    fun getOrInflatePdfUnlock(): LayoutPdfUnlockBinding {
+        if (pdfUnlockBinding == null) {
+            val stub = binding.stubPdfUnlock
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutPdfUnlockRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutPdfUnlockBinding.bind(view)
+                pdfUnlockBinding = b
+                applyInsetsToDefault(b.root)
+                onPdfUnlockInflated?.invoke(b)
+            }
+        }
+        return pdfUnlockBinding!!
+    }
+
     fun getOrInflate(workspace: SecondaryWorkspace): View = when (workspace) {
         SecondaryWorkspace.IMAGE_UPSCALER -> getOrInflateImageUpscaler().root
         SecondaryWorkspace.DOCUMENT_SCANNER -> getOrInflateDocScanner().root
         SecondaryWorkspace.BACKGROUND_REMOVER -> getOrInflateBackgroundRemover().root
         SecondaryWorkspace.MOTION_LAB -> getOrInflateMotionLab().root
         SecondaryWorkspace.PROVENANCE -> getOrInflateProvenance().root
+        SecondaryWorkspace.PDF_SIGNATURE -> getOrInflatePdfSignature().root
+        SecondaryWorkspace.PDF_UNLOCK -> getOrInflatePdfUnlock().root
     }
 
     @MainThread
@@ -240,6 +300,8 @@ class WorkspaceHost(
         backgroundRemoverBinding?.root?.let { applyInsetsToDefault(it) }
         motionLabBinding?.root?.let { applyInsetsToDefault(it) }
         provenanceBinding?.root?.let { applyInsetsToDefault(it) }
+        pdfSignatureBinding?.root?.let { applyInsetsToDefault(it) }
+        pdfUnlockBinding?.root?.let { applyInsetsToDefault(it) }
     }
 
     private fun applyInsetsToScrolledAppbar(view: View) {
@@ -273,5 +335,7 @@ class WorkspaceHost(
         backgroundRemoverBinding = null
         motionLabBinding = null
         provenanceBinding = null
+        pdfSignatureBinding = null
+        pdfUnlockBinding = null
     }
 }

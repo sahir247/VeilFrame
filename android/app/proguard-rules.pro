@@ -110,6 +110,14 @@
 }
 
 # =========================================================================
+# PDFBox & BouncyCastle (Offline PDF Engine: Signature Verification & Decryption)
+# =========================================================================
+-keep class com.tom_roush.pdfbox.** { *; }
+-dontwarn com.tom_roush.pdfbox.**
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+
+# =========================================================================
 # Attributes & BuildConfig
 # =========================================================================
 -keep class com.veilframe.app.BuildConfig { *; }

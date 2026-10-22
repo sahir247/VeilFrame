@@ -622,6 +622,67 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Intent Launcher: PDF Signature Validation -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardHomePdfSignature"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_signature_valid"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="PDF Signature Validation"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="PKIX cryptographic audit, CCA India verification &amp; checkmark stamping"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:importantForAccessibility="no"
+                        tools:ignore="ContentDescription"
+                        app:tint="?attr/colorSecondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Category 2: Privacy Cleaners -->
             <TextView
                 android:layout_width="wrap_content"
@@ -2698,6 +2759,24 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout="@layout/layout_motion_lab" />
+
+    <!-- ================================================================= -->
+    <!-- 15. PDF SIGNATURE VALIDATION WORKSPACE                            -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfSignature"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_signature" />
+
+    <!-- ================================================================= -->
+    <!-- 16. PDF UNLOCK & DECRYPTION WORKSPACE                             -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfUnlock"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_unlock" />
 
     <!-- ================================================================= -->
     <!-- ================================================================= -->
