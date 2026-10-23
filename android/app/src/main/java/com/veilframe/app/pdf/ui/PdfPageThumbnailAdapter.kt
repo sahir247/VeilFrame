@@ -3,6 +3,7 @@ package com.veilframe.app.pdf.ui
 import android.content.Context
 import android.net.Uri
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
@@ -41,6 +42,14 @@ class PdfPageThumbnailAdapter(
             field = value
             notifyDataSetChanged()
         }
+
+    var isReorderMode: Boolean = false
+        set(value) {
+            field = value
+            notifyDataSetChanged()
+        }
+
+    var onStartDragListener: ((RecyclerView.ViewHolder) -> Unit)? = null
 
     fun setDocument(uri: Uri, count: Int, initialSelectedPages: Set<Int> = emptySet()) {
         pdfUri = uri
@@ -170,6 +179,28 @@ class PdfPageThumbnailAdapter(
 
             binding.cbPageSelected.isChecked = isSelected
 
+            if (isReorderMode) {
+                binding.cbPageSelected.visibility = View.GONE
+                binding.ivDragHandle.visibility = View.VISIBLE
+                binding.ivDragHandle.setOnTouchListener { v, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                        onStartDragListener?.invoke(this)
+                    }
+                    false
+                }
+                binding.cardPageThumbnail.setOnLongClickListener {
+                    binding.root.parent?.requestDisallowInterceptTouchEvent(true)
+                    onStartDragListener?.invoke(this)
+                    true
+                }
+            } else {
+                binding.cbPageSelected.visibility = View.VISIBLE
+                binding.ivDragHandle.visibility = View.GONE
+                binding.ivDragHandle.setOnTouchListener(null)
+                binding.cardPageThumbnail.setOnLongClickListener(null)
+            }
+
             if (isSelected) {
                 binding.cardPageThumbnail.strokeColor = ContextCompat.getColor(context, R.color.vf_primary)
                 binding.cardPageThumbnail.setCardBackgroundColor(ContextCompat.getColor(context, R.color.vf_container_high))
@@ -203,6 +234,8 @@ class PdfPageThumbnailAdapter(
                         deletedPages.add(pageNumber)
                     }
                     notifyItemChanged(bindingAdapterPosition)
+                } else if (isReorderMode) {
+                    onPagePreviewRequested?.invoke(pageNumber)
                 } else {
                     if (pageNumber in selectedPages) {
                         selectedPages.remove(pageNumber)

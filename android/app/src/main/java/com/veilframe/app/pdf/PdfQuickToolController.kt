@@ -194,6 +194,7 @@ class PdfQuickToolController(
                 binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "PAGES TO ROTATE (SELECT SPECIFIC OR ALL)"
                 rotateThumbnailAdapter?.isDeleteMode = false
+                rotateThumbnailAdapter?.isReorderMode = false
             }
             QuickMode.DELETE -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Prune"
@@ -205,6 +206,7 @@ class PdfQuickToolController(
                 binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "TAP PAGES TO MARK FOR DELETION (RED CROSS)"
                 rotateThumbnailAdapter?.isDeleteMode = true
+                rotateThumbnailAdapter?.isReorderMode = false
             }
             QuickMode.REORDER -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Reorder"
@@ -213,9 +215,13 @@ class PdfQuickToolController(
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
                 binding.layoutReorderControls.visibility = View.VISIBLE
-                binding.tvRotateHint.visibility = View.VISIBLE
-                binding.tvRotateGridTitle.text = "PAGES SEQUENCE (DRAG TO REORDER OR USE BOX)"
+                binding.tvRotateHint.visibility = View.GONE
+                binding.tvRotateGridTitle.text = "PAGES SEQUENCE (DRAG TO ARRANGE)"
                 rotateThumbnailAdapter?.isDeleteMode = false
+                rotateThumbnailAdapter?.isReorderMode = true
+                binding.chipGroupReorderMode.check(R.id.chipReorderDrag)
+                binding.layoutReorderDragTip.visibility = View.VISIBLE
+                binding.containerManualSequence.visibility = View.GONE
             }
             QuickMode.SIGN -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Sign"
@@ -316,7 +322,14 @@ class PdfQuickToolController(
             onPageSelectionChanged = { _ -> }
         ).apply {
             onPageOrderChanged = { order ->
-                binding.etCustomPageOrder.setText(order.joinToString(", "))
+                if (activeMode == QuickMode.REORDER) {
+                    binding.etCustomPageOrder.setText(order.joinToString(" > "))
+                }
+            }
+            onStartDragListener = { holder ->
+                if (activeMode == QuickMode.REORDER) {
+                    rotateItemTouchHelper?.startDrag(holder)
+                }
             }
             onPagePreviewRequested = { pageNum ->
                 selectedUris.firstOrNull()?.let { uri ->
@@ -344,9 +357,48 @@ class PdfQuickToolController(
             }
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
             override fun isLongPressDragEnabled(): Boolean = (activeMode == QuickMode.REORDER)
+
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(viewHolder, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+                    binding.rvRotatePagesThumbnails.parent?.requestDisallowInterceptTouchEvent(true)
+                    viewHolder.itemView.animate()
+                        .scaleX(1.05f)
+                        .scaleY(1.05f)
+                        .alpha(0.88f)
+                        .setDuration(120)
+                        .start()
+                    viewHolder.itemView.elevation = 20f
+                }
+            }
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                viewHolder.itemView.animate()
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .alpha(1.0f)
+                    .setDuration(120)
+                    .start()
+                viewHolder.itemView.elevation = 0f
+            }
         }
         rotateItemTouchHelper = ItemTouchHelper(callback).also {
             it.attachToRecyclerView(binding.rvRotatePagesThumbnails)
+        }
+
+        binding.chipGroupReorderMode.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.contains(R.id.chipReorderManual)) {
+                binding.layoutReorderDragTip.visibility = View.GONE
+                binding.containerManualSequence.visibility = View.VISIBLE
+                val current = rotateThumbnailAdapter?.getPageOrder() ?: emptyList()
+                if (current.isNotEmpty() && binding.etCustomPageOrder.text.isNullOrBlank()) {
+                    binding.etCustomPageOrder.setText(current.joinToString(" > "))
+                }
+            } else {
+                binding.layoutReorderDragTip.visibility = View.VISIBLE
+                binding.containerManualSequence.visibility = View.GONE
+            }
         }
 
         binding.btnApplyPageOrder.setOnClickListener {

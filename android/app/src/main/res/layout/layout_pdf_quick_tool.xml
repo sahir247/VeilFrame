@@ -669,25 +669,98 @@
                         android:visibility="gone"
                         android:layout_marginBottom="8dp">
 
-                        <com.google.android.material.textfield.TextInputLayout
-                            android:id="@+id/tilCustomPageOrder"
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        <!-- Mode Selector: Drag & Arrange vs Custom Sequence -->
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupReorderMode"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="Custom Page Sequence (e.g. 3, 4, 2, 1, 5 or 3&gt;4&gt;2&gt;1&gt;5)"
-                            app:boxCornerRadiusBottomEnd="12dp"
-                            app:boxCornerRadiusBottomStart="12dp"
-                            app:boxCornerRadiusTopEnd="12dp"
-                            app:boxCornerRadiusTopStart="12dp"
+                            android:layout_marginBottom="8dp"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipReorderDrag"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                app:chipIcon="@drawable/ic_drag_handle"
+                                android:text="Drag &amp; Arrange" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipReorderManual"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:chipIcon="@drawable/ic_edit"
+                                android:text="Custom Sequence" />
+                        </com.google.android.material.chip.ChipGroup>
+
+                        <!-- Drag & Arrange tip banner -->
+                        <LinearLayout
+                            android:id="@+id/layoutReorderDragTip"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="@drawable/rounded_card_bg"
+                            android:backgroundTint="@color/vf_container_high"
+                            android:paddingHorizontal="12dp"
+                            android:paddingVertical="8dp"
                             android:layout_marginBottom="8dp">
 
-                            <com.google.android.material.textfield.TextInputEditText
-                                android:id="@+id/etCustomPageOrder"
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:src="@drawable/ic_drag_handle"
+                                app:tint="?attr/colorPrimary"
+                                android:layout_marginEnd="8dp" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Touch &amp; drag the handle or hold any card to arrange. Order updates live."
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <!-- Manual Sequence Input (toggleable) -->
+                        <LinearLayout
+                            android:id="@+id/containerManualSequence"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone"
+                            android:layout_marginBottom="4dp">
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                android:id="@+id/tilCustomPageOrder"
+                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:inputType="text"
-                                android:maxLines="1" />
-                        </com.google.android.material.textfield.TextInputLayout>
+                                android:hint="Custom Page Sequence (e.g. 3, 4, 2, 1, 5 or 3&gt;4&gt;2&gt;1&gt;5)"
+                                app:boxCornerRadiusBottomEnd="12dp"
+                                app:boxCornerRadiusBottomStart="12dp"
+                                app:boxCornerRadiusTopEnd="12dp"
+                                app:boxCornerRadiusTopStart="12dp"
+                                android:layout_marginBottom="8dp">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/etCustomPageOrder"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="text"
+                                    android:maxLines="1" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnApplyPageOrder"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="6dp"
+                                android:text="Apply Sequence" />
+                        </LinearLayout>
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -696,21 +769,12 @@
                             android:layout_marginBottom="6dp">
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnApplyPageOrder"
-                                style="@style/Widget.Material3.Button.TonalButton"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1.2"
-                                android:layout_marginEnd="4dp"
-                                android:text="Apply Sequence" />
-
-                            <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnReversePageOrder"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginHorizontal="2dp"
+                                android:layout_marginEnd="4dp"
                                 android:text="Reverse" />
 
                             <com.google.android.material.button.MaterialButton
