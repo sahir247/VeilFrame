@@ -100,31 +100,32 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    ncnn::Mat in0 = ncnn::Mat::from_pixels(
-        reinterpret_cast<const unsigned char*>(pixels0),
-        ncnn::Mat::PIXEL_RGBA2RGB,
-        w, h
-    );
-    ncnn::Mat in1 = ncnn::Mat::from_pixels(
-        reinterpret_cast<const unsigned char*>(pixels1),
-        ncnn::Mat::PIXEL_RGBA2RGB,
-        w, h
-    );
+    std::vector<unsigned char> rgb0(w * h * 3);
+    std::vector<unsigned char> rgb1(w * h * 3);
+    const unsigned char* p0 = reinterpret_cast<const unsigned char*>(pixels0);
+    const unsigned char* p1 = reinterpret_cast<const unsigned char*>(pixels1);
+    const int pixel_count = w * h;
+    for (int i = 0; i < pixel_count; i++) {
+        rgb0[i * 3 + 0] = p0[i * 4 + 0];
+        rgb0[i * 3 + 1] = p0[i * 4 + 1];
+        rgb0[i * 3 + 2] = p0[i * 4 + 2];
+        rgb1[i * 3 + 0] = p1[i * 4 + 0];
+        rgb1[i * 3 + 1] = p1[i * 4 + 1];
+        rgb1[i * 3 + 2] = p1[i * 4 + 2];
+    }
 
     AndroidBitmap_unlockPixels(env, bitmap0);
     AndroidBitmap_unlockPixels(env, bitmap1);
 
+    ncnn::Mat in0(w, h, reinterpret_cast<void*>(rgb0.data()), (size_t)3u, 1);
+    ncnn::Mat in1(w, h, reinterpret_cast<void*>(rgb1.data()), (size_t)3u, 1);
+
     std::vector<unsigned char> rgb_buffer(w * h * 3);
     ncnn::Mat outimage(w, h, rgb_buffer.data(), (size_t)3u, 1);
-    int ret = 0;
-    if (g_rife_gpuid >= 0) {
-        ret = g_rife->process_v4(in0, in1, timestep, outimage);
-    } else {
-        ret = g_rife->process_v4_cpu(in0, in1, timestep, outimage);
-    }
+    int ret = g_rife->process(in0, in1, timestep, outimage);
 
     if (ret != 0) {
-        LOGE("RIFE process_v4 failed with code %d", ret);
+        LOGE("RIFE process failed with code %d", ret);
         return nullptr;
     }
 
@@ -156,8 +157,14 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    ncnn::Mat::from_pixels(rgb_buffer.data(), ncnn::Mat::PIXEL_RGB, w, h)
-        .to_pixels(reinterpret_cast<unsigned char*>(out_pixels), ncnn::Mat::PIXEL_RGB2RGBA);
+    const unsigned char* rgb_out = rgb_buffer.data();
+    unsigned char* p_out = reinterpret_cast<unsigned char*>(out_pixels);
+    for (int i = 0; i < pixel_count; i++) {
+        p_out[i * 4 + 0] = rgb_out[i * 3 + 0];
+        p_out[i * 4 + 1] = rgb_out[i * 3 + 1];
+        p_out[i * 4 + 2] = rgb_out[i * 3 + 2];
+        p_out[i * 4 + 3] = 255;
+    }
     AndroidBitmap_unlockPixels(env, outBitmap);
 
     return outBitmap;

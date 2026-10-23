@@ -78,7 +78,7 @@ RIFE::~RIFE()
 }
 
 #if _WIN32
-static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const wchar_t* name)
+static int load_param_model(ncnn::Net& net, const std::wstring& modeldir, const wchar_t* name)
 {
     wchar_t parampath[256];
     wchar_t modelpath[256];
@@ -90,34 +90,40 @@ static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const
         if (!fp)
         {
             fwprintf(stderr, L"_wfopen %ls failed\n", parampath);
+            return -1;
         }
 
-        net.load_param(fp);
-
+        int ret = net.load_param(fp);
         fclose(fp);
+        if (ret != 0) return ret;
     }
     {
         FILE* fp = _wfopen(modelpath, L"rb");
         if (!fp)
         {
             fwprintf(stderr, L"_wfopen %ls failed\n", modelpath);
+            return -1;
         }
 
-        net.load_model(fp);
-
+        int ret = net.load_model(fp);
         fclose(fp);
+        if (ret != 0) return ret;
     }
+    return 0;
 }
 #else
-static void load_param_model(ncnn::Net& net, const std::string& modeldir, const char* name)
+static int load_param_model(ncnn::Net& net, const std::string& modeldir, const char* name)
 {
     char parampath[256];
     char modelpath[256];
     sprintf(parampath, "%s/%s.param", modeldir.c_str(), name);
     sprintf(modelpath, "%s/%s.bin", modeldir.c_str(), name);
 
-    net.load_param(parampath);
-    net.load_model(modelpath);
+    int ret = net.load_param(parampath);
+    if (ret != 0) return ret;
+    ret = net.load_model(modelpath);
+    if (ret != 0) return ret;
+    return 0;
 }
 #endif
 
@@ -151,18 +157,24 @@ int RIFE::load(const std::string& modeldir)
     fusionnet.register_custom_layer("rife.Warp", Warp_layer_creator);
 
 #if _WIN32
-    load_param_model(flownet, modeldir, L"flownet");
+    int ret = load_param_model(flownet, modeldir, L"flownet");
+    if (ret != 0) return ret;
     if (!rife_v4)
     {
-        load_param_model(contextnet, modeldir, L"contextnet");
-        load_param_model(fusionnet, modeldir, L"fusionnet");
+        ret = load_param_model(contextnet, modeldir, L"contextnet");
+        if (ret != 0) return ret;
+        ret = load_param_model(fusionnet, modeldir, L"fusionnet");
+        if (ret != 0) return ret;
     }
 #else
-    load_param_model(flownet, modeldir, "flownet");
+    int ret = load_param_model(flownet, modeldir, "flownet");
+    if (ret != 0) return ret;
     if (!rife_v4)
     {
-        load_param_model(contextnet, modeldir, "contextnet");
-        load_param_model(fusionnet, modeldir, "fusionnet");
+        ret = load_param_model(contextnet, modeldir, "contextnet");
+        if (ret != 0) return ret;
+        ret = load_param_model(fusionnet, modeldir, "fusionnet");
+        if (ret != 0) return ret;
     }
 #endif
 
@@ -2467,7 +2479,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
     if (!vkdev)
     {
         // cpu only
-        return process_cpu(in0image, in1image, timestep, outimage);
+        return process_v4_cpu(in0image, in1image, timestep, outimage);
     }
 
     if (timestep == 0.f)

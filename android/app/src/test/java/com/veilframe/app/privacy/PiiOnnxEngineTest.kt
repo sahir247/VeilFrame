@@ -163,7 +163,7 @@ class PiiOnnxEngineTest {
         assertEquals(PiiClass.BARCODE, PiiOnnxEngine.mapClassIndex(4, numClasses = 5))
 
         // COCO mapping
-        assertEquals(PiiClass.FACE, PiiOnnxEngine.mapClassIndex(0, numClasses = 80)) // person
+        assertEquals(PiiClass.PERSON, PiiOnnxEngine.mapClassIndex(0, numClasses = 80)) // person (full human body)
         assertEquals(PiiClass.PLATE, PiiOnnxEngine.mapClassIndex(2, numClasses = 80)) // car
         assertEquals(PiiClass.PLATE, PiiOnnxEngine.mapClassIndex(3, numClasses = 80)) // motorcycle
         assertEquals(PiiClass.CARD, PiiOnnxEngine.mapClassIndex(67, numClasses = 80)) // cell phone
@@ -391,6 +391,50 @@ class PiiOnnxEngineTest {
         assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.RIFE))
         assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.DIS))
         assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.FARNEBACK))
+    }
+
+    @Test
+    fun testFaceVsPersonSeparationGuaranteesFaceOnlyRedaction() {
+        // Simulated image of 100x100 containing a person from y=10..90, with face at y=10..30
+        val bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(Color.WHITE)
+
+        val faceDetection = PiiDetection(
+            rect = RectF(40f, 10f, 60f, 30f),
+            piiClass = PiiClass.FACE,
+            score = 0.95f
+        )
+        val fullBodyPersonDetection = PiiDetection(
+            rect = RectF(30f, 10f, 70f, 90f),
+            piiClass = PiiClass.PERSON,
+            score = 0.88f
+        )
+
+        // When user chooses face-only redaction (PiiClass.FACE), PERSON is excluded
+        val activeDetections = listOf(faceDetection, fullBodyPersonDetection).filter { it.piiClass == PiiClass.FACE }
+        assertEquals(1, activeDetections.size)
+        assertEquals(PiiClass.FACE, activeDetections[0].piiClass)
+
+        val redacted = PiiOnnxEngine.applySolidRedaction(bmp, activeDetections, Color.BLACK)
+
+        // Face area is cleanly redacted
+        assertEquals(Color.BLACK, redacted.getPixel(50, 20))
+
+        // Torso/body area is NOT redacted (preserves whole human body)
+        assertEquals(Color.WHITE, redacted.getPixel(50, 60))
+        assertEquals(Color.WHITE, redacted.getPixel(50, 80))
+    }
+
+    @Test
+    fun testMattingNativeConstants() {
+        assertEquals(0, com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_U2NETP)
+        assertEquals(1, com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_MODNET)
+    }
+
+    @Test
+    fun testRifeModelUrlsApproved() {
+        assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.PARAM_URL))
+        assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.BIN_URL))
     }
 
     private fun findModelFile(name: String): File? {

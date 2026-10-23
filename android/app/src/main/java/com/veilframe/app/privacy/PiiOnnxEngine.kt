@@ -155,7 +155,7 @@ class PiiOnnxEngine(
                 }
             } else {
                 when (classIdx) {
-                    0 -> PiiClass.FACE // COCO person
+                    0 -> PiiClass.PERSON // COCO person (full human body)
                     2, 3, 5, 7 -> PiiClass.PLATE // car, motorcycle, bus, truck
                     67 -> PiiClass.CARD // cell phone
                     73 -> PiiClass.CARD // book/document
@@ -510,9 +510,10 @@ class PiiOnnxEngine(
  */
 enum class PiiClass(val label: String, val category: String) {
     FACE("Face", "Biometric"),
+    PERSON("Person (Full Body)", "Human"),
     PLATE("License Plate", "Identifier"),
     SIGNATURE("Signature", "Legal"),
-    CARD("Credit Card", "Financial"),
+    CARD("Credit Card / ID", "Financial"),
     BARCODE("Barcode/QR", "Data")
 }
 
