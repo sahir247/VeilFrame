@@ -158,6 +158,83 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
+                    <!-- VISUAL PAGE THUMBNAILS PREVIEW & CONTROLS -->
+                    <LinearLayout
+                        android:id="@+id/containerExtractThumbnailSection"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="SELECT PAGES TO EXTRACT"
+                                android:textColor="@color/vf_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:letterSpacing="0.08" />
+
+                            <TextView
+                                android:id="@+id/tvExtractSelectionCount"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 selected"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/vf_primary" />
+                        </LinearLayout>
+
+                        <!-- Fast Selection Buttons Row -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnExtractSelectAll"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:textSize="11sp"
+                                android:text="Select All"
+                                app:cornerRadius="8dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnExtractDeselectAll"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginStart="4dp"
+                                android:textSize="11sp"
+                                android:text="Clear All"
+                                app:cornerRadius="8dp" />
+                        </LinearLayout>
+
+                        <!-- Thumbnail Grid -->
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvExtractPagesThumbnails"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:nestedScrollingEnabled="false"
+                            android:clipToPadding="false"
+                            android:overScrollMode="never" />
+                    </LinearLayout>
+
+
+
                     <!-- Page Selection Input -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilExtractPagesRange"

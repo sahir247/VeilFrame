@@ -34,6 +34,7 @@ class ToolsCatalogueCoordinator(
             WorkspaceRoute.AI_BUNDLE to binding.cardToolAiBundler,
             WorkspaceRoute.MARKDOWN_STUDIO to binding.cardToolMarkdownStudio,
             WorkspaceRoute.PROVENANCE to binding.cardToolProvenance,
+            WorkspaceRoute.PDF_STUDIO to binding.cardToolPdfStudio,
             WorkspaceRoute.PDF_SIGNATURE to binding.cardToolPdfSignature,
             WorkspaceRoute.PDF_UNLOCK to binding.cardToolPdfUnlock
         )

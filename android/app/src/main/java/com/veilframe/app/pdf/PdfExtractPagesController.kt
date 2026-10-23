@@ -1,41 +1,42 @@
 package com.veilframe.app.pdf
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.GridLayoutManager
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutPdfExtractPagesBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
-import com.veilframe.app.pdf.operations.ImageConverter
 import com.veilframe.app.pdf.operations.ImageFormat
 import com.veilframe.app.pdf.operations.PdfOrganizer
+import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
+import com.veilframe.app.pdf.ui.PdfThumbnailLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Controller orchestrating PDF page extraction with the dual twist:
- * 1. Extract selected pages as a brand new standalone PDF document.
- * 2. Extract selected pages directly into high-res images (WebP, PNG, JPEG) with DPI scaling.
+ * Controller orchestrating visual PDF Page Extraction (to new PDF or images).
+ * Features real-time page thumbnail rendering, visual multi-selection, preset ranges,
+ * and lossless image compression export.
  */
 class PdfExtractPagesController(
     private val activity: AppCompatActivity,
     private val binding: LayoutPdfExtractPagesBinding,
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
-    private val onSaveFileRequest: (ByteArray, String) -> Unit,
+    private val onSaveFileRequest: (data: ByteArray, fileName: String) -> Unit,
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
@@ -45,8 +46,11 @@ class PdfExtractPagesController(
     private var isExtracting: Boolean = false
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
+    private var isInternalRangeUpdate = false
 
     private val pdfOrganizer by lazy { PdfOrganizer() }
+    private val thumbnailLoader by lazy { PdfThumbnailLoader(activity) }
+    private var thumbnailAdapter: PdfPageThumbnailAdapter? = null
 
     override fun hasPickedMedia(): Boolean = activePdfUri != null
     override fun hasUnsavedWork(): Boolean = activePdfUri != null && !isSaved
@@ -56,13 +60,16 @@ class PdfExtractPagesController(
         activeJob?.cancel()
         activePdfUri = null
         isExtracting = false
+        thumbnailLoader.clearCache()
     }
 
     fun init() {
         setupToolbar()
         setupPicker()
+        setupThumbnailGrid()
         setupFormatToggle()
         setupPresetChips()
+        setupRangeTextWatcher()
         setupExecuteButton()
     }
 
@@ -86,6 +93,53 @@ class PdfExtractPagesController(
         }
     }
 
+    private fun setupThumbnailGrid() {
+        thumbnailAdapter = PdfPageThumbnailAdapter(
+            context = activity,
+            scope = scope,
+            thumbnailLoader = thumbnailLoader,
+            onPageSelectionChanged = { selectedPages ->
+                onAdapterSelectionChanged(selectedPages)
+            }
+        )
+        binding.rvExtractPagesThumbnails.layoutManager = GridLayoutManager(activity, 3)
+        binding.rvExtractPagesThumbnails.adapter = thumbnailAdapter
+
+        binding.btnExtractSelectAll.setOnClickListener {
+            thumbnailAdapter?.selectAll()
+        }
+        binding.btnExtractDeselectAll.setOnClickListener {
+            thumbnailAdapter?.deselectAll()
+        }
+    }
+
+    private fun onAdapterSelectionChanged(selectedPages: Set<Int>) {
+        binding.tvExtractSelectionCount.text = "${selectedPages.size} of $totalPages selected"
+        if (!isInternalRangeUpdate) {
+            isInternalRangeUpdate = true
+            val formattedRange = formatPagesToRangeString(selectedPages)
+            binding.etExtractPagesRange.setText(formattedRange)
+            isInternalRangeUpdate = false
+        }
+    }
+
+    private fun setupRangeTextWatcher() {
+        binding.etExtractPagesRange.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!isInternalRangeUpdate) {
+                    val text = s?.toString().orEmpty()
+                    val pages = parseSelectedPages(text).toSet()
+                    isInternalRangeUpdate = true
+                    thumbnailAdapter?.selectPages(pages)
+                    binding.tvExtractSelectionCount.text = "${pages.size} of $totalPages selected"
+                    isInternalRangeUpdate = false
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
     fun handlePdfSelected(uri: Uri) {
         activePdfUri = uri
         isSaved = false
@@ -106,8 +160,8 @@ class PdfExtractPagesController(
                         withContext(Dispatchers.Main) {
                             binding.tvExtractPagesDocMeta.text = "$totalPages pages total"
                             binding.containerExtractPagesConfig.visibility = View.VISIBLE
-                            val defaultRange = if (totalPages > 1) "1-${minOf(3, totalPages)}" else "1"
-                            binding.etExtractPagesRange.setText(defaultRange)
+                            val initialPages = if (totalPages > 1) (1..minOf(3, totalPages)).toSet() else setOf(1)
+                            thumbnailAdapter?.setDocument(uri, totalPages, initialPages)
                         }
                     }
                 }
@@ -130,28 +184,52 @@ class PdfExtractPagesController(
 
     private fun setupPresetChips() {
         binding.chipPresetAll.setOnClickListener {
-            binding.etExtractPagesRange.setText("1-$totalPages")
+            thumbnailAdapter?.selectAll()
         }
         binding.chipPresetFirst.setOnClickListener {
-            binding.etExtractPagesRange.setText("1")
+            thumbnailAdapter?.selectPages(setOf(1))
         }
         binding.chipPresetOdd.setOnClickListener {
-            val odd = (1..totalPages step 2).joinToString(", ")
-            binding.etExtractPagesRange.setText(odd)
+            val odd = (1..totalPages step 2).toSet()
+            thumbnailAdapter?.selectPages(odd)
         }
         binding.chipPresetEven.setOnClickListener {
-            val even = (2..totalPages step 2).joinToString(", ")
-            binding.etExtractPagesRange.setText(if (even.isEmpty()) "1" else even)
+            val even = (2..totalPages step 2).toSet()
+            thumbnailAdapter?.selectPages(even)
         }
     }
 
-    private fun parseSelectedPages(input: String): List<Int> {
-        val result = mutableSetOf<Int>()
-        val parts = input.split(",").map { it.trim() }
+    private fun formatPagesToRangeString(pages: Set<Int>): String {
+        if (pages.isEmpty()) return ""
+        val sorted = pages.sorted()
+        val ranges = mutableListOf<String>()
+        var start = sorted[0]
+        var end = start
 
+        for (i in 1 until sorted.size) {
+            val current = sorted[i]
+            if (current == end + 1) {
+                end = current
+            } else {
+                ranges.add(if (start == end) "$start" else "$start-$end")
+                start = current
+                end = current
+            }
+        }
+        ranges.add(if (start == end) "$start" else "$start-$end")
+        return ranges.joinToString(", ")
+    }
+
+    private fun parseSelectedPages(rangeInput: String): List<Int> {
+        val result = mutableSetOf<Int>()
+        if (rangeInput.isBlank()) return emptyList()
+
+        val parts = rangeInput.split(",", ";", " ")
         for (part in parts) {
-            if (part.contains("-")) {
-                val rangeParts = part.split("-").map { it.trim() }
+            val clean = part.trim()
+            if (clean.isEmpty()) continue
+            if (clean.contains("-")) {
+                val rangeParts = clean.split("-")
                 if (rangeParts.size == 2) {
                     val start = rangeParts[0].toIntOrNull() ?: continue
                     val end = rangeParts[1].toIntOrNull() ?: continue
@@ -160,7 +238,7 @@ class PdfExtractPagesController(
                     }
                 }
             } else {
-                val p = part.toIntOrNull()
+                val p = clean.toIntOrNull()
                 if (p != null && p in 1..totalPages) {
                     result.add(p)
                 }
@@ -172,11 +250,11 @@ class PdfExtractPagesController(
     private fun setupExecuteButton() {
         binding.btnExtractPagesExecute.setOnClickListener {
             val uri = activePdfUri ?: return@setOnClickListener
-            val rangeText = binding.etExtractPagesRange.text?.toString()?.trim() ?: ""
-            val selectedPages = parseSelectedPages(rangeText)
+            val selectedPages = thumbnailAdapter?.getSelectedPages()?.toList()?.sorted()
+                ?: parseSelectedPages(binding.etExtractPagesRange.text?.toString() ?: "")
 
             if (selectedPages.isEmpty()) {
-                Toast.makeText(activity, "Please enter a valid page range (1 to $totalPages)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Please select at least one page to extract", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -191,7 +269,6 @@ class PdfExtractPagesController(
                 try {
                     val base = activePdfName.removeSuffix(".pdf")
                     if (!isImageMode) {
-                        // Extract as PDF
                         val outStream = ByteArrayOutputStream()
                         val result = pdfOrganizer.extractPagesAsPdf(
                             context = activity,
@@ -214,7 +291,6 @@ class PdfExtractPagesController(
                             }
                         }
                     } else {
-                        // Extract as Images
                         val format = when (binding.chipGroupImageCodec.checkedChipId) {
                             R.id.chipCodecPng -> ImageFormat.PNG
                             R.id.chipCodecJpeg -> ImageFormat.JPEG
@@ -260,12 +336,10 @@ class PdfExtractPagesController(
                                 }
 
                                 if (compressedImages.size == 1) {
-                                    // Single image export
                                     val (num, bytes) = compressedImages.first()
                                     val exportName = "${base}_page_${num}.$ext"
                                     onSaveFileRequest(bytes, exportName)
                                 } else {
-                                    // Multiple images: zip archive
                                     val zipOut = ByteArrayOutputStream()
                                     ZipOutputStream(zipOut).use { zos ->
                                         for ((num, bytes) in compressedImages) {

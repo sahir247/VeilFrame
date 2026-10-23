@@ -14,9 +14,9 @@ import java.io.File
 class WorkspaceCatalogueContractTest {
 
     @Test
-    fun `canonical workspace catalogue has exactly 16 routes with complete metadata`() {
+    fun `canonical workspace catalogue has exactly 17 routes with complete metadata`() {
         val routes = WorkspaceRoute.values()
-        assertEquals("WorkspaceRoute catalogue must define exactly 16 canonical workspaces", 16, routes.size)
+        assertEquals("WorkspaceRoute catalogue must define exactly 17 canonical workspaces", 17, routes.size)
 
         routes.forEach { route ->
             assertNotNull(route.id)
@@ -30,7 +30,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `all 16 canonical workspaces have corresponding cards in layout_tools_catalogue`() {
+    fun `all 17 canonical workspaces have corresponding cards in layout_tools_catalogue`() {
         val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
         val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
         val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
@@ -53,11 +53,12 @@ class WorkspaceCatalogueContractTest {
             "cardToolMarkdownStudio",
             "cardToolProvenance",
             "cardToolMotionLab",
+            "cardToolPdfStudio",
             "cardToolPdfSignature",
             "cardToolPdfUnlock"
         )
 
-        assertEquals("Expected exactly 16 card IDs in layout", 16, expectedCardIds.size)
+        assertEquals("Expected exactly 17 card IDs in layout", 17, expectedCardIds.size)
 
         expectedCardIds.forEach { cardId ->
             assertTrue(
@@ -74,7 +75,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `activity wires all 16 workspace card listeners and filter pairs`() {
+    fun `activity wires all 17 workspace card listeners and filter pairs`() {
         val actFile = File("src/main/java/com/veilframe/app/MainActivity.kt")
         val altActFile = File("android/app/src/main/java/com/veilframe/app/MainActivity.kt")
         val targetFile = if (actFile.exists()) actFile else altActFile
@@ -109,6 +110,7 @@ class WorkspaceCatalogueContractTest {
             "cardToolMarkdownStudio",
             "cardToolProvenance",
             "cardToolMotionLab",
+            "cardToolPdfStudio",
             "cardToolPdfSignature",
             "cardToolPdfUnlock"
         )
@@ -181,7 +183,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `layout_tools_catalogue declares 16 offline engines in subtitle`() {
+    fun `layout_tools_catalogue declares 17 offline engines in subtitle`() {
         val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
         val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
         val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
@@ -190,7 +192,7 @@ class WorkspaceCatalogueContractTest {
         val xmlContent = targetFile.readText()
         assertTrue(
             "Catalogue subtitle must declare 16 offline engines (was stale 14)",
-            xmlContent.contains("16 offline engines for privacy, media, documents, and forensics")
+            xmlContent.contains("17 offline engines for privacy, media, documents, and forensics")
         )
         assertFalse(
             "Catalogue subtitle must not declare 14 engines",

@@ -1,4 +1,4 @@
-package com.veilframe.app
+﻿package com.veilframe.app
 
 import android.app.Activity
 import android.content.Context
@@ -965,6 +965,7 @@ class MainActivity : AppCompatActivity() {
                     WorkspaceRoute.PROVENANCE -> openProvenance()
                     WorkspaceRoute.PDF_SIGNATURE -> openPdfSignature()
                     WorkspaceRoute.PDF_UNLOCK -> openPdfUnlock()
+                    WorkspaceRoute.PDF_STUDIO -> openPdfStudio()
                 }
             },
             onOpenMarkdownStudio = {
@@ -1233,6 +1234,7 @@ class MainActivity : AppCompatActivity() {
             binding.cardHomeMotionLab,
             binding.cardHomeImageQuality,
             binding.cardHomeProvenance,
+            binding.cardHomePdfStudio,
             binding.cardHomePdfSignature,
             binding.cardHomeDiagnostics
         )
@@ -1292,6 +1294,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.cardHomeProvenance.setOnClickListener {
             openProvenance()
+        }
+
+        binding.cardHomePdfStudio.setOnClickListener {
+            openPdfStudio()
         }
 
         binding.cardHomePdfSignature.setOnClickListener {

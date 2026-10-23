@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/cardPageThumbnail"
+    style="@style/Widget.Material3.CardView.Filled"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="@color/vf_container"
+    app:cardCornerRadius="12dp"
+    app:strokeColor="@color/vf_surface_variant"
+    app:strokeWidth="1.5dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="6dp">
+
+        <!-- Page Preview Image Container with Fixed Aspect Ratio -->
+        <FrameLayout
+            android:id="@+id/containerThumb"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:background="@color/vf_container_low">
+
+            <ImageView
+                android:id="@+id/ivPageThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitCenter"
+                android:importantForAccessibility="no"
+                android:background="#FFFFFF" />
+
+            <ProgressBar
+                android:id="@+id/pbThumbLoading"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+
+            <!-- Deleted / Strikethrough Overlay for Delete Mode -->
+            <FrameLayout
+                android:id="@+id/overlayDeleted"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#99000000"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_close"
+                    app:tint="#FF5252" />
+            </FrameLayout>
+
+            <!-- Rotation Badge Overlay -->
+            <TextView
+                android:id="@+id/tvRotationBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_pdf_badge"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="90°"
+                android:textColor="@color/vf_on_primary"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Bottom bar: Page number and Checkbox -->
+        <LinearLayout
+            android:id="@+id/layoutBottomBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="6dp">
+
+            <TextView
+                android:id="@+id/tvPageNumber"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Page 1"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="@color/vf_text_primary"
+                android:ellipsize="end"
+                android:singleLine="true" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/cbPageSelected"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:clickable="false"
+                android:focusable="false" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

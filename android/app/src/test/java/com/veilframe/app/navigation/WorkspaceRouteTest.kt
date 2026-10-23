@@ -9,9 +9,9 @@ import org.junit.Test
 class WorkspaceRouteTest {
 
     @Test
-    fun `all 16 canonical workspaces are defined and populated`() {
+    fun `all 17 canonical workspaces are defined and populated`() {
         val routes = WorkspaceRoute.values()
-        assertEquals("Must define exactly 16 canonical workspaces", 16, routes.size)
+        assertEquals("Must define exactly 17 canonical workspaces", 17, routes.size)
 
         routes.forEach { route ->
             assertNotNull(route.id)
@@ -35,7 +35,7 @@ class WorkspaceRouteTest {
         assertEquals("Privacy category must contain 2 sanitizers", 2, privacy.size)
         assertEquals("Analyze category must contain 2 tools", 2, analyze.size)
         assertEquals("Developer category must contain 3 tools", 3, developer.size)
-        assertEquals("PDF Operations category must contain 2 tools", 2, pdfOperations.size)
+        assertEquals("PDF Operations category must contain 3 tools", 3, pdfOperations.size)
 
         assertTrue(createEdit.contains(WorkspaceRoute.IMAGE_STUDIO))
         assertTrue(createEdit.contains(WorkspaceRoute.VIDEO_STUDIO))
@@ -55,6 +55,7 @@ class WorkspaceRouteTest {
         assertTrue(developer.contains(WorkspaceRoute.MARKDOWN_STUDIO))
         assertTrue(developer.contains(WorkspaceRoute.PROVENANCE))
 
+        assertTrue(pdfOperations.contains(WorkspaceRoute.PDF_STUDIO))
         assertTrue(pdfOperations.contains(WorkspaceRoute.PDF_SIGNATURE))
         assertTrue(pdfOperations.contains(WorkspaceRoute.PDF_UNLOCK))
     }
@@ -83,7 +84,7 @@ class WorkspaceRouteTest {
         assertTrue("Searching 'optical flow' must return Motion Lab", motionResults.contains(WorkspaceRoute.MOTION_LAB))
 
         val emptyResults = WorkspaceRoute.search("")
-        assertEquals("Empty query must return all 16 workspaces", 16, emptyResults.size)
+        assertEquals("Empty query must return all 17 workspaces", 17, emptyResults.size)
     }
 
     @Test

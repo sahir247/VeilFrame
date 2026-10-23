@@ -162,6 +162,15 @@ enum class WorkspaceRoute(
         aliases = listOf("optical flow", "motion", "interpolation", "slow motion", "frame rate", "fps", "frames", "smooth"),
         iconRes = R.drawable.ic_speed
     ),
+    PDF_STUDIO(
+        id = "pdf_studio",
+        title = "PDF Studio Hub",
+        description = "Universal 21-in-1 offline document suite for merging, splitting, watermarking, OCR & signatures",
+        category = WorkspaceCategory.PDF_OPERATIONS,
+        status = WorkspaceStatus.STABLE,
+        aliases = listOf("pdf", "studio", "hub", "suite", "document", "tools", "all in one", "merge", "split", "extract", "watermark", "flatten", "print", "booklet", "ocr"),
+        iconRes = R.drawable.ic_pdf_file
+    ),
     PDF_SIGNATURE(
         id = "pdf_signature",
         title = "PDF Signature Validator",
