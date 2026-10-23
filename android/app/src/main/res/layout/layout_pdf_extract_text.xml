@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutPdfExtractTextRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Top App Bar -->
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbarPdfExtractText"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:navigationIconTint="@color/vf_text_primary"
+            app:title="Extract Text &amp; OCR"
+            app:titleTextColor="@color/vf_text_primary"
+            app:subtitle="Embedded Streams &amp; Google ML Kit"
+            app:subtitleTextColor="@color/vf_text_secondary">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPdfExtractTextReset"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone"
+                android:contentDescription="Close PDF"
+                app:icon="@drawable/ic_close"
+                app:iconTint="@color/vf_text_secondary" />
+        </com.google.android.material.appbar.MaterialToolbar>
+
+        <!-- Main Scroller -->
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/scrollPdfExtractText"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- 1. Document Picker & Metadata Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardExtractTextPicker"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="@color/vf_surface_variant"
+                    app:strokeWidth="1dp"
+                    android:layout_marginBottom="16dp">
+
+                    <LinearLayout
+                        android:id="@+id/containerExtractTextEmptyState"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:padding="24dp">
+
+                        <ImageView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:src="@drawable/ic_text"
+                            app:tint="@color/vf_secondary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Select PDF to Extract Text"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:gravity="center"
+                            android:text="Fast stream extraction with automatic ML Kit OCR fallback"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/containerExtractTextDocInfo"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="16dp"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:src="@drawable/ic_pdf_file" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:layout_marginStart="12dp">
+
+                            <TextView
+                                android:id="@+id/tvExtractTextDocName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="document.pdf"
+                                android:textStyle="bold"
+                                android:textSize="14sp"
+                                android:textColor="@color/vf_text_primary"
+                                android:ellipsize="middle"
+                                android:singleLine="true" />
+
+                            <TextView
+                                android:id="@+id/tvExtractTextDocMeta"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="6 pages • 1.1 MB"
+                                android:textSize="12sp"
+                                android:textColor="@color/vf_text_secondary"
+                                android:layout_marginTop="2dp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnExtractTextChangeDoc"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Change" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Processing Indicator -->
+                <LinearLayout
+                    android:id="@+id/containerExtractTextLoading"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="24dp"
+                    android:visibility="gone">
+
+                    <ProgressBar
+                        android:layout_width="40dp"
+                        android:layout_height="40dp" />
+
+                    <TextView
+                        android:id="@+id/tvExtractTextLoadingStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Extracting embedded text streams..."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <!-- 2. TWIST: INLINE OCR PROMPT BANNER (Shown when 0 chars found) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardOcrPromptBanner"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="16dp"
+                    app:cardBackgroundColor="@color/vf_status_warn_bg"
+                    app:strokeColor="@color/vf_accent_amber"
+                    app:strokeWidth="1dp"
+                    android:layout_marginBottom="16dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:src="@drawable/ic_warning"
+                                app:tint="@color/vf_accent_amber" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="No Embedded Text Found"
+                                android:textColor="@color/vf_accent_amber"
+                                android:textStyle="bold"
+                                android:textSize="14sp"
+                                android:layout_marginStart="8dp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="This document appears to contain scanned photos or flat page images without digital character streams. Would you like to run on-device Google ML Kit OCR to recognize text right now?"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRunOcrFallback"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Recognize Text with Google ML Kit OCR"
+                            app:icon="@drawable/ic_visibility"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 3. Extracted Text Results Section -->
+                <LinearLayout
+                    android:id="@+id/containerExtractTextResults"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- Metadata Header & Badges -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="EXTRACTED CONTENT"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:id="@+id/tvExtractTextStats"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="342 words • 2,150 chars"
+                            android:textSize="12sp"
+                            android:textColor="@color/vf_text_secondary" />
+                    </LinearLayout>
+
+                    <!-- Text Container Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="300dp"
+                        app:cardCornerRadius="16dp"
+                        app:strokeColor="@color/vf_surface_variant"
+                        app:strokeWidth="1dp"
+                        android:layout_marginBottom="16dp">
+
+                        <ScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/tvExtractedContent"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="13sp"
+                                android:lineSpacingExtra="4dp"
+                                android:textIsSelectable="true" />
+                        </ScrollView>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- Action Buttons: Copy to Clipboard & Save as TXT -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="12dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnExtractTextCopy"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="Copy Text"
+                            app:cornerRadius="14dp"
+                            app:icon="@drawable/ic_action_copy" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnExtractTextSaveTxt"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:text="Save as TXT"
+                            app:cornerRadius="14dp"
+                            app:icon="@drawable/ic_action_save" />
+                    </LinearLayout>
+
+                    <!-- Secondary Option: Force ML Kit OCR Re-scan -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnForceMlKitOcr"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Run Deep Google ML Kit OCR Scan Instead"
+                        app:icon="@drawable/ic_visibility" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

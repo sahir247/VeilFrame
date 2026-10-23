@@ -38,7 +38,8 @@ class PdfUnlockController(
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
     private val onSavePdfRequest: (ByteArray, String) -> Unit,
-    private val onNavigateBack: () -> Unit
+    private val onNavigateBack: () -> Unit,
+    private val onOpenPdfStudio: (() -> Unit)? = null
 ) : ToolWorkStateContract {
 
     private var originalPdfBytes: ByteArray? = null
@@ -78,6 +79,10 @@ class PdfUnlockController(
     fun init() {
         binding.toolbarPdfUnlock.setNavigationOnClickListener {
             onNavigateBack()
+        }
+
+        binding.btnPdfUnlockOpenHub.setOnClickListener {
+            onOpenPdfStudio?.invoke()
         }
 
         binding.btnPdfUnlockReset.setOnClickListener {

@@ -26,6 +26,18 @@
             app:subtitle="Remove Password Protection Offline"
             app:subtitleTextColor="@color/vf_text_secondary">
 
+            <!-- All PDF Tools Hub -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPdfUnlockOpenHub"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="4dp"
+                android:contentDescription="All PDF Tools"
+                app:icon="@drawable/ic_toc"
+                app:iconTint="@color/vf_text_primary" />
+
             <!-- Reset / Close Document -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPdfUnlockReset"

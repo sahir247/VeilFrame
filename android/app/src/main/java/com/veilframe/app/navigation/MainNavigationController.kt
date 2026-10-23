@@ -237,6 +237,13 @@ class MainNavigationController(
                     ScreenState.PROVENANCE -> showProvenanceScreen()
                     ScreenState.PDF_SIGNATURE -> showPdfSignatureScreen()
                     ScreenState.PDF_UNLOCK -> showPdfUnlockScreen()
+                    ScreenState.PDF_STUDIO -> showPdfStudioScreen()
+                    ScreenState.PDF_WATERMARK -> showPdfWatermarkScreen()
+                    ScreenState.PDF_EXTRACT_TEXT -> showPdfExtractTextScreen()
+                    ScreenState.PDF_EXTRACT_PAGES -> showPdfExtractPagesScreen()
+                    ScreenState.PDF_FLATTEN -> showPdfFlattenScreen()
+                    ScreenState.PDF_IMPOSITION -> showPdfImpositionScreen()
+                    ScreenState.PDF_QUICK_TOOL -> showPdfQuickToolScreen()
                     else -> showHomeScreen()
                 }
             } finally {
@@ -362,6 +369,48 @@ class MainNavigationController(
                 view.translationX = 0f
             }
         }
+        workspaceHost.pdfStudioRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfWatermarkRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfExtractTextRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfExtractPagesRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfFlattenRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfImpositionRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
+        workspaceHost.pdfQuickToolRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
+        }
     }
 
     fun showHomeScreen() {
@@ -389,6 +438,13 @@ class MainNavigationController(
             ScreenState.PROVENANCE -> workspaceHost.provenanceRoot
             ScreenState.PDF_SIGNATURE -> workspaceHost.pdfSignatureRoot
             ScreenState.PDF_UNLOCK -> workspaceHost.pdfUnlockRoot
+            ScreenState.PDF_STUDIO -> workspaceHost.pdfStudioRoot
+            ScreenState.PDF_WATERMARK -> workspaceHost.pdfWatermarkRoot
+            ScreenState.PDF_EXTRACT_TEXT -> workspaceHost.pdfExtractTextRoot
+            ScreenState.PDF_EXTRACT_PAGES -> workspaceHost.pdfExtractPagesRoot
+            ScreenState.PDF_FLATTEN -> workspaceHost.pdfFlattenRoot
+            ScreenState.PDF_IMPOSITION -> workspaceHost.pdfImpositionRoot
+            ScreenState.PDF_QUICK_TOOL -> workspaceHost.pdfQuickToolRoot
             ScreenState.HOME -> null
         }
         if (!isNavigatingBack) {
@@ -753,5 +809,117 @@ class MainNavigationController(
 
         val pdfUnlockRoot = workspaceHost.activate(SecondaryWorkspace.PDF_UNLOCK)
         transitionToTool(pdfUnlockRoot, wasHome)
+    }
+
+    fun showPdfStudioScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_STUDIO)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_STUDIO)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfWatermarkScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_WATERMARK)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_WATERMARK)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfExtractTextScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_EXTRACT_TEXT)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_EXTRACT_TEXT)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfExtractPagesScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_EXTRACT_PAGES)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_EXTRACT_PAGES)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfFlattenScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_FLATTEN)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_FLATTEN)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfImpositionScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_IMPOSITION)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_IMPOSITION)
+        transitionToTool(root, wasHome)
+    }
+
+    fun showPdfQuickToolScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        recordNavigationTo(ScreenState.PDF_QUICK_TOOL)
+
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        val root = workspaceHost.activate(SecondaryWorkspace.PDF_QUICK_TOOL)
+        transitionToTool(root, wasHome)
     }
 }

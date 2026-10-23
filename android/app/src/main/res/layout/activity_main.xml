@@ -2780,6 +2780,69 @@
         android:layout="@layout/layout_pdf_unlock" />
 
     <!-- ================================================================= -->
+    <!-- 17. PDF STUDIO HUB WORKSPACE                                      -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfStudio"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_studio" />
+
+    <!-- ================================================================= -->
+    <!-- 18. PDF WATERMARK WORKSPACE                                       -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfWatermark"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_watermark" />
+
+    <!-- ================================================================= -->
+    <!-- 19. PDF EXTRACT TEXT WORKSPACE                                    -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfExtractText"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_extract_text" />
+
+    <!-- ================================================================= -->
+    <!-- 20. PDF EXTRACT PAGES WORKSPACE                                   -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfExtractPages"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_extract_pages" />
+
+    <!-- ================================================================= -->
+    <!-- 21. PDF FLATTEN WORKSPACE                                         -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfFlatten"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_flatten" />
+
+    <!-- ================================================================= -->
+    <!-- 22. PDF PRINT IMPOSITION STUDIO WORKSPACE                         -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfImposition"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_imposition" />
+
+    <!-- ================================================================= -->
+    <!-- 23. PDF QUICK TOOL WORKSPACE                                      -->
+    <!-- ================================================================= -->
+    <ViewStub
+        android:id="@+id/stubPdfQuickTool"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_pdf_quick_tool" />
+
+    <!-- ================================================================= -->
     <!-- ================================================================= -->
     <!-- 3. FLOATING ACTION DOCK (Tool Mode Only - Pill Dock)             -->
     <!-- ================================================================= -->

@@ -226,6 +226,14 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.85")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
 
+    // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
+    implementation("org.apache.poi:poi:5.2.5")
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.commons:commons-compress:1.26.1")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("org.json:json:20240303")

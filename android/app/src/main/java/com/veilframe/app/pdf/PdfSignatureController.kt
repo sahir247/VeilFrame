@@ -47,7 +47,8 @@ class PdfSignatureController(
     private val onPickPdfRequest: () -> Unit,
     private val onSavePdfRequest: (ByteArray, String) -> Unit,
     private val onNavigateBack: () -> Unit,
-    private val onImportCaCertRequest: () -> Unit
+    private val onImportCaCertRequest: () -> Unit,
+    private val onOpenPdfStudio: (() -> Unit)? = null
 ) : ToolWorkStateContract {
 
     private val engine = PdfSignatureEngine(activity)
@@ -95,6 +96,10 @@ class PdfSignatureController(
     fun init() {
         binding.toolbarPdfSignature.setNavigationOnClickListener {
             onNavigateBack()
+        }
+
+        binding.btnPdfSignatureOpenHub.setOnClickListener {
+            onOpenPdfStudio?.invoke()
         }
 
         binding.btnPdfTrustStore.setOnClickListener {

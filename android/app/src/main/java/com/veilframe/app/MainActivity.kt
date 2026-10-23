@@ -34,6 +34,8 @@ import com.veilframe.app.databinding.LayoutPdfSignatureBinding
 import com.veilframe.app.databinding.LayoutPdfUnlockBinding
 import com.veilframe.app.pdf.PdfSignatureController
 import com.veilframe.app.pdf.PdfUnlockController
+import com.veilframe.app.pdf.PdfSuiteCoordinator
+import com.veilframe.app.pdf.PdfQuickToolController
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
@@ -115,6 +117,9 @@ class MainActivity : AppCompatActivity() {
     private var pendingBgRemoverExportFile: File? = null
     private var pendingPdfSignatureSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
+
+    // Dedicated PDF Suite Coordinator
+    private lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
@@ -789,6 +794,9 @@ class MainActivity : AppCompatActivity() {
         if (::pdfUnlockController.isInitialized) {
             pdfUnlockController.discardAndReleaseAllResources()
         }
+        if (::pdfSuiteCoordinator.isInitialized) {
+            pdfSuiteCoordinator.discardAllResources()
+        }
     }
 
     private fun initSubControllers() {
@@ -829,7 +837,14 @@ class MainActivity : AppCompatActivity() {
             },
             onPdfUnlockInflated = { pdfUnlockBinding ->
                 initPdfUnlock(pdfUnlockBinding)
-            }
+            },
+            onPdfStudioInflated = { pdfSuiteCoordinator.initPdfStudio(it) },
+            onPdfWatermarkInflated = { pdfSuiteCoordinator.initPdfWatermark(it) },
+            onPdfExtractTextInflated = { pdfSuiteCoordinator.initPdfExtractText(it) },
+            onPdfExtractPagesInflated = { pdfSuiteCoordinator.initPdfExtractPages(it) },
+            onPdfFlattenInflated = { pdfSuiteCoordinator.initPdfFlatten(it) },
+            onPdfImpositionInflated = { pdfSuiteCoordinator.initPdfImposition(it) },
+            onPdfQuickToolInflated = { pdfSuiteCoordinator.initPdfQuickTool(it) }
         )
 
         navigationController = MainNavigationController(
@@ -849,6 +864,21 @@ class MainActivity : AppCompatActivity() {
             onLibraryScreenEntered = { refreshLibrary() }
         )
         navigationController.init()
+
+        pdfSuiteCoordinator = PdfSuiteCoordinator(
+            activity = this,
+            scope = lifecycleScope,
+            workspaceHost = workspaceHost,
+            navigationController = navigationController,
+            safStorageManager = safStorageManager,
+            onOpenPdfSignature = { openPdfSignature() },
+            onOpenPdfUnlock = { openPdfUnlock() },
+            onSaveActiveToolState = { toolSessionManager.saveCurrentToolState() },
+            onPauseVideoPlayback = { pauseVideoPlayback() },
+            onClearBackTimer = { clearBackTimer() },
+            canNavigate = { canNavigate() },
+            log = { consoleLogController.log(it) }
+        )
 
         toolSessionManager = ToolSessionManager(
             activity = this,
@@ -1134,6 +1164,9 @@ class MainActivity : AppCompatActivity() {
             },
             onImportCaCertRequest = {
                 pdfCaCertPickerLauncher.launch(arrayOf("application/x-x509-ca-cert", "application/pkix-cert", "*/*"))
+            },
+            onOpenPdfStudio = {
+                openPdfStudio()
             }
         ).apply { init() }
     }
@@ -1150,6 +1183,9 @@ class MainActivity : AppCompatActivity() {
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
+            },
+            onOpenPdfStudio = {
+                openPdfStudio()
             }
         ).apply { init() }
     }
@@ -1646,6 +1682,34 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened PDF Unlock workspace.")
     }
 
+    fun openPdfStudio() {
+        pdfSuiteCoordinator.openPdfStudio()
+    }
+
+    fun openPdfWatermark() {
+        pdfSuiteCoordinator.openWatermark()
+    }
+
+    fun openPdfExtractText() {
+        pdfSuiteCoordinator.openExtractText()
+    }
+
+    fun openPdfExtractPages() {
+        pdfSuiteCoordinator.openExtractPages()
+    }
+
+    fun openPdfFlatten() {
+        pdfSuiteCoordinator.openFlatten()
+    }
+
+    fun openPdfImposition() {
+        pdfSuiteCoordinator.openImposition()
+    }
+
+    fun openPdfQuickTool(mode: PdfQuickToolController.QuickMode) {
+        pdfSuiteCoordinator.openQuickTool(mode)
+    }
+
     private fun showDiagnosticsDialog() {
         MainDialogHelper.showDiagnosticsDialog(this, consoleLogController)
     }
@@ -1670,6 +1734,7 @@ class MainActivity : AppCompatActivity() {
         val isToolExecuting = ::toolExecutionController.isInitialized && toolExecutionController.isExecuting
         val isPdfSigProcessing = ::pdfSignatureController.isInitialized && pdfSignatureController.isProcessing
         val isPdfUnlockProcessing = ::pdfUnlockController.isInitialized && pdfUnlockController.isProcessing
+        val isPdfSuiteProcessing = ::pdfSuiteCoordinator.isInitialized && pdfSuiteCoordinator.hasActiveProcessing()
 
         if (::videoStudioController.isInitialized && !isVideoProcessing) videoStudioController.clear()
         if (::videoPlayerController.isInitialized && !isVideoProcessing) videoPlayerController.clearMedia()
@@ -1682,7 +1747,10 @@ class MainActivity : AppCompatActivity() {
         if (::markdownViewerController.isInitialized) markdownViewerController.clear()
         if (::pdfSignatureController.isInitialized && !isPdfSigProcessing) pdfSignatureController.discardAndReleaseAllResources()
         if (::pdfUnlockController.isInitialized && !isPdfUnlockProcessing) pdfUnlockController.discardAndReleaseAllResources()
-        if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing && !isVideoProcessing && !isImageProcessing && !isMotionLabProcessing && !isToolExecuting && !isPdfSigProcessing && !isPdfUnlockProcessing) {
+        if (::pdfSuiteCoordinator.isInitialized) {
+            pdfSuiteCoordinator.discardInactiveResources()
+        }
+        if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing && !isVideoProcessing && !isImageProcessing && !isMotionLabProcessing && !isToolExecuting && !isPdfSigProcessing && !isPdfUnlockProcessing && !isPdfSuiteProcessing) {
             workspaceHost.pause()
         }
         if (!isToolExecuting) {
@@ -2093,6 +2161,13 @@ class MainActivity : AppCompatActivity() {
                 ScreenState.PROVENANCE -> openProvenance()
                 ScreenState.PDF_SIGNATURE -> openPdfSignature()
                 ScreenState.PDF_UNLOCK -> openPdfUnlock()
+                ScreenState.PDF_STUDIO -> openPdfStudio()
+                ScreenState.PDF_WATERMARK -> openPdfWatermark()
+                ScreenState.PDF_EXTRACT_TEXT -> openPdfExtractText()
+                ScreenState.PDF_EXTRACT_PAGES -> openPdfExtractPages()
+                ScreenState.PDF_FLATTEN -> openPdfFlatten()
+                ScreenState.PDF_IMPOSITION -> openPdfImposition()
+                ScreenState.PDF_QUICK_TOOL -> openPdfQuickTool(PdfQuickToolController.QuickMode.MERGE)
                 ScreenState.MARKDOWN_VIEWER -> {
                     val mdUriStr = savedInstanceState.getString(KEY_MARKDOWN_URI)
                     val mdFilePath = savedInstanceState.getString(KEY_MARKDOWN_FILE_PATH)
@@ -2133,6 +2208,13 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.TOOL -> if (::toolExecutionController.isInitialized) toolExecutionController else null
             com.veilframe.app.navigation.ScreenState.PDF_SIGNATURE -> if (::pdfSignatureController.isInitialized) pdfSignatureController else null
             com.veilframe.app.navigation.ScreenState.PDF_UNLOCK -> if (::pdfUnlockController.isInitialized) pdfUnlockController else null
+            com.veilframe.app.navigation.ScreenState.PDF_STUDIO,
+            com.veilframe.app.navigation.ScreenState.PDF_WATERMARK,
+            com.veilframe.app.navigation.ScreenState.PDF_EXTRACT_TEXT,
+            com.veilframe.app.navigation.ScreenState.PDF_EXTRACT_PAGES,
+            com.veilframe.app.navigation.ScreenState.PDF_FLATTEN,
+            com.veilframe.app.navigation.ScreenState.PDF_IMPOSITION,
+            com.veilframe.app.navigation.ScreenState.PDF_QUICK_TOOL -> if (::pdfSuiteCoordinator.isInitialized) pdfSuiteCoordinator.getActiveToolWorkContract(screen) else null
             else -> null
         }
     }
@@ -2148,6 +2230,7 @@ class MainActivity : AppCompatActivity() {
         if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) return true
         if (::pdfSignatureController.isInitialized && pdfSignatureController.isProcessing) return true
         if (::pdfUnlockController.isInitialized && pdfUnlockController.isProcessing) return true
+        if (::pdfSuiteCoordinator.isInitialized && pdfSuiteCoordinator.hasActiveProcessing()) return true
         if (VeilFrameProcessingService.activeJob?.state == com.veilframe.app.media.JobState.RUNNING) return true
         return false
     }

@@ -2,6 +2,8 @@ package com.veilframe.app.pdf
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.rendering.PDFRenderer
@@ -9,10 +11,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
- * Offline engine for removing PDF passwords, permissions, and encryption restrictions.
+ * Production offline engine for removing PDF passwords, permissions, and encryption restrictions.
  * Decrypts documents 100% locally on-device without cloud transmission.
+ * Utilizes MemoryUsageSetting.setupTempFileOnly() to prevent heap exhaustion on large documents.
  */
 object PdfUnlockEngine {
 
@@ -21,7 +27,7 @@ object PdfUnlockEngine {
      */
     fun checkEncryption(pdfBytes: ByteArray): PdfInitialCheck {
         return try {
-            PDDocument.load(ByteArrayInputStream(pdfBytes)).use { doc ->
+            PDDocument.load(ByteArrayInputStream(pdfBytes), MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                 if (doc.isEncrypted) {
                     PdfInitialCheck.PasswordRequired(pdfBytes)
                 } else {
@@ -36,7 +42,23 @@ object PdfUnlockEngine {
     }
 
     /**
+     * Inspects the encryption state directly from a stream.
+     */
+    fun checkEncryption(inputStream: InputStream): Boolean {
+        return try {
+            PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                doc.isEncrypted
+            }
+        } catch (e: InvalidPasswordException) {
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Unlocks and strips all encryption/security from the PDF using the supplied password.
+     * Uses memory-safe temp file streaming and sets isAllSecurityToBeRemoved = true.
      * Renders a preview bitmap of the first page.
      */
     suspend fun unlockPdf(
@@ -45,13 +67,13 @@ object PdfUnlockEngine {
     ): Result<PdfUnlockResult> = withContext(Dispatchers.IO) {
         try {
             val doc = if (password.isNotEmpty()) {
-                PDDocument.load(ByteArrayInputStream(pdfBytes), password)
+                PDDocument.load(ByteArrayInputStream(pdfBytes), password, MemoryUsageSetting.setupTempFileOnly())
             } else {
-                PDDocument.load(ByteArrayInputStream(pdfBytes))
+                PDDocument.load(ByteArrayInputStream(pdfBytes), MemoryUsageSetting.setupTempFileOnly())
             }
 
             doc.use { loadedDoc ->
-                // Remove all encryption dictionary entries and permissions restrictions
+                // Authoritative security removal: clears encryption dictionary and restrictions
                 loadedDoc.isAllSecurityToBeRemoved = true
 
                 val outStream = ByteArrayOutputStream()
@@ -66,11 +88,8 @@ object PdfUnlockEngine {
                 if (pageCount > 0) {
                     try {
                         val renderer = PDFRenderer(loadedDoc)
-                        // Render at 150 DPI for crisp visual presentation
                         previewBmp = renderer.renderImageWithDPI(0, 150f)
-                    } catch (e: Exception) {
-                        // Preview rendering failure should not block unlock
-                    }
+                    } catch (_: Exception) {}
                 }
 
                 Result.success(
@@ -87,6 +106,38 @@ object PdfUnlockEngine {
         } catch (e: InvalidPasswordException) {
             Result.failure(IllegalArgumentException("Incorrect password. Please verify the document password and try again."))
         } catch (e: Exception) {
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("password") || msg.contains("decrypt")) {
+                Result.failure(IllegalArgumentException("Incorrect password. Please verify the document password and try again."))
+            } else {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Stream-based memory-safe PDF unlock for large files.
+     */
+    suspend fun unlockPdfStream(
+        inputStream: InputStream,
+        outputStream: OutputStream,
+        password: String
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val doc = if (password.isNotEmpty()) {
+                PDDocument.load(inputStream, password, MemoryUsageSetting.setupTempFileOnly())
+            } else {
+                PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            }
+
+            doc.use { loadedDoc ->
+                loadedDoc.isAllSecurityToBeRemoved = true
+                loadedDoc.save(outputStream)
+                Result.success(loadedDoc.numberOfPages)
+            }
+        } catch (e: InvalidPasswordException) {
+            Result.failure(IllegalArgumentException("Incorrect password"))
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }
@@ -100,7 +151,7 @@ object PdfUnlockEngine {
         dpi: Float = 150f
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            PDDocument.load(ByteArrayInputStream(pdfBytes)).use { doc ->
+            PDDocument.load(ByteArrayInputStream(pdfBytes), MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                 if (doc.numberOfPages > pageIndex) {
                     val renderer = PDFRenderer(doc)
                     renderer.renderImageWithDPI(pageIndex, dpi)
