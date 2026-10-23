@@ -592,7 +592,10 @@ class DocumentSession(
                         watermarkPosition = p.optString("watermarkPosition", "bottom-right"),
                         watermarkSize = p.optInt("watermarkSize", 28),
                         watermarkColor = p.optString("watermarkColor", "#80FFFFFF"),
-                        watermarkOpacity = p.optDouble("watermarkOpacity", 0.6).toFloat(),
+                        watermarkOpacity = run {
+                            val raw = p.optDouble("watermarkOpacity", 0.6).toFloat()
+                            if (raw > 1.0f) (raw / 100f).coerceIn(0.05f, 1.0f) else raw.coerceIn(0.05f, 1.0f)
+                        },
                         watermarkFont = p.optString("watermarkFont", "Sans-Serif")
                     )
                     loadedPages.add(page)

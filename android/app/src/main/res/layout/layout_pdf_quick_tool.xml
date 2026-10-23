@@ -20,11 +20,11 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/vf_text_primary"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="PDF Operation"
-            app:titleTextColor="@color/vf_text_primary"
+            app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="Offline Processing"
-            app:subtitleTextColor="@color/vf_text_secondary">
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPdfQuickToolReset"
@@ -36,7 +36,7 @@
                 android:visibility="gone"
                 android:contentDescription="Close Document"
                 app:icon="@drawable/ic_close"
-                app:iconTint="@color/vf_text_secondary" />
+                app:iconTint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <!-- Main Scroller -->
@@ -1010,6 +1010,123 @@
                                 android:text="Custom Location" />
                         </com.google.android.material.chip.ChipGroup>
                     </HorizontalScrollView>
+
+                    <!-- Interactive Visual Placement Card (Acrobat-grade Touch/Drag) -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardSignInteractivePlacement"
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:cardCornerRadius="16dp"
+                        app:strokeColor="@color/vf_surface_variant"
+                        app:strokeWidth="1dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginBottom="6dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="VISUAL PLACEMENT (TAP OR DRAG)"
+                                    android:textColor="@color/vf_secondary"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:letterSpacing="0.08" />
+
+                                <TextView
+                                    android:id="@+id/tvSignCoordBadge"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="X: 70% | Y: 10%"
+                                    android:textColor="?attr/colorPrimary"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Touch anywhere on the page to position your signature directly"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp"
+                                android:layout_marginBottom="8dp" />
+
+                            <!-- Interactive Page Frame -->
+                            <FrameLayout
+                                android:id="@+id/frameSignInteractiveContainer"
+                                android:layout_width="match_parent"
+                                android:layout_height="220dp"
+                                android:background="@color/vf_container_low"
+                                android:clipChildren="true">
+
+                                <!-- Rendered Page Thumbnail -->
+                                <ImageView
+                                    android:id="@+id/ivSignPagePreview"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:scaleType="fitCenter"
+                                    android:background="#FFFFFF"
+                                    android:contentDescription="Page Preview for Signature Placement" />
+
+                                <!-- Loading spinner -->
+                                <ProgressBar
+                                    android:id="@+id/pbSignPreviewLoading"
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:layout_gravity="center"
+                                    android:visibility="gone" />
+
+                                <!-- Floating / Draggable Signature Indicator Pill -->
+                                <com.google.android.material.card.MaterialCardView
+                                    android:id="@+id/viewSignPlacementIndicator"
+                                    style="@style/Widget.Material3.CardView.Filled"
+                                    android:layout_width="96dp"
+                                    android:layout_height="36dp"
+                                    app:cardCornerRadius="8dp"
+                                    app:cardBackgroundColor="#CC2563EB"
+                                    app:strokeColor="#FFFFFF"
+                                    app:strokeWidth="1.5dp"
+                                    app:cardElevation="4dp">
+
+                                    <FrameLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:padding="2dp">
+
+                                        <ImageView
+                                            android:id="@+id/ivSignMiniaturePreview"
+                                            android:layout_width="match_parent"
+                                            android:layout_height="match_parent"
+                                            android:scaleType="fitCenter"
+                                            android:visibility="gone" />
+
+                                        <TextView
+                                            android:id="@+id/tvSignIndicatorPlaceholder"
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:layout_gravity="center"
+                                            android:text="✍ Signature"
+                                            android:textColor="#FFFFFF"
+                                            android:textSize="11sp"
+                                            android:textStyle="bold" />
+                                    </FrameLayout>
+                                </com.google.android.material.card.MaterialCardView>
+                            </FrameLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
                     <!-- Custom Location Sliders -->
                     <LinearLayout

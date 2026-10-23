@@ -37,11 +37,29 @@ class SignaturePadView @JvmOverloads constructor(
     private var lastY = 0f
     private var isPathEmpty = true
 
+    private var targetInkColor: Int = Color.BLACK
     var onSignatureChanged: ((isEmpty: Boolean) -> Unit)? = null
+    var onStrokeCompleted: (() -> Unit)? = null
 
     init {
-        // In dark mode, visible sign is white, in light mode it is dark
-        paint.color = if (isNightMode) Color.WHITE else Color.parseColor("#18181B")
+        // In dark mode, visible sign is seen as white; in light mode it is seen as dark
+        updateDisplayPenColor()
+    }
+
+    private fun updateDisplayPenColor() {
+        val displayColor = when {
+            targetInkColor == Color.BLACK && isNightMode -> Color.WHITE
+            targetInkColor == Color.WHITE && !isNightMode -> Color.parseColor("#64748B")
+            targetInkColor == Color.BLACK && !isNightMode -> Color.parseColor("#18181B")
+            else -> targetInkColor
+        }
+        paint.color = displayColor
+        invalidate()
+    }
+
+    fun setInkColor(inkColor: Int) {
+        this.targetInkColor = inkColor
+        updateDisplayPenColor()
     }
 
     var penColor: Int
@@ -65,6 +83,7 @@ class SignaturePadView @JvmOverloads constructor(
         isPathEmpty = true
         invalidate()
         onSignatureChanged?.invoke(true)
+        onStrokeCompleted?.invoke()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -101,6 +120,7 @@ class SignaturePadView @JvmOverloads constructor(
                 path.lineTo(x, y)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 invalidate()
+                onStrokeCompleted?.invoke()
                 return true
             }
         }
@@ -127,10 +147,9 @@ class SignaturePadView @JvmOverloads constructor(
         val canvas = Canvas(bitmap)
         canvas.translate(-rect.left, -rect.top)
 
+        val finalColor = targetColor ?: targetInkColor
         val renderPaint = Paint(paint).apply {
-            if (targetColor != null) {
-                color = targetColor
-            }
+            color = finalColor
             alpha = (opacity.coerceIn(0.05f, 1.0f) * 255).toInt()
         }
         canvas.drawPath(path, renderPaint)

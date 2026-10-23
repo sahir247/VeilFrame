@@ -20,11 +20,11 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/vf_text_primary"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="Extract Text &amp; OCR"
-            app:titleTextColor="@color/vf_text_primary"
+            app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="Embedded Streams &amp; Google ML Kit"
-            app:subtitleTextColor="@color/vf_text_secondary">
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPdfExtractTextReset"
@@ -36,7 +36,7 @@
                 android:visibility="gone"
                 android:contentDescription="Close PDF"
                 app:icon="@drawable/ic_close"
-                app:iconTint="@color/vf_text_secondary" />
+                app:iconTint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <!-- Main Scroller -->

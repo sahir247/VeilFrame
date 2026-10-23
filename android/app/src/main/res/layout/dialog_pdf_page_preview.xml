@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#EE0F172A">
+    android:background="#F0090D16">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,7 +17,7 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
-            android:background="#33000000">
+            android:background="#40000000">
 
             <TextView
                 android:id="@+id/tvPreviewPageTitle"
@@ -44,21 +44,36 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:padding="12dp">
+            android:padding="16dp">
 
-            <ImageView
-                android:id="@+id/ivPreviewFullPage"
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Material3.CardView.Filled"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:scaleType="fitCenter"
-                android:background="#FFFFFF"
-                android:contentDescription="Full Page Render" />
+                app:cardCornerRadius="16dp"
+                app:strokeColor="#33FFFFFF"
+                app:strokeWidth="1dp"
+                app:cardElevation="8dp"
+                app:cardBackgroundColor="#FFFFFF">
 
-            <ProgressBar
-                android:id="@+id/pbPreviewLoading"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center" />
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <ImageView
+                        android:id="@+id/ivPreviewFullPage"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="Full Page Render" />
+
+                    <ProgressBar
+                        android:id="@+id/pbPreviewLoading"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="center" />
+                </FrameLayout>
+            </com.google.android.material.card.MaterialCardView>
         </FrameLayout>
     </LinearLayout>
 </FrameLayout>

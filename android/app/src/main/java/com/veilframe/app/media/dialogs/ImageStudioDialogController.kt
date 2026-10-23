@@ -412,7 +412,7 @@ class ImageStudioDialogController(
         var draftSize = editState.watermarkSize
         var draftPosition = editState.watermarkPosition
         var draftColor = editState.watermarkColor
-        var draftOpacity = editState.watermarkOpacity
+        var draftOpacity = if (editState.watermarkOpacity > 1.0f) (editState.watermarkOpacity / 100f).coerceIn(0.1f, 1.0f) else editState.watermarkOpacity.coerceIn(0.1f, 1.0f)
         var draftFont = editState.watermarkFont
 
         fun updateWatermarkPreview() {

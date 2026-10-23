@@ -1,11 +1,13 @@
 package com.veilframe.app.pdf
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
 import android.widget.ProgressBar
@@ -13,6 +15,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
@@ -214,6 +217,10 @@ class PdfQuickToolController(
             QuickMode.SIGN -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Sign"
                 binding.panelParamSign.visibility = View.VISIBLE
+                if (selectedUris.isNotEmpty()) {
+                    refreshSignPagePreview()
+                }
+                updateSignPlacementIndicator(binding.sliderSignPosX.value, binding.sliderSignPosY.value)
             }
             QuickMode.METADATA -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF for Metadata"
@@ -502,6 +509,10 @@ class PdfQuickToolController(
                                 binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
                                 splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
                                 rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
+                                if (activeMode == QuickMode.SIGN) {
+                                    refreshSignPagePreview()
+                                    updateSignPlacementIndicator(binding.sliderSignPosX.value, binding.sliderSignPosY.value)
+                                }
                             }
                         }
                     }
@@ -611,9 +622,15 @@ class PdfQuickToolController(
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupSignControls() {
         binding.btnSignClear.setOnClickListener {
             binding.viewSignaturePad.clear()
+            updateMiniatureSignaturePreview()
+        }
+
+        binding.viewSignaturePad.onStrokeCompleted = {
+            updateMiniatureSignaturePreview()
         }
 
         binding.chipGroupSignColor.setOnCheckedStateChangeListener { _, checkedIds ->
@@ -623,20 +640,148 @@ class PdfQuickToolController(
                 checkedIds.contains(R.id.chipSignColorWhite) -> Color.WHITE
                 else -> Color.BLACK
             }
+            binding.viewSignaturePad.setInkColor(selectedSignColor)
+            updateMiniatureSignaturePreview()
         }
 
         binding.sliderSignOpacity.addOnChangeListener { _, value, _ ->
             binding.tvSignOpacityVal.text = "${value.toInt()}%"
+            updateMiniatureSignaturePreview()
         }
 
         binding.chipGroupSignPage.setOnCheckedStateChangeListener { _, checkedIds ->
             val isCustom = checkedIds.contains(R.id.chipSignPageCustom)
             binding.tilSignCustomPage.visibility = if (isCustom) View.VISIBLE else View.GONE
+            refreshSignPagePreview()
+        }
+
+        binding.etSignCustomPage.doAfterTextChanged {
+            refreshSignPagePreview()
         }
 
         binding.chipGroupSignPlacement.setOnCheckedStateChangeListener { _, checkedIds ->
             val isCustom = checkedIds.contains(R.id.chipPlacementCustom)
             binding.layoutSignCustomLocation.visibility = if (isCustom) View.VISIBLE else View.GONE
+            val coords = when {
+                checkedIds.contains(R.id.chipPlacementBottomLeft) -> 8.0f to 6.0f
+                checkedIds.contains(R.id.chipPlacementBottomCenter) -> 35.0f to 6.0f
+                checkedIds.contains(R.id.chipPlacementTopLeft) -> 8.0f to 87.0f
+                checkedIds.contains(R.id.chipPlacementTopRight) -> 62.0f to 87.0f
+                checkedIds.contains(R.id.chipPlacementCenter) -> 35.0f to 46.0f
+                checkedIds.contains(R.id.chipPlacementBottomRight) -> 62.0f to 6.0f
+                else -> null
+            }
+            if (coords != null) {
+                binding.sliderSignPosX.value = coords.first
+                binding.sliderSignPosY.value = coords.second
+                updateSignPlacementIndicator(coords.first, coords.second)
+            }
+        }
+
+        binding.sliderSignPosX.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val yVal = binding.sliderSignPosY.value
+                updateSignPlacementIndicator(value, yVal)
+            }
+        }
+
+        binding.sliderSignPosY.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val xVal = binding.sliderSignPosX.value
+                updateSignPlacementIndicator(xVal, value)
+            }
+        }
+
+        binding.frameSignInteractiveContainer.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    val containerW = v.width.toFloat()
+                    val containerH = v.height.toFloat()
+                    if (containerW > 0 && containerH > 0) {
+                        val indicatorW = binding.viewSignPlacementIndicator.width.toFloat()
+                        val indicatorH = binding.viewSignPlacementIndicator.height.toFloat()
+
+                        val left = (event.x - indicatorW / 2f).coerceIn(0f, (containerW - indicatorW).coerceAtLeast(0f))
+                        val top = (event.y - indicatorH / 2f).coerceIn(0f, (containerH - indicatorH).coerceAtLeast(0f))
+
+                        val xPct = if (containerW > indicatorW) (left / (containerW - indicatorW)) * 100f else 0f
+                        // PDF coordinates have Y=0 at page bottom, touch coordinates have Y=0 at top
+                        val yPct = if (containerH > indicatorH) (1.0f - (top / (containerH - indicatorH))) * 100f else 0f
+
+                        val clampedX = xPct.coerceIn(0f, 100f)
+                        val clampedY = yPct.coerceIn(0f, 100f)
+
+                        binding.sliderSignPosX.value = clampedX
+                        binding.sliderSignPosY.value = clampedY
+
+                        if (!binding.chipPlacementCustom.isChecked) {
+                            binding.chipPlacementCustom.isChecked = true
+                            binding.layoutSignCustomLocation.visibility = View.VISIBLE
+                        }
+                        updateSignPlacementIndicator(clampedX, clampedY)
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun updateSignPlacementIndicator(xPct: Float, yPct: Float) {
+        binding.tvSignCoordBadge.text = "X: ${xPct.toInt()}% | Y: ${yPct.toInt()}%"
+        binding.frameSignInteractiveContainer.post {
+            val containerW = binding.frameSignInteractiveContainer.width.toFloat()
+            val containerH = binding.frameSignInteractiveContainer.height.toFloat()
+            val indicatorW = binding.viewSignPlacementIndicator.width.toFloat()
+            val indicatorH = binding.viewSignPlacementIndicator.height.toFloat()
+
+            if (containerW > indicatorW && containerH > indicatorH) {
+                val transX = (containerW - indicatorW) * (xPct.coerceIn(0f, 100f) / 100f)
+                val transY = (containerH - indicatorH) * (1.0f - (yPct.coerceIn(0f, 100f) / 100f))
+                binding.viewSignPlacementIndicator.translationX = transX
+                binding.viewSignPlacementIndicator.translationY = transY
+            }
+        }
+    }
+
+    private fun updateMiniatureSignaturePreview() {
+        val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+        val bmp = binding.viewSignaturePad.getSignatureBitmap(targetColor = selectedSignColor, opacity = opacity)
+        if (bmp != null) {
+            binding.ivSignMiniaturePreview.setImageBitmap(bmp)
+            binding.ivSignMiniaturePreview.visibility = View.VISIBLE
+            binding.tvSignIndicatorPlaceholder.visibility = View.GONE
+        } else {
+            binding.ivSignMiniaturePreview.setImageDrawable(null)
+            binding.ivSignMiniaturePreview.visibility = View.GONE
+            binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
+        }
+    }
+
+    private fun refreshSignPagePreview() {
+        val uri = selectedUris.firstOrNull() ?: return
+        if (primaryDocPages <= 0) return
+        val targetPageIdx = when {
+            binding.chipSignPageFirst.isChecked -> 0
+            binding.chipSignPageAll.isChecked -> 0
+            binding.chipSignPageCustom.isChecked -> {
+                val p = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                (p - 1).coerceIn(0, primaryDocPages - 1)
+            }
+            else -> (primaryDocPages - 1).coerceAtLeast(0)
+        }
+
+        binding.pbSignPreviewLoading.visibility = View.VISIBLE
+        scope.launch(Dispatchers.IO) {
+            val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
+            withContext(Dispatchers.Main) {
+                binding.pbSignPreviewLoading.visibility = View.GONE
+                if (bmp != null) {
+                    binding.ivSignPagePreview.setImageBitmap(bmp)
+                } else {
+                    binding.ivSignPagePreview.setImageResource(R.drawable.ic_pdf_file)
+                }
+            }
         }
     }
 
@@ -1129,6 +1274,13 @@ class PdfQuickToolController(
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.layoutFilesItems.removeAllViews()
         binding.viewSignaturePad.clear()
+        binding.ivSignMiniaturePreview.setImageDrawable(null)
+        binding.ivSignMiniaturePreview.visibility = View.GONE
+        binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
+        binding.ivSignPagePreview.setImageDrawable(null)
+        binding.sliderSignPosX.value = 70.0f
+        binding.sliderSignPosY.value = 10.0f
+        updateSignPlacementIndicator(70.0f, 10.0f)
         mergePageAdapter?.setItems(emptyList())
         binding.etCustomMergeOrder.setText("")
         binding.etCustomPageOrder.setText("")

@@ -20,11 +20,11 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/vf_text_primary"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="PDF Studio"
-            app:titleTextColor="@color/vf_text_primary"
+            app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="Universal Offline PDF Operations"
-            app:subtitleTextColor="@color/vf_text_secondary">
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant">
 
             <!-- Reset / Search -->
             <com.google.android.material.button.MaterialButton
@@ -36,7 +36,7 @@
                 android:layout_marginEnd="8dp"
                 android:contentDescription="Search PDF Tools"
                 app:icon="@drawable/ic_search"
-                app:iconTint="@color/vf_text_secondary" />
+                app:iconTint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <!-- Main Scroller -->

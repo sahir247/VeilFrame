@@ -25,13 +25,19 @@ object WatermarkEngine {
             val scale = (mutableBmp.width.toFloat() / 1000f).coerceIn(0.5f, 4.0f)
             val fontSizePx = state.watermarkSize.toFloat() * scale
 
+            val normOpacity = if (state.watermarkOpacity > 1.0f) {
+                (state.watermarkOpacity / 100f).coerceIn(0.05f, 1.0f)
+            } else {
+                state.watermarkOpacity.coerceIn(0.05f, 1.0f)
+            }
+
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = parseColor(state.watermarkColor)
-                alpha = (state.watermarkOpacity * 255f).toInt().coerceIn(0, 255)
+                alpha = (normOpacity * 255f).toInt().coerceIn(0, 255)
                 textSize = fontSizePx
                 style = Paint.Style.FILL
                 typeface = resolveTypeface(state.watermarkFont)
-                setShadowLayer(4f * scale, 2f * scale, 2f * scale, Color.argb(160, 0, 0, 0))
+                setShadowLayer(4f * scale, 2f * scale, 2f * scale, Color.argb((normOpacity * 160f).toInt(), 0, 0, 0))
             }
 
             val text = state.watermarkText

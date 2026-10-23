@@ -1603,7 +1603,8 @@ class DocumentScannerController(
                         else -> binding.chipDocPosBottomRight.isChecked = true
                     }
                     binding.sliderDocWmSize.value = currentPage.watermarkSize.toFloat().coerceIn(12f, 72f)
-                    binding.sliderDocWmOpacity.value = (currentPage.watermarkOpacity * 100f).coerceIn(10f, 100f)
+                    val normDocWmOpacity = if (currentPage.watermarkOpacity > 1.0f) currentPage.watermarkOpacity / 100f else currentPage.watermarkOpacity
+                    binding.sliderDocWmOpacity.value = (normDocWmOpacity * 100f).coerceIn(10f, 100f)
                 }
             } finally {
                 isSyncingFilterChips = false
