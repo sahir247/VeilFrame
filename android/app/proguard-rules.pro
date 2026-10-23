@@ -126,5 +126,28 @@
 -keepattributes InnerClasses
 -keepattributes EnclosingMethod
 -keepattributes SourceFile,LineNumberTable
+# =========================================================================
+# Apache POI, XMLBeans, Log4j & Transitive Non-Android Dependencies
+# =========================================================================
+# Desktop Java AWT, Color, Geometry, and XML stream classes not present on Android runtime
+-dontwarn java.awt.**
+-dontwarn javax.xml.stream.**
 
+# OSGi, Bnd SPI, and FindBugs compile-time annotations
+-dontwarn org.osgi.framework.**
+-dontwarn aQute.bnd.annotation.**
+-dontwarn edu.umd.cs.findbugs.annotations.**
 
+# Optional XPath and SVG rendering engines (Saxon, Batik)
+-dontwarn net.sf.saxon.**
+-dontwarn org.apache.batik.**
+
+# Apache POI, Log4j, XMLBeans, and Commons Compress internal reflection/warnings
+-dontwarn org.apache.poi.**
+-dontwarn org.apache.xmlbeans.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.apache.commons.compress.**
+
+# Preserve Apache POI document parsing & XMLBeans classes
+-keep class org.apache.poi.** { *; }
+-keep class org.apache.xmlbeans.** { *; }
