@@ -23,6 +23,11 @@ endif()
 add_library(veilframe_ncnn SHARED
     realsr_jni.cpp
     realsr.cpp
+    matting_jni.cpp
+    pii_ncnn_jni.cpp
+    rife_jni.cpp
+    rife/rife.cpp
+    rife/warp.cpp
 )
 
 target_compile_options(veilframe_ncnn PRIVATE -fexceptions)
@@ -30,6 +35,7 @@ target_link_options(veilframe_ncnn PRIVATE "-Wl,-z,max-page-size=16384")
 
 target_include_directories(veilframe_ncnn PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/rife
     ${CMAKE_CURRENT_SOURCE_DIR}/ncnn/${ANDROID_ABI}/include
 )
 

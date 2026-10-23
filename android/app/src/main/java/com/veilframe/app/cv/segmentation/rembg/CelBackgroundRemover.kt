@@ -1,28 +1,25 @@
 package com.veilframe.app.cv.segmentation.rembg
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import java.nio.FloatBuffer
+import com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlin.math.max
 
 /**
- * 1:1 Port of Cel-Android BackgroundRemover ML pipeline:
+ * NCNN-powered neural background removal pipeline:
  * - Decodes image with EXIF orientation correction
- * - Runs ONNX neural segmentation (BiRefNet Lite, ISNet General, or U2Net Human)
- * - Reconstructs full-resolution image with alpha channel via memory-safe striped processing
+ * - Runs native NCNN matting (U^2-Net-P bundled in assets or MODNet on-demand) via Vulkan GPU / OpenMP
+ * - Merges generated alpha mask with full-resolution original image
  * - Applies edge post-processing: tighten edges (1px erosion), feather edges (1px blur), trim transparent
- * - Handles NNAPI/delegate errors with graceful CPU fallback and retry
  */
 class CelBackgroundRemover(
-    private val sessionManager: RembgOnnxSessionManager,
+    private val context: Context,
+    private val repository: RembgModelRepository = RembgModelRepository(context),
+    private val sessionManager: RembgOnnxSessionManager? = null,
 ) {
-    private val ortEnv = OrtEnvironment.getEnvironment()
-
     suspend fun removeBackground(
         imageBytes: ByteArray,
         model: RembgModel,
@@ -40,66 +37,78 @@ class CelBackgroundRemover(
             warnings += "Large image (${sourceInfo.width}×${sourceInfo.height}) — processing at full resolution."
         }
 
-        onProgress(RembgProgress(10, "Loading model…"))
+        onProgress(RembgProgress(10, "Loading ${model.displayName}…"))
         ensureActive()
-        val session = loadSession(model)
-        val inputName = session.inputNames.iterator().next()
 
-        onProgress(RembgProgress(25, "Preparing image tensor…"))
-        ensureActive()
-        val inferenceBitmap = decodeForInference(imageBytes, model)
+        val modelType = if (model == RembgModel.U2NETP) {
+            NcnnMattingNative.MODEL_TYPE_U2NETP
+        } else {
+            NcnnMattingNative.MODEL_TYPE_MODNET
+        }
 
-        var maskedSmall: Bitmap? = null
-        try {
-            onProgress(RembgProgress(45, "Running neural segmentation…"))
-            ensureActive()
-
-            maskedSmall = runInference(session, inputName, inferenceBitmap, model, onProgress)
-
-            onProgress(RembgProgress(85, "Building full resolution…"))
-            ensureActive()
-
-            var resultBitmap = mergeToFullResolution(imageBytes, sourceInfo, maskedSmall)
-            if (maskedSmall !== resultBitmap) {
-                maskedSmall.recycle()
-                maskedSmall = null
+        val initSuccess = if (model.isBundled) {
+            NcnnMattingNative.nativeInit(
+                context.assets,
+                "models/u2netp/${model.paramFileName}",
+                "models/u2netp/${model.fileName}",
+                modelType,
+                true,
+                true
+            )
+        } else {
+            if (!repository.isModelReady(model)) {
+                throw IllegalStateException("Model ${model.displayName} is not downloaded or incomplete. Download it in Model Manager first.")
             }
+            val binFile = repository.getModelFile(model)
+            val paramFile = repository.getParamFile(model)
+            NcnnMattingNative.nativeInit(
+                null,
+                paramFile.absolutePath,
+                binFile.absolutePath,
+                modelType,
+                true,
+                false
+            )
+        }
 
-            onProgress(RembgProgress(95, "Refining edges…"))
-            resultBitmap = applyEdgePostProcessing(resultBitmap, tightenEdges, featherEdges, trim)
+        if (!initSuccess) {
+            throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
+        }
+
+        onProgress(RembgProgress(30, "Decoding image…"))
+        ensureActive()
+        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes, inMutable = true)
+
+        val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
+            sourceBitmap
+        } else {
+            sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        }
+
+        var maskBitmap: Bitmap? = null
+        try {
+            onProgress(RembgProgress(55, "Running neural matting…"))
+            ensureActive()
+
+            maskBitmap = NcnnMattingNative.nativeProcess(rgbaBitmap, modelType, true)
+                ?: throw IllegalStateException("Native neural matting returned null mask for ${model.displayName}")
+
+            onProgress(RembgProgress(80, "Building cutout…"))
+            ensureActive()
+
+            var cutoutBitmap = applyFullResolutionColors(sourceBitmap, maskBitmap)
+
+            onProgress(RembgProgress(90, "Refining edges…"))
+            cutoutBitmap = applyEdgePostProcessing(cutoutBitmap, tightenEdges, featherEdges, trim)
 
             onProgress(RembgProgress(100, "Done"))
-            RembgResult(resultBitmap, sourceInfo, model, warnings)
-        } catch (e: Exception) {
-            sessionManager.closeSession(model)
-            if (isDelegateFailure(e)) {
-                val retrySession = sessionManager.recreateSession(model)
-                val retryInput = retrySession.inputNames.iterator().next()
-                try {
-                    maskedSmall = runInference(retrySession, retryInput, inferenceBitmap, model, onProgress)
-                    onProgress(RembgProgress(85, "Building full resolution…"))
-                    var resultBitmap = mergeToFullResolution(imageBytes, sourceInfo, maskedSmall)
-                    if (maskedSmall !== resultBitmap) {
-                        maskedSmall.recycle()
-                        maskedSmall = null
-                    }
-                    resultBitmap = applyEdgePostProcessing(resultBitmap, tightenEdges, featherEdges, trim)
-                    onProgress(RembgProgress(100, "Done"))
-                    return@withContext RembgResult(resultBitmap, sourceInfo, model, warnings)
-                } catch (retryError: Exception) {
-                    throw friendlyProcessingError(model, retryError)
-                }
-            }
-            throw friendlyProcessingError(model, e)
-        } catch (e: OutOfMemoryError) {
-            sessionManager.closeAll()
-            throw IllegalStateException(
-                "Not enough memory for this image with ${model.displayName}. Try a smaller image or another model.",
-                e,
-            )
+            RembgResult(cutoutBitmap, sourceInfo, model, warnings)
         } finally {
-            maskedSmall?.recycle()
-            inferenceBitmap.recycle()
+            maskBitmap?.recycle()
+            if (rgbaBitmap !== sourceBitmap) {
+                rgbaBitmap.recycle()
+            }
+            sourceBitmap.recycle()
         }
     }
 
@@ -132,95 +141,6 @@ class CelBackgroundRemover(
             }
         }
         return resultBitmap
-    }
-
-    private fun loadSession(model: RembgModel): ai.onnxruntime.OrtSession {
-        return try {
-            sessionManager.getSession(model)
-        } catch (e: Throwable) {
-            throw IllegalStateException(
-                "Could not load ${model.displayName}. Check Model Manager to ensure the model is downloaded.",
-                e,
-            )
-        }
-    }
-
-    private fun decodeForInference(imageBytes: ByteArray, model: RembgModel): Bitmap {
-        val target = max(model.inputWidth, model.inputHeight)
-        val decoded = RembgImageUtils.decodeOrientedBitmap(imageBytes, target)
-        val fitted = RembgImageUtils.scaleToFit(decoded, model.inputWidth, model.inputHeight)
-        if (fitted !== decoded) decoded.recycle()
-        return fitted
-    }
-
-    private fun mergeToFullResolution(
-        imageBytes: ByteArray,
-        sourceInfo: RembgSourceInfo,
-        maskedSmall: Bitmap,
-    ): Bitmap {
-        if (maskedSmall.width == sourceInfo.width && maskedSmall.height == sourceInfo.height) {
-            return maskedSmall
-        }
-        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes, inMutable = true)
-        var upscaledAlpha: Bitmap? = null
-        var fullRes: Bitmap? = null
-        try {
-            upscaledAlpha = Bitmap.createScaledBitmap(
-                maskedSmall,
-                sourceBitmap.width,
-                sourceBitmap.height,
-                true,
-            )
-            fullRes = applyFullResolutionColors(sourceBitmap, upscaledAlpha)
-            return fullRes
-        } finally {
-            if (upscaledAlpha != null && upscaledAlpha !== maskedSmall) {
-                upscaledAlpha.recycle()
-            }
-            if (fullRes !== sourceBitmap) {
-                sourceBitmap.recycle()
-            }
-        }
-    }
-
-    private suspend fun runInference(
-        session: ai.onnxruntime.OrtSession,
-        inputName: String,
-        bitmap: Bitmap,
-        model: RembgModel,
-        onProgress: suspend (RembgProgress) -> Unit,
-    ): Bitmap {
-        onProgress(RembgProgress(50, "Running ${model.displayName}…"))
-        val tensorData = ImagePreprocessor.prepareInput(bitmap, model)
-        val inputShape = longArrayOf(1, 3, model.inputHeight.toLong(), model.inputWidth.toLong())
-
-        val (mask, maskW, maskH) = OnnxTensor.createTensor(ortEnv, FloatBuffer.wrap(tensorData), inputShape)
-            .use { inputTensor ->
-                session.run(mapOf(inputName to inputTensor)).use { results ->
-                    MaskPostprocessor.parseMaskFromValue(results[0])
-                }
-            }
-
-        onProgress(RembgProgress(75, "Extracting alpha mask…"))
-        return MaskPostprocessor.applyMask(bitmap, mask, maskW, maskH, model.needsSigmoidOutput)
-    }
-
-    private fun isDelegateFailure(error: Throwable): Boolean {
-        val message = generateSequence(error) { it.cause }
-            .joinToString(" ") { it.message.orEmpty() }
-            .lowercase()
-        return message.contains("aneuralnetworks") ||
-            message.contains("nnapi") ||
-            message.contains("ort_fail")
-    }
-
-    private fun friendlyProcessingError(model: RembgModel, error: Throwable): IllegalStateException {
-        val detail = error.message?.take(120)
-        return IllegalStateException(
-            "Couldn't process this image with ${model.displayName}. " +
-                (detail?.let { " ($it)" } ?: ""),
-            error,
-        )
     }
 
     fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {

@@ -23,9 +23,6 @@
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
 
-# ONNX Runtime (Rembg background removal inference)
--keep class ai.onnxruntime.** { *; }
--dontwarn ai.onnxruntime.**
 
 # ML Kit Barcode Scanning
 -keep class com.google.mlkit.** { *; }

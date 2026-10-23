@@ -1,7 +1,5 @@
 package com.veilframe.app.cv.segmentation.rembg
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OnnxValue
 import android.graphics.Bitmap
 import android.graphics.Rect
 import kotlin.math.exp
@@ -9,9 +7,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * 1:1 Port of Cel-Android MaskPostprocessor:
- * - Parses raw ONNX tensor float buffers
- * - Applies sigmoid activation when required (e.g., BiRefNet Lite)
+ * Cel-Android MaskPostprocessor:
+ * - Applies sigmoid activation when required
  * - Computes normalized alpha mask and merges into full-resolution source with striped memory budgeting
  * - Applies edge tightening (1px alpha erosion to pull cutout inward and strip background bleed/fringe)
  * - Applies edge feathering (1px alpha box blur to soften cutouts)
@@ -20,19 +17,6 @@ import kotlin.math.min
 object MaskPostprocessor {
 
     private const val STRIPE_ROWS = 256
-
-    fun parseMaskFromValue(value: OnnxValue): Triple<FloatArray, Int, Int> {
-        val tensor = value as OnnxTensor
-        val shape = tensor.info.shape
-        val height = shape[shape.size - 2].toInt()
-        val width = shape[shape.size - 1].toInt()
-        val count = width * height
-        val flat = FloatArray(count)
-        val buffer = tensor.floatBuffer
-        buffer.rewind()
-        buffer.get(flat, 0, min(count, buffer.remaining()))
-        return Triple(flat, width, height)
-    }
 
     fun applyMask(
         source: Bitmap,

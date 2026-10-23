@@ -87,7 +87,7 @@ class BackgroundRemoverController(
     private val repository = RembgModelRepository(activity)
     private val downloadManager = RembgModelDownloadManager(activity, repository)
     private val sessionManager = RembgOnnxSessionManager(repository)
-    private val remover = CelBackgroundRemover(sessionManager)
+    private val remover = CelBackgroundRemover(activity, repository, sessionManager)
 
     private companion object {
         const val TAG = "VeilFrame.BgRemover"
@@ -344,43 +344,33 @@ class BackgroundRemoverController(
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
             val readyCount = repository.listReadyModels().size
-            dialogBinding.tvModelCountSummary.text = "$readyCount of 3 AI Models Installed"
+            dialogBinding.tvModelCountSummary.text = "$readyCount of 2 AI Models Ready"
 
-            // Card 1: BiRefNet Lite
-            val isBiRefNetReady = repository.isModelReady(RembgModel.BIREFNET_GENERAL_LITE)
-            if (isBiRefNetReady) {
-                dialogBinding.tvModelStatusBiRefNet.text = "Installed"
-                dialogBinding.tvModelStatusBiRefNet.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModelBiRefNet.visibility = View.GONE
-                dialogBinding.btnDeleteModelBiRefNet.visibility = View.VISIBLE
-                dialogBinding.btnRedownloadModelBiRefNet.visibility = View.VISIBLE
-                dialogBinding.btnSelectModelBiRefNet.visibility = View.VISIBLE
-                if (currentModel == RembgModel.BIREFNET_GENERAL_LITE) {
-                    dialogBinding.btnSelectModelBiRefNet.text = "Active"
-                    dialogBinding.btnSelectModelBiRefNet.isEnabled = false
-                } else {
-                    dialogBinding.btnSelectModelBiRefNet.text = "Select"
-                    dialogBinding.btnSelectModelBiRefNet.isEnabled = true
-                }
+            // Card 1: U^2-Net-P (Bundled)
+            dialogBinding.tvModelStatusBiRefNet.text = "Bundled in App"
+            dialogBinding.tvModelStatusBiRefNet.setTextColor(activity.getColor(R.color.vf_accent_green))
+            dialogBinding.btnDownloadModelBiRefNet.visibility = View.GONE
+            dialogBinding.btnDeleteModelBiRefNet.visibility = View.GONE
+            dialogBinding.btnRedownloadModelBiRefNet.visibility = View.GONE
+            dialogBinding.btnSelectModelBiRefNet.visibility = View.VISIBLE
+            if (currentModel == RembgModel.U2NETP) {
+                dialogBinding.btnSelectModelBiRefNet.text = "Active"
+                dialogBinding.btnSelectModelBiRefNet.isEnabled = false
             } else {
-                dialogBinding.tvModelStatusBiRefNet.text = "Not Installed"
-                dialogBinding.tvModelStatusBiRefNet.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModelBiRefNet.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModelBiRefNet.visibility = View.GONE
-                dialogBinding.btnRedownloadModelBiRefNet.visibility = View.GONE
-                dialogBinding.btnSelectModelBiRefNet.visibility = View.GONE
+                dialogBinding.btnSelectModelBiRefNet.text = "Select"
+                dialogBinding.btnSelectModelBiRefNet.isEnabled = true
             }
 
-            // Card 2: ISNet General
-            val isIsNetReady = repository.isModelReady(RembgModel.ISNET_GENERAL)
-            if (isIsNetReady) {
+            // Card 2: MODNet (HD Matting, Downloadable)
+            val isModNetReady = repository.isModelReady(RembgModel.MODNET)
+            if (isModNetReady) {
                 dialogBinding.tvModelStatusIsNet.text = "Installed"
                 dialogBinding.tvModelStatusIsNet.setTextColor(activity.getColor(R.color.vf_accent_green))
                 dialogBinding.btnDownloadModelIsNet.visibility = View.GONE
                 dialogBinding.btnDeleteModelIsNet.visibility = View.VISIBLE
                 dialogBinding.btnRedownloadModelIsNet.visibility = View.VISIBLE
                 dialogBinding.btnSelectModelIsNet.visibility = View.VISIBLE
-                if (currentModel == RembgModel.ISNET_GENERAL) {
+                if (currentModel == RembgModel.MODNET) {
                     dialogBinding.btnSelectModelIsNet.text = "Active"
                     dialogBinding.btnSelectModelIsNet.isEnabled = false
                 } else {
@@ -396,30 +386,8 @@ class BackgroundRemoverController(
                 dialogBinding.btnSelectModelIsNet.visibility = View.GONE
             }
 
-            // Card 3: U2Net Human
-            val isU2NetReady = repository.isModelReady(RembgModel.U2NET_HUMAN)
-            if (isU2NetReady) {
-                dialogBinding.tvModelStatusU2Net.text = "Installed"
-                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_accent_green))
-                dialogBinding.btnDownloadModelU2Net.visibility = View.GONE
-                dialogBinding.btnDeleteModelU2Net.visibility = View.VISIBLE
-                dialogBinding.btnRedownloadModelU2Net.visibility = View.VISIBLE
-                dialogBinding.btnSelectModelU2Net.visibility = View.VISIBLE
-                if (currentModel == RembgModel.U2NET_HUMAN) {
-                    dialogBinding.btnSelectModelU2Net.text = "Active"
-                    dialogBinding.btnSelectModelU2Net.isEnabled = false
-                } else {
-                    dialogBinding.btnSelectModelU2Net.text = "Select"
-                    dialogBinding.btnSelectModelU2Net.isEnabled = true
-                }
-            } else {
-                dialogBinding.tvModelStatusU2Net.text = "Not Installed"
-                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_text_muted))
-                dialogBinding.btnDownloadModelU2Net.visibility = View.VISIBLE
-                dialogBinding.btnDeleteModelU2Net.visibility = View.GONE
-                dialogBinding.btnRedownloadModelU2Net.visibility = View.GONE
-                dialogBinding.btnSelectModelU2Net.visibility = View.GONE
-            }
+            // Card 3: Hidden
+            dialogBinding.cardModelU2Net.visibility = View.GONE
         }
 
         fun download(model: RembgModel, progressView: com.google.android.material.progressindicator.LinearProgressIndicator, triggerButton: View) {
@@ -464,26 +432,9 @@ class BackgroundRemoverController(
             }
         }
 
-        // BiRefNet Lite listeners
-        dialogBinding.btnDownloadModelBiRefNet.setOnClickListener {
-            download(RembgModel.BIREFNET_GENERAL_LITE, dialogBinding.progressModelBiRefNet, dialogBinding.btnDownloadModelBiRefNet)
-        }
-        dialogBinding.btnRedownloadModelBiRefNet.setOnClickListener {
-            repository.deleteModel(RembgModel.BIREFNET_GENERAL_LITE)
-            sessionManager.closeSession(RembgModel.BIREFNET_GENERAL_LITE)
-            download(RembgModel.BIREFNET_GENERAL_LITE, dialogBinding.progressModelBiRefNet, dialogBinding.btnRedownloadModelBiRefNet)
-        }
-        dialogBinding.btnDeleteModelBiRefNet.setOnClickListener {
-            repository.deleteModel(RembgModel.BIREFNET_GENERAL_LITE)
-            sessionManager.closeSession(RembgModel.BIREFNET_GENERAL_LITE)
-            if (currentModel == RembgModel.BIREFNET_GENERAL_LITE) {
-                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
-            }
-            refreshCards()
-            updateActiveModelBadge()
-        }
+        // U2Net-P (Card 1) listeners
         dialogBinding.btnSelectModelBiRefNet.setOnClickListener {
-            currentModel = RembgModel.BIREFNET_GENERAL_LITE
+            currentModel = RembgModel.U2NETP
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -493,55 +444,26 @@ class BackgroundRemoverController(
             updateUi()
         }
 
-        // ISNet General listeners
+        // MODNet (Card 2) listeners
         dialogBinding.btnDownloadModelIsNet.setOnClickListener {
-            download(RembgModel.ISNET_GENERAL, dialogBinding.progressModelIsNet, dialogBinding.btnDownloadModelIsNet)
+            download(RembgModel.MODNET, dialogBinding.progressModelIsNet, dialogBinding.btnDownloadModelIsNet)
         }
         dialogBinding.btnRedownloadModelIsNet.setOnClickListener {
-            repository.deleteModel(RembgModel.ISNET_GENERAL)
-            sessionManager.closeSession(RembgModel.ISNET_GENERAL)
-            download(RembgModel.ISNET_GENERAL, dialogBinding.progressModelIsNet, dialogBinding.btnRedownloadModelIsNet)
+            repository.deleteModel(RembgModel.MODNET)
+            sessionManager.closeSession(RembgModel.MODNET)
+            download(RembgModel.MODNET, dialogBinding.progressModelIsNet, dialogBinding.btnRedownloadModelIsNet)
         }
         dialogBinding.btnDeleteModelIsNet.setOnClickListener {
-            repository.deleteModel(RembgModel.ISNET_GENERAL)
-            sessionManager.closeSession(RembgModel.ISNET_GENERAL)
-            if (currentModel == RembgModel.ISNET_GENERAL) {
-                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
+            repository.deleteModel(RembgModel.MODNET)
+            sessionManager.closeSession(RembgModel.MODNET)
+            if (currentModel == RembgModel.MODNET) {
+                currentModel = RembgModel.U2NETP
             }
             refreshCards()
             updateActiveModelBadge()
         }
         dialogBinding.btnSelectModelIsNet.setOnClickListener {
-            currentModel = RembgModel.ISNET_GENERAL
-            refreshCards()
-            updateActiveModelBadge()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (resultBitmap != null) {
-                resultBitmap = null
-            }
-            updateUi()
-        }
-
-        // U2Net Human listeners
-        dialogBinding.btnDownloadModelU2Net.setOnClickListener {
-            download(RembgModel.U2NET_HUMAN, dialogBinding.progressModelU2Net, dialogBinding.btnDownloadModelU2Net)
-        }
-        dialogBinding.btnRedownloadModelU2Net.setOnClickListener {
-            repository.deleteModel(RembgModel.U2NET_HUMAN)
-            sessionManager.closeSession(RembgModel.U2NET_HUMAN)
-            download(RembgModel.U2NET_HUMAN, dialogBinding.progressModelU2Net, dialogBinding.btnRedownloadModelU2Net)
-        }
-        dialogBinding.btnDeleteModelU2Net.setOnClickListener {
-            repository.deleteModel(RembgModel.U2NET_HUMAN)
-            sessionManager.closeSession(RembgModel.U2NET_HUMAN)
-            if (currentModel == RembgModel.U2NET_HUMAN) {
-                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
-            }
-            refreshCards()
-            updateActiveModelBadge()
-        }
-        dialogBinding.btnSelectModelU2Net.setOnClickListener {
-            currentModel = RembgModel.U2NET_HUMAN
+            currentModel = RembgModel.MODNET
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)

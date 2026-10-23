@@ -210,42 +210,106 @@ class MotionLabController(
                     captureFps ?: 30f
                 }
 
-                setStatus("Synthesising motion frames (${if (qualityMode) "Farnebäck" else "DIS"})…")
-                val estimator = com.veilframe.app.cv.motion.FlowEstimator(
-                    algorithm = if (qualityMode) {
-                        com.veilframe.app.cv.motion.FlowEstimator.Algorithm.FARNEBACK
+                val rifeManager = com.veilframe.app.media.rife.RifeModelManager(activity)
+                var useRife = false
+                try {
+                    if (!rifeManager.isModelReady()) {
+                        setStatus("Downloading RIFE AI model on first run…")
+                        val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
+                            setStatus(msg)
+                            setProgress(pct, 100)
+                        }
+                        if (dlResult.isSuccess) {
+                            useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
+                                rifeManager.modelDir.absolutePath,
+                                useGpu = true
+                            )
+                        }
                     } else {
-                        com.veilframe.app.cv.motion.FlowEstimator.Algorithm.DIS
+                        useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
+                            rifeManager.modelDir.absolutePath,
+                            useGpu = true
+                        )
                     }
-                )
-                val synthOptions = com.veilframe.app.cv.motion.FrameSynthesizer.Options(estimator = estimator)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "RIFE initialization fell back to optical flow: ${t.message}")
+                    useRife = false
+                }
+
+                setStatus("Synthesising motion frames (${if (useRife) "RIFE v4 Neural AI" else if (qualityMode) "Farnebäck" else "DIS"})…")
+                val estimator = if (!useRife) {
+                    com.veilframe.app.cv.motion.FlowEstimator(
+                        algorithm = if (qualityMode) {
+                            com.veilframe.app.cv.motion.FlowEstimator.Algorithm.FARNEBACK
+                        } else {
+                            com.veilframe.app.cv.motion.FlowEstimator.Algorithm.DIS
+                        }
+                    )
+                } else null
+                val synthOptions = if (estimator != null) com.veilframe.app.cv.motion.FrameSynthesizer.Options(estimator = estimator) else null
 
                 var outIdx = 0
                 var prev = Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR)
                 if (prev.empty()) throw IllegalStateException("Frame 0 unreadable")
                 Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
 
-                for (i in 1 until frames.size) {
-                    if (cancelRequested) { prev.release(); throw InterruptedException("Cancelled") }
-                    val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
-                    if (cur.empty()) { prev.release(); throw IllegalStateException("Frame $i unreadable") }
-                    if (cur.size() != prev.size()) {
-                        prev.release(); cur.release()
-                        throw IllegalStateException("Frame size changed mid-video — cannot interpolate mixed resolutions")
+                try {
+                    for (i in 1 until frames.size) {
+                        if (cancelRequested) { prev.release(); throw InterruptedException("Cancelled") }
+                        val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
+                        if (cur.empty()) { prev.release(); throw IllegalStateException("Frame $i unreadable") }
+                        if (cur.size() != prev.size()) {
+                            prev.release(); cur.release()
+                            throw IllegalStateException("Frame size changed mid-video — cannot interpolate mixed resolutions")
+                        }
+
+                        var bmp0: android.graphics.Bitmap? = null
+                        var bmp1: android.graphics.Bitmap? = null
+                        if (useRife) {
+                            bmp0 = android.graphics.BitmapFactory.decodeFile(frames[i - 1].absolutePath)
+                            bmp1 = android.graphics.BitmapFactory.decodeFile(frames[i].absolutePath)
+                        }
+
+                        try {
+                            for (k in 1 until multiplier) {
+                                val t = k.toDouble() / multiplier
+                                var interpolatedSuccessfully = false
+                                if (useRife && bmp0 != null && bmp1 != null) {
+                                    val synthBmp = com.veilframe.app.media.rife.RifeNcnnNative.nativeInterpolate(
+                                        bmp0, bmp1, t.toFloat()
+                                    )
+                                    if (synthBmp != null) {
+                                        val outFile = File(outDir, "o_%05d.png".format(outIdx++))
+                                        outFile.outputStream().use { fos ->
+                                            synthBmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos)
+                                        }
+                                        synthBmp.recycle()
+                                        interpolatedSuccessfully = true
+                                    }
+                                }
+
+                                if (!interpolatedSuccessfully && synthOptions != null) {
+                                    val result = com.veilframe.app.cv.motion.FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
+                                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
+                                    result.frame.release()
+                                    result.confidence.release()
+                                    result.fallbackMask.release()
+                                }
+                                if (cancelRequested) { prev.release(); cur.release(); throw InterruptedException("Cancelled") }
+                            }
+                        } finally {
+                            bmp0?.recycle()
+                            bmp1?.recycle()
+                        }
+                        prev.release()
+                        prev = cur
+                        Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
+                        setProgress(i, frames.size - 1)
                     }
-                    for (k in 1 until multiplier) {
-                        val t = k.toDouble() / multiplier
-                        val result = com.veilframe.app.cv.motion.FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
-                        Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
-                        result.frame.release()
-                        result.confidence.release()
-                        result.fallbackMask.release()
-                        if (cancelRequested) { prev.release(); cur.release(); throw InterruptedException("Cancelled") }
+                } finally {
+                    if (useRife) {
+                        com.veilframe.app.media.rife.RifeNcnnNative.nativeRelease()
                     }
-                    prev.release()
-                    prev = cur
-                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
-                    setProgress(i, frames.size - 1)
                 }
                 prev.release()
 

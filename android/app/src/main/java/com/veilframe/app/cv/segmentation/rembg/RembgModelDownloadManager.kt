@@ -87,7 +87,7 @@ class RembgModelDownloadManager(
         model: RembgModel,
         listener: DownloadListener? = null,
     ): Result<File> = withContext(Dispatchers.IO) {
-        if (repository.isModelReady(model)) {
+        if (model.isBundled || repository.isModelReady(model)) {
             val file = repository.getModelFile(model)
             listener?.onSuccess(model, file)
             return@withContext Result.success(file)
@@ -285,6 +285,11 @@ class RembgModelDownloadManager(
                 tempFinal.delete()
             }
 
+            if (model.paramDownloadUrl.isNotEmpty()) {
+                val paramDest = repository.getParamFile(model)
+                downloadSimpleFile(model.paramDownloadUrl, paramDest)
+            }
+
             _state.value = _state.value.copy(
                 isDownloading = false,
                 bytesDownloaded = totalBytes,
@@ -316,6 +321,28 @@ class RembgModelDownloadManager(
                 activeConnection?.disconnect()
             } catch (_: Exception) {}
             activeConnection = null
+        }
+    }
+
+    private fun downloadSimpleFile(urlStr: String, destFile: File) {
+        if (!isAllowedModelUrl(urlStr)) return
+        val temp = File(destFile.parentFile, "${destFile.name}.tmp")
+        try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = CONNECT_TIMEOUT_MS
+            conn.readTimeout = READ_TIMEOUT_MS
+            conn.instanceFollowRedirects = true
+            conn.inputStream.use { input ->
+                FileOutputStream(temp).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (destFile.exists()) destFile.delete()
+            temp.renameTo(destFile)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to download simple file $urlStr: ${e.message}")
+            if (temp.exists()) temp.delete()
         }
     }
 

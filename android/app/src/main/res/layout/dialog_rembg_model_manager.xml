@@ -86,7 +86,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- SECTION HEADER: AI ONNX MODELS -->
+            <!-- SECTION HEADER: AI NEURAL MODELS -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -135,7 +135,7 @@
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="BiRefNet Lite"
+                                    android:text="U^2-Net-P"
                                     android:textColor="@color/vf_text_primary"
                                     android:textSize="14sp"
                                     android:textStyle="bold" />
@@ -149,7 +149,7 @@
                                     android:paddingEnd="6dp"
                                     android:paddingTop="2dp"
                                     android:paddingBottom="2dp"
-                                    android:text="Recommended"
+                                    android:text="Bundled"
                                     android:textColor="@color/vf_accent_green"
                                     android:textSize="10sp"
                                     android:textStyle="bold" />
@@ -159,7 +159,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="~197 MB • SOTA high-resolution matting"
+                                android:text="2.3 MB • Instant offline portrait &amp; object matting"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -274,7 +274,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="ISNet General"
+                                android:text="MODNet (HD Matting)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -283,7 +283,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="~175 MB • Great for people, hair, and fine edges"
+                                android:text="~13.5 MB • High-definition human portrait &amp; fine-hair matting"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -358,7 +358,7 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Download (~175 MB)"
+                            android:text="Download (~13.5 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconTint="@color/vf_primary" />
@@ -366,12 +366,13 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- MODEL 3: U2Net Human -->
+            <!-- MODEL 3: (Hidden) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardModelU2Net"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
+                android:visibility="gone"
                 app:cardBackgroundColor="@color/vf_surface"
                 app:cardCornerRadius="12dp"
                 app:strokeColor="@color/vf_surface_stroke"
