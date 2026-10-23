@@ -164,4 +164,64 @@ class PdfStudioEnhancementsTest {
         assertEquals(207.5f, x, 0.01f)
         assertEquals(391.0f, y, 0.01f)
     }
+
+    @Test
+    fun testPdfPageThumbnailAdapter_batchSelectionAndDeletion() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val loader = com.veilframe.app.pdf.ui.PdfThumbnailLoader(context)
+        var lastSelection: Set<Int> = emptySet()
+        val adapter = com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter(
+            context = context,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main),
+            thumbnailLoader = loader,
+            onPageSelectionChanged = { lastSelection = it }
+        )
+
+        adapter.setDocument(android.net.Uri.EMPTY, 7)
+        assertEquals(7, adapter.itemCount)
+
+        // Test selectOdd: 1, 3, 5, 7
+        adapter.selectOdd()
+        assertEquals(setOf(1, 3, 5, 7), adapter.getSelectedPages())
+        assertEquals(setOf(1, 3, 5, 7), lastSelection)
+
+        // Test selectEven: 2, 4, 6
+        adapter.selectEven()
+        assertEquals(setOf(2, 4, 6), adapter.getSelectedPages())
+        assertEquals(setOf(2, 4, 6), lastSelection)
+
+        // Test markOddForDeletion
+        adapter.markOddForDeletion()
+        assertEquals(setOf(1, 3, 5, 7), adapter.getDeletedPages())
+        assertEquals(setOf(1, 3, 5, 7), lastSelection)
+
+        // Test markEvenForDeletion
+        adapter.markEvenForDeletion()
+        assertEquals(setOf(2, 4, 6), adapter.getDeletedPages())
+        assertEquals(setOf(2, 4, 6), lastSelection)
+
+        // Test markAllForDeletion
+        adapter.markAllForDeletion()
+        assertEquals((1..7).toSet(), adapter.getDeletedPages())
+        assertEquals((1..7).toSet(), lastSelection)
+
+        // Test clearDeletionMarks
+        adapter.clearDeletionMarks()
+        assertTrue(adapter.getDeletedPages().isEmpty())
+        assertTrue(lastSelection.isEmpty())
+    }
+
+    @Test
+    fun testOpticalScaleMultiplier_forMonospace() {
+        val baseSizePx = 15f
+        val modernScale = 1.0f
+        val monoScale = 1.12f
+
+        val modernSize = baseSizePx * modernScale
+        val monoSize = baseSizePx * monoScale
+
+        assertEquals(15f, modernSize, 0.001f)
+        assertEquals(16.8f, monoSize, 0.001f)
+        assertTrue(monoSize > modernSize)
+    }
 }

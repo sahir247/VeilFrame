@@ -18,7 +18,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.veilframe.app.pdf.ui.PdfMergeFileListAdapter
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ItemPdfMergeFileBinding
@@ -115,8 +117,10 @@ class PdfQuickToolController(
     private var splitThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var rotateThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var mergePageAdapter: PdfMergePageAdapter? = null
+    private var mergeFileListAdapter: com.veilframe.app.pdf.ui.PdfMergeFileListAdapter? = null
     private var rotateItemTouchHelper: ItemTouchHelper? = null
     private var mergeItemTouchHelper: ItemTouchHelper? = null
+    private var mergeFilesItemTouchHelper: ItemTouchHelper? = null
     private var selectedSignColor: Int = Color.BLACK
 
     override fun hasPickedMedia(): Boolean = selectedUris.isNotEmpty()
@@ -165,11 +169,18 @@ class PdfQuickToolController(
                 binding.tvQuickToolPickPrompt.text = "Select PDFs to Merge"
                 binding.tvQuickToolPickSubtitle.text = "Choose 2 or more documents to combine"
                 binding.containerMultiFileList.visibility = View.VISIBLE
+                binding.chipGroupMergeMode.visibility = View.VISIBLE
             }
             QuickMode.IMAGE_TO_PDF -> {
                 binding.tvQuickToolPickPrompt.text = "Select Images"
                 binding.tvQuickToolPickSubtitle.text = "Choose images to compile into a PDF"
                 binding.containerMultiFileList.visibility = View.VISIBLE
+                binding.chipGroupMergeMode.visibility = View.GONE
+                binding.layoutMergePageInterleave.visibility = View.GONE
+                binding.rvMergeFiles.visibility = View.VISIBLE
+                binding.layoutMergeArrangeBar.visibility = View.VISIBLE
+                binding.tvMergeDragTip.visibility = View.VISIBLE
+                binding.btnAddMoreFiles.visibility = View.VISIBLE
             }
             QuickMode.SPLIT -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Split"
@@ -191,6 +202,8 @@ class PdfQuickToolController(
                 binding.chipGroupRotateAngle.visibility = View.VISIBLE
                 binding.tilRotatePages.visibility = View.VISIBLE
                 binding.layoutReorderControls.visibility = View.GONE
+                binding.layoutRotateFastButtons.visibility = View.VISIBLE
+                binding.layoutDeleteFastButtons.visibility = View.GONE
                 binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "PAGES TO ROTATE (SELECT SPECIFIC OR ALL)"
                 rotateThumbnailAdapter?.isDeleteMode = false
@@ -203,6 +216,8 @@ class PdfQuickToolController(
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
                 binding.layoutReorderControls.visibility = View.GONE
+                binding.layoutRotateFastButtons.visibility = View.GONE
+                binding.layoutDeleteFastButtons.visibility = View.VISIBLE
                 binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "TAP PAGES TO MARK FOR DELETION (RED CROSS)"
                 rotateThumbnailAdapter?.isDeleteMode = true
@@ -215,6 +230,8 @@ class PdfQuickToolController(
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
                 binding.layoutReorderControls.visibility = View.VISIBLE
+                binding.layoutRotateFastButtons.visibility = View.GONE
+                binding.layoutDeleteFastButtons.visibility = View.GONE
                 binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "PAGES SEQUENCE (DRAG TO ARRANGE)"
                 rotateThumbnailAdapter?.isDeleteMode = false
@@ -308,6 +325,15 @@ class PdfQuickToolController(
 
         binding.btnSplitSelectAll.setOnClickListener {
             splitThumbnailAdapter?.selectAll()
+        }
+        binding.btnSplitOdd.setOnClickListener {
+            splitThumbnailAdapter?.selectOdd()
+        }
+        binding.btnSplitEven.setOnClickListener {
+            splitThumbnailAdapter?.selectEven()
+        }
+        binding.btnSplitInvert.setOnClickListener {
+            splitThumbnailAdapter?.invertSelection()
         }
         binding.btnSplitDeselectAll.setOnClickListener {
             splitThumbnailAdapter?.deselectAll()
@@ -449,9 +475,123 @@ class PdfQuickToolController(
                 rotateThumbnailAdapter?.setPageOrder(evenOrder)
             }
         }
+
+        // Delete mode quick selection buttons
+        binding.btnDeleteOdd.setOnClickListener {
+            rotateThumbnailAdapter?.markOddForDeletion()
+        }
+        binding.btnDeleteEven.setOnClickListener {
+            rotateThumbnailAdapter?.markEvenForDeletion()
+        }
+        binding.btnDeleteAll.setOnClickListener {
+            rotateThumbnailAdapter?.markAllForDeletion()
+        }
+        binding.btnDeleteClear.setOnClickListener {
+            rotateThumbnailAdapter?.clearDeletionMarks()
+        }
+
+        // Rotate mode quick selection buttons
+        binding.btnRotateSelectAll.setOnClickListener {
+            rotateThumbnailAdapter?.selectAll()
+        }
+        binding.btnRotateOdd.setOnClickListener {
+            rotateThumbnailAdapter?.selectOdd()
+        }
+        binding.btnRotateEven.setOnClickListener {
+            rotateThumbnailAdapter?.selectEven()
+        }
+        binding.btnRotateClear.setOnClickListener {
+            rotateThumbnailAdapter?.deselectAll()
+        }
     }
 
     private fun setupMergeControls() {
+        mergeFileListAdapter = PdfMergeFileListAdapter(
+            context = activity,
+            scope = scope,
+            thumbnailLoader = thumbnailLoader
+        ).apply {
+            onOrderChanged = { newOrder ->
+                selectedUris.clear()
+                selectedUris.addAll(newOrder)
+                binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
+                if (selectedUris.isEmpty()) {
+                    binding.containerQuickToolEmptyState.visibility = View.VISIBLE
+                    binding.btnPdfQuickToolReset.visibility = View.GONE
+                }
+            }
+            onItemRemoved = { _ ->
+                if (selectedUris.isEmpty()) {
+                    binding.containerQuickToolEmptyState.visibility = View.VISIBLE
+                    binding.btnPdfQuickToolReset.visibility = View.GONE
+                }
+            }
+            onStartDrag = { holder ->
+                mergeFilesItemTouchHelper?.startDrag(holder)
+            }
+        }
+        binding.rvMergeFiles.layoutManager = LinearLayoutManager(activity)
+        binding.rvMergeFiles.adapter = mergeFileListAdapter
+
+        val filesCallback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN,
+            0
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                mergeFileListAdapter?.moveItem(from, to)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+            override fun isLongPressDragEnabled(): Boolean = true
+
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(viewHolder, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+                    binding.rvMergeFiles.parent?.requestDisallowInterceptTouchEvent(true)
+                    viewHolder.itemView.animate()
+                        .scaleX(1.02f)
+                        .scaleY(1.02f)
+                        .alpha(0.92f)
+                        .setDuration(120)
+                        .start()
+                    viewHolder.itemView.elevation = 16f
+                }
+            }
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                viewHolder.itemView.animate()
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .alpha(1.0f)
+                    .setDuration(120)
+                    .start()
+                viewHolder.itemView.elevation = 0f
+            }
+        }
+        mergeFilesItemTouchHelper = ItemTouchHelper(filesCallback).also {
+            it.attachToRecyclerView(binding.rvMergeFiles)
+        }
+
+        binding.chipMergeReverse.setOnClickListener {
+            mergeFileListAdapter?.reverseOrder()
+        }
+        binding.chipMergeSortName.setOnClickListener {
+            mergeFileListAdapter?.sortByName()
+        }
+        binding.chipMergeClear.setOnClickListener {
+            selectedUris.clear()
+            mergeFileListAdapter?.clearAll()
+            binding.containerQuickToolEmptyState.visibility = View.VISIBLE
+            binding.btnPdfQuickToolReset.visibility = View.GONE
+        }
+
         mergePageAdapter = PdfMergePageAdapter(
             context = activity,
             scope = scope,
@@ -490,7 +630,9 @@ class PdfQuickToolController(
 
         binding.chipGroupMergeMode.setOnCheckedStateChangeListener { _, checkedIds ->
             val isPages = checkedIds.contains(R.id.chipMergeModePages)
-            binding.layoutFilesItems.visibility = if (isPages) View.GONE else View.VISIBLE
+            binding.rvMergeFiles.visibility = if (isPages) View.GONE else View.VISIBLE
+            binding.layoutMergeArrangeBar.visibility = if (isPages) View.GONE else View.VISIBLE
+            binding.tvMergeDragTip.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.btnAddMoreFiles.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.layoutMergePageInterleave.visibility = if (isPages) View.VISIBLE else View.GONE
             if (isPages) {
@@ -633,75 +775,8 @@ class PdfQuickToolController(
     }
 
     private fun updateMultiFileList() {
-        binding.layoutFilesItems.removeAllViews()
         binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
-
-        val inflater = LayoutInflater.from(activity)
-
-        for (idx in selectedUris.indices) {
-            val uri = selectedUris[idx]
-            val name = queryDocumentName(uri)
-
-            val itemBinding = ItemPdfMergeFileBinding.inflate(inflater, binding.layoutFilesItems, false)
-
-            itemBinding.tvMergeSequence.text = "#${idx + 1}"
-            itemBinding.tvMergeFileName.text = name
-            itemBinding.tvMergeFileMeta.text = "Loading preview..."
-
-            // Load first page thumbnail
-            itemBinding.pbMergeThumb.visibility = View.VISIBLE
-            scope.launch(Dispatchers.IO) {
-                val bmp = thumbnailLoader.loadPageThumbnail(uri, 0, 160)
-                var pageCount = 1
-                try {
-                    activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        PDDocument.load(stream).use { pageCount = it.numberOfPages }
-                    }
-                } catch (_: Exception) {}
-
-                withContext(Dispatchers.Main) {
-                    itemBinding.pbMergeThumb.visibility = View.GONE
-                    if (bmp != null) {
-                        itemBinding.ivMergeThumb.setImageBitmap(bmp)
-                    } else {
-                        itemBinding.ivMergeThumb.setImageResource(R.drawable.ic_pdf_file)
-                    }
-                    itemBinding.tvMergeFileMeta.text = "$pageCount ${if (pageCount == 1) "page" else "pages"}"
-                }
-            }
-
-            // Move Up button
-            itemBinding.btnMergeMoveUp.isEnabled = (idx > 0)
-            itemBinding.btnMergeMoveUp.alpha = if (idx > 0) 1.0f else 0.35f
-            itemBinding.btnMergeMoveUp.setOnClickListener {
-                if (idx > 0) {
-                    Collections.swap(selectedUris, idx, idx - 1)
-                    updateMultiFileList()
-                }
-            }
-
-            // Move Down button
-            itemBinding.btnMergeMoveDown.isEnabled = (idx < selectedUris.size - 1)
-            itemBinding.btnMergeMoveDown.alpha = if (idx < selectedUris.size - 1) 1.0f else 0.35f
-            itemBinding.btnMergeMoveDown.setOnClickListener {
-                if (idx < selectedUris.size - 1) {
-                    Collections.swap(selectedUris, idx, idx + 1)
-                    updateMultiFileList()
-                }
-            }
-
-            // Remove button
-            itemBinding.btnMergeRemove.setOnClickListener {
-                selectedUris.removeAt(idx)
-                updateMultiFileList()
-                if (selectedUris.isEmpty()) {
-                    binding.containerQuickToolEmptyState.visibility = View.VISIBLE
-                    binding.btnPdfQuickToolReset.visibility = View.GONE
-                }
-            }
-
-            binding.layoutFilesItems.addView(itemBinding.root)
-        }
+        mergeFileListAdapter?.setUris(selectedUris)
         if (binding.chipMergeModePages.isChecked) {
             refreshMergePageItems()
         }
@@ -1426,7 +1501,7 @@ class PdfQuickToolController(
         binding.containerQuickToolDocInfo.visibility = View.GONE
         binding.containerQuickToolEmptyState.visibility = View.VISIBLE
         binding.btnPdfQuickToolReset.visibility = View.GONE
-        binding.layoutFilesItems.removeAllViews()
+        mergeFileListAdapter?.clearAll()
         binding.viewSignaturePad.clear()
         binding.ivSignMiniaturePreview.setImageDrawable(null)
         binding.ivSignMiniaturePreview.visibility = View.GONE

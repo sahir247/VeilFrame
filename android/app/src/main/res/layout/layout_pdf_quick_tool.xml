@@ -162,22 +162,67 @@
                     android:visibility="gone"
                     android:layout_marginBottom="16dp">
 
-                    <TextView
-                        android:id="@+id/tvMultiFileCount"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="SELECTED FILES (0)"
-                        android:textColor="@color/vf_secondary"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.08"
-                        android:layout_marginBottom="6dp" />
-
                     <LinearLayout
-                        android:id="@+id/layoutFilesItems"
+                        android:id="@+id/layoutMergeArrangeBar"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="6dp">
+
+                        <TextView
+                            android:id="@+id/tvMultiFileCount"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="SELECTED FILES (0)"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMergeReverse"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="Reverse"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="4dp" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMergeSortName"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="A-Z"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="4dp" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMergeClear"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="Clear"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvMergeDragTip"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Touch &amp; drag the handle ⠿ or hold any card to arrange order."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="8dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvMergeFiles"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false"
+                        tools:listitem="@layout/item_pdf_merge_file" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAddMoreFiles"
@@ -399,20 +444,52 @@
                             android:layout_width="0dp"
                             android:layout_height="36dp"
                             android:layout_weight="1"
-                            android:layout_marginEnd="4dp"
-                            android:textSize="11sp"
-                            android:text="Select All"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="All"
                             app:cornerRadius="8dp" />
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnSplitDeselectAll"
+                            android:id="@+id/btnSplitOdd"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
                             android:layout_height="36dp"
                             android:layout_weight="1"
-                            android:layout_marginStart="4dp"
-                            android:textSize="11sp"
-                            android:text="Clear All"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Odd"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSplitEven"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Even"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSplitInvert"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Invert"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSplitDeselectAll"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:textSize="10sp"
+                            android:text="Clear"
                             app:cornerRadius="8dp" />
                     </LinearLayout>
 
@@ -822,6 +899,112 @@
                                 android:layout_height="wrap_content"
                                 android:text="Even (2,4,6...)" />
                         </com.google.android.material.chip.ChipGroup>
+                    </LinearLayout>
+
+                    <!-- Fast Selection Buttons for Delete Pages Mode -->
+                    <LinearLayout
+                        android:id="@+id/layoutDeleteFastButtons"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDeleteOdd"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Mark Odd"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDeleteEven"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Mark Even"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDeleteAll"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Mark All"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDeleteClear"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:textSize="10sp"
+                            android:text="Clear"
+                            app:cornerRadius="8dp" />
+                    </LinearLayout>
+
+                    <!-- Fast Selection Buttons for Rotate Pages Mode -->
+                    <LinearLayout
+                        android:id="@+id/layoutRotateFastButtons"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRotateSelectAll"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="All"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRotateOdd"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Odd"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRotateEven"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="3dp"
+                            android:textSize="10sp"
+                            android:text="Even"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRotateClear"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:textSize="10sp"
+                            android:text="Clear"
+                            app:cornerRadius="8dp" />
                     </LinearLayout>
 
                     <androidx.recyclerview.widget.RecyclerView

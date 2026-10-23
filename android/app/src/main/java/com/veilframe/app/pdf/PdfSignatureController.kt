@@ -91,6 +91,7 @@ class PdfSignatureController(
         binding.cardPdfSignaturePick.visibility = View.VISIBLE
         binding.btnPdfSignatureReset.visibility = View.GONE
         binding.progressPdfPreview.visibility = View.GONE
+        binding.badgePreviewVerifiedTick.visibility = View.GONE
     }
 
     fun init() {
@@ -249,6 +250,7 @@ class PdfSignatureController(
             binding.tvPdfStatusTitle.text = "No Digital Signatures Found"
             binding.tvPdfStatusSubtitle.text = "This document does not contain any cryptographic PDF signature dictionaries."
             binding.cardUntrustedPrompt.visibility = View.GONE
+            binding.badgePreviewVerifiedTick.visibility = View.GONE
             binding.btnSaveValidatedPdf.isEnabled = false
             return
         }
@@ -262,6 +264,7 @@ class PdfSignatureController(
             binding.tvPdfStatusTitle.text = "Signature Invalid / Altered"
             binding.tvPdfStatusSubtitle.text = "Document integrity verification failed. Signature byte range or CMS hash mismatch."
             binding.cardUntrustedPrompt.visibility = View.GONE
+            binding.badgePreviewVerifiedTick.visibility = View.GONE
         } else if (report.isFullyVerified) {
             binding.cardPdfStatusBanner.setCardBackgroundColor(activity.getColor(R.color.vf_surface))
             binding.ivPdfStatusIcon.setImageResource(R.drawable.ic_signature_valid)
@@ -275,6 +278,14 @@ class PdfSignatureController(
             binding.tvPdfStatusTitle.text = "Signature Valid"
             binding.tvPdfStatusSubtitle.text = "All digital signatures are cryptographically valid and chained to a trusted root authority."
             binding.cardUntrustedPrompt.visibility = View.GONE
+
+            // Visible tick in preview (authentic Adobe DC green checkmark badge)
+            binding.badgePreviewVerifiedTick.visibility = View.VISIBLE
+            val badgeColor = 0xFF008736.toInt()
+            binding.badgePreviewVerifiedTick.backgroundTintList = android.content.res.ColorStateList.valueOf(badgeColor)
+            binding.ivPreviewVerifiedIcon.imageTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+            binding.tvPreviewVerifiedLabel.setTextColor(0xFFFFFFFF.toInt())
+            binding.tvPreviewVerifiedLabel.text = if (report.signatures.any { it.isPinned }) "Signature Valid • Pinned" else "Signature Valid"
         } else if (report.untrustedSigners.isNotEmpty()) {
             binding.cardPdfStatusBanner.setCardBackgroundColor(activity.getColor(R.color.vf_surface))
             binding.ivPdfStatusIcon.setImageResource(R.drawable.ic_signature_valid)
@@ -282,6 +293,7 @@ class PdfSignatureController(
             binding.tvPdfStatusTitle.text = "Signature Valid (Untrusted Signer)"
             binding.tvPdfStatusSubtitle.text = "Signatures are mathematically valid, but the certificate chain does not anchor to a trusted root."
             binding.cardUntrustedPrompt.visibility = View.VISIBLE
+            binding.badgePreviewVerifiedTick.visibility = View.GONE
         }
     }
 

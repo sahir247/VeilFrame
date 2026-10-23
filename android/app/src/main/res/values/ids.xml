@@ -10,4 +10,6 @@
     <item name="vf_tag_progress_anim" type="id" />
     <!-- View tag key: pending staggerRise Runnable attached to child view -->
     <item name="vf_tag_stagger_runnable" type="id" />
+    <!-- View tag key: original unscaled text size in px for optical typography scaling -->
+    <item name="vf_tag_base_text_size" type="id" />
 </resources>

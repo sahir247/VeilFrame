@@ -359,12 +359,12 @@
                 </FrameLayout>
             </LinearLayout>
 
-            <!-- Section 4: Typography (2x2 Visual Cards) -->
+            <!-- Section 4: Font (2x2 Visual Cards) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="Typography style"
+                android:text="Font"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
@@ -396,24 +396,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:gravity="center"
+                        android:paddingVertical="14dp"
+                        android:paddingHorizontal="12dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="System"
                             android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="sans-serif" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Android OS Default"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -435,24 +429,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:gravity="center"
+                        android:paddingVertical="14dp"
+                        android:paddingHorizontal="12dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Modern"
                             android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_sans" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Plus Jakarta Sans"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -474,24 +462,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:gravity="center"
+                        android:paddingVertical="14dp"
+                        android:paddingHorizontal="12dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Mono"
                             android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_mono" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Terminal Monospace"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -513,24 +495,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:gravity="center"
+                        android:paddingVertical="14dp"
+                        android:paddingHorizontal="12dp">
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Serif"
                             android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_serif" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Editorial Serif"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </GridLayout>
@@ -550,7 +526,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="Auto-prunes oldest temporary cache when storage exceeds quota. AI and CV models are strictly preserved."
+                android:text="Auto-prunes cache above quota. AI models preserved."
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 

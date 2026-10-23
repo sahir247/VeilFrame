@@ -206,6 +206,40 @@
                                     android:layout_gravity="center"
                                     android:indeterminate="true"
                                     android:visibility="gone" />
+
+                                <!-- Visible Signature Verified Tick in Preview -->
+                                <LinearLayout
+                                    android:id="@+id/badgePreviewVerifiedTick"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_gravity="bottom|end"
+                                    android:layout_margin="12dp"
+                                    android:background="@drawable/bg_pdf_badge"
+                                    android:backgroundTint="#008736"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical"
+                                    android:paddingHorizontal="10dp"
+                                    android:paddingVertical="5dp"
+                                    android:elevation="6dp"
+                                    android:visibility="gone">
+
+                                    <ImageView
+                                        android:id="@+id/ivPreviewVerifiedIcon"
+                                        android:layout_width="16dp"
+                                        android:layout_height="16dp"
+                                        android:src="@drawable/ic_signature_valid"
+                                        app:tint="#FFFFFF"
+                                        android:layout_marginEnd="6dp" />
+
+                                    <TextView
+                                        android:id="@+id/tvPreviewVerifiedLabel"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:text="Signature Valid"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="11sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
                             </FrameLayout>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>

@@ -192,20 +192,33 @@ class PdfSignatureEngine(private val context: Context) {
                     }
                 }
 
-                // Render page preview at 150 DPI
+                val isTampered = sigList.any { !it.isCryptoValid || !it.isByteRangePlausible || (it.revisionReport?.hasFailedChecks() == true) }
+                val isFullyVerified = sigList.isNotEmpty() && sigList.all { it.isFullyVerified }
+                val untrustedSigners = sigList.filter { it.isCryptoValid && !it.isPathTrusted && !it.isPinned }
+
+                // Render page preview at 150 DPI (baking authentic green checkmark tick if verified/trusted)
                 var previewBmp: Bitmap? = null
                 if (loadedDoc.numberOfPages > 0) {
                     try {
-                        val renderer = PDFRenderer(loadedDoc)
-                        previewBmp = renderer.renderImageWithDPI(previewPageIndex, 150f)
+                        if (isFullyVerified) {
+                            try {
+                                val stamped = PdfStamperEngine.processPdf(pdfBytes, password)
+                                PDDocument.load(ByteArrayInputStream(stamped.printablePdf)).use { pDoc ->
+                                    val r = PDFRenderer(pDoc)
+                                    previewBmp = r.renderImageWithDPI(previewPageIndex, 150f)
+                                }
+                            } catch (_: Exception) {
+                                val renderer = PDFRenderer(loadedDoc)
+                                previewBmp = renderer.renderImageWithDPI(previewPageIndex, 150f)
+                            }
+                        } else {
+                            val renderer = PDFRenderer(loadedDoc)
+                            previewBmp = renderer.renderImageWithDPI(previewPageIndex, 150f)
+                        }
                     } catch (e: Exception) {
                         // ignore rendering errors
                     }
                 }
-
-                val isTampered = sigList.any { !it.isCryptoValid || !it.isByteRangePlausible || (it.revisionReport?.hasFailedChecks() == true) }
-                val isFullyVerified = sigList.isNotEmpty() && sigList.all { it.isFullyVerified }
-                val untrustedSigners = sigList.filter { it.isCryptoValid && !it.isPathTrusted && !it.isPinned }
 
                 val title = loadedDoc.documentInformation?.title
                 val fileSizeFormatted = formatFileSize(pdfBytes.size.toLong())

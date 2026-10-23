@@ -154,8 +154,9 @@ object ThemeSettingsManager {
      * Called post-setContentView or during live font changes to apply typography to the entire view tree.
      */
     fun applyTypography(activity: Activity) {
+        val typo = getTypographyStyle(activity)
         val tf = getTypeface(activity)
-        applyTypefaceRecursively(activity.window.decorView, tf)
+        applyTypefaceRecursively(activity.window.decorView, tf, typo)
     }
 
     fun getThemeMode(context: Context): ThemeMode {
@@ -266,14 +267,34 @@ object ThemeSettingsManager {
         }
     }
 
-    private fun applyTypefaceRecursively(view: View, typeface: Typeface) {
+    private fun applyTypefaceRecursively(view: View, typeface: Typeface, typo: TypographyStyle) {
         if (view is TextView) {
             val style = view.typeface?.style ?: Typeface.NORMAL
             view.setTypeface(typeface, style)
+
+            // Optical sizing consistency:
+            // Terminal Monospace has a narrower glyph bounding box and smaller optical x-height
+            // (~88% of Plus Jakarta Sans / Modern). When users select Mono, TextViews look noticeably tiny.
+            // We scale Mono by ~1.12x so all text sizes feel optically equivalent and consistent across the app.
+            val baseSize = (view.getTag(R.id.vf_tag_base_text_size) as? Float) ?: run {
+                val current = view.textSize
+                view.setTag(R.id.vf_tag_base_text_size, current)
+                current
+            }
+
+            val targetSize = if (typo == TypographyStyle.MONOSPACE) {
+                baseSize * 1.12f
+            } else {
+                baseSize
+            }
+
+            if (Math.abs(view.textSize - targetSize) > 0.05f) {
+                view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, targetSize)
+            }
         }
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
-                applyTypefaceRecursively(view.getChildAt(i), typeface)
+                applyTypefaceRecursively(view.getChildAt(i), typeface, typo)
             }
         }
     }

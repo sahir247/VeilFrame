@@ -129,6 +129,52 @@ class PdfPageThumbnailAdapter(
         onPageSelectionChanged(selectedPages)
     }
 
+    fun selectOdd() {
+        if (totalPages <= 0) return
+        selectedPages.clear()
+        for (i in 1..totalPages step 2) selectedPages.add(i)
+        notifyDataSetChanged()
+        onPageSelectionChanged(selectedPages)
+    }
+
+    fun selectEven() {
+        if (totalPages <= 0) return
+        selectedPages.clear()
+        for (i in 2..totalPages step 2) selectedPages.add(i)
+        notifyDataSetChanged()
+        onPageSelectionChanged(selectedPages)
+    }
+
+    fun markOddForDeletion() {
+        if (totalPages <= 0) return
+        deletedPages.clear()
+        for (i in 1..totalPages step 2) deletedPages.add(i)
+        notifyDataSetChanged()
+        onPageSelectionChanged(deletedPages)
+    }
+
+    fun markEvenForDeletion() {
+        if (totalPages <= 0) return
+        deletedPages.clear()
+        for (i in 2..totalPages step 2) deletedPages.add(i)
+        notifyDataSetChanged()
+        onPageSelectionChanged(deletedPages)
+    }
+
+    fun clearDeletionMarks() {
+        deletedPages.clear()
+        notifyDataSetChanged()
+        onPageSelectionChanged(deletedPages)
+    }
+
+    fun markAllForDeletion() {
+        if (totalPages <= 0) return
+        deletedPages.clear()
+        for (i in 1..totalPages) deletedPages.add(i)
+        notifyDataSetChanged()
+        onPageSelectionChanged(deletedPages)
+    }
+
     fun getSelectedPages(): Set<Int> = selectedPages.toSet()
     fun getDeletedPages(): Set<Int> = deletedPages.toSet()
 
