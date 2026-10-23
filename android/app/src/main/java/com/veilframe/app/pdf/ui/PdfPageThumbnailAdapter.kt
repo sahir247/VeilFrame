@@ -80,6 +80,13 @@ class PdfPageThumbnailAdapter(
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
+    fun resetOrder() {
+        pageOrder.clear()
+        for (i in 1..totalPages) pageOrder.add(i)
+        notifyDataSetChanged()
+        onPageOrderChanged?.invoke(pageOrder.toList())
+    }
+
     fun selectAll() {
         if (totalPages <= 0) return
         selectedPages.clear()
@@ -142,10 +149,19 @@ class PdfPageThumbnailAdapter(
 
             val currentPos = bindingAdapterPosition
             val isReordered = pageOrder != (1..totalPages).toList()
+            val isMoved = isReordered && currentPos >= 0 && (currentPos + 1 != pageNumber)
+
             binding.tvPageNumber.text = if (isReordered && currentPos >= 0) {
-                "Page $pageNumber (#${currentPos + 1})"
+                if (isMoved) "#${currentPos + 1} (was p.$pageNumber)" else "Page $pageNumber"
             } else {
                 "Page $pageNumber"
+            }
+
+            if (isMoved) {
+                binding.tvSequenceBadge.visibility = View.VISIBLE
+                binding.tvSequenceBadge.text = "#${currentPos + 1}"
+            } else {
+                binding.tvSequenceBadge.visibility = View.GONE
             }
 
             val isSelected = pageNumber in selectedPages

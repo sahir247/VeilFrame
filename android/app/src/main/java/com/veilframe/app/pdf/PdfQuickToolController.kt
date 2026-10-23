@@ -187,6 +187,7 @@ class PdfQuickToolController(
             QuickMode.ROTATE -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Rotate"
                 binding.panelParamRotate.visibility = View.VISIBLE
+                binding.tvRotateAngleLabel.visibility = View.VISIBLE
                 binding.chipGroupRotateAngle.visibility = View.VISIBLE
                 binding.tilRotatePages.visibility = View.VISIBLE
                 binding.layoutReorderControls.visibility = View.GONE
@@ -197,6 +198,7 @@ class PdfQuickToolController(
             QuickMode.DELETE -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Prune"
                 binding.panelParamRotate.visibility = View.VISIBLE
+                binding.tvRotateAngleLabel.visibility = View.GONE
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
                 binding.layoutReorderControls.visibility = View.GONE
@@ -207,6 +209,7 @@ class PdfQuickToolController(
             QuickMode.REORDER -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Reorder"
                 binding.panelParamRotate.visibility = View.VISIBLE
+                binding.tvRotateAngleLabel.visibility = View.GONE
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
                 binding.layoutReorderControls.visibility = View.VISIBLE
@@ -348,11 +351,12 @@ class PdfQuickToolController(
 
         binding.btnApplyPageOrder.setOnClickListener {
             val input = binding.etCustomPageOrder.text?.toString().orEmpty()
-            val order = parsePageSequence(input)
+            val total = primaryDocPages
+            val order = parsePageSequence(input, total)
             if (order.isNotEmpty()) {
                 rotateThumbnailAdapter?.setPageOrder(order)
             } else {
-                Toast.makeText(activity, "Enter valid page numbers (e.g. 3, 4, 2, 1, 5)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Enter valid page sequence (e.g. 3>4>2>1>5 or 1-3, 5)", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -360,6 +364,37 @@ class PdfQuickToolController(
             val current = rotateThumbnailAdapter?.getPageOrder() ?: emptyList()
             if (current.isNotEmpty()) {
                 rotateThumbnailAdapter?.setPageOrder(current.reversed())
+            }
+        }
+
+        binding.btnResetPageOrder.setOnClickListener {
+            rotateThumbnailAdapter?.resetOrder()
+        }
+
+        binding.chipPresetReset.setOnClickListener {
+            rotateThumbnailAdapter?.resetOrder()
+        }
+
+        binding.chipPresetReverse.setOnClickListener {
+            val current = rotateThumbnailAdapter?.getPageOrder() ?: emptyList()
+            if (current.isNotEmpty()) {
+                rotateThumbnailAdapter?.setPageOrder(current.reversed())
+            }
+        }
+
+        binding.chipPresetOdd.setOnClickListener {
+            val total = primaryDocPages
+            if (total > 0) {
+                val oddOrder = (1..total step 2).toList()
+                rotateThumbnailAdapter?.setPageOrder(oddOrder)
+            }
+        }
+
+        binding.chipPresetEven.setOnClickListener {
+            val total = primaryDocPages
+            if (total > 0) {
+                val evenOrder = (2..total step 2).toList()
+                rotateThumbnailAdapter?.setPageOrder(evenOrder)
             }
         }
     }
@@ -427,17 +462,26 @@ class PdfQuickToolController(
         }
         scope.launch(Dispatchers.IO) {
             val mergeItems = selectedUris.mapIndexed { idx, uri ->
+                val mime = activity.contentResolver.getType(uri) ?: ""
+                val isImg = mime.startsWith("image/") ||
+                    uri.toString().endsWith(".jpg", true) ||
+                    uri.toString().endsWith(".jpeg", true) ||
+                    uri.toString().endsWith(".png", true) ||
+                    uri.toString().endsWith(".webp", true)
+                val type = if (isImg) MergeItemType.IMAGE else MergeItemType.PDF
                 var pageCount = 1
-                try {
-                    activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        PDDocument.load(stream).use { doc -> pageCount = doc.numberOfPages }
-                    }
-                } catch (_: Exception) {}
+                if (!isImg) {
+                    try {
+                        activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc -> pageCount = doc.numberOfPages }
+                        }
+                    } catch (_: Exception) {}
+                }
                 MergeItem(
                     id = "doc_$idx",
                     uri = uri,
                     name = queryDocumentName(uri),
-                    type = MergeItemType.PDF,
+                    type = type,
                     pageCount = pageCount
                 )
             }
@@ -450,8 +494,8 @@ class PdfQuickToolController(
 
     private fun applyCustomMergeOrderText() {
         val input = binding.etCustomMergeOrder.text?.toString().orEmpty()
-        val requestedOrder = parsePageSequence(input)
         val currentItems = mergePageAdapter?.getItems() ?: emptyList()
+        val requestedOrder = parsePageSequence(input, currentItems.size)
         if (requestedOrder.isEmpty() || currentItems.isEmpty()) {
             Toast.makeText(activity, "Enter page sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)", Toast.LENGTH_SHORT).show()
             return
@@ -1229,10 +1273,68 @@ class PdfQuickToolController(
         }
     }
 
-    private fun parsePageSequence(input: String): List<Int> {
-        if (input.isBlank()) return emptyList()
-        val regex = Regex("""\d+""")
-        return regex.findAll(input).mapNotNull { it.value.toIntOrNull() }.filter { it > 0 }.toList()
+    companion object {
+        /**
+         * Robust page sequence parser supporting:
+         * - Arbitrary delimiters: ',', ';', '>', '->', spaces, '|' (e.g. "3>4>2>1>5", "1, 2, 7, 6, 3, 4, 5, 10, 8, 9")
+         * - Ranges: "1-4" or "1..4" -> [1, 2, 3, 4]
+         * - Reverse ranges: "5-1" -> [5, 4, 3, 2, 1]
+         * - Keywords: "reverse", "rev", "odd", "even", "reset", "all"
+         */
+        fun parsePageSequence(input: String, totalPages: Int = 0): List<Int> {
+            if (input.isBlank()) return emptyList()
+            val clean = input.trim().lowercase()
+
+            if (totalPages > 0) {
+                if (clean == "reverse" || clean == "rev") {
+                    return (totalPages downTo 1).toList()
+                }
+                if (clean == "odd" || clean == "odds") {
+                    return (1..totalPages step 2).toList()
+                }
+                if (clean == "even" || clean == "evens") {
+                    return (2..totalPages step 2).toList()
+                }
+                if (clean == "reset" || clean == "all") {
+                    return (1..totalPages).toList()
+                }
+            }
+
+            val result = mutableListOf<Int>()
+            // Split on delimiters: >, ->, commas, semicolons, or pipes
+            val tokens = input.split(Regex("[,;>|]+|\\s*->\\s*"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+
+            for (token in tokens) {
+                // Range check: 1-4 or 1..4 or 4-1
+                val rangeMatch = Regex("""^(\d+)\s*(?:-|–|\.\.)\s*(\d+)$""").matchEntire(token)
+                if (rangeMatch != null) {
+                    val start = rangeMatch.groupValues[1].toIntOrNull() ?: continue
+                    val end = rangeMatch.groupValues[2].toIntOrNull() ?: continue
+                    if (start > 0 && end > 0) {
+                        if (start <= end) {
+                            for (p in start..end) {
+                                if (totalPages <= 0 || p <= totalPages) result.add(p)
+                            }
+                        } else {
+                            for (p in start downTo end) {
+                                if (totalPages <= 0 || p <= totalPages) result.add(p)
+                            }
+                        }
+                    }
+                } else {
+                    // Single page or space-separated tokens
+                    val numbers = Regex("""\d+""").findAll(token).mapNotNull { it.value.toIntOrNull() }
+                    for (num in numbers) {
+                        if (num > 0 && (totalPages <= 0 || num <= totalPages)) {
+                            result.add(num)
+                        }
+                    }
+                }
+            }
+            return result
+        }
     }
 
     private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {

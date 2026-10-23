@@ -60,21 +60,42 @@
                     app:tint="#FF5252" />
             </FrameLayout>
 
-            <!-- Rotation Badge Overlay -->
-            <TextView
-                android:id="@+id/tvRotationBadge"
+            <!-- Top-Start Badges: Sequence & Rotation -->
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="top|start"
-                android:layout_margin="4dp"
-                android:background="@drawable/bg_pdf_badge"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:text="90°"
-                android:textColor="@color/vf_on_primary"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:orientation="horizontal"
+                android:layout_margin="4dp">
+
+                <TextView
+                    android:id="@+id/tvSequenceBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_pdf_badge"
+                    android:backgroundTint="?attr/colorPrimary"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:text="#1"
+                    android:textColor="@color/vf_on_primary"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:layout_marginEnd="4dp" />
+
+                <TextView
+                    android:id="@+id/tvRotationBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_pdf_badge"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:text="90°"
+                    android:textColor="@color/vf_on_primary"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </LinearLayout>
 
             <!-- Transparent Fullscreen Preview Icon -->
             <ImageView

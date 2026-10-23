@@ -75,12 +75,19 @@ class PdfMerger {
         onProgress: (Float) -> Unit = {}
     ): Result<Unit> {
         val items = inputUris.map { uri ->
+            val mime = context.contentResolver.getType(uri) ?: ""
+            val isImg = mime.startsWith("image/") ||
+                uri.toString().endsWith(".jpg", true) ||
+                uri.toString().endsWith(".jpeg", true) ||
+                uri.toString().endsWith(".png", true) ||
+                uri.toString().endsWith(".webp", true)
+            val type = if (isImg) MergeItemType.IMAGE else MergeItemType.PDF
             MergeItem(
                 uri = uri,
-                name = uri.lastPathSegment ?: "document.pdf",
+                name = uri.lastPathSegment ?: if (isImg) "image.jpg" else "document.pdf",
                 size = 0L,
                 formattedSize = "",
-                type = MergeItemType.PDF,
+                type = type,
                 pageCount = 1
             )
         }
