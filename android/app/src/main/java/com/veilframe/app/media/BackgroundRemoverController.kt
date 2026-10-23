@@ -18,7 +18,7 @@ import com.veilframe.app.R
 import com.veilframe.app.cv.core.CvPriority
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.rembg.CelBackgroundRemover
-import com.veilframe.app.cv.segmentation.rembg.RembgOnnxSessionManager
+import com.veilframe.app.cv.segmentation.rembg.RembgSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
@@ -86,7 +86,7 @@ class BackgroundRemoverController(
     /** Model storage and execution subsystems */
     private val repository = RembgModelRepository(activity)
     private val downloadManager = RembgModelDownloadManager(activity, repository)
-    private val sessionManager = RembgOnnxSessionManager(repository)
+    private val sessionManager = RembgSessionManager(repository)
     private val remover = CelBackgroundRemover(activity, repository, sessionManager)
 
     private companion object {

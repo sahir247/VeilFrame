@@ -13,7 +13,7 @@ import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
 import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
 import com.veilframe.app.media.rife.RifeModelManager
 import com.veilframe.app.media.rife.RifeNcnnNative
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -123,7 +123,7 @@ class NcnnMigrationOnDeviceTest {
         val inputBitmap = loadTestPortrait()
         assertNotNull(inputBitmap)
 
-        val piiEngine = PiiOnnxEngine(context)
+        val piiEngine = PiiNcnnEngine(context)
         val detections = piiEngine.detect(inputBitmap, confThreshold = 0.40f, iouThreshold = 0.45f)
         assertNotNull("Detections must not be null", detections)
         Log.i(TAG, "Detected ${detections.size} PII entities")
@@ -132,7 +132,7 @@ class NcnnMigrationOnDeviceTest {
         }
         assertTrue("Should detect face/person in portrait photo", detections.isNotEmpty())
 
-        val redacted = PiiOnnxEngine.applySolidRedaction(inputBitmap, detections)
+        val redacted = PiiNcnnEngine.applySolidRedaction(inputBitmap, detections)
         assertNotNull("Redacted bitmap must not be null", redacted)
 
         val outDir = context.getExternalFilesDir(null) ?: context.cacheDir

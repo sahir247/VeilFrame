@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 import com.veilframe.app.privacy.PiiDetection
 import com.veilframe.app.privacy.PiiClass
 import java.io.File
@@ -93,17 +93,17 @@ class ImageStudioController(
     // Race-condition guard for async image loading
     private val loadToken = AtomicLong(0L)
 
-    // On-device AI PII Detection Engine (YOLOv8 ONNX)
-    private var piiEngine: PiiOnnxEngine? = null
+    // On-device AI PII Detection Engine (UltraFace & YOLOv8 NCNN)
+    private var piiEngine: PiiNcnnEngine? = null
 
-    private fun getOrInitPiiEngine(): PiiOnnxEngine? {
+    private fun getOrInitPiiEngine(): PiiNcnnEngine? {
         return try {
             if (piiEngine == null) {
-                piiEngine = PiiOnnxEngine(activity)
+                piiEngine = PiiNcnnEngine(activity)
             }
             piiEngine
         } catch (e: Exception) {
-            Log.e("VeilFrame.ImageStudio", "Failed to initialize PII ONNX engine: ${e.message}", e)
+            Log.e("VeilFrame.ImageStudio", "Failed to initialize PII NCNN engine: ${e.message}", e)
             null
         }
     }
@@ -842,14 +842,14 @@ class ImageStudioController(
                 // QualityGate verification on current live preview
                 val previewRendered = renderLivePreview(editState)
                 val isCompliant = if (previewRendered != null) {
-                    val scaledDets = PiiOnnxEngine.scaleDetections(
+                    val scaledDets = PiiNcnnEngine.scaleDetections(
                         selectedDetections,
                         item.origWidth,
                         item.origHeight,
                         previewRendered.width,
                         previewRendered.height
                     )
-                    PiiOnnxEngine.verifyZeroResidualSignals(previewRendered, scaledDets)
+                    PiiNcnnEngine.verifyZeroResidualSignals(previewRendered, scaledDets)
                 } else false
 
                 val summary = selectedDetections.groupBy { it.label }.map { "${it.key}: ${it.value.size}" }.joinToString(", ")
@@ -857,7 +857,7 @@ class ImageStudioController(
                 Toast.makeText(activity, toastMsg, Toast.LENGTH_LONG).show()
 
                 // Export structured manifest for audit log
-                val manifestJson = PiiOnnxEngine.exportRedactionManifest(
+                val manifestJson = PiiNcnnEngine.exportRedactionManifest(
                     detections = selectedDetections,
                     imageWidth = item.origWidth,
                     imageHeight = item.origHeight

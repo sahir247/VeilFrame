@@ -6,7 +6,7 @@ import android.media.MediaMetadataRetriever
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiDetection
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 import org.opencv.core.Mat
 import org.opencv.core.Rect
 import org.opencv.video.Tracker
@@ -86,7 +86,7 @@ class CentroidTracker : BboxTracker {
  * 4. Computes exact clamped, codec-aligned 9:16 crop boundaries.
  */
 class VideoReframeEngine(
-    private val piiEngine: PiiOnnxEngine? = null,
+    private val piiEngine: PiiNcnnEngine? = null,
     val targetAspect: Float = 9f / 16f,
     private val trackerProvider: () -> BboxTracker = { createDefaultTracker() },
     private val bitmapDetector: ((Bitmap) -> List<PiiDetection>)? = null

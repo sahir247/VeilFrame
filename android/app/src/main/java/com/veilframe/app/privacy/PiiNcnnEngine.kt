@@ -16,14 +16,14 @@ import org.opencv.imgproc.Imgproc
 import java.io.File
 
 /**
- * PiiOnnxEngine — NCNN native inference engine for automated PII detection.
+ * PiiNcnnEngine — NCNN native inference engine for automated PII detection.
  * Executes on Android via NCNN with OpenMP / Vulkan acceleration, bundling UltraFace RFB-320
  * and YOLOv8n NCNN directly in APK assets. Completely eliminates ONNX Runtime.
  *
  * Implements Layer C (Isolated Solid Redaction) mask generation and QualityGate
  * zero-residual-probe verification for the VeilFrame Image Privacy Compiler.
  */
-class PiiOnnxEngine(
+class PiiNcnnEngine(
     context: Context? = null,
     assetName: String = DEFAULT_ASSET_NAME
 ) : AutoCloseable {
@@ -321,14 +321,14 @@ class PiiOnnxEngine(
         fun fromAsset(
             context: Context,
             assetName: String = DEFAULT_ASSET_NAME
-        ): PiiOnnxEngine = PiiOnnxEngine(context, assetName)
+        ): PiiNcnnEngine = PiiNcnnEngine(context, assetName)
 
-        fun fromFile(file: File): PiiOnnxEngine {
+        fun fromFile(file: File): PiiNcnnEngine {
             require(file.exists() && file.length() > 0) { "Model file does not exist: ${file.absolutePath}" }
-            return PiiOnnxEngine(null)
+            return PiiNcnnEngine(null)
         }
 
-        fun fromBytes(bytes: ByteArray): PiiOnnxEngine = PiiOnnxEngine(null)
+        fun fromBytes(bytes: ByteArray): PiiNcnnEngine = PiiNcnnEngine(null)
     }
 
     val inputName: String = DEFAULT_INPUT_NAME
@@ -526,3 +526,9 @@ data class PiiDetection(
     val score: Float,
     val label: String = piiClass.label
 )
+
+@Deprecated(
+    message = "Renamed to PiiNcnnEngine; ONNX Runtime has been completely eliminated in favor of Tencent NCNN.",
+    replaceWith = ReplaceWith("PiiNcnnEngine")
+)
+typealias PiiOnnxEngine = PiiNcnnEngine

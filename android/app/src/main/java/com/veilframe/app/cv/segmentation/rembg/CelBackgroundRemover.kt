@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 class CelBackgroundRemover(
     private val context: Context,
     private val repository: RembgModelRepository = RembgModelRepository(context),
-    private val sessionManager: RembgOnnxSessionManager? = null,
+    private val sessionManager: RembgSessionManager? = null,
 ) {
     suspend fun removeBackground(
         imageBytes: ByteArray,

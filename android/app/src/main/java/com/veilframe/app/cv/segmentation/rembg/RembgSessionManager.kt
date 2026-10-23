@@ -4,10 +4,9 @@ import com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative
 
 /**
  * Manages NCNN native sessions and lifecycle for background removal models.
- * Kept for interface compatibility with existing controllers, routing model lifecycle
- * directly to the native NCNN matting pipeline.
+ * Routes model lifecycle directly to the native Tencent NCNN matting pipeline.
  */
-class RembgOnnxSessionManager(
+class RembgSessionManager(
     private val modelRepository: RembgModelRepository? = null,
 ) {
     fun closeSession(model: RembgModel) {
@@ -18,3 +17,9 @@ class RembgOnnxSessionManager(
         NcnnMattingNative.nativeRelease()
     }
 }
+
+@Deprecated(
+    message = "Renamed to RembgSessionManager; ONNX Runtime has been completely eliminated.",
+    replaceWith = ReplaceWith("RembgSessionManager")
+)
+typealias RembgOnnxSessionManager = RembgSessionManager

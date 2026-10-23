@@ -11,7 +11,7 @@ import android.util.Log
 import com.veilframe.app.media.CropSpec
 import com.veilframe.app.media.ImageEditState
 import com.veilframe.app.media.watermark.WatermarkEngine
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 
 /**
  * Authoritative non-destructive image transformation engine.
@@ -104,14 +104,14 @@ object ImageTransformEngine {
 
         // 0. Layer C Isolated Solid Redaction (AI PII Auto-Redactor)
         if (state.piiDetections.isNotEmpty()) {
-            val scaledDetections = PiiOnnxEngine.scaleDetections(
+            val scaledDetections = PiiNcnnEngine.scaleDetections(
                 detections = state.piiDetections,
                 srcW = origFullW,
                 srcH = origFullH,
                 dstW = result.width,
                 dstH = result.height
             )
-            result = PiiOnnxEngine.applySolidRedaction(result, scaledDetections)
+            result = PiiNcnnEngine.applySolidRedaction(result, scaledDetections)
         }
 
         // 1. Crop

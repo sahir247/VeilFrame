@@ -14,17 +14,17 @@ import java.io.File
 
 /**
  * Unit tests verifying the mathematical decoding, NMS suppression,
- * solid redaction, QualityGate residual probe verification, and ONNX Runtime
- * inference of [PiiOnnxEngine].
+ * solid redaction, QualityGate residual probe verification, and Tencent NCNN
+ * inference of [PiiNcnnEngine].
  */
 @RunWith(RobolectricTestRunner::class)
-class PiiOnnxEngineTest {
+class PiiNcnnEngineTest {
 
     @Test
     fun testCalculateIoUDisjoint() {
         val a = RectF(0f, 0f, 10f, 10f)
         val b = RectF(20f, 20f, 30f, 30f)
-        val iou = PiiOnnxEngine.calculateIoU(a, b)
+        val iou = PiiNcnnEngine.calculateIoU(a, b)
         assertEquals(0.0f, iou, 0.0001f)
     }
 
@@ -32,7 +32,7 @@ class PiiOnnxEngineTest {
     fun testCalculateIoUIdentical() {
         val a = RectF(10f, 10f, 50f, 50f)
         val b = RectF(10f, 10f, 50f, 50f)
-        val iou = PiiOnnxEngine.calculateIoU(a, b)
+        val iou = PiiNcnnEngine.calculateIoU(a, b)
         assertEquals(1.0f, iou, 0.0001f)
     }
 
@@ -45,7 +45,7 @@ class PiiOnnxEngineTest {
         // IoU = 50 / 150 = 0.33333334
         val a = RectF(0f, 0f, 10f, 10f)
         val b = RectF(5f, 0f, 15f, 10f)
-        val iou = PiiOnnxEngine.calculateIoU(a, b)
+        val iou = PiiNcnnEngine.calculateIoU(a, b)
         assertEquals(50f / 150f, iou, 0.0001f)
     }
 
@@ -67,7 +67,7 @@ class PiiOnnxEngineTest {
             score = 0.85f
         )
 
-        val kept = PiiOnnxEngine.applyNMS(listOf(boxHigh, boxLow, boxFar), iouThreshold = 0.45f)
+        val kept = PiiNcnnEngine.applyNMS(listOf(boxHigh, boxLow, boxFar), iouThreshold = 0.45f)
         assertEquals(2, kept.size)
         assertEquals(0.95f, kept[0].score, 0.0001f)
         assertEquals(0.85f, kept[1].score, 0.0001f)
@@ -87,7 +87,7 @@ class PiiOnnxEngineTest {
             score = 0.88f
         )
 
-        val kept = PiiOnnxEngine.applyNMS(listOf(boxFace, boxCard), iouThreshold = 0.45f)
+        val kept = PiiNcnnEngine.applyNMS(listOf(boxFace, boxCard), iouThreshold = 0.45f)
         assertEquals("Different PII classes must never suppress each other", 2, kept.size)
     }
 
@@ -100,7 +100,7 @@ class PiiOnnxEngineTest {
                 score = 0.90f - i * 0.05f
             )
         }
-        val kept = PiiOnnxEngine.applyNMS(detections, iouThreshold = 0.45f)
+        val kept = PiiNcnnEngine.applyNMS(detections, iouThreshold = 0.45f)
         assertEquals(1, kept.size)
         assertEquals(0.90f, kept[0].score, 0.0001f)
     }
@@ -130,7 +130,7 @@ class PiiOnnxEngineTest {
         val origW = 1920
         val origH = 1080
 
-        val detections = PiiOnnxEngine.postprocess(
+        val detections = PiiNcnnEngine.postprocess(
             output = syntheticOutput,
             origW = origW,
             origH = origH,
@@ -156,19 +156,19 @@ class PiiOnnxEngineTest {
 
     @Test
     fun testClassMappingFiveClassAndCoco() {
-        assertEquals(PiiClass.FACE, PiiOnnxEngine.mapClassIndex(0, numClasses = 5))
-        assertEquals(PiiClass.PLATE, PiiOnnxEngine.mapClassIndex(1, numClasses = 5))
-        assertEquals(PiiClass.SIGNATURE, PiiOnnxEngine.mapClassIndex(2, numClasses = 5))
-        assertEquals(PiiClass.CARD, PiiOnnxEngine.mapClassIndex(3, numClasses = 5))
-        assertEquals(PiiClass.BARCODE, PiiOnnxEngine.mapClassIndex(4, numClasses = 5))
+        assertEquals(PiiClass.FACE, PiiNcnnEngine.mapClassIndex(0, numClasses = 5))
+        assertEquals(PiiClass.PLATE, PiiNcnnEngine.mapClassIndex(1, numClasses = 5))
+        assertEquals(PiiClass.SIGNATURE, PiiNcnnEngine.mapClassIndex(2, numClasses = 5))
+        assertEquals(PiiClass.CARD, PiiNcnnEngine.mapClassIndex(3, numClasses = 5))
+        assertEquals(PiiClass.BARCODE, PiiNcnnEngine.mapClassIndex(4, numClasses = 5))
 
         // COCO mapping
-        assertEquals(PiiClass.PERSON, PiiOnnxEngine.mapClassIndex(0, numClasses = 80)) // person (full human body)
-        assertEquals(PiiClass.PLATE, PiiOnnxEngine.mapClassIndex(2, numClasses = 80)) // car
-        assertEquals(PiiClass.PLATE, PiiOnnxEngine.mapClassIndex(3, numClasses = 80)) // motorcycle
-        assertEquals(PiiClass.CARD, PiiOnnxEngine.mapClassIndex(67, numClasses = 80)) // cell phone
-        assertEquals(PiiClass.CARD, PiiOnnxEngine.mapClassIndex(73, numClasses = 80)) // book
-        assertEquals(null, PiiOnnxEngine.mapClassIndex(16, numClasses = 80)) // dog -> null
+        assertEquals(PiiClass.PERSON, PiiNcnnEngine.mapClassIndex(0, numClasses = 80)) // person (full human body)
+        assertEquals(PiiClass.PLATE, PiiNcnnEngine.mapClassIndex(2, numClasses = 80)) // car
+        assertEquals(PiiClass.PLATE, PiiNcnnEngine.mapClassIndex(3, numClasses = 80)) // motorcycle
+        assertEquals(PiiClass.CARD, PiiNcnnEngine.mapClassIndex(67, numClasses = 80)) // cell phone
+        assertEquals(PiiClass.CARD, PiiNcnnEngine.mapClassIndex(73, numClasses = 80)) // book
+        assertEquals(null, PiiNcnnEngine.mapClassIndex(16, numClasses = 80)) // dog -> null
     }
 
     @Test
@@ -188,16 +188,16 @@ class PiiOnnxEngineTest {
         // Before redaction, pixels inside the box are white, so zero-residual test fails
         assertFalse(
             "Unredacted sensitive region must fail the zero-residual probe check",
-            PiiOnnxEngine.verifyZeroResidualSignals(bitmap, detections, Color.BLACK)
+            PiiNcnnEngine.verifyZeroResidualSignals(bitmap, detections, Color.BLACK)
         )
 
         // Apply solid constant fill redaction
-        val redacted = PiiOnnxEngine.applySolidRedaction(bitmap, detections, Color.BLACK)
+        val redacted = PiiNcnnEngine.applySolidRedaction(bitmap, detections, Color.BLACK)
 
         // After redaction, every pixel inside 10..40 x 10..40 is pure black (0x000000)
         assertTrue(
             "Solid redacted image must satisfy QualityGate Contract 4 with zero residual leakage",
-            PiiOnnxEngine.verifyZeroResidualSignals(redacted, detections, Color.BLACK)
+            PiiNcnnEngine.verifyZeroResidualSignals(redacted, detections, Color.BLACK)
         )
 
         // Verify outside pixels remain intact (white)
@@ -219,7 +219,7 @@ class PiiOnnxEngineTest {
             )
         )
 
-        val manifest = PiiOnnxEngine.exportRedactionManifest(
+        val manifest = PiiNcnnEngine.exportRedactionManifest(
             imageWidth = 1920,
             imageHeight = 1080,
             detections = detections
@@ -242,14 +242,14 @@ class PiiOnnxEngineTest {
     }
 
     @Test
-    fun testOnnxModelLoadingAndInference() {
-        val modelFile = findModelFile("pii_yolov8n.onnx")
+    fun testNcnnModelLoadingAndInference() {
+        val modelFile = findModelFile("models/pii/yolov8n.ncnn.bin")
         if (modelFile == null || !modelFile.exists()) {
-            println("Skipping ONNX live session test; model file not found in test search path.")
+            println("Skipping NCNN live session test; model file not found in test search path.")
             return
         }
 
-        PiiOnnxEngine.fromFile(modelFile).use { engine ->
+        PiiNcnnEngine.fromFile(modelFile).use { engine ->
             assertEquals("images", engine.inputName)
 
             // Run inference with pre-allocated zero buffer (blank canvas)
@@ -276,7 +276,7 @@ class PiiOnnxEngineTest {
         )
 
         // Scale from 100x200 to 200x400 (2.0x scale in both dimensions)
-        val scaled = PiiOnnxEngine.scaleDetections(
+        val scaled = PiiNcnnEngine.scaleDetections(
             detections = original,
             srcW = 100,
             srcH = 200,
@@ -332,7 +332,7 @@ class PiiOnnxEngineTest {
         assertEquals(Color.WHITE, result.getPixel(70, 70))
 
         // Contract 4 verification
-        val isCompliant = PiiOnnxEngine.verifyZeroResidualSignals(result, state.piiDetections)
+        val isCompliant = PiiNcnnEngine.verifyZeroResidualSignals(result, state.piiDetections)
         assertTrue(isCompliant)
     }
 
@@ -378,11 +378,11 @@ class PiiOnnxEngineTest {
         val bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
         bmp.eraseColor(Color.WHITE)
         val detection = PiiDetection(rect = sanitized, piiClass = PiiClass.FACE, score = 0.99f)
-        val redacted = PiiOnnxEngine.applySolidRedaction(bmp, listOf(detection), Color.BLACK)
+        val redacted = PiiNcnnEngine.applySolidRedaction(bmp, listOf(detection), Color.BLACK)
 
         assertEquals(Color.BLACK, redacted.getPixel(25, 35))
         assertEquals(Color.WHITE, redacted.getPixel(5, 5))
-        assertTrue(PiiOnnxEngine.verifyZeroResidualSignals(redacted, listOf(detection), Color.BLACK))
+        assertTrue(PiiNcnnEngine.verifyZeroResidualSignals(redacted, listOf(detection), Color.BLACK))
     }
 
     @Test
@@ -415,7 +415,7 @@ class PiiOnnxEngineTest {
         assertEquals(1, activeDetections.size)
         assertEquals(PiiClass.FACE, activeDetections[0].piiClass)
 
-        val redacted = PiiOnnxEngine.applySolidRedaction(bmp, activeDetections, Color.BLACK)
+        val redacted = PiiNcnnEngine.applySolidRedaction(bmp, activeDetections, Color.BLACK)
 
         // Face area is cleanly redacted
         assertEquals(Color.BLACK, redacted.getPixel(50, 20))
