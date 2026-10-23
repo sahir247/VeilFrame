@@ -355,6 +355,44 @@ class PiiOnnxEngineTest {
         assertTrue(state.piiDetections.isEmpty())
     }
 
+    @Test
+    fun testPiiDetectionSanitizationAndSolidRedaction() {
+        // Test that even with inverted coordinates (x1 > x2 or y1 > y2), rect is sanitized and redacted
+        val rawX1 = 40f
+        val rawY1 = 50f
+        val rawX2 = 10f
+        val rawY2 = 20f
+        val sanitized = RectF(
+            minOf(rawX1, rawX2),
+            minOf(rawY1, rawY2),
+            maxOf(rawX1, rawX2),
+            maxOf(rawY1, rawY2)
+        )
+        assertEquals(10f, sanitized.left, 0.001f)
+        assertEquals(20f, sanitized.top, 0.001f)
+        assertEquals(40f, sanitized.right, 0.001f)
+        assertEquals(50f, sanitized.bottom, 0.001f)
+        assertTrue(sanitized.width() > 0)
+        assertTrue(sanitized.height() > 0)
+
+        val bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(Color.WHITE)
+        val detection = PiiDetection(rect = sanitized, piiClass = PiiClass.FACE, score = 0.99f)
+        val redacted = PiiOnnxEngine.applySolidRedaction(bmp, listOf(detection), Color.BLACK)
+
+        assertEquals(Color.BLACK, redacted.getPixel(25, 35))
+        assertEquals(Color.WHITE, redacted.getPixel(5, 5))
+        assertTrue(PiiOnnxEngine.verifyZeroResidualSignals(redacted, listOf(detection), Color.BLACK))
+    }
+
+    @Test
+    fun testMotionLabMethodEnumValues() {
+        val methods = com.veilframe.app.media.MotionLabController.MotionMethod.values()
+        assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.RIFE))
+        assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.DIS))
+        assertTrue(methods.contains(com.veilframe.app.media.MotionLabController.MotionMethod.FARNEBACK))
+    }
+
     private fun findModelFile(name: String): File? {
         val candidates = listOf(
             File("android/app/src/main/assets/$name"),

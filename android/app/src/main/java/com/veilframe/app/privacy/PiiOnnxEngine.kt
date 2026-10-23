@@ -429,7 +429,7 @@ class PiiOnnxEngine(
                     val y2 = faceResults[i * stride + 5]
                     candidates.add(
                         PiiDetection(
-                            rect = RectF(x1, y1, x2, y2),
+                            rect = RectF(minOf(x1, x2), minOf(y1, y2), maxOf(x1, x2), maxOf(y1, y2)),
                             piiClass = PiiClass.FACE,
                             score = score
                         )
@@ -454,7 +454,7 @@ class PiiOnnxEngine(
                     if (mappedClass != null) {
                         candidates.add(
                             PiiDetection(
-                                rect = RectF(x1, y1, x2, y2),
+                                rect = RectF(minOf(x1, x2), minOf(y1, y2), maxOf(x1, x2), maxOf(y1, y2)),
                                 piiClass = mappedClass,
                                 score = score
                             )

@@ -48,6 +48,13 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     g_rife = new RIFE(g_rife_gpuid, false, false, false, 4, false, true);
 
     int ret = g_rife->load(dir_str);
+    if (ret != 0 && g_rife_gpuid >= 0) {
+        LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP", ret);
+        delete g_rife;
+        g_rife_gpuid = -1;
+        g_rife = new RIFE(-1, false, false, false, 4, false, true);
+        ret = g_rife->load(dir_str);
+    }
     if (ret != 0) {
         LOGE("Failed to load RIFE v4 model from %s (ret=%d)", dir_str.c_str(), ret);
         delete g_rife;

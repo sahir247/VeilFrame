@@ -50,10 +50,16 @@ class MotionLabController(
         const val MAX_FRAMES = 900
     }
 
+    enum class MotionMethod {
+        RIFE,
+        DIS,
+        FARNEBACK
+    }
+
     private var sourceUri: Uri? = null
     val currentSourceUri: Uri? get() = sourceUri
     private var multiplier = 2
-    private var qualityMode = false
+    private var method = MotionMethod.RIFE
     private var job: Job? = null
     override val isProcessing: Boolean get() = job?.isActive == true
     override val supportsBackgroundExecution: Boolean get() = true
@@ -76,8 +82,9 @@ class MotionLabController(
         }
         binding.chipMotion2x.setOnClickListener { multiplier = 2 }
         binding.chipMotion4x.setOnClickListener { multiplier = 4 }
-        binding.chipMotionFast.setOnClickListener { qualityMode = false }
-        binding.chipMotionQuality.setOnClickListener { qualityMode = true }
+        binding.chipMotionRife.setOnClickListener { method = MotionMethod.RIFE }
+        binding.chipMotionFast.setOnClickListener { method = MotionMethod.DIS }
+        binding.chipMotionQuality.setOnClickListener { method = MotionMethod.FARNEBACK }
         binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
@@ -210,36 +217,46 @@ class MotionLabController(
                     captureFps ?: 30f
                 }
 
-                val rifeManager = com.veilframe.app.media.rife.RifeModelManager(activity)
                 var useRife = false
-                try {
-                    if (!rifeManager.isModelReady()) {
-                        setStatus("Downloading RIFE AI model on first run…")
-                        val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
-                            setStatus(msg)
-                            setProgress(pct, 100)
-                        }
-                        if (dlResult.isSuccess) {
+                if (method == MotionMethod.RIFE) {
+                    val rifeManager = com.veilframe.app.media.rife.RifeModelManager(activity)
+                    try {
+                        if (!rifeManager.isModelReady()) {
+                            setStatus("Downloading RIFE AI model on first run…")
+                            val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
+                                setStatus(msg)
+                                setProgress(pct, 100)
+                            }
+                            if (dlResult.isSuccess) {
+                                useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
+                                    rifeManager.modelDir.absolutePath,
+                                    useGpu = true
+                                )
+                            }
+                        } else {
                             useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
                                 rifeManager.modelDir.absolutePath,
                                 useGpu = true
                             )
                         }
-                    } else {
-                        useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
-                            rifeManager.modelDir.absolutePath,
-                            useGpu = true
-                        )
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "RIFE initialization fell back to optical flow: ${t.message}")
+                        useRife = false
                     }
-                } catch (t: Throwable) {
-                    Log.w(TAG, "RIFE initialization fell back to optical flow: ${t.message}")
-                    useRife = false
+                    if (!useRife) {
+                        setStatus("RIFE unavailable, falling back to DIS…")
+                    }
                 }
 
-                setStatus("Synthesising motion frames (${if (useRife) "RIFE v4 Neural AI" else if (qualityMode) "Farnebäck" else "DIS"})…")
+                val methodName = when {
+                    useRife -> "RIFE v4 Neural AI"
+                    method == MotionMethod.FARNEBACK -> "Farnebäck"
+                    else -> "DIS"
+                }
+                setStatus("Synthesising motion frames ($methodName)…")
                 val estimator = if (!useRife) {
                     com.veilframe.app.cv.motion.FlowEstimator(
-                        algorithm = if (qualityMode) {
+                        algorithm = if (method == MotionMethod.FARNEBACK) {
                             com.veilframe.app.cv.motion.FlowEstimator.Algorithm.FARNEBACK
                         } else {
                             com.veilframe.app.cv.motion.FlowEstimator.Algorithm.DIS

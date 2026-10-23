@@ -226,19 +226,20 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectFaces(
     std::vector<BBox> picked;
     nms_filter(raw_boxes, iouThreshold, picked);
 
-    // Pack into flat float array: [x1, y1, x2, y2, score, ...]
-    const int stride = 5;
+    // Stride 6: [class_id (0=FACE), score, x1, y1, x2, y2]
+    const int stride = 6;
     jfloatArray result = env->NewFloatArray(static_cast<jsize>(picked.size() * stride));
     if (!result) return nullptr;
 
     std::vector<float> flat;
     flat.reserve(picked.size() * stride);
     for (const auto& b : picked) {
+        flat.push_back(0.0f); // PiiClass.FACE (class 0)
+        flat.push_back(b.score);
         flat.push_back(b.x1);
         flat.push_back(b.y1);
         flat.push_back(b.x2);
         flat.push_back(b.y2);
-        flat.push_back(b.score);
     }
 
     env->SetFloatArrayRegion(result, 0, flat.size(), flat.data());
@@ -291,45 +292,151 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
 
     std::vector<BBox> candidates;
     if (!out.empty() && out.dims >= 2) {
-        const int num_anchors = out.h; // typically 8400
-        const int total_features = out.w; // typically 4 + 80 = 84 or 4 + num_classes
-        const int num_classes = total_features - 4;
+        int num_anchors = 8400;
+        int total_features = 84;
+        bool transposed = false;
+
+        if (out.h == 8400) {
+            num_anchors = out.h;
+            total_features = out.w;
+            transposed = false;
+        } else if (out.w == 8400) {
+            num_anchors = out.w;
+            total_features = out.h;
+            transposed = true;
+        } else {
+            num_anchors = out.h;
+            total_features = out.w;
+            transposed = false;
+        }
 
         const float scale_x = static_cast<float>(orig_w) / target_size;
         const float scale_y = static_cast<float>(orig_h) / target_size;
 
-        for (int i = 0; i < num_anchors; i++) {
-            const float* row = out.row(i);
-            float max_score = -1.0f;
-            int best_cls = -1;
+        auto get_feat = [&](int anchor_idx, int feat_idx) -> float {
+            if (transposed) {
+                return out.row(feat_idx)[anchor_idx];
+            } else {
+                return out.row(anchor_idx)[feat_idx];
+            }
+        };
 
-            for (int c = 0; c < num_classes; c++) {
-                float sc = row[4 + c];
-                if (sc > max_score) {
-                    max_score = sc;
-                    best_cls = c;
+        if (total_features == 144) {
+            // YOLOv8 with DFL (4 * 16 = 64) and 80 COCO classes
+            const int num_classes = 80;
+            for (int i = 0; i < num_anchors; i++) {
+                float max_score = -1.0f;
+                int best_cls = -1;
+
+                for (int c = 0; c < num_classes; c++) {
+                    float logit = get_feat(i, 64 + c);
+                    float sc = 1.0f / (1.0f + std::exp(-logit));
+                    if (sc > max_score) {
+                        max_score = sc;
+                        best_cls = c;
+                    }
+                }
+
+                if (max_score > scoreThreshold && best_cls >= 0) {
+                    float anchor_cx = 0.0f;
+                    float anchor_cy = 0.0f;
+                    float stride_val = 8.0f;
+
+                    if (i < 6400) {
+                        stride_val = 8.0f;
+                        int gx = i % 80;
+                        int gy = i / 80;
+                        anchor_cx = (gx + 0.5f) * stride_val;
+                        anchor_cy = (gy + 0.5f) * stride_val;
+                    } else if (i < 8000) {
+                        stride_val = 16.0f;
+                        int idx = i - 6400;
+                        int gx = idx % 40;
+                        int gy = idx / 40;
+                        anchor_cx = (gx + 0.5f) * stride_val;
+                        anchor_cy = (gy + 0.5f) * stride_val;
+                    } else {
+                        stride_val = 32.0f;
+                        int idx = i - 8000;
+                        int gx = idx % 20;
+                        int gy = idx / 20;
+                        anchor_cx = (gx + 0.5f) * stride_val;
+                        anchor_cy = (gy + 0.5f) * stride_val;
+                    }
+
+                    // Decode DFL for 4 directions: left (0), top (1), right (2), bottom (3)
+                    float dist[4];
+                    for (int k = 0; k < 4; k++) {
+                        float max_val = get_feat(i, k * 16);
+                        for (int j = 1; j < 16; j++) {
+                            float v = get_feat(i, k * 16 + j);
+                            if (v > max_val) max_val = v;
+                        }
+                        float exp_vals[16];
+                        float sum_exp = 0.0f;
+                        for (int j = 0; j < 16; j++) {
+                            exp_vals[j] = std::exp(get_feat(i, k * 16 + j) - max_val);
+                            sum_exp += exp_vals[j];
+                        }
+                        float d = 0.0f;
+                        if (sum_exp > 0.0f) {
+                            for (int j = 0; j < 16; j++) {
+                                d += j * (exp_vals[j] / sum_exp);
+                            }
+                        }
+                        dist[k] = d;
+                    }
+
+                    float left = (anchor_cx - dist[0] * stride_val) * scale_x;
+                    float top = (anchor_cy - dist[1] * stride_val) * scale_y;
+                    float right = (anchor_cx + dist[2] * stride_val) * scale_x;
+                    float bottom = (anchor_cy + dist[3] * stride_val) * scale_y;
+
+                    candidates.push_back({
+                        std::max(0.0f, left),
+                        std::max(0.0f, top),
+                        std::min(static_cast<float>(orig_w), right),
+                        std::min(static_cast<float>(orig_h), bottom),
+                        max_score,
+                        best_cls
+                    });
                 }
             }
+        } else {
+            // Standard end-to-end format (cx, cy, w, h + class probabilities)
+            const int num_classes = total_features - 4;
+            for (int i = 0; i < num_anchors; i++) {
+                float max_score = -1.0f;
+                int best_cls = -1;
 
-            if (max_score > scoreThreshold && best_cls >= 0) {
-                float cx = row[0];
-                float cy = row[1];
-                float w = row[2];
-                float h = row[3];
+                for (int c = 0; c < num_classes; c++) {
+                    float sc = get_feat(i, 4 + c);
+                    if (sc > max_score) {
+                        max_score = sc;
+                        best_cls = c;
+                    }
+                }
 
-                float left = (cx - w / 2.0f) * scale_x;
-                float top = (cy - h / 2.0f) * scale_y;
-                float right = (cx + w / 2.0f) * scale_x;
-                float bottom = (cy + h / 2.0f) * scale_y;
+                if (max_score > scoreThreshold && best_cls >= 0) {
+                    float cx = get_feat(i, 0);
+                    float cy = get_feat(i, 1);
+                    float w = get_feat(i, 2);
+                    float h = get_feat(i, 3);
 
-                candidates.push_back({
-                    std::max(0.0f, left),
-                    std::max(0.0f, top),
-                    std::min(static_cast<float>(orig_w), right),
-                    std::min(static_cast<float>(orig_h), bottom),
-                    max_score,
-                    best_cls
-                });
+                    float left = (cx - w / 2.0f) * scale_x;
+                    float top = (cy - h / 2.0f) * scale_y;
+                    float right = (cx + w / 2.0f) * scale_x;
+                    float bottom = (cy + h / 2.0f) * scale_y;
+
+                    candidates.push_back({
+                        std::max(0.0f, left),
+                        std::max(0.0f, top),
+                        std::min(static_cast<float>(orig_w), right),
+                        std::min(static_cast<float>(orig_h), bottom),
+                        max_score,
+                        best_cls
+                    });
+                }
             }
         }
     }

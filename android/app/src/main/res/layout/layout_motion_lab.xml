@@ -159,11 +159,18 @@
                         app:selectionRequired="true">
 
                         <com.google.android.material.chip.Chip
-                            android:id="@+id/chipMotionFast"
+                            android:id="@+id/chipMotionRife"
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:checked="true"
+                            android:text="RIFE v4 (AI Neural)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMotionFast"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             android:text="Fast (DIS)" />
 
                         <com.google.android.material.chip.Chip
