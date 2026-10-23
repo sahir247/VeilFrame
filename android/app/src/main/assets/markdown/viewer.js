@@ -107,8 +107,8 @@
           mathPlaceholders.push({ id: id, math: math.trim(), display: true });
           return id;
         });
-        // Inline math: $ ... $ (closing $ not preceded by space, not followed by digit) or \( ... \)
-        content = content.replace(/(^|[^\$])\$([^\s\$](?:[\s\S]*?[^\s\$])?)\$(?!\d|\$)/g, function(match, prefix, math) {
+        // Inline math: $ ... $ (cannot span newlines or contain unescaped $) or \( ... \)
+        content = content.replace(/(^|[^\$])\$([^\s\$\n](?:[^\$\n]*?[^\s\$\n])?)\$(?!\d|\$)/g, function(match, prefix, math) {
           const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
           mathPlaceholders.push({ id: id, math: math.trim(), display: false });
           return prefix + id;
@@ -273,9 +273,15 @@
           let renderedMath = '';
           if (typeof katex !== 'undefined') {
             try {
-              renderedMath = katex.renderToString(item.math, {
+              let cleanMath = item.math;
+              if (cleanMath.includes('₹')) {
+                cleanMath = cleanMath.replace(/₹/g, '\\text{₹}');
+              }
+              renderedMath = katex.renderToString(cleanMath, {
                 displayMode: item.display,
-                throwOnError: false
+                throwOnError: false,
+                strict: false,
+                trust: true
               });
             } catch (e) {
               renderedMath = '<span class="katex-error">' + escapeHtml(item.math) + '</span>';

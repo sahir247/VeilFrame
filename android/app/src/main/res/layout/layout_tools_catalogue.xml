@@ -225,24 +225,6 @@
                                 android:contentDescription="Image Studio"
                                 android:src="@drawable/ic_tab_image"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -302,24 +284,6 @@
                                 android:contentDescription="Video Studio"
                                 android:src="@drawable/ic_tab_video"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -389,24 +353,6 @@
                                 android:contentDescription="QR Studio"
                                 android:src="@drawable/ic_tool_qr"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -466,24 +412,6 @@
                                 android:contentDescription="Document Scanner"
                                 android:src="@drawable/ic_camera"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -553,24 +481,6 @@
                                 android:contentDescription="Background Remover"
                                 android:src="@drawable/ic_crop"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -630,24 +540,6 @@
                                 android:contentDescription="AI Image Upscaler"
                                 android:src="@drawable/ic_resize"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -732,24 +624,6 @@
                                 android:contentDescription="Image Cleaner"
                                 android:src="@drawable/ic_shield_image"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -809,24 +683,6 @@
                                 android:contentDescription="Video Cleaner"
                                 android:src="@drawable/ic_shield_video"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -988,24 +844,6 @@
                                 android:contentDescription="Folder Scanner"
                                 android:src="@drawable/ic_tab_folder"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1090,24 +928,6 @@
                                 android:contentDescription="Code Bundler"
                                 android:src="@drawable/ic_tab_bundle"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1167,24 +987,6 @@
                                 android:contentDescription="Markdown Studio"
                                 android:src="@drawable/ic_toc"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1254,24 +1056,6 @@
                                 android:contentDescription="Provenance &amp; Verify"
                                 android:src="@drawable/ic_check_circle"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1448,19 +1232,6 @@
                             android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_pill"
-                        android:paddingStart="6dp"
-                        android:paddingEnd="6dp"
-                        android:paddingTop="2dp"
-                        android:paddingBottom="2dp"
-                        android:text="Stable"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -1506,24 +1277,6 @@
                                 android:contentDescription="Verify PDF"
                                 android:src="@drawable/ic_signature_valid"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
@@ -1583,24 +1336,6 @@
                                 android:contentDescription="Unlock PDF"
                                 android:src="@drawable/ic_lock_open"
                                 app:tint="?attr/colorPrimary" />
-
-                            <View
-                                android:layout_width="0dp"
-                                android:layout_height="0dp"
-                                android:layout_weight="1" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_badge_pill"
-                                android:paddingStart="6dp"
-                                android:paddingEnd="6dp"
-                                android:paddingTop="2dp"
-                                android:paddingBottom="2dp"
-                                android:text="Stable"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
-                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView

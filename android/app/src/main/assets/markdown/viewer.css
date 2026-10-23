@@ -326,6 +326,19 @@ body.width-full #viewer-container {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 8px 0;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.katex-display > .katex {
+  max-width: 100%;
+}
+.katex-error {
+  color: #ef4444;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 1px 4px;
+  border-radius: 4px;
 }
 
 /* Find in Page Highlighter */
