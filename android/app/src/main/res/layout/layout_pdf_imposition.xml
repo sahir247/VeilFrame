@@ -158,6 +158,110 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
+                    <!-- Live Sheet Preview Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardImpositionPreview"
+                        style="@style/Widget.Material3.CardView.Filled"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:cardCornerRadius="16dp"
+                        app:strokeColor="@color/vf_surface_variant"
+                        app:strokeWidth="1dp"
+                        android:layout_marginBottom="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginBottom="8dp">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="LIVE SHEET PREVIEW"
+                                    android:textColor="@color/vf_secondary"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:letterSpacing="0.08" />
+
+                                <TextView
+                                    android:id="@+id/tvImpositionSheetIndicator"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Sheet 1 of 1"
+                                    android:textSize="12sp"
+                                    android:textColor="@color/vf_text_secondary" />
+                            </LinearLayout>
+
+                            <FrameLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="280dp"
+                                android:background="@color/vf_container"
+                                android:padding="8dp">
+
+                                <ImageView
+                                    android:id="@+id/ivImpositionPreview"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:scaleType="fitCenter"
+                                    android:contentDescription="Imposed Sheet Preview" />
+
+                                <ProgressBar
+                                    android:id="@+id/pbImpositionLoading"
+                                    android:layout_width="36dp"
+                                    android:layout_height="36dp"
+                                    android:layout_gravity="center"
+                                    android:visibility="gone" />
+                            </FrameLayout>
+
+                            <!-- Sheet Navigation Buttons -->
+                            <LinearLayout
+                                android:id="@+id/containerImpositionSheetNav"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="8dp">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnImpositionPrevSheet"
+                                    style="@style/Widget.Material3.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Previous"
+                                    app:icon="@drawable/ic_arrow_back" />
+
+                                <TextView
+                                    android:id="@+id/tvImpositionSheetCount"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:gravity="center"
+                                    android:text="Sheet 1 / 1"
+                                    android:textStyle="bold"
+                                    android:textSize="12sp"
+                                    android:textColor="@color/vf_text_primary" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnImpositionNextSheet"
+                                    style="@style/Widget.Material3.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Next"
+                                    app:icon="@drawable/ic_arrow_forward"
+                                    app:iconGravity="end" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
                     <!-- Imposition Layout Mode -->
                     <TextView
                         android:layout_width="wrap_content"

@@ -18,6 +18,7 @@ import com.veilframe.app.pdf.imposition.ImpositionToolMode
 import com.veilframe.app.pdf.imposition.NUpLayoutMode
 import com.veilframe.app.pdf.imposition.PaperPreset
 import com.veilframe.app.pdf.imposition.PaperSize
+import com.veilframe.app.pdf.imposition.SheetLayout
 import com.veilframe.app.pdf.imposition.ZineType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,7 @@ import java.io.File
 
 /**
  * Controller orchestrating Print Imposition Studio: Booklets, N-Up (Z-order, Cut & Stack),
- * 8-Page Mini-Zines, sheet layout calculation, and print PDF export.
+ * 8-Page Mini-Zines, real-time live sheet preview, layout calculation, and print PDF export.
  */
 class PdfImpositionController(
     private val activity: AppCompatActivity,
@@ -47,6 +48,9 @@ class PdfImpositionController(
     private var isGenerating: Boolean = false
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
+    private var previewJob: Job? = null
+    private var activeSheetLayouts: List<SheetLayout> = emptyList()
+    private var currentSheetIndex: Int = 0
 
     override fun hasPickedMedia(): Boolean = activePdfUri != null
     override fun hasUnsavedWork(): Boolean = activePdfUri != null && !isSaved
@@ -54,8 +58,12 @@ class PdfImpositionController(
 
     override fun discardAndReleaseAllResources() {
         activeJob?.cancel()
+        previewJob?.cancel()
         activePdfUri = null
+        activeSheetLayouts = emptyList()
+        currentSheetIndex = 0
         isGenerating = false
+        binding.ivImpositionPreview.setImageBitmap(null)
     }
 
     fun init() {
@@ -80,7 +88,33 @@ class PdfImpositionController(
         }
 
         binding.chipGroupImpositionScheme.setOnCheckedStateChangeListener { _, checkedIds ->
-            updateImpositionPlanSummary(checkedIds.firstOrNull() ?: R.id.chipSchemeBooklet)
+            val checkedId = checkedIds.firstOrNull() ?: R.id.chipSchemeBooklet
+            updateImpositionPlanSummary(checkedId)
+            calculateAndRenderLivePreview(resetIndex = true)
+        }
+
+        binding.chipGroupImpositionPaperSize.setOnCheckedStateChangeListener { _, _ ->
+            calculateAndRenderLivePreview(resetIndex = false)
+        }
+
+        binding.switchDrawGuides.setOnCheckedChangeListener { _, _ ->
+            calculateAndRenderLivePreview(resetIndex = false)
+        }
+
+        binding.btnImpositionPrevSheet.setOnClickListener {
+            if (currentSheetIndex > 0) {
+                currentSheetIndex--
+                updateSheetPaginationUI()
+                renderCurrentSheetPreview()
+            }
+        }
+
+        binding.btnImpositionNextSheet.setOnClickListener {
+            if (currentSheetIndex < activeSheetLayouts.size - 1) {
+                currentSheetIndex++
+                updateSheetPaginationUI()
+                renderCurrentSheetPreview()
+            }
         }
 
         setupExecuteAction()
@@ -118,6 +152,7 @@ class PdfImpositionController(
                     binding.tvImpositionDocMeta.text = "$totalPages pages • ${wMm}x${hMm} mm"
                     val checked = binding.chipGroupImpositionScheme.checkedChipId
                     updateImpositionPlanSummary(if (checked != View.NO_ID) checked else R.id.chipSchemeBooklet)
+                    calculateAndRenderLivePreview(resetIndex = true)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -200,6 +235,85 @@ class PdfImpositionController(
             zineType = ZineType.ONE_SHEET_8PAGE,
             showCropMarks = binding.switchDrawGuides.isChecked
         )
+    }
+
+    private fun calculateAndRenderLivePreview(resetIndex: Boolean) {
+        if (activePdfUri == null || totalPages <= 0) return
+
+        try {
+            val config = getCurrentConfig()
+            activeSheetLayouts = ImpositionEngine.calculateLayout(
+                pageCount = totalPages,
+                sourceWidthPt = sourceWidthPt,
+                sourceHeightPt = sourceHeightPt,
+                config = config
+            )
+        } catch (_: Exception) {
+            activeSheetLayouts = emptyList()
+        }
+
+        if (resetIndex || currentSheetIndex !in activeSheetLayouts.indices) {
+            currentSheetIndex = 0
+        }
+
+        updateSheetPaginationUI()
+        renderCurrentSheetPreview()
+    }
+
+    private fun updateSheetPaginationUI() {
+        val totalSheets = activeSheetLayouts.size
+        if (totalSheets <= 0) {
+            binding.containerImpositionSheetNav.visibility = View.GONE
+            binding.tvImpositionSheetIndicator.text = ""
+            return
+        }
+
+        binding.containerImpositionSheetNav.visibility = View.VISIBLE
+        binding.btnImpositionPrevSheet.isEnabled = currentSheetIndex > 0
+        binding.btnImpositionNextSheet.isEnabled = currentSheetIndex < totalSheets - 1
+
+        val sheetNum = currentSheetIndex + 1
+        val isBooklet = binding.chipGroupImpositionScheme.checkedChipId == R.id.chipSchemeBooklet
+        val side = if (isBooklet) {
+            if (sheetNum % 2 == 1) "Front" else "Back"
+        } else {
+            "Sheet"
+        }
+
+        binding.tvImpositionSheetCount.text = "Sheet $sheetNum / $totalSheets"
+        binding.tvImpositionSheetIndicator.text = if (isBooklet) {
+            "Sheet $sheetNum of $totalSheets ($side)"
+        } else {
+            "Sheet $sheetNum of $totalSheets"
+        }
+    }
+
+    private fun renderCurrentSheetPreview() {
+        val uri = activePdfUri ?: return
+        if (currentSheetIndex !in activeSheetLayouts.indices) return
+
+        val sheet = activeSheetLayouts[currentSheetIndex]
+        val drawGuides = binding.switchDrawGuides.isChecked
+
+        previewJob?.cancel()
+        binding.pbImpositionLoading.visibility = View.VISIBLE
+
+        previewJob = scope.launch(Dispatchers.IO) {
+            val bitmap = ImpositionPdfExporter.renderSheetPreview(
+                context = activity,
+                inputUri = uri,
+                sheet = sheet,
+                drawGuides = drawGuides,
+                maxDimension = 900
+            )
+
+            withContext(Dispatchers.Main) {
+                binding.pbImpositionLoading.visibility = View.GONE
+                if (bitmap != null) {
+                    binding.ivImpositionPreview.setImageBitmap(bitmap)
+                }
+            }
+        }
     }
 
     private fun setupExecuteAction() {

@@ -140,6 +140,137 @@ object ImpositionPdfExporter {
         outputFile
     }
 
+    /**
+     * Renders a real-time live preview bitmap of an individual virtual sheet layout.
+     * Accurately scales placed pages, applies rotation, draws crop/fold guides, and sheet boundaries.
+     */
+    suspend fun renderSheetPreview(
+        context: Context,
+        inputUri: Uri,
+        sheet: SheetLayout,
+        drawGuides: Boolean,
+        maxDimension: Int = 1000
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        var pfd: ParcelFileDescriptor? = null
+        var pdfRenderer: PdfRenderer? = null
+        try {
+            pfd = context.contentResolver.openFileDescriptor(inputUri, "r") ?: return@withContext null
+            pdfRenderer = PdfRenderer(pfd)
+
+            val maxPt = maxOf(sheet.widthPt, sheet.heightPt).coerceAtLeast(1f)
+            val previewScale = (maxDimension.toFloat() / maxPt).coerceIn(0.5f, 3.0f)
+
+            val previewWidth = (sheet.widthPt * previewScale).toInt().coerceAtLeast(100)
+            val previewHeight = (sheet.heightPt * previewScale).toInt().coerceAtLeast(100)
+
+            val sheetBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(sheetBitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
+
+            val borderPaint = Paint().apply {
+                color = android.graphics.Color.parseColor("#CFD8DC")
+                strokeWidth = 1f * previewScale
+                style = Paint.Style.STROKE
+                isAntiAlias = true
+            }
+
+            val placeholderPaint = Paint().apply {
+                color = android.graphics.Color.parseColor("#F5F5F5")
+                style = Paint.Style.FILL
+            }
+
+            val placeholderTextPaint = Paint().apply {
+                color = android.graphics.Color.parseColor("#9E9E9E")
+                textSize = 10f * previewScale
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+            }
+
+            for (placement in sheet.placements) {
+                val destLeft = placement.xPt * previewScale
+                val destTop = placement.yPt * previewScale
+                val destWidth = placement.widthPt * previewScale
+                val destHeight = placement.heightPt * previewScale
+                val destRect = RectF(destLeft, destTop, destLeft + destWidth, destTop + destHeight)
+
+                if (placement.sourcePageIndex < 0 || placement.sourcePageIndex >= pdfRenderer.pageCount) {
+                    canvas.drawRect(destRect, placeholderPaint)
+                    canvas.drawRect(destRect, borderPaint)
+                    canvas.drawText(
+                        "Blank Pad",
+                        destRect.centerX(),
+                        destRect.centerY() + (placeholderTextPaint.textSize / 3f),
+                        placeholderTextPaint
+                    )
+                    continue
+                }
+
+                val sourcePage = pdfRenderer.openPage(placement.sourcePageIndex)
+                try {
+                    val srcWidth = sourcePage.width
+                    val srcHeight = sourcePage.height
+
+                    val renderScale = (maxOf(destWidth / srcWidth.toFloat(), destHeight / srcHeight.toFloat()) * 1.5f).coerceIn(0.5f, 2.5f)
+                    val renderW = (srcWidth * renderScale).toInt().coerceAtLeast(10)
+                    val renderH = (srcHeight * renderScale).toInt().coerceAtLeast(10)
+
+                    val pageBitmap = Bitmap.createBitmap(renderW, renderH, Bitmap.Config.ARGB_8888)
+                    sourcePage.render(pageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                    canvas.save()
+
+                    if (placement.rotationDegrees != 0f) {
+                        val centerX = destLeft + destWidth / 2f
+                        val centerY = destTop + destHeight / 2f
+                        canvas.rotate(placement.rotationDegrees, centerX, centerY)
+                    }
+
+                    val srcRect = if (placement.cropBox != null) {
+                        val crop = placement.cropBox
+                        val l = (pageBitmap.width * crop.leftPct).toInt()
+                        val t = (pageBitmap.height * crop.topPct).toInt()
+                        val r = (pageBitmap.width * (1f - crop.rightPct)).toInt()
+                        val b = (pageBitmap.height * (1f - crop.bottomPct)).toInt()
+                        Rect(l, t, r, b)
+                    } else {
+                        Rect(0, 0, pageBitmap.width, pageBitmap.height)
+                    }
+
+                    canvas.drawBitmap(pageBitmap, srcRect, destRect, Paint(Paint.FILTER_BITMAP_FLAG))
+                    canvas.drawRect(destRect, borderPaint)
+
+                    canvas.restore()
+                    pageBitmap.recycle()
+                } finally {
+                    sourcePage.close()
+                }
+
+                if (sheet.showPageNumbers) {
+                    drawPageNumber(canvas, placement, previewScale)
+                }
+            }
+
+            if (drawGuides) {
+                drawPrintMarks(canvas, sheet, previewScale)
+            }
+
+            val sheetBorderPaint = Paint().apply {
+                color = android.graphics.Color.parseColor("#90A4AE")
+                strokeWidth = 1.5f * previewScale
+                style = Paint.Style.STROKE
+                isAntiAlias = true
+            }
+            canvas.drawRect(0f, 0f, previewWidth.toFloat(), previewHeight.toFloat(), sheetBorderPaint)
+
+            sheetBitmap
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { pdfRenderer?.close() } catch (_: Exception) {}
+            try { pfd?.close() } catch (_: Exception) {}
+        }
+    }
+
     private fun drawPageNumber(canvas: Canvas, placement: PagePlacement, dpiScale: Float) {
         val numberText = (placement.sourcePageIndex + 1).toString()
         val textSize = 11f * dpiScale
@@ -204,6 +335,24 @@ object ImpositionPdfExporter {
                 // Bottom-Right Corner
                 canvas.drawLine(x + w + markOffset, y + h, x + w + markOffset + markLength, y + h, paint)
                 canvas.drawLine(x + w, y + h + markOffset, x + w, y + h + markOffset + markLength, paint)
+            }
+
+            // Draw fold / crease lines (dashed) between placements
+            val foldPaint = Paint().apply {
+                color = android.graphics.Color.parseColor("#E53935")
+                strokeWidth = 1f * dpiScale
+                style = Paint.Style.STROKE
+                pathEffect = android.graphics.DashPathEffect(floatArrayOf(6f * dpiScale, 6f * dpiScale), 0f)
+                isAntiAlias = true
+            }
+            if (sheet.placements.size == 2) {
+                val midX = (sheet.widthPt * dpiScale) / 2f
+                canvas.drawLine(midX, 0f, midX, sheet.heightPt * dpiScale, foldPaint)
+            } else if (sheet.placements.size == 4) {
+                val midX = (sheet.widthPt * dpiScale) / 2f
+                val midY = (sheet.heightPt * dpiScale) / 2f
+                canvas.drawLine(midX, 0f, midX, sheet.heightPt * dpiScale, foldPaint)
+                canvas.drawLine(0f, midY, sheet.widthPt * dpiScale, midY, foldPaint)
             }
         }
 
