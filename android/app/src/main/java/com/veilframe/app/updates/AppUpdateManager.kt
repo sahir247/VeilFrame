@@ -374,7 +374,7 @@ class AppUpdateManager(
             return
         }
         isCheckingUpdates = true
-        binding.progressUpdateCheck.visibility = View.VISIBLE
+        setUpdateProgressVisibility(true)
 
         scope.launch(Dispatchers.IO) {
             try {
@@ -567,9 +567,8 @@ class AppUpdateManager(
                     onLog("[SEC] Update rejected: Malformed remote versionCode ($remoteVersionCode)")
                     withContext(Dispatchers.Main) {
                         if (activity.isFinishing || activity.isDestroyed) return@withContext
-                        binding.progressUpdateCheck.visibility = View.GONE
-                        binding.tvUpdateStatus.text = "Update check blocked: Invalid remote build version"
-                        binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                        setUpdateProgressVisibility(false)
+                        setUpdateStatusText("Update check blocked: Invalid remote build version", activity.getColor(R.color.vf_accent_amber))
                         if (isUserInitiated) {
                             showSecurityAlertDialog("Update Blocked: The remote release contains an invalid or nonsensical version code ($remoteVersionCode).")
                         }
@@ -582,8 +581,7 @@ class AppUpdateManager(
                     withContext(Dispatchers.Main) {
                         if (!activity.isFinishing && !activity.isDestroyed) {
                             val headerTag = if (remoteTagName.isNotEmpty()) remoteTagName else "v$remoteVersionName"
-                            binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $headerTag"
-                            binding.tvWhatsNewContent.text = releaseChangelog
+                            setWhatsNewText("WHAT'S NEW IN $headerTag", releaseChangelog)
                         }
                     }
                     val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -595,20 +593,21 @@ class AppUpdateManager(
 
                 withContext(Dispatchers.Main) {
                     if (activity.isFinishing || activity.isDestroyed) return@withContext
-                    binding.progressUpdateCheck.visibility = View.GONE
+                    setUpdateProgressVisibility(false)
 
                     if (canProceedWithInstall) {
                         if (!isAllowedUpdateUrl(apkDownloadUrl)) {
-                            binding.tvUpdateStatus.text = if (isRepairMode) "Repair blocked: Untrusted origin" else "Update blocked: Untrusted origin"
-                            binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                            setUpdateStatusText(
+                                if (isRepairMode) "Repair blocked: Untrusted origin" else "Update blocked: Untrusted origin",
+                                activity.getColor(R.color.vf_accent_amber)
+                            )
                             showSecurityAlertDialog("Operation Blocked: The APK download URL points to an unverified origin:\n$apkDownloadUrl")
                             return@withContext
                         }
 
                         val targetName = if (manifestApkName.isNotEmpty()) sanitizeApkFilename(manifestApkName) else "VeilFrame-v$remoteVersionName.apk"
                         val statusLabel = if (isRepairMode) "Repair Package Ready: v$remoteVersionName" else "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
-                        binding.tvUpdateStatus.text = statusLabel
-                        binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                        setUpdateStatusText(statusLabel, activity.getColor(R.color.vf_accent_amber))
                         showUpdateAvailableDialog(
                             versionName = remoteVersionName,
                             versionCode = remoteVersionCode,
@@ -623,8 +622,7 @@ class AppUpdateManager(
                         Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
                         val currentDisplayVersion = com.veilframe.app.util.AppVersionProvider.getDisplayVersion(activity)
-                        binding.tvUpdateStatus.text = "Installed: $currentDisplayVersion • Up to date"
-                        binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
+                        setUpdateStatusText("Installed: $currentDisplayVersion • Up to date", activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
                             showLatestVersionDialog(currentDisplayVersion)
                         }
@@ -633,14 +631,13 @@ class AppUpdateManager(
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     if (!activity.isFinishing && !activity.isDestroyed) {
-                        binding.progressUpdateCheck.visibility = View.GONE
+                        setUpdateProgressVisibility(false)
                         val action = if (isRepairMode) "Repair check" else "Update check"
                         if (isUserInitiated) {
                             Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
                             val currentDisplayVersion = com.veilframe.app.util.AppVersionProvider.getDisplayVersion(activity)
-                            binding.tvUpdateStatus.text = "Installed: $currentDisplayVersion • Local Engine"
-                            binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_text_secondary))
+                            setUpdateStatusText("Installed: $currentDisplayVersion • Local Engine", activity.getColor(R.color.vf_text_secondary))
                         }
                     }
                 }
@@ -648,6 +645,23 @@ class AppUpdateManager(
                 isCheckingUpdates = false
             }
         }
+    }
+
+    private fun setUpdateProgressVisibility(visible: Boolean) {
+        val v = if (visible) View.VISIBLE else View.GONE
+        binding.layoutSettingsPanel.progressSettingsUpdateCheck.visibility = v
+    }
+
+    private fun setUpdateStatusText(text: String, color: Int? = null) {
+        binding.layoutSettingsPanel.tvSettingsUpdateStatus.text = text
+        if (color != null) {
+            binding.layoutSettingsPanel.tvSettingsUpdateStatus.setTextColor(color)
+        }
+    }
+
+    private fun setWhatsNewText(header: String, content: String) {
+        binding.layoutSettingsPanel.tvSettingsWhatsNewHeader.text = header
+        binding.layoutSettingsPanel.tvSettingsWhatsNewContent.text = content
     }
 
     private fun showLatestVersionDialog(version: String) {
@@ -864,9 +878,8 @@ class AppUpdateManager(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!activity.packageManager.canRequestPackageInstalls()) {
                     pendingInstallApk = apkFile
-                    binding.tvUpdateStatus.text = "Update downloaded • Tap to Install"
-                    binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
-                    binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                    setUpdateStatusText("Update downloaded • Tap to Install", activity.getColor(R.color.vf_accent_amber))
+                    binding.layoutSettingsPanel.tvSettingsUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
                     Toast.makeText(activity, "Please allow VeilFrame to install app updates", Toast.LENGTH_LONG).show()
                     val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:${activity.packageName}")
@@ -898,14 +911,13 @@ class AppUpdateManager(
                 onLog("[WARN] Intent activity query notice: ${e.message}")
             }
 
-            binding.tvUpdateStatus.text = "Installing update... (Tap to retry if interrupted)"
-            binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
-            binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_blue))
+            setUpdateStatusText("Installing update... (Tap to retry if interrupted)", activity.getColor(R.color.vf_accent_blue))
+            binding.layoutSettingsPanel.tvSettingsUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
 
             activity.startActivity(installIntent)
         } catch (e: Exception) {
-            binding.tvUpdateStatus.text = "Install interrupted • Tap to retry"
-            binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
+            setUpdateStatusText("Install interrupted • Tap to retry")
+            binding.layoutSettingsPanel.tvSettingsUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
             Toast.makeText(activity, "Installation error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

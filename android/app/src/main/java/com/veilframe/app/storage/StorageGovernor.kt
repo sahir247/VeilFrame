@@ -69,6 +69,36 @@ object StorageGovernor {
         bytesFreed
     }
 
+    fun clearCache(context: Context): Long {
+        var bytesFreed = 0L
+        for (file in getManagedFiles(context)) {
+            val size = file.length()
+            if (file.delete()) {
+                bytesFreed += size
+            }
+        }
+        return bytesFreed
+    }
+
+    /**
+     * Calculates the total disposable cache size in bytes.
+     */
+    fun getAppCacheSizeBytes(context: Context): Long {
+        return getManagedFiles(context).sumOf { it.length() }
+    }
+
+    fun formatBytes(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        var b = bytes.toDouble()
+        var unitIndex = 0
+        while (b >= 1024 && unitIndex < units.size - 1) {
+            b /= 1024
+            unitIndex++
+        }
+        return String.format(java.util.Locale.US, "%.1f %s", b, units[unitIndex])
+    }
+
     @androidx.annotation.VisibleForTesting
     internal fun getManagedFiles(context: Context): List<File> {
         // Only disposable cache directories are subject to automated quota pruning.

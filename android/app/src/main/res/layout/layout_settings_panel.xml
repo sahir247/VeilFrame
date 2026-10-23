@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
@@ -47,7 +48,6 @@
         </LinearLayout>
     </LinearLayout>
 
-
     <!-- Content ScrollView -->
     <androidx.core.widget.NestedScrollView
         android:id="@+id/scrollSettings"
@@ -62,7 +62,7 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Section 1: Base Theme Mode -->
+            <!-- Section 1: Base Theme Mode (4-Segment Horizontal Pill Bar) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -72,48 +72,58 @@
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
 
-            <RadioGroup
-                android:id="@+id/rgThemeMode"
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/toggleThemeMode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp">
+                android:layout_marginTop="8dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
 
-                <RadioButton
-                    android:id="@+id/rbThemeSystem"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnThemeSystem"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="6dp"
-                    android:text="Follow System\nMatches device day / night setting"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="System"
+                    android:textSize="12sp" />
 
-                <RadioButton
-                    android:id="@+id/rbThemeLight"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnThemeLight"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="6dp"
-                    android:text="Light\nCrisp daylight palette"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="Light"
+                    android:textSize="12sp" />
 
-                <RadioButton
-                    android:id="@+id/rbThemeDark"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnThemeDark"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="6dp"
-                    android:text="Dark\nCharcoal matte dark theme"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="Dark"
+                    android:textSize="12sp" />
 
-                <RadioButton
-                    android:id="@+id/rbThemeAmoled"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnThemeAmoled"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="6dp"
-                    android:text="AMOLED Dark\nPure #000000 true black for OLED battery savings"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
-            </RadioGroup>
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="OLED"
+                    android:textSize="12sp" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
 
             <!-- Section 2: Material You Dynamic Colors -->
             <LinearLayout
@@ -153,7 +163,7 @@
                     android:layout_marginStart="8dp" />
             </LinearLayout>
 
-            <!-- Section 3: Custom Accent Palettes -->
+            <!-- Section 3: Custom Accent Palettes (Horizontal Color Swatch Circles) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -174,50 +184,182 @@
                 android:textSize="11sp"
                 android:visibility="gone" />
 
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupAccentPalette"
+            <LinearLayout
+                android:id="@+id/layoutAccentSwatches"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                app:singleSelection="true">
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:weightSum="5">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPaletteMonochrome"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
+                <!-- 1. Monochrome (#18181B / #334155) -->
+                <FrameLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Monochrome" />
+                    android:layout_weight="1"
+                    android:gravity="center">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPaletteForestSage"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatchMonochrome"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="Monochrome palette"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="2dp"
+                        app:cardBackgroundColor="#334155"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/imgCheckMonochrome"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_done"
+                            app:tint="#FFFFFF"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+                    </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+
+                <!-- 2. Forest Sage (#2E7D32) -->
+                <FrameLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Forest Sage" />
+                    android:layout_weight="1"
+                    android:gravity="center">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPaletteDeepOcean"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatchForestSage"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="Forest Sage palette"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="2dp"
+                        app:cardBackgroundColor="#2E7D32"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/imgCheckForestSage"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_done"
+                            app:tint="#FFFFFF"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+                    </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+
+                <!-- 3. Deep Ocean (#1976D2) -->
+                <FrameLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Deep Ocean" />
+                    android:layout_weight="1"
+                    android:gravity="center">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPaletteWarmAmber"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatchDeepOcean"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="Deep Ocean palette"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="2dp"
+                        app:cardBackgroundColor="#1976D2"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/imgCheckDeepOcean"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_done"
+                            app:tint="#FFFFFF"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+                    </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+
+                <!-- 4. Warm Amber (#D97706) -->
+                <FrameLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Warm Amber" />
+                    android:layout_weight="1"
+                    android:gravity="center">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPaletteCyberViolet"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatchWarmAmber"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="Warm Amber palette"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="2dp"
+                        app:cardBackgroundColor="#D97706"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/imgCheckWarmAmber"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_done"
+                            app:tint="#FFFFFF"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+                    </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+
+                <!-- 5. Cyber Violet (#7C3AED) -->
+                <FrameLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Cyber Violet" />
-            </com.google.android.material.chip.ChipGroup>
+                    android:layout_weight="1"
+                    android:gravity="center">
 
-            <!-- Section 4: Typography -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/swatchCyberViolet"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="Cyber Violet palette"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="2dp"
+                        app:cardBackgroundColor="#7C3AED"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/imgCheckCyberViolet"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_done"
+                            app:tint="#FFFFFF"
+                            android:visibility="gone"
+                            tools:visibility="visible" />
+                    </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- Section 4: Typography (2x2 Visual Cards) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -228,50 +370,172 @@
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
 
-            <RadioGroup
-                android:id="@+id/rgTypography"
+            <GridLayout
+                android:id="@+id/gridTypography"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp">
+                android:layout_marginTop="8dp"
+                android:columnCount="2"
+                android:rowCount="2">
 
-                <RadioButton
-                    android:id="@+id/rbTypoSystem"
-                    android:layout_width="match_parent"
+                <!-- 1. System -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTypoSystem"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="System Font (Android OS Default)"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
 
-                <RadioButton
-                    android:id="@+id/rbTypoSans"
-                    android:layout_width="match_parent"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="System"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:fontFamily="sans-serif" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Android OS Default"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 2. Modern Sans -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTypoSans"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="Modern Sans (Plus Jakarta Sans)"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
 
-                <RadioButton
-                    android:id="@+id/rbTypoMonospace"
-                    android:layout_width="match_parent"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Modern"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:fontFamily="@font/font_sans" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Plus Jakarta Sans"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 3. Terminal Mono -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTypoMonospace"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="Terminal Monospace"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
 
-                <RadioButton
-                    android:id="@+id/rbTypoSerif"
-                    android:layout_width="match_parent"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Mono"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:fontFamily="@font/font_mono" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Terminal Monospace"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 4. Editorial Serif -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTypoSerif"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="Editorial Serif"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
-            </RadioGroup>
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
 
-            <!-- Section 5: Storage Governor -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Serif"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:fontFamily="@font/font_serif" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Editorial Serif"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </GridLayout>
+
+            <!-- Section 5: Storage Governor (Horizontal Segmented Bar + Clear Cache Action) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -286,62 +550,351 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="Auto-prunes oldest exports and temporary cache when storage exceeds limit. Neural AI and CV models are strictly preserved."
+                android:text="Auto-prunes oldest temporary cache when storage exceeds quota. AI and CV models are strictly preserved."
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
-            <RadioGroup
-                android:id="@+id/rgStorageLimit"
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/toggleStorageLimit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStorage1Gb"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="1 GB"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStorage2Gb"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="2 GB"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStorage4Gb"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="4 GB"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStorage8Gb"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="8 GB"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStorageUnlimited"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="2dp"
+                    android:paddingEnd="2dp"
+                    android:text="Max"
+                    android:textSize="12sp" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClearCacheNow"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Clear Cache Now"
+                app:icon="@drawable/ic_delete"
+                app:iconSize="16dp" />
+
+            <!-- Section 6: System Diagnostics & Console (Evicted from Home) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Diagnostics &amp; logs"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.08"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardSettingsDiagnostics"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="14dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="14dp">
+
+                    <ImageView
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:src="@drawable/ic_settings"
+                        app:tint="?attr/colorPrimary"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="System Diagnostics &amp; Console"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Engine status, thermal telemetry &amp; live logs"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        app:tint="?attr/colorSecondary"
+                        android:importantForAccessibility="no" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section 7: About & In-App Updates (Evicted from Home) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="About &amp; in-app updates"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.08"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardSettingsUpdates"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:cardCornerRadius="14dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="VeilFrame Mobile"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvSettingsUpdateStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Installed: v2.2.9 • Local Engine"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSettingsRepairApp"
+                            style="@style/Widget.VeilFrame.Button.Utility"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="Repair"
+                            android:textColor="@color/vf_accent_amber"
+                            app:strokeColor="@color/vf_accent_amber"
+                            app:icon="@drawable/ic_reset"
+                            app:iconSize="13dp"
+                            app:iconTint="@color/vf_accent_amber" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSettingsCheckUpdates"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:text="Update"
+                            android:textColor="@color/vf_primary"
+                            app:icon="@drawable/ic_system_update"
+                            app:iconSize="14dp"
+                            app:iconTint="@color/vf_primary" />
+                    </LinearLayout>
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progressSettingsUpdateCheck"
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:indeterminate="true"
+                        android:visibility="gone"
+                        app:indicatorColor="@color/vf_accent_green" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section 8: What's New (Evicted from Home) -->
+            <LinearLayout
+                android:id="@+id/layoutSettingsWhatsNewHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingVertical="4dp">
+
+                <TextView
+                    android:id="@+id/tvSettingsWhatsNewHeader"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="What's New in v2.2.9"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:id="@+id/ivSettingsWhatsNewChevron"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_expand_more"
+                    app:tint="?attr/colorOnSurfaceVariant"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardSettingsWhatsNew"
+                style="@style/Widget.Material3.CardView.Filled"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:layout_marginBottom="24dp">
+                android:visibility="gone"
+                app:cardCornerRadius="12dp">
 
-                <RadioButton
-                    android:id="@+id/rbStorage1Gb"
+                <TextView
+                    android:id="@+id/tvSettingsWhatsNewContent"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="1 GB"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:padding="14dp"
+                    android:text="• Structural deduplication &amp; action dashboard\n• Compact scannable tools grid with unified icons\n• Redesigned settings with color swatches &amp; pill bars\n• Zero cloud telemetry &amp; 100% forensic local processing"
+                    android:textColor="@color/vf_text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="4dp" />
+            </com.google.android.material.card.MaterialCardView>
 
-                <RadioButton
-                    android:id="@+id/rbStorage2Gb"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="2 GB (Default)"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+            <!-- Section 9: Resources & Community Links (2x2 Grid) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Resources &amp; community"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.08"
+                android:textStyle="bold" />
 
-                <RadioButton
-                    android:id="@+id/rbStorage4Gb"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="4 GB"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+            <GridLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="32dp"
+                android:columnCount="2"
+                android:rowCount="2">
 
-                <RadioButton
-                    android:id="@+id/rbStorage8Gb"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettingsLinkGithub"
+                    style="@style/Widget.VeilFrame.Button.Utility"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="8 GB"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:text="GitHub" />
 
-                <RadioButton
-                    android:id="@+id/rbStorageUnlimited"
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettingsLinkDocs"
+                    style="@style/Widget.VeilFrame.Button.Utility"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:paddingVertical="4dp"
-                    android:text="Unlimited"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp" />
-            </RadioGroup>
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:text="Docs" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettingsLinkChangelog"
+                    style="@style/Widget.VeilFrame.Button.Utility"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:text="Changelog" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettingsLinkAbout"
+                    style="@style/Widget.VeilFrame.Button.Utility"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:text="About" />
+            </GridLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

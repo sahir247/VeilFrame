@@ -202,7 +202,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -211,7 +211,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -220,8 +220,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Image Studio"
                                 android:src="@drawable/ic_tab_image"
                                 app:tint="?attr/colorPrimary" />
@@ -230,27 +230,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Image Studio"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Advanced editing, crop, color adjustment, compression"
+                            android:layout_marginTop="2dp"
+                            android:text="Advanced editing, crop, color &amp; compress"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -265,7 +279,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -274,7 +288,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -283,8 +297,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Video Studio"
                                 android:src="@drawable/ic_tab_video"
                                 app:tint="?attr/colorPrimary" />
@@ -293,27 +307,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Video Studio"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Trimming, speed adjustment, rotation, WhatsApp compress"
+                            android:layout_marginTop="2dp"
+                            android:text="Trim, speed, rotation &amp; WhatsApp compress"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -338,7 +366,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -347,7 +375,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -356,9 +384,9 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
-                                android:contentDescription="QR Code Studio"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="QR Studio"
                                 android:src="@drawable/ic_tool_qr"
                                 app:tint="?attr/colorPrimary" />
 
@@ -366,27 +394,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="QR Code Studio"
+                            android:layout_marginTop="6dp"
+                            android:text="QR Studio"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Artistic QR generator with 11 styles, CameraX scanner"
+                            android:layout_marginTop="2dp"
+                            android:text="11 artistic styles, presets &amp; safe scanner"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -401,7 +443,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -410,7 +452,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -419,8 +461,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Document Scanner"
                                 android:src="@drawable/ic_camera"
                                 app:tint="?attr/colorPrimary" />
@@ -429,27 +471,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Document Scanner"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Multi-page scan, automatic corner detection, PDF export"
+                            android:layout_marginTop="2dp"
+                            android:text="Multi-page scan, corner fix &amp; PDF export"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -474,7 +530,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -483,7 +539,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -492,8 +548,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Background Remover"
                                 android:src="@drawable/ic_crop"
                                 app:tint="?attr/colorPrimary" />
@@ -502,27 +558,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Background Remover"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Offline subject segmentation, transparent cutout, compare"
+                            android:layout_marginTop="2dp"
+                            android:text="Offline subject segmentation &amp; cutout"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -537,7 +607,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -546,7 +616,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -555,8 +625,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="AI Image Upscaler"
                                 android:src="@drawable/ic_resize"
                                 app:tint="?attr/colorPrimary" />
@@ -565,27 +635,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="AI Image Upscaler"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Offline AI super-resolution and local restoration"
+                            android:layout_marginTop="2dp"
+                            android:text="Offline AI 2x / 4x super-resolution"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -625,7 +709,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -634,7 +718,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -643,37 +727,51 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Image Cleaner"
-                                android:src="@drawable/ic_exif"
+                                android:src="@drawable/ic_shield_image"
                                 app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Image Cleaner"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Strip EXIF, GPS coordinates, camera serials, and traces"
+                            android:layout_marginTop="2dp"
+                            android:text="Strip EXIF, GPS coordinates &amp; serials"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -688,7 +786,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -697,7 +795,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -706,37 +804,51 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Video Cleaner"
-                                android:src="@drawable/ic_action_clear"
+                                android:src="@drawable/ic_shield_video"
                                 app:tint="?attr/colorPrimary" />
 
                             <View
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Video Cleaner"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Purge container metadata, chapters, encoder tags, PRNU"
+                            android:layout_marginTop="2dp"
+                            android:text="Purge container metadata, tags &amp; PRNU"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -776,7 +888,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -785,7 +897,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -794,8 +906,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Image Quality"
                                 android:src="@drawable/ic_visibility"
                                 app:tint="?attr/colorPrimary" />
@@ -808,36 +920,37 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
                                 android:paddingTop="2dp"
                                 android:paddingBottom="2dp"
                                 android:text="Beta"
                                 android:textColor="@color/vf_accent_amber"
-                                android:textSize="11sp"
+                                android:textSize="10sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Image Quality"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Evaluate sharpness, blur, sensor noise, dynamic range"
+                            android:layout_marginTop="2dp"
+                            android:text="Evaluate sharpness, blur, noise &amp; range"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -852,7 +965,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -861,7 +974,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -870,8 +983,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Folder Scanner"
                                 android:src="@drawable/ic_tab_folder"
                                 app:tint="?attr/colorPrimary" />
@@ -880,27 +993,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Folder Scanner"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Recursive directory inspection, duplicate detection, auditing"
+                            android:layout_marginTop="2dp"
+                            android:text="Directory inspection &amp; duplicate audit"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -921,7 +1048,7 @@
                 android:textStyle="bold"
                 android:letterSpacing="0.08" />
 
-            <!-- Row 1: AI Context Bundler + Markdown Studio -->
+            <!-- Row 1: Code Bundler + Markdown Studio -->
             <LinearLayout
                 android:id="@+id/rowDev1"
                 android:layout_width="match_parent"
@@ -930,7 +1057,7 @@
                 android:baselineAligned="false"
                 android:layout_marginBottom="10dp">
 
-                <!-- 11. AI Context Bundler -->
+                <!-- 11. Code Bundler -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardToolAiBundler"
                     style="@style/Widget.Material3.CardView.Filled"
@@ -940,7 +1067,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -949,7 +1076,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -958,9 +1085,9 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
-                                android:contentDescription="AI Context Bundler"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="Code Bundler"
                                 android:src="@drawable/ic_tab_bundle"
                                 app:tint="?attr/colorPrimary" />
 
@@ -968,27 +1095,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="AI Context Bundler"
+                            android:layout_marginTop="6dp"
+                            android:text="Code Bundler"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Compile codebases into secure, token-budgeted .aibundle"
+                            android:layout_marginTop="2dp"
+                            android:text="Compile codebases into .aibundle archives"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -1003,7 +1144,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -1012,7 +1153,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1021,8 +1162,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Markdown Studio"
                                 android:src="@drawable/ic_toc"
                                 app:tint="?attr/colorPrimary" />
@@ -1031,38 +1172,53 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Markdown Studio"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Offline markdown previewer, report viewer, and editor"
+                            android:layout_marginTop="2dp"
+                            android:text="Offline markdown viewer &amp; report editor"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- Row 2: Provenance & Verify -->
+            <!-- Row 2: Provenance & Verify + Motion Lab -->
             <LinearLayout
                 android:id="@+id/rowDev2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:baselineAligned="false"
                 android:layout_marginBottom="16dp">
 
                 <!-- 13. Provenance & Verify -->
@@ -1075,7 +1231,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -1084,7 +1240,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1093,8 +1249,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Provenance &amp; Verify"
                                 android:src="@drawable/ic_check_circle"
                                 app:tint="?attr/colorPrimary" />
@@ -1103,27 +1259,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Provenance &amp; Verify"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Ed25519 digital signature validation, SHA-256 integrity, audit manifests"
+                            android:layout_marginTop="2dp"
+                            android:text="Ed25519 digital signature &amp; SHA-256 audit"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -1138,7 +1308,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -1147,7 +1317,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1156,8 +1326,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Motion Lab"
                                 android:src="@drawable/ic_speed"
                                 app:tint="?attr/colorPrimary" />
@@ -1170,36 +1340,37 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
-                                android:paddingStart="5dp"
-                                android:paddingEnd="5dp"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
                                 android:paddingTop="2dp"
                                 android:paddingBottom="2dp"
                                 android:text="Alpha"
                                 android:textColor="@color/vf_accent_amber"
-                                android:textSize="11sp"
+                                android:textSize="10sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Motion Lab"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Optical-flow frame interpolation — 2×/4× smoother motion"
+                            android:layout_marginTop="2dp"
+                            android:text="Optical-flow 2x / 4x frame interpolation"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -1212,7 +1383,7 @@
                 android:id="@+id/headerCategoryPdfOperations"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
                 android:text="PDF operations"
                 android:textColor="@color/vf_secondary"
@@ -1220,7 +1391,7 @@
                 android:textStyle="bold"
                 android:letterSpacing="0.08" />
 
-                        <!-- Row PDF Hub: PDF Studio Hub -->
+            <!-- Row PDF Hub: PDF Studio Hub -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolPdfStudio"
                 style="@style/Widget.Material3.CardView.Filled"
@@ -1229,7 +1400,7 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="14dp"
                 app:cardElevation="1dp"
                 app:strokeColor="@color/vf_surface_variant"
                 app:strokeWidth="1dp">
@@ -1239,11 +1410,11 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:padding="14dp">
+                    android:padding="12dp">
 
                     <ImageView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
                         android:contentDescription="PDF Studio Hub"
                         android:src="@drawable/ic_pdf_file"
                         app:tint="?attr/colorPrimary" />
@@ -1252,7 +1423,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="14dp"
+                        android:layout_marginStart="12dp"
                         android:layout_marginEnd="8dp"
                         android:orientation="vertical">
 
@@ -1261,27 +1432,39 @@
                             android:layout_height="wrap_content"
                             android:text="PDF Studio Hub"
                             android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="Universal document workspace: Merge, Split, Extract, Watermark, Flatten &amp; Print"
+                            android:text="Universal document suite for merge, split &amp; OCR"
                             android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textSize="11sp"
+                            android:maxLines="2"
+                            android:ellipsize="end" />
                     </LinearLayout>
 
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        app:tint="?attr/colorSecondary" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_pill"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:text="Stable"
+                        android:textColor="@color/vf_accent_green"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Row PDF 1: PDF Signature Validation + Unlock PDF -->
+            <!-- Row PDF 1: Verify PDF + Unlock PDF -->
             <LinearLayout
                 android:id="@+id/rowPdf1"
                 android:layout_width="match_parent"
@@ -1290,7 +1473,7 @@
                 android:baselineAligned="false"
                 android:layout_marginBottom="10dp">
 
-                <!-- 1. PDF Signature Validator -->
+                <!-- 16. Verify PDF -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardToolPdfSignature"
                     style="@style/Widget.Material3.CardView.Filled"
@@ -1300,7 +1483,7 @@
                     android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -1309,7 +1492,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1318,9 +1501,9 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
-                                android:contentDescription="PDF Signature Validator"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="Verify PDF"
                                 android:src="@drawable/ic_signature_valid"
                                 app:tint="?attr/colorPrimary" />
 
@@ -1328,32 +1511,46 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="Signature Validator"
+                            android:layout_marginTop="6dp"
+                            android:text="Verify PDF"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Cryptographic signature audit, PKIX chain checks &amp; green checkmark stamping"
+                            android:layout_marginTop="2dp"
+                            android:text="Cryptographic signature &amp; PKIX checkmark audit"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- 2. Unlock PDF -->
+                <!-- 17. Unlock PDF -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardToolPdfUnlock"
                     style="@style/Widget.Material3.CardView.Filled"
@@ -1363,7 +1560,7 @@
                     android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="14dp"
                     app:cardElevation="1dp"
                     app:strokeColor="@color/vf_surface_variant"
                     app:strokeWidth="1dp">
@@ -1372,7 +1569,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:orientation="vertical"
-                        android:padding="12dp">
+                        android:padding="10dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1381,8 +1578,8 @@
                             android:orientation="horizontal">
 
                             <ImageView
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:contentDescription="Unlock PDF"
                                 android:src="@drawable/ic_lock_open"
                                 app:tint="?attr/colorPrimary" />
@@ -1391,27 +1588,41 @@
                                 android:layout_width="0dp"
                                 android:layout_height="0dp"
                                 android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="6dp"
                             android:text="Unlock PDF"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="13sp"
                             android:textStyle="bold"
+                            android:singleLine="true"
                             android:maxLines="1"
                             android:ellipsize="end" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Remove password protection, decrypt offline &amp; export unlocked document"
+                            android:layout_marginTop="2dp"
+                            android:text="Remove password protection &amp; decrypt offline"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>

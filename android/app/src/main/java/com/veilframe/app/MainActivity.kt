@@ -1,4 +1,4 @@
-﻿package com.veilframe.app
+package com.veilframe.app
 
 import android.app.Activity
 import android.content.Context
@@ -344,6 +344,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Dedicated Tools SAF and Photo Picker Activity Result Launchers
+    private val homePhotoPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            handleHomeFileIntake(uri)
+        }
+    }
+
+    private val homeVideoPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            handleHomeFileIntake(uri)
+        }
+    }
+
+    private val homeDocPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            handleHomeFileIntake(uri)
+        }
+    }
+
+    private val homeFilePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            handleHomeFileIntake(uri)
+        }
+    }
+
     private val visualMediaPickerLauncher = registerForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -580,10 +614,10 @@ class MainActivity : AppCompatActivity() {
         val cachedTag = prefs.getString("cached_changelog_tag", null)
         val cachedChangelog = prefs.getString("cached_changelog", null)
         if (!cachedTag.isNullOrEmpty() && !cachedChangelog.isNullOrEmpty()) {
-            binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $cachedTag"
-            binding.tvWhatsNewContent.text = cachedChangelog
+            binding.layoutSettingsPanel.tvSettingsWhatsNewHeader.text = "WHAT'S NEW IN $cachedTag"
+            binding.layoutSettingsPanel.tvSettingsWhatsNewContent.text = cachedChangelog
         } else {
-            binding.tvWhatsNewHeader.text = "WHAT'S NEW IN ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)}"
+            binding.layoutSettingsPanel.tvSettingsWhatsNewHeader.text = "WHAT'S NEW IN ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)}"
         }
 
         // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel + bottom navigation / rail
@@ -661,7 +695,7 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         VeilFrameInteraction.bindWorkspace(binding.root)
 
-        binding.tvUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
+        binding.layoutSettingsPanel.tvSettingsUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
 
         consoleLogController.log("[SYS] Initialized VeilFrame ${com.veilframe.app.util.AppVersionProvider.getVersionName(this)} Native Core Runtime")
         consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
@@ -744,7 +778,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         appUpdateManager.onResume()
-        updateHeroBanner()
     }
 
     override fun onPause() {
@@ -983,7 +1016,12 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onRecreateNeeded = { restoreScrollY ->
                 seamlessRecreateSettings(restoreScrollY)
-            }
+            },
+            onOpenDiagnostics = { showDiagnosticsDialog() },
+            onCheckUpdates = { appUpdateManager.checkForUpdates(isUserInitiated = true) },
+            onRepairApp = { appUpdateManager.repairApp() },
+            onOpenUrl = { url -> openWebUrl(url) },
+            onShowAbout = { showAboutDialog() }
         )
     }
 
@@ -1193,31 +1231,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         // Theme & Appearance actions
-        binding.btnToggleTheme.setOnClickListener { toggleTheme() }
-        binding.btnToolToggleTheme.setOnClickListener { toggleTheme() }
         binding.btnSettings.setOnClickListener { openSettingsOverlay() }
         binding.btnToolSettings.setOnClickListener { openSettingsOverlay() }
 
         // Material 3 Expressive Motion: tactile touch bounce on all primary interactive views
         val interactiveBounceViews = listOf(
-            binding.btnToggleTheme,
-            binding.btnToolToggleTheme,
             binding.btnSettings,
             binding.btnToolSettings,
-            binding.cardToolAi,
-            binding.cardToolVideo,
-            binding.cardToolImage,
-            binding.cardToolFolder,
-            binding.cardToolImageStudio,
-            binding.cardToolVideoStudio,
-            binding.cardToolImageUpscaler,
-            binding.cardToolMarkdownViewer,
-            binding.btnCheckUpdates,
-            binding.btnRepairApp,
-            binding.btnLinkGithub,
-            binding.btnLinkDocs,
-            binding.btnLinkChangelog,
-            binding.btnLinkAbout,
+            binding.cardHomeFileIntake,
+            binding.btnHomeIntakePhoto,
+            binding.btnHomeIntakeVideo,
+            binding.btnHomeIntakeDoc,
+            binding.btnHomeIntakeBrowse,
+            binding.cardRecent1,
+            binding.cardRecent2,
+            binding.cardRecent3,
+            binding.cardRecent4,
+            binding.btnSeeAllTools,
+            binding.cardPrivacyPulse,
             binding.btnPickFolder,
             binding.btnPickFile,
             binding.btnClearTarget,
@@ -1228,111 +1259,27 @@ class MainActivity : AppCompatActivity() {
             binding.btnShareResult,
             binding.btnResultSave,
             binding.btnResultShare,
-            binding.btnResultPreview,
-            binding.cardHomeDocScanner,
-            binding.cardHomeBgRemover,
-            binding.cardHomeMotionLab,
-            binding.cardHomeImageQuality,
-            binding.cardHomeProvenance,
-            binding.cardHomePdfStudio,
-            binding.cardHomePdfSignature,
-            binding.cardHomeDiagnostics
+            binding.btnResultPreview
         )
         interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
 
-        // Home Dashboard Tool Cards - DISTINCT CLEANER WORKFLOWS
-        binding.cardToolAi.setOnClickListener {
-            openTool(ToolMode.AI_BUNDLE)
-        }
+        // Home Action Dashboard - Universal File Intake Pickers
+        binding.btnHomeIntakePhoto.setOnClickListener { homePhotoPickerLauncher.launch("image/*") }
+        binding.btnHomeIntakeVideo.setOnClickListener { homeVideoPickerLauncher.launch("video/*") }
+        binding.btnHomeIntakeDoc.setOnClickListener { homeDocPickerLauncher.launch(arrayOf("application/pdf", "text/*", "application/*")) }
+        binding.btnHomeIntakeBrowse.setOnClickListener { homeFilePickerLauncher.launch(arrayOf("*/*")) }
+        binding.btnHomeIntakeClear.setOnClickListener { clearHomeFileIntake() }
 
-        binding.cardToolVideo.setOnClickListener {
-            openTool(ToolMode.VIDEO_CLEANER) // Dedicated Video Sanitizer
-        }
+        // Home Action Dashboard - Pinned / Recent Engines (2x2 Grid)
+        binding.cardRecent1.setOnClickListener { openTool(ToolMode.VIDEO_CLEANER) }
+        binding.cardRecent2.setOnClickListener { openTool(ToolMode.IMAGE_CLEANER) }
+        binding.cardRecent3.setOnClickListener { openImageUpscaler() }
+        binding.cardRecent4.setOnClickListener { openTool(ToolMode.AI_BUNDLE) }
 
-        binding.cardToolImage.setOnClickListener {
-            openTool(ToolMode.IMAGE_CLEANER) // Dedicated Image Cleaner
+        // Jump to Tools Catalogue tab
+        binding.btnSeeAllTools.setOnClickListener {
+            binding.bottomNavigation.selectedItemId = R.id.nav_tools
         }
-
-        binding.cardToolFolder.setOnClickListener {
-            openTool(ToolMode.FOLDER_SCANNER)
-        }
-
-        // Image Studio & Video Studio Dashboard Cards - DISTINCT STUDIO WORKFLOWS
-        binding.cardToolImageStudio.setOnClickListener {
-            openImageStudio()
-        }
-
-        binding.cardToolVideoStudio.setOnClickListener {
-            openVideoStudio()
-        }
-
-        binding.cardToolImageUpscaler.setOnClickListener {
-            openImageUpscaler()
-        }
-
-        binding.cardToolQr.setOnClickListener {
-            openQrStudio()
-        }
-
-        updateHeroBanner()
-
-        binding.cardHomeDocScanner.setOnClickListener {
-            openDocumentScanner()
-        }
-
-        binding.cardHomeBgRemover.setOnClickListener {
-            openBackgroundRemover()
-        }
-
-        binding.cardHomeMotionLab.setOnClickListener {
-            openMotionLab()
-        }
-
-        binding.cardHomeImageQuality.setOnClickListener {
-            showImageQualitySourcePicker()
-        }
-
-        binding.cardHomeProvenance.setOnClickListener {
-            openProvenance()
-        }
-
-        binding.cardHomePdfStudio.setOnClickListener {
-            openPdfStudio()
-        }
-
-        binding.cardHomePdfSignature.setOnClickListener {
-            openPdfSignature()
-        }
-
-        binding.cardHomeDiagnostics.setOnClickListener {
-            showDiagnosticsDialog()
-        }
-
-        // In-App Updates & Repair Button
-        binding.btnCheckUpdates.setOnClickListener {
-            appUpdateManager.checkForUpdates(isUserInitiated = true)
-        }
-        binding.btnRepairApp.setOnClickListener {
-            appUpdateManager.repairApp()
-        }
-
-        // What's New Collapsible Header
-        binding.layoutWhatsNewHeader.setOnClickListener {
-            val isCurrentlyVisible = binding.cardWhatsNew.visibility == View.VISIBLE
-            if (isCurrentlyVisible) {
-                binding.cardWhatsNew.visibility = View.GONE
-                binding.ivWhatsNewChevron.animate().rotation(0f).setDuration(200).start()
-            } else {
-                binding.cardWhatsNew.visibility = View.VISIBLE
-                binding.ivWhatsNewChevron.animate().rotation(180f).setDuration(200).start()
-            }
-        }
-
-        // External Links
-        binding.btnLinkGithub.setOnClickListener { openWebUrl("https://github.com/sahir247/VeilFrame") }
-        binding.btnLinkDocs.setOnClickListener { openWebUrl("https://github.com/sahir247/VeilFrame#readme") }
-        binding.btnLinkChangelog.setOnClickListener { openWebUrl("https://github.com/sahir247/VeilFrame/blob/main/RELEASE_NOTES.md") }
-        binding.btnLinkAbout.setOnClickListener { showAboutDialog() }
 
         // Target Pickers inside Tool
         binding.btnPickFolder.setOnClickListener { folderPickerLauncher.launch(null) }
@@ -1347,11 +1294,6 @@ class MainActivity : AppCompatActivity() {
             binding.btnToggleConsole.setIconResource(
                 if (isConsoleExpanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more
             )
-        }
-
-        // Markdown Viewer Dashboard Card (Open Existing or Create Blank)
-        binding.cardToolMarkdownViewer.setOnClickListener {
-            showMarkdownStudioEntryDialog()
         }
 
         // Result Card Direct Actions
@@ -1372,69 +1314,141 @@ class MainActivity : AppCompatActivity() {
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
     }
 
-    private fun updateHeroBanner() {
-        val topTool = com.veilframe.app.tools.ToolUsageTracker.getMostUsedTool(this)
-        binding.tvHeroCategory.text = topTool.category
-        binding.tvHeroBadge.text = topTool.badge
-        binding.tvHeroTitle.text = topTool.title
-        binding.tvHeroDescription.text = topTool.description
-        binding.btnHeroLaunch.text = topTool.buttonText
-        binding.btnHeroLaunch.setIconResource(topTool.iconRes)
-        val launchAction = {
-            when (topTool) {
-                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_UPSCALER -> openImageUpscaler()
-                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.DOCUMENT_SCANNER -> openDocumentScanner()
-                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.QR_STUDIO -> openQrStudio()
-                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.VIDEO_STUDIO -> openVideoStudio()
-                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_STUDIO -> openImageStudio()
+    private var currentHomeIntakeUri: Uri? = null
+
+    private fun handleHomeFileIntake(uri: Uri) {
+        currentHomeIntakeUri = uri
+        val mimeType = contentResolver.getType(uri) ?: ""
+        val displayName = safStorageManager.getDisplayName(uri)
+        val sizeBytes = safStorageManager.queryFileSize(uri)
+        val sizeStr = safStorageManager.formatBytes(sizeBytes)
+
+        binding.layoutHomeIntakePickers.visibility = View.GONE
+        binding.layoutHomeIntakeMounted.visibility = View.VISIBLE
+        binding.tvHomeIntakeFileName.text = displayName
+        binding.tvHomeIntakeMeta.text = if (sizeBytes > 0) "$sizeStr • ${mimeType.ifEmpty { "File" }}" else mimeType.ifEmpty { "Selected File" }
+
+        val isImage = mimeType.startsWith("image/") || displayName.endsWith(".jpg", true) || displayName.endsWith(".png", true) || displayName.endsWith(".webp", true) || displayName.endsWith(".heic", true)
+        val isVideo = mimeType.startsWith("video/") || displayName.endsWith(".mp4", true) || displayName.endsWith(".mkv", true) || displayName.endsWith(".mov", true) || displayName.endsWith(".avi", true)
+        val isPdf = mimeType == "application/pdf" || displayName.endsWith(".pdf", true)
+
+        if (isImage) {
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_image)
+            binding.btnSuggestEngine1.apply {
+                text = "Clean EXIF"
+                setIconResource(R.drawable.ic_shield_image)
+                setOnClickListener {
+                    openTool(ToolMode.IMAGE_CLEANER)
+                    handleSingleFileSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "AI Upscale"
+                setIconResource(R.drawable.ic_resize)
+                setOnClickListener {
+                    openImageUpscaler()
+                    workspaceHost.getOrInflateImageUpscaler()
+                    imageUpscalerController.handleImageSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Remove BG"
+                setIconResource(R.drawable.ic_crop)
+                setOnClickListener {
+                    openBackgroundRemover()
+                    workspaceHost.getOrInflateBackgroundRemover()
+                    backgroundRemoverController.handleImageSelected(uri)
+                }
+            }
+        } else if (isVideo) {
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_video)
+            binding.btnSuggestEngine1.apply {
+                text = "Clean Video"
+                setIconResource(R.drawable.ic_shield_video)
+                setOnClickListener {
+                    openTool(ToolMode.VIDEO_CLEANER)
+                    handleSingleFileSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "Video Studio"
+                setIconResource(R.drawable.ic_tab_video)
+                setOnClickListener {
+                    openVideoStudio()
+                    videoStudioController.handleVideosSelected(listOf(uri))
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Motion Lab"
+                setIconResource(R.drawable.ic_speed)
+                setOnClickListener {
+                    openMotionLab()
+                    workspaceHost.getOrInflateMotionLab()
+                    motionLabController.setSource(uri)
+                }
+            }
+        } else if (isPdf) {
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_pdf_file)
+            binding.btnSuggestEngine1.apply {
+                text = "Verify PDF"
+                setIconResource(R.drawable.ic_signature_valid)
+                setOnClickListener {
+                    openPdfSignature()
+                    workspaceHost.getOrInflatePdfSignature()
+                    pdfSignatureController.handlePdfSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "PDF Studio"
+                setIconResource(R.drawable.ic_pdf_file)
+                setOnClickListener {
+                    openPdfStudio()
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Unlock PDF"
+                setIconResource(R.drawable.ic_lock_open)
+                setOnClickListener {
+                    openPdfUnlock()
+                    workspaceHost.getOrInflatePdfUnlock()
+                    pdfUnlockController.handlePdfSelected(uri)
+                }
+            }
+        } else {
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_folder)
+            binding.btnSuggestEngine1.apply {
+                text = "Code Bundler"
+                setIconResource(R.drawable.ic_tab_bundle)
+                setOnClickListener {
+                    openTool(ToolMode.AI_BUNDLE)
+                    handleSingleFileSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "Scan Folder"
+                setIconResource(R.drawable.ic_tab_folder)
+                setOnClickListener {
+                    openTool(ToolMode.FOLDER_SCANNER)
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Provenance"
+                setIconResource(R.drawable.ic_certificate)
+                setOnClickListener {
+                    openProvenance()
+                    workspaceHost.getOrInflateProvenance()
+                    provenanceController.handleFileSelected(uri)
+                }
             }
         }
-        binding.cardHeroUpscaler.setOnClickListener { launchAction() }
-        binding.btnHeroLaunch.setOnClickListener { launchAction() }
     }
 
-    private fun showDocumentSourcePicker() {
-        SharedSourcePickerSheet.newInstance(
-            title = "Document Scanner Source",
-            mediaType = SharedSourcePickerSheet.MediaType.DOCUMENT_ONLY,
-            isCameraEnabled = true
-        ) { source ->
-            when (source) {
-                SharedSourcePickerSheet.SourceType.CAMERA -> {
-                    openDocumentScanner()
-                    docScannerController.openCameraViewfinder()
-                }
-                SharedSourcePickerSheet.SourceType.PHOTOS -> {
-                    openDocumentScanner()
-                    docScannerPhotosLauncher.launch("image/*")
-                }
-                SharedSourcePickerSheet.SourceType.FILES -> {
-                    openDocumentScanner()
-                    docScannerFilesLauncher.launch(arrayOf("image/*", "application/pdf"))
-                }
-            }
-        }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
+    private fun clearHomeFileIntake() {
+        currentHomeIntakeUri = null
+        binding.layoutHomeIntakeMounted.visibility = View.GONE
+        binding.layoutHomeIntakePickers.visibility = View.VISIBLE
     }
 
-    private fun showBackgroundRemoverSourcePicker() {
-        SharedSourcePickerSheet.newInstance(
-            title = "Background Remover Source",
-            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY,
-            isCameraEnabled = false,
-            cameraDisabledReason = "Background Remover operates on gallery photos and image files"
-        ) { source ->
-            when (source) {
-                SharedSourcePickerSheet.SourceType.CAMERA -> {
-                    Toast.makeText(this, "Camera capture is not supported for background removal", Toast.LENGTH_SHORT).show()
-                }
-                SharedSourcePickerSheet.SourceType.PHOTOS,
-                SharedSourcePickerSheet.SourceType.FILES -> {
-                    openBackgroundRemover()
-                    bgRemoverPickerLauncher.launch("image/*")
-                }
-            }
-        }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
-    }
 
     private fun showImageQualitySourcePicker() {
         SharedSourcePickerSheet.newInstance(
@@ -1904,23 +1918,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun toggleTheme() {
-        val current = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
-        val next = when (current) {
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> {
-                val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-                if (isDark) com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT else com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
-            }
-            else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
-        }
-        com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next, applyImmediately = true)
-        // Toolbar toggle: immediate recreate (not inside settings panel)
-        com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
-        recreate()
-    }
 
     internal fun openSettingsOverlay(animate: Boolean = true, restoreScrollY: Int? = null) {
         settingsOverlayCoordinator.open(animate, restoreScrollY)

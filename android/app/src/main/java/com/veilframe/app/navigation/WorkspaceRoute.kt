@@ -97,7 +97,7 @@ enum class WorkspaceRoute(
         category = WorkspaceCategory.PRIVACY,
         status = WorkspaceStatus.STABLE,
         aliases = listOf("metadata", "exif", "gps", "privacy", "sanitize", "clean", "scrub"),
-        iconRes = R.drawable.ic_exif
+        iconRes = R.drawable.ic_shield_image
     ),
     VIDEO_CLEANER(
         id = "video_cleaner",
@@ -106,7 +106,7 @@ enum class WorkspaceRoute(
         category = WorkspaceCategory.PRIVACY,
         status = WorkspaceStatus.STABLE,
         aliases = listOf("video privacy", "metadata", "prnu", "sanitize", "clean", "scrub"),
-        iconRes = R.drawable.ic_action_clear
+        iconRes = R.drawable.ic_shield_video
     ),
     IMAGE_QUALITY(
         id = "image_quality",
@@ -128,11 +128,11 @@ enum class WorkspaceRoute(
     ),
     AI_BUNDLE(
         id = "ai_bundle",
-        title = "AI Context Bundler",
+        title = "Code Bundler",
         description = "Compile codebases and docs into secure, token-budgeted .aibundle archives",
         category = WorkspaceCategory.DEVELOPER,
         status = WorkspaceStatus.STABLE,
-        aliases = listOf("bundle", "ai", "llm", "context", "prompt", "token", "source"),
+        aliases = listOf("bundle", "ai", "code", "ai bundle", "llm", "context", "prompt", "token", "source"),
         iconRes = R.drawable.ic_tab_bundle
     ),
     MARKDOWN_STUDIO(
@@ -173,7 +173,7 @@ enum class WorkspaceRoute(
     ),
     PDF_SIGNATURE(
         id = "pdf_signature",
-        title = "PDF Signature Validator",
+        title = "Verify PDF",
         description = "Cryptographic signature validation, PKIX certificate checking, and authentic checkmark stamping",
         category = WorkspaceCategory.PDF_OPERATIONS,
         status = WorkspaceStatus.STABLE,

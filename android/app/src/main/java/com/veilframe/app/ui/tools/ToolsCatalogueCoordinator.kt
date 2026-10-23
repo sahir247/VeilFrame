@@ -107,6 +107,44 @@ class ToolsCatalogueCoordinator(
             if (visible) visibleCount++
         }
 
+        // Dynamically collapse empty rows to prevent whitespace
+        val allRows = listOf(
+            binding.rowCreate1 to listOf(binding.cardToolImageStudio, binding.cardToolVideoStudio),
+            binding.rowCreate2 to listOf(binding.cardToolQrStudio, binding.cardToolDocScanner),
+            binding.rowCreate3 to listOf(binding.cardToolBgRemover, binding.cardToolAiUpscaler),
+            binding.rowPrivacy1 to listOf(binding.cardToolPrivacyScrubber, binding.cardToolVideoCleaner),
+            binding.rowAnalyze1 to listOf(binding.cardToolImageQuality, binding.cardToolFolderAnalyzer),
+            binding.rowDev1 to listOf(binding.cardToolAiBundler, binding.cardToolMarkdownStudio),
+            binding.rowDev2 to listOf(binding.cardToolProvenance, binding.cardToolMotionLab),
+            binding.rowPdf1 to listOf(binding.cardToolPdfSignature, binding.cardToolPdfUnlock)
+        )
+
+        allRows.forEach { (row, rowCards) ->
+            row.visibility = if (rowCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+        }
+
+        // Collapse category headers when category is filtered out or empty
+        val createCards = listOf(binding.cardToolImageStudio, binding.cardToolVideoStudio, binding.cardToolQrStudio, binding.cardToolDocScanner, binding.cardToolBgRemover, binding.cardToolAiUpscaler)
+        val privacyCards = listOf(binding.cardToolPrivacyScrubber, binding.cardToolVideoCleaner)
+        val analyzeCards = listOf(binding.cardToolImageQuality, binding.cardToolFolderAnalyzer)
+        val devCards = listOf(binding.cardToolAiBundler, binding.cardToolMarkdownStudio, binding.cardToolProvenance, binding.cardToolMotionLab)
+        val pdfCards = listOf(binding.cardToolPdfStudio, binding.cardToolPdfSignature, binding.cardToolPdfUnlock)
+
+        binding.headerCategoryCreateEdit.visibility =
+            if ((selectedCategory == null || selectedCategory == WorkspaceCategory.CREATE_EDIT) && createCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+
+        binding.headerCategoryPrivacy.visibility =
+            if ((selectedCategory == null || selectedCategory == WorkspaceCategory.PRIVACY) && privacyCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+
+        binding.headerCategoryAnalyze.visibility =
+            if ((selectedCategory == null || selectedCategory == WorkspaceCategory.ANALYZE) && analyzeCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+
+        binding.headerCategoryDeveloper.visibility =
+            if ((selectedCategory == null || selectedCategory == WorkspaceCategory.DEVELOPER) && devCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+
+        binding.headerCategoryPdfOperations.visibility =
+            if ((selectedCategory == null || selectedCategory == WorkspaceCategory.PDF_OPERATIONS) && pdfCards.any { it.visibility == View.VISIBLE }) View.VISIBLE else View.GONE
+
         binding.containerEmptySearch.visibility =
             if (visibleCount == 0) View.VISIBLE else View.GONE
     }
