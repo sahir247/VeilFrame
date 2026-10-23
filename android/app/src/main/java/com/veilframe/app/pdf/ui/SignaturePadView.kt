@@ -21,9 +21,12 @@ class SignaturePadView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
+    private val isNightMode: Boolean
+        get() = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+
     private val path = Path()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#18181B") // VeilFrame primary ink
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
@@ -35,6 +38,11 @@ class SignaturePadView @JvmOverloads constructor(
     private var isPathEmpty = true
 
     var onSignatureChanged: ((isEmpty: Boolean) -> Unit)? = null
+
+    init {
+        // In dark mode, visible sign is white, in light mode it is dark
+        paint.color = if (isNightMode) Color.WHITE else Color.parseColor("#18181B")
+    }
 
     var penColor: Int
         get() = paint.color
@@ -99,7 +107,7 @@ class SignaturePadView @JvmOverloads constructor(
         return super.onTouchEvent(event)
     }
 
-    fun getSignatureBitmap(): Bitmap? {
+    fun getSignatureBitmap(targetColor: Int? = null, opacity: Float = 1.0f): Bitmap? {
         if (isPathEmpty || width <= 0 || height <= 0) return null
 
         val bounds = RectF()
@@ -118,7 +126,14 @@ class SignaturePadView @JvmOverloads constructor(
         val bitmap = Bitmap.createBitmap(cropW, cropH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.translate(-rect.left, -rect.top)
-        canvas.drawPath(path, paint)
+
+        val renderPaint = Paint(paint).apply {
+            if (targetColor != null) {
+                color = targetColor
+            }
+            alpha = (opacity.coerceIn(0.05f, 1.0f) * 255).toInt()
+        }
+        canvas.drawPath(path, renderPaint)
         return bitmap
     }
 }

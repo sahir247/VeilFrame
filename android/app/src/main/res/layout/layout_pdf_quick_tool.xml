@@ -187,6 +187,101 @@
                         android:layout_marginTop="8dp"
                         android:text="Add Another File"
                         app:icon="@drawable/ic_add" />
+
+                    <!-- Merge Mode Selector: File Sequence vs Granular Page Interleave -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupMergeMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="8dp"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMergeModeFiles"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="File Sequence" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMergeModePages"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Custom Page Interleave" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <!-- Page-Level Interleaving View -->
+                    <LinearLayout
+                        android:id="@+id/layoutMergePageInterleave"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Drag cards to interleave in custom order (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9). Tap ⤢ to preview."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginBottom="8dp" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/tilCustomMergeOrder"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="Custom Page Sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)"
+                            app:boxCornerRadiusBottomEnd="12dp"
+                            app:boxCornerRadiusBottomStart="12dp"
+                            app:boxCornerRadiusTopEnd="12dp"
+                            app:boxCornerRadiusTopStart="12dp"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etCustomMergeOrder"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:maxLines="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnApplyMergeOrder"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:text="Apply Order" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnResetMergeOrder"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="4dp"
+                                android:text="Reset Natural" />
+                        </LinearLayout>
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvMergePageItems"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:nestedScrollingEnabled="false"
+                            android:clipToPadding="false"
+                            android:overScrollMode="never" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <!-- 2. DYNAMIC PARAMETER PANELS -->
@@ -555,6 +650,70 @@
                         android:layout_marginTop="8dp"
                         android:layout_marginBottom="8dp" />
 
+                    <TextView
+                        android:id="@+id/tvRotateHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Drag cards to reorder (e.g. 3 &gt; 4 &gt; 2 &gt; 1 &gt; 5). Tap ⤢ to preview."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutReorderControls"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/tilCustomPageOrder"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="Custom Page Sequence (e.g. 3, 4, 2, 1, 5 or 3&gt;4&gt;2&gt;1&gt;5)"
+                            app:boxCornerRadiusBottomEnd="12dp"
+                            app:boxCornerRadiusBottomStart="12dp"
+                            app:boxCornerRadiusTopEnd="12dp"
+                            app:boxCornerRadiusTopStart="12dp"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etCustomPageOrder"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:maxLines="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginBottom="8dp">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnApplyPageOrder"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:text="Apply Sequence" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnReversePageOrder"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="4dp"
+                                android:text="Reverse Order" />
+                        </LinearLayout>
+                    </LinearLayout>
+
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/rvRotatePagesThumbnails"
                         android:layout_width="match_parent"
@@ -615,6 +774,169 @@
                             android:background="@color/vf_container" />
                     </com.google.android.material.card.MaterialCardView>
 
+                    <!-- Ink Colour Selection -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="INK COLOUR"
+                        android:textColor="@color/vf_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08"
+                        android:layout_marginBottom="6dp" />
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:layout_marginBottom="12dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupSignColor"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignColorBlack"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="Classic Black" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignColorBlue"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Deep Blue" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignColorRed"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Crimson Red" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignColorWhite"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Pure White" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <!-- Opacity Slider -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="OPACITY"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:id="@+id/tvSignOpacityVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="100%"
+                            android:textStyle="bold"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderSignOpacity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="10.0"
+                        android:valueTo="100.0"
+                        android:value="100.0"
+                        android:stepSize="5.0"
+                        android:layout_marginBottom="12dp" />
+
+                    <!-- Target Page Selection -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TARGET PAGE"
+                        android:textColor="@color/vf_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08"
+                        android:layout_marginBottom="6dp" />
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupSignPage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignPageLast"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="Last Page" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignPageFirst"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="First Page" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignPageAll"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="All Pages" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignPageCustom"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Specific Page" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/tilSignCustomPage"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Target Page Number"
+                        android:visibility="gone"
+                        android:layout_marginBottom="12dp">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etSignCustomPage"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:text="1" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Placement Position Selection -->
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -625,34 +947,111 @@
                         android:letterSpacing="0.08"
                         android:layout_marginBottom="6dp" />
 
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chipGroupSignPlacement"
+                    <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:singleSelection="true">
+                        android:scrollbars="none"
+                        android:layout_marginBottom="8dp">
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipPlacementBottomRight"
-                            style="@style/Widget.Material3.Chip.Filter"
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupSignPlacement"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="Bottom Right" />
+                            app:singleSelection="true">
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipPlacementBottomCenter"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementBottomRight"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="Bottom Right" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementBottomCenter"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Bottom Center" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementBottomLeft"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Bottom Left" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementTopRight"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Top Right" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementTopLeft"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Top Left" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementCenter"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Center" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPlacementCustom"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Custom Location" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <!-- Custom Location Sliders -->
+                    <LinearLayout
+                        android:id="@+id/layoutSignCustomLocation"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Bottom Center" />
+                            android:text="Horizontal Position (X %)"
+                            android:textSize="11sp"
+                            android:textColor="@color/vf_text_secondary" />
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipPlacementBottomLeft"
-                            style="@style/Widget.Material3.Chip.Filter"
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/sliderSignPosX"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0.0"
+                            android:valueTo="100.0"
+                            android:value="70.0"
+                            android:stepSize="2.0" />
+
+                        <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Bottom Left" />
-                    </com.google.android.material.chip.ChipGroup>
+                            android:text="Vertical Position from Bottom (Y %)"
+                            android:textSize="11sp"
+                            android:textColor="@color/vf_text_secondary" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/sliderSignPosY"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0.0"
+                            android:valueTo="100.0"
+                            android:value="10.0"
+                            android:stepSize="2.0" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <!-- Panel E: METADATA INSPECTOR & STRIPPER -->

@@ -35,8 +35,8 @@ data class MergeItem(
     val id: String = UUID.randomUUID().toString(),
     val uri: Uri,
     val name: String,
-    val size: Long,
-    val formattedSize: String,
+    val size: Long = 0L,
+    val formattedSize: String = "",
     val type: MergeItemType,
     val pageCount: Int = 1
 )
@@ -310,6 +310,69 @@ class PdfMerger {
             } ?: 1
         } catch (e: Exception) {
             1
+        }
+    }
+
+    /**
+     * Merge pages across multiple documents in arbitrary interleaved sequence.
+     */
+    suspend fun mergePageItems(
+        context: Context,
+        pageItems: List<MergePageItem>,
+        outputStream: OutputStream,
+        onProgress: (Float) -> Unit = {}
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        if (pageItems.isEmpty()) return@withContext Result.failure(IllegalArgumentException("No pages to merge"))
+        MemoryGuard.checkMemory("mergePageItems")
+
+        var destinationDocument: PDDocument? = null
+        val openedDocs = mutableMapOf<Uri, PDDocument>()
+
+        try {
+            destinationDocument = PDDocument()
+            val destination = destinationDocument
+
+            pageItems.forEachIndexed { index, pageItem ->
+                ensureActive()
+                if (pageItem.isImage) {
+                    val bitmap = loadBitmap(context, pageItem.sourceItem.uri)
+                    if (bitmap != null) {
+                        addImagePageToDocument(destination, bitmap)
+                    }
+                } else {
+                    val uri = pageItem.sourceItem.uri
+                    val srcDoc = openedDocs.getOrPut(uri) {
+                        val stream = context.contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("Cannot open ${pageItem.sourceItem.name}")
+                        PDDocument.load(stream, MemoryUsageSetting.setupTempFileOnly())
+                    }
+                    if (pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
+                        val page = srcDoc.getPage(pageItem.sourcePageIndex)
+                        destination.importPage(page)
+                    }
+                }
+                onProgress((index + 1).toFloat() / pageItems.size)
+            }
+
+            ensureActive()
+            destination.save(outputStream)
+            outputStream.flush()
+            onProgress(1.0f)
+            Result.success(Unit)
+
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            try {
+                destinationDocument?.close()
+            } catch (_: Exception) {}
+            openedDocs.values.forEach { doc ->
+                try {
+                    doc.close()
+                } catch (_: Exception) {}
+            }
         }
     }
 }

@@ -140,7 +140,7 @@ class PdfWatermarkController(
         })
 
         binding.sliderWatermarkOpacity.addOnChangeListener { _, value, _ ->
-            val pct = (value * 100).toInt()
+            val pct = value.toInt()
             binding.tvWatermarkOpacityVal.text = "$pct%"
             triggerLivePreviewUpdate()
         }
@@ -165,7 +165,7 @@ class PdfWatermarkController(
     private fun getCurrentConfig(): WatermarkConfig {
         val rawText = binding.etWatermarkText.text?.toString()?.trim()
         val content = if (rawText.isNullOrEmpty()) "CONFIDENTIAL" else rawText
-        val opacity = binding.sliderWatermarkOpacity.value
+        val opacity = (binding.sliderWatermarkOpacity.value / 100f).coerceIn(0.05f, 1.0f)
         val rotation = binding.sliderWatermarkAngle.value
         val fontSize = binding.sliderWatermarkFontSize.value
         val color = Color.DKGRAY

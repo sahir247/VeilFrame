@@ -170,7 +170,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_add"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -214,7 +214,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_crop"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -267,7 +267,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_toc"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -311,7 +311,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_rotate"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -364,7 +364,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_delete"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -408,7 +408,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_file_download"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -473,7 +473,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_compress"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -517,7 +517,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_tab_image"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -570,7 +570,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_pdf_file"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -614,7 +614,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_text"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -667,7 +667,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_visibility"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -711,7 +711,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_tab_folder"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -776,7 +776,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_lock"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -820,7 +820,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_lock_open"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -873,7 +873,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_color_filter"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -917,7 +917,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_edit"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -970,7 +970,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_aspect_ratio"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1014,7 +1014,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_exif"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1079,7 +1079,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_print"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -1123,7 +1123,7 @@
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
                                 android:src="@drawable/ic_edit"
-                                app:tint="@color/vf_primary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"

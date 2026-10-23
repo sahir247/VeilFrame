@@ -1,13 +1,21 @@
 package com.veilframe.app.pdf
 
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ItemPdfMergeFileBinding
@@ -16,6 +24,9 @@ import com.veilframe.app.navigation.ToolWorkStateContract
 import com.veilframe.app.pdf.operations.HtmlToPdfConverter
 import com.veilframe.app.pdf.operations.ImageConverter
 import com.veilframe.app.pdf.operations.ImageFormat
+import com.veilframe.app.pdf.operations.MergeItem
+import com.veilframe.app.pdf.operations.MergeItemType
+import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.OfficeConverter
 import com.veilframe.app.pdf.operations.PageRange
 import com.veilframe.app.pdf.operations.PdfCompressor
@@ -30,6 +41,7 @@ import com.veilframe.app.pdf.operations.PdfSigner
 import com.veilframe.app.pdf.operations.PdfSplitter
 import com.veilframe.app.pdf.operations.RotationAngle
 import com.veilframe.app.pdf.operations.SignaturePlacement
+import com.veilframe.app.pdf.ui.PdfMergePageAdapter
 import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
 import com.veilframe.app.pdf.ui.PdfThumbnailLoader
 import kotlinx.coroutines.CoroutineScope
@@ -99,6 +111,10 @@ class PdfQuickToolController(
 
     private var splitThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var rotateThumbnailAdapter: PdfPageThumbnailAdapter? = null
+    private var mergePageAdapter: PdfMergePageAdapter? = null
+    private var rotateItemTouchHelper: ItemTouchHelper? = null
+    private var mergeItemTouchHelper: ItemTouchHelper? = null
+    private var selectedSignColor: Int = Color.BLACK
 
     override fun hasPickedMedia(): Boolean = selectedUris.isNotEmpty()
     override fun hasUnsavedWork(): Boolean = selectedUris.isNotEmpty() && !isSaved
@@ -117,6 +133,7 @@ class PdfQuickToolController(
         setupCompressControls()
         setupSplitControls()
         setupRotateControls()
+        setupMergeControls()
         setupSignControls()
         setupExecuteButton()
     }
@@ -168,6 +185,9 @@ class PdfQuickToolController(
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Rotate"
                 binding.panelParamRotate.visibility = View.VISIBLE
                 binding.chipGroupRotateAngle.visibility = View.VISIBLE
+                binding.tilRotatePages.visibility = View.VISIBLE
+                binding.layoutReorderControls.visibility = View.GONE
+                binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "PAGES TO ROTATE (SELECT SPECIFIC OR ALL)"
                 rotateThumbnailAdapter?.isDeleteMode = false
             }
@@ -176,6 +196,8 @@ class PdfQuickToolController(
                 binding.panelParamRotate.visibility = View.VISIBLE
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
+                binding.layoutReorderControls.visibility = View.GONE
+                binding.tvRotateHint.visibility = View.GONE
                 binding.tvRotateGridTitle.text = "TAP PAGES TO MARK FOR DELETION (RED CROSS)"
                 rotateThumbnailAdapter?.isDeleteMode = true
             }
@@ -184,7 +206,9 @@ class PdfQuickToolController(
                 binding.panelParamRotate.visibility = View.VISIBLE
                 binding.chipGroupRotateAngle.visibility = View.GONE
                 binding.tilRotatePages.visibility = View.GONE
-                binding.tvRotateGridTitle.text = "DOCUMENT PAGES OVERVIEW"
+                binding.layoutReorderControls.visibility = View.VISIBLE
+                binding.tvRotateHint.visibility = View.VISIBLE
+                binding.tvRotateGridTitle.text = "PAGES SEQUENCE (DRAG TO REORDER OR USE BOX)"
                 rotateThumbnailAdapter?.isDeleteMode = false
             }
             QuickMode.SIGN -> {
@@ -239,7 +263,13 @@ class PdfQuickToolController(
             onPageSelectionChanged = { selectedPages ->
                 binding.tvSplitSelectionCount.text = "${selectedPages.size} of $primaryDocPages selected"
             }
-        )
+        ).apply {
+            onPagePreviewRequested = { pageNum ->
+                selectedUris.firstOrNull()?.let { uri ->
+                    showFullScreenPagePreview(uri, pageNum - 1)
+                }
+            }
+        }
         binding.rvSplitPagesThumbnails.layoutManager = GridLayoutManager(activity, 3)
         binding.rvSplitPagesThumbnails.adapter = splitThumbnailAdapter
 
@@ -274,9 +304,163 @@ class PdfQuickToolController(
             scope = scope,
             thumbnailLoader = thumbnailLoader,
             onPageSelectionChanged = { _ -> }
-        )
+        ).apply {
+            onPageOrderChanged = { order ->
+                binding.etCustomPageOrder.setText(order.joinToString(", "))
+            }
+            onPagePreviewRequested = { pageNum ->
+                selectedUris.firstOrNull()?.let { uri ->
+                    showFullScreenPagePreview(uri, pageNum - 1)
+                }
+            }
+        }
         binding.rvRotatePagesThumbnails.layoutManager = GridLayoutManager(activity, 3)
         binding.rvRotatePagesThumbnails.adapter = rotateThumbnailAdapter
+
+        val callback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
+            0
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                if (activeMode != QuickMode.REORDER) return false
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                rotateThumbnailAdapter?.moveItem(from, to)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+            override fun isLongPressDragEnabled(): Boolean = (activeMode == QuickMode.REORDER)
+        }
+        rotateItemTouchHelper = ItemTouchHelper(callback).also {
+            it.attachToRecyclerView(binding.rvRotatePagesThumbnails)
+        }
+
+        binding.btnApplyPageOrder.setOnClickListener {
+            val input = binding.etCustomPageOrder.text?.toString().orEmpty()
+            val order = parsePageSequence(input)
+            if (order.isNotEmpty()) {
+                rotateThumbnailAdapter?.setPageOrder(order)
+            } else {
+                Toast.makeText(activity, "Enter valid page numbers (e.g. 3, 4, 2, 1, 5)", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnReversePageOrder.setOnClickListener {
+            val current = rotateThumbnailAdapter?.getPageOrder() ?: emptyList()
+            if (current.isNotEmpty()) {
+                rotateThumbnailAdapter?.setPageOrder(current.reversed())
+            }
+        }
+    }
+
+    private fun setupMergeControls() {
+        mergePageAdapter = PdfMergePageAdapter(
+            context = activity,
+            scope = scope,
+            thumbnailLoader = thumbnailLoader
+        ).apply {
+            onPageOrderChanged = { items ->
+                val orderStr = items.map { it.overallPageNumber }.joinToString(", ")
+                binding.etCustomMergeOrder.setText(orderStr)
+            }
+            onPagePreviewRequested = { uri, pageIndex ->
+                showFullScreenPagePreview(uri, pageIndex)
+            }
+        }
+        binding.rvMergePageItems.layoutManager = GridLayoutManager(activity, 3)
+        binding.rvMergePageItems.adapter = mergePageAdapter
+
+        val mergeCallback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
+            0
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                mergePageAdapter?.moveItem(from, to)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+        }
+        mergeItemTouchHelper = ItemTouchHelper(mergeCallback).also {
+            it.attachToRecyclerView(binding.rvMergePageItems)
+        }
+
+        binding.chipGroupMergeMode.setOnCheckedStateChangeListener { _, checkedIds ->
+            val isPages = checkedIds.contains(R.id.chipMergeModePages)
+            binding.layoutFilesItems.visibility = if (isPages) View.GONE else View.VISIBLE
+            binding.btnAddMoreFiles.visibility = if (isPages) View.GONE else View.VISIBLE
+            binding.layoutMergePageInterleave.visibility = if (isPages) View.VISIBLE else View.GONE
+            if (isPages) {
+                refreshMergePageItems()
+            }
+        }
+
+        binding.btnApplyMergeOrder.setOnClickListener {
+            applyCustomMergeOrderText()
+        }
+
+        binding.btnResetMergeOrder.setOnClickListener {
+            refreshMergePageItems()
+        }
+    }
+
+    private fun refreshMergePageItems() {
+        if (selectedUris.isEmpty()) {
+            mergePageAdapter?.setItems(emptyList())
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val mergeItems = selectedUris.mapIndexed { idx, uri ->
+                var pageCount = 1
+                try {
+                    activity.contentResolver.openInputStream(uri)?.use { stream ->
+                        PDDocument.load(stream).use { doc -> pageCount = doc.numberOfPages }
+                    }
+                } catch (_: Exception) {}
+                MergeItem(
+                    id = "doc_$idx",
+                    uri = uri,
+                    name = queryDocumentName(uri),
+                    type = MergeItemType.PDF,
+                    pageCount = pageCount
+                )
+            }
+            val pageItems = pdfMerger.buildPageItems(mergeItems)
+            withContext(Dispatchers.Main) {
+                mergePageAdapter?.setItems(pageItems)
+            }
+        }
+    }
+
+    private fun applyCustomMergeOrderText() {
+        val input = binding.etCustomMergeOrder.text?.toString().orEmpty()
+        val requestedOrder = parsePageSequence(input)
+        val currentItems = mergePageAdapter?.getItems() ?: emptyList()
+        if (requestedOrder.isEmpty() || currentItems.isEmpty()) {
+            Toast.makeText(activity, "Enter page sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val itemMap = currentItems.associateBy { it.overallPageNumber }
+        val reordered = mutableListOf<MergePageItem>()
+        for (num in requestedOrder) {
+            itemMap[num]?.let { reordered.add(it) }
+        }
+        for (item in currentItems) {
+            if (!reordered.contains(item)) {
+                reordered.add(item)
+            }
+        }
+        mergePageAdapter?.setItems(reordered)
     }
 
     private fun requestPickForActiveMode() {
@@ -411,6 +595,9 @@ class PdfQuickToolController(
 
             binding.layoutFilesItems.addView(itemBinding.root)
         }
+        if (binding.chipMergeModePages.isChecked) {
+            refreshMergePageItems()
+        }
     }
 
     private fun setupCompressControls() {
@@ -427,6 +614,29 @@ class PdfQuickToolController(
     private fun setupSignControls() {
         binding.btnSignClear.setOnClickListener {
             binding.viewSignaturePad.clear()
+        }
+
+        binding.chipGroupSignColor.setOnCheckedStateChangeListener { _, checkedIds ->
+            selectedSignColor = when {
+                checkedIds.contains(R.id.chipSignColorBlue) -> Color.parseColor("#1D4ED8")
+                checkedIds.contains(R.id.chipSignColorRed) -> Color.parseColor("#DC2626")
+                checkedIds.contains(R.id.chipSignColorWhite) -> Color.WHITE
+                else -> Color.BLACK
+            }
+        }
+
+        binding.sliderSignOpacity.addOnChangeListener { _, value, _ ->
+            binding.tvSignOpacityVal.text = "${value.toInt()}%"
+        }
+
+        binding.chipGroupSignPage.setOnCheckedStateChangeListener { _, checkedIds ->
+            val isCustom = checkedIds.contains(R.id.chipSignPageCustom)
+            binding.tilSignCustomPage.visibility = if (isCustom) View.VISIBLE else View.GONE
+        }
+
+        binding.chipGroupSignPlacement.setOnCheckedStateChangeListener { _, checkedIds ->
+            val isCustom = checkedIds.contains(R.id.chipPlacementCustom)
+            binding.layoutSignCustomLocation.visibility = if (isCustom) View.VISIBLE else View.GONE
         }
     }
 
@@ -472,7 +682,13 @@ class PdfQuickToolController(
 
                 when (activeMode) {
                     QuickMode.MERGE -> {
-                        val result = pdfMerger.mergePdfs(activity, selectedUris, outStream)
+                        val isInterleaved = binding.chipMergeModePages.isChecked && (mergePageAdapter?.itemCount ?: 0) > 0
+                        val result = if (isInterleaved) {
+                            val pageItems = mergePageAdapter?.getItems() ?: emptyList()
+                            pdfMerger.mergePageItems(activity, pageItems, outStream)
+                        } else {
+                            pdfMerger.mergePdfs(activity, selectedUris, outStream)
+                        }
                         withContext(Dispatchers.Main) {
                             finishExecution(result.isSuccess, outStream.toByteArray(), "merged_document.pdf", origText)
                         }
@@ -623,7 +839,7 @@ class PdfQuickToolController(
                     }
                     QuickMode.REORDER -> {
                         val uri = selectedUris.first()
-                        val order = (1..primaryDocPages).reversed().toList() // Simple reverse or custom
+                        val order = rotateThumbnailAdapter?.getPageOrder() ?: (1..primaryDocPages).toList()
                         val result = pdfOrganizer.reorderPages(activity, uri, outStream, order)
                         withContext(Dispatchers.Main) {
                             finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_reordered.pdf", origText)
@@ -677,7 +893,13 @@ class PdfQuickToolController(
                     }
                     QuickMode.SIGN -> {
                         val uri = selectedUris.first()
-                        val sigBmp = withContext(Dispatchers.Main) { binding.viewSignaturePad.getSignatureBitmap() }
+                        val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+                        val sigBmp = withContext(Dispatchers.Main) {
+                            binding.viewSignaturePad.getSignatureBitmap(
+                                targetColor = selectedSignColor,
+                                opacity = opacity
+                            )
+                        }
                         if (sigBmp == null) {
                             withContext(Dispatchers.Main) {
                                 isExecuting = false
@@ -688,19 +910,47 @@ class PdfQuickToolController(
                             return@launch
                         }
 
-                        val placement = SignaturePlacement(
-                            pageIndex = 0,
-                            x = 350f,
-                            y = 80f,
-                            width = 180f,
-                            height = 60f
-                        )
+                        val targetPages = when {
+                            binding.chipSignPageFirst.isChecked -> listOf(0)
+                            binding.chipSignPageAll.isChecked -> (0 until primaryDocPages).toList()
+                            binding.chipSignPageCustom.isChecked -> {
+                                val inputPage = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                                listOf((inputPage - 1).coerceIn(0, primaryDocPages - 1))
+                            }
+                            else -> listOf((primaryDocPages - 1).coerceAtLeast(0))
+                        }
 
-                        val result = pdfSigner.addSignatureBitmap(
+                        val sigWidth = 180f
+                        val sigHeight = 60f
+                        val (posX, posY) = when {
+                            binding.chipPlacementBottomLeft.isChecked -> 50f to 50f
+                            binding.chipPlacementBottomCenter.isChecked -> 207f to 50f
+                            binding.chipPlacementTopLeft.isChecked -> 50f to 730f
+                            binding.chipPlacementTopRight.isChecked -> 365f to 730f
+                            binding.chipPlacementCenter.isChecked -> 207f to 390f
+                            binding.chipPlacementCustom.isChecked -> {
+                                val xPct = (binding.sliderSignPosX.value / 100f).coerceIn(0f, 1f)
+                                val yPct = (binding.sliderSignPosY.value / 100f).coerceIn(0f, 1f)
+                                ((595f - sigWidth) * xPct) to ((842f - sigHeight) * yPct)
+                            }
+                            else -> 365f to 50f
+                        }
+
+                        val placements = targetPages.map { pIndex ->
+                            SignaturePlacement(
+                                pageIndex = pIndex,
+                                x = posX,
+                                y = posY,
+                                width = sigWidth,
+                                height = sigHeight
+                            )
+                        }
+
+                        val result = pdfSigner.addSignatureBitmaps(
                             inputUri = uri,
                             outputStream = outStream,
                             signatureBitmap = sigBmp,
-                            placement = placement
+                            placements = placements
                         )
                         withContext(Dispatchers.Main) {
                             finishExecution(result.success, outStream.toByteArray(), "${base}_signed.pdf", origText)
@@ -834,6 +1084,44 @@ class PdfQuickToolController(
         }
     }
 
+    private fun parsePageSequence(input: String): List<Int> {
+        if (input.isBlank()) return emptyList()
+        val regex = Regex("""\d+""")
+        return regex.findAll(input).mapNotNull { it.value.toIntOrNull() }.filter { it > 0 }.toList()
+    }
+
+    private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {
+        val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_pdf_page_preview, null)
+        val dialog = AlertDialog.Builder(activity)
+            .setView(dialogView)
+            .create()
+
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+
+        val tvTitle = dialogView.findViewById<TextView>(R.id.tvPreviewPageTitle)
+        val btnClose = dialogView.findViewById<View>(R.id.btnPreviewClose)
+        val ivPreview = dialogView.findViewById<ImageView>(R.id.ivPreviewFullPage)
+        val pbLoading = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
+
+        tvTitle.text = "Page ${pageIndex + 1} Preview"
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        pbLoading.visibility = View.VISIBLE
+        scope.launch(Dispatchers.IO) {
+            val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
+            withContext(Dispatchers.Main) {
+                pbLoading.visibility = View.GONE
+                if (highResBitmap != null) {
+                    ivPreview.setImageBitmap(highResBitmap)
+                } else {
+                    ivPreview.setImageResource(R.drawable.ic_pdf_file)
+                }
+            }
+        }
+
+        dialog.show()
+    }
+
     private fun resetWorkspace() {
         discardAndReleaseAllResources()
         binding.containerQuickToolDocInfo.visibility = View.GONE
@@ -841,6 +1129,9 @@ class PdfQuickToolController(
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.layoutFilesItems.removeAllViews()
         binding.viewSignaturePad.clear()
+        mergePageAdapter?.setItems(emptyList())
+        binding.etCustomMergeOrder.setText("")
+        binding.etCustomPageOrder.setText("")
     }
 
     private fun queryDocumentName(uri: Uri): String {

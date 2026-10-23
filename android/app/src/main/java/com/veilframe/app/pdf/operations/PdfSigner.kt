@@ -532,7 +532,16 @@ class PdfSigner(private val context: Context) {
         signatureBitmap: Bitmap,
         placement: SignaturePlacement,
         extras: SignatureExtras = SignatureExtras()
+    ): SignatureResult = addSignatureBitmaps(inputUri, outputStream, signatureBitmap, listOf(placement), extras)
+
+    suspend fun addSignatureBitmaps(
+        inputUri: Uri,
+        outputStream: java.io.OutputStream,
+        signatureBitmap: Bitmap,
+        placements: List<SignaturePlacement>,
+        extras: SignatureExtras = SignatureExtras()
     ): SignatureResult = withContext(Dispatchers.IO) {
+        if (placements.isEmpty()) return@withContext SignatureResult(false, "No placement specified")
         var document: PDDocument? = null
         try {
             val inputStream = context.contentResolver.openInputStream(inputUri)
@@ -540,20 +549,22 @@ class PdfSigner(private val context: Context) {
             document = PDDocument.load(inputStream)
             inputStream.close()
 
-            val pageIndex = placement.pageIndex.coerceIn(0, (document.numberOfPages - 1).coerceAtLeast(0))
-            val page = document.getPage(pageIndex)
+            for (placement in placements) {
+                val pageIndex = placement.pageIndex.coerceIn(0, (document.numberOfPages - 1).coerceAtLeast(0))
+                val page = document.getPage(pageIndex)
 
-            val scaledBitmap = Bitmap.createScaledBitmap(
-                signatureBitmap,
-                placement.width.toInt().coerceAtLeast(1),
-                placement.height.toInt().coerceAtLeast(1),
-                true
-            )
+                val scaledBitmap = Bitmap.createScaledBitmap(
+                    signatureBitmap,
+                    placement.width.toInt().coerceAtLeast(1),
+                    placement.height.toInt().coerceAtLeast(1),
+                    true
+                )
 
-            addSignatureToPage(document, page, scaledBitmap, placement)
-            addSignatureExtras(document, page, placement, extras)
-            if (scaledBitmap != signatureBitmap) {
-                scaledBitmap.recycle()
+                addSignatureToPage(document, page, scaledBitmap, placement)
+                addSignatureExtras(document, page, placement, extras)
+                if (scaledBitmap != signatureBitmap) {
+                    scaledBitmap.recycle()
+                }
             }
 
             document.save(outputStream)

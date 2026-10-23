@@ -28,9 +28,13 @@ class PdfPageThumbnailAdapter(
 
     private var pdfUri: Uri? = null
     private var totalPages: Int = 0
+    private val pageOrder = mutableListOf<Int>()
     private val selectedPages = mutableSetOf<Int>()
     private val deletedPages = mutableSetOf<Int>()
     private val pageRotations = mutableMapOf<Int, Int>()
+
+    var onPageOrderChanged: ((List<Int>) -> Unit)? = null
+    var onPagePreviewRequested: ((Int) -> Unit)? = null
 
     var isDeleteMode: Boolean = false
         set(value) {
@@ -41,12 +45,39 @@ class PdfPageThumbnailAdapter(
     fun setDocument(uri: Uri, count: Int, initialSelectedPages: Set<Int> = emptySet()) {
         pdfUri = uri
         totalPages = count
+        pageOrder.clear()
+        for (i in 1..count) pageOrder.add(i)
         selectedPages.clear()
         selectedPages.addAll(initialSelectedPages)
         deletedPages.clear()
         pageRotations.clear()
         notifyDataSetChanged()
         onPageSelectionChanged(selectedPages)
+        onPageOrderChanged?.invoke(pageOrder.toList())
+    }
+
+    fun moveItem(fromPosition: Int, toPosition: Int) {
+        if (fromPosition < 0 || fromPosition >= pageOrder.size || toPosition < 0 || toPosition >= pageOrder.size) return
+        val item = pageOrder.removeAt(fromPosition)
+        pageOrder.add(toPosition, item)
+        notifyItemMoved(fromPosition, toPosition)
+        val start = minOf(fromPosition, toPosition)
+        val count = kotlin.math.abs(fromPosition - toPosition) + 1
+        notifyItemRangeChanged(start, count)
+        onPageOrderChanged?.invoke(pageOrder.toList())
+    }
+
+    fun getPageOrder(): List<Int> = pageOrder.toList()
+
+    fun setPageOrder(newOrder: List<Int>) {
+        pageOrder.clear()
+        pageOrder.addAll(newOrder.filter { it in 1..totalPages })
+        if (pageOrder.size < totalPages) {
+            val remaining = (1..totalPages).filter { it !in pageOrder }
+            pageOrder.addAll(remaining)
+        }
+        notifyDataSetChanged()
+        onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
     fun selectAll() {
@@ -85,7 +116,7 @@ class PdfPageThumbnailAdapter(
     fun getSelectedPages(): Set<Int> = selectedPages.toSet()
     fun getDeletedPages(): Set<Int> = deletedPages.toSet()
 
-    override fun getItemCount(): Int = totalPages
+    override fun getItemCount(): Int = pageOrder.size
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ThumbnailViewHolder {
         val binding = ItemPdfPageThumbnailBinding.inflate(
@@ -95,7 +126,7 @@ class PdfPageThumbnailAdapter(
     }
 
     override fun onBindViewHolder(holder: ThumbnailViewHolder, position: Int) {
-        val pageNumber = position + 1 // 1-indexed
+        val pageNumber = if (position in pageOrder.indices) pageOrder[position] else position + 1
         holder.bind(pageNumber)
     }
 
@@ -109,7 +140,13 @@ class PdfPageThumbnailAdapter(
             renderJob?.cancel()
             val uri = pdfUri ?: return
 
-            binding.tvPageNumber.text = "Page $pageNumber"
+            val currentPos = bindingAdapterPosition
+            val isReordered = pageOrder != (1..totalPages).toList()
+            binding.tvPageNumber.text = if (isReordered && currentPos >= 0) {
+                "Page $pageNumber (#${currentPos + 1})"
+            } else {
+                "Page $pageNumber"
+            }
 
             val isSelected = pageNumber in selectedPages
             val isDeleted = pageNumber in deletedPages
@@ -134,6 +171,11 @@ class PdfPageThumbnailAdapter(
                 binding.tvRotationBadge.text = "$rotation°"
             } else {
                 binding.tvRotationBadge.visibility = View.GONE
+            }
+
+            // Fullscreen preview button
+            binding.btnPageFullscreen.setOnClickListener {
+                onPagePreviewRequested?.invoke(pageNumber)
             }
 
             // Card click listener

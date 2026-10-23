@@ -75,6 +75,22 @@
                 android:textSize="10sp"
                 android:textStyle="bold"
                 android:visibility="gone" />
+
+            <!-- Transparent Fullscreen Preview Icon -->
+            <ImageView
+                android:id="@+id/btnPageFullscreen"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_pdf_badge"
+                android:backgroundTint="#80000000"
+                android:padding="5dp"
+                android:src="@drawable/ic_action_expand"
+                android:contentDescription="Fullscreen Page Preview"
+                app:tint="#FFFFFF"
+                android:clickable="true"
+                android:focusable="true" />
         </FrameLayout>
 
         <!-- Bottom bar: Page number and Checkbox -->

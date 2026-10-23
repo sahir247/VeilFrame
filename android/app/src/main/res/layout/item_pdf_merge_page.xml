@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/cardMergePage"
+    style="@style/Widget.Material3.CardView.Filled"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="@color/vf_container"
+    app:cardCornerRadius="12dp"
+    app:strokeColor="@color/vf_surface_variant"
+    app:strokeWidth="1.5dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="6dp">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:background="@color/vf_container_low">
+
+            <ImageView
+                android:id="@+id/ivMergePageThumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitCenter"
+                android:background="#FFFFFF"
+                android:importantForAccessibility="no" />
+
+            <ProgressBar
+                android:id="@+id/pbMergePageLoading"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+
+            <!-- Sequence Badge -->
+            <TextView
+                android:id="@+id/tvMergePageSequence"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_pdf_badge"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="#1"
+                android:textColor="@color/vf_on_primary"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <!-- Transparent Fullscreen Preview Icon -->
+            <ImageView
+                android:id="@+id/btnMergePageFullscreen"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_pdf_badge"
+                android:backgroundTint="#80000000"
+                android:padding="5dp"
+                android:src="@drawable/ic_action_expand"
+                android:contentDescription="Fullscreen Page Preview"
+                app:tint="#FFFFFF"
+                android:clickable="true"
+                android:focusable="true" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tvMergePageDocLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Doc 1 • Page 1"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="@color/vf_text_primary"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:layout_marginTop="6dp" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
