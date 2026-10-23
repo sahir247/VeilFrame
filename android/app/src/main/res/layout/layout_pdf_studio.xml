@@ -916,7 +916,7 @@
                             <ImageView
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
-                                android:src="@drawable/ic_edit"
+                                android:src="@drawable/ic_sign_pdf"
                                 app:tint="?attr/colorPrimary" />
 
                             <TextView
@@ -1122,7 +1122,7 @@
                             <ImageView
                                 android:layout_width="28dp"
                                 android:layout_height="28dp"
-                                android:src="@drawable/ic_edit"
+                                android:src="@drawable/ic_fill_form"
                                 app:tint="?attr/colorPrimary" />
 
                             <TextView
@@ -1181,7 +1181,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Digital Signature Validator"
+                                android:text="Verify PDF"
                                 android:textStyle="bold"
                                 android:textSize="15sp"
                                 android:textColor="@color/vf_text_primary" />

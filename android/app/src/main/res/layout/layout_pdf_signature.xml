@@ -21,7 +21,7 @@
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationIconTint="?attr/colorOnSurface"
-            app:title="PDF Signature Validator"
+            app:title="Verify PDF"
             app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="PKIX Verification &amp; Checkmark Stamping"
             app:subtitleTextColor="?attr/colorOnSurfaceVariant">
@@ -398,11 +398,11 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnSaveValidatedPdf"
-                                style="@style/Widget.VeilFrame.Button.Execute"
+                                style="@style/Widget.VeilFrame.Button.Primary"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginBottom="8dp"
-                                android:text="Save Validated Copy"
+                                android:text="Save PDF"
                                 app:icon="@drawable/ic_action_save" />
 
                             <LinearLayout

@@ -8,7 +8,10 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.content.res.ColorStateList
+import com.veilframe.app.qr.ui.QrColorPickerDialog
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -122,6 +125,10 @@ class PdfQuickToolController(
     private var mergeItemTouchHelper: ItemTouchHelper? = null
     private var mergeFilesItemTouchHelper: ItemTouchHelper? = null
     private var selectedSignColor: Int = Color.BLACK
+    private var signPosXPercent: Float = 70f
+    private var signPosYPercent: Float = 10f
+    private var signScaleFactor: Float = 1.0f
+    private var scaleGestureDetector: ScaleGestureDetector? = null
 
     override fun hasPickedMedia(): Boolean = selectedUris.isNotEmpty()
     override fun hasUnsavedWork(): Boolean = selectedUris.isNotEmpty() && !isSaved
@@ -246,7 +253,7 @@ class PdfQuickToolController(
                 if (selectedUris.isNotEmpty()) {
                     refreshSignPagePreview()
                 }
-                updateSignPlacementIndicator(binding.sliderSignPosX.value, binding.sliderSignPosY.value)
+                updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
             }
             QuickMode.METADATA -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF for Metadata"
@@ -749,7 +756,7 @@ class PdfQuickToolController(
                                 rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
                                 if (activeMode == QuickMode.SIGN) {
                                     refreshSignPagePreview()
-                                    updateSignPlacementIndicator(binding.sliderSignPosX.value, binding.sliderSignPosY.value)
+                                    updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
                                 }
                             }
                         }
@@ -805,19 +812,57 @@ class PdfQuickToolController(
         }
 
         binding.chipGroupSignColor.setOnCheckedStateChangeListener { _, checkedIds ->
-            selectedSignColor = when {
-                checkedIds.contains(R.id.chipSignColorBlue) -> Color.parseColor("#1D4ED8")
-                checkedIds.contains(R.id.chipSignColorRed) -> Color.parseColor("#DC2626")
-                checkedIds.contains(R.id.chipSignColorWhite) -> Color.WHITE
-                else -> Color.BLACK
+            when {
+                checkedIds.contains(R.id.chipSignColorBlue) -> {
+                    selectedSignColor = Color.parseColor("#1D4ED8")
+                    binding.viewSignaturePad.setInkColor(selectedSignColor)
+                    updateMiniatureSignaturePreview()
+                }
+                checkedIds.contains(R.id.chipSignColorRed) -> {
+                    selectedSignColor = Color.parseColor("#DC2626")
+                    binding.viewSignaturePad.setInkColor(selectedSignColor)
+                    updateMiniatureSignaturePreview()
+                }
+                checkedIds.contains(R.id.chipSignColorWhite) -> {
+                    selectedSignColor = Color.WHITE
+                    binding.viewSignaturePad.setInkColor(selectedSignColor)
+                    updateMiniatureSignaturePreview()
+                }
+                checkedIds.contains(R.id.chipSignColorBlack) -> {
+                    selectedSignColor = Color.BLACK
+                    binding.viewSignaturePad.setInkColor(selectedSignColor)
+                    updateMiniatureSignaturePreview()
+                }
             }
-            binding.viewSignaturePad.setInkColor(selectedSignColor)
-            updateMiniatureSignaturePreview()
+        }
+
+        binding.chipSignColorCustom.setOnClickListener {
+            val dialog = QrColorPickerDialog(
+                context = activity,
+                initialColor = selectedSignColor,
+                contrastAgainstColor = Color.WHITE,
+                isForeground = true
+            ) { newColor ->
+                selectedSignColor = newColor
+                binding.chipSignColorCustom.text = String.format("#%06X", (0xFFFFFF and newColor))
+                binding.chipSignColorCustom.chipIconTint = ColorStateList.valueOf(newColor)
+                binding.chipSignColorCustom.isChecked = true
+                binding.viewSignaturePad.setInkColor(selectedSignColor)
+                updateMiniatureSignaturePreview()
+            }.show()
+            dialog.findViewById<TextView>(R.id.picker_title)?.text = "Select Ink Color"
+            dialog.findViewById<TextView>(R.id.picker_subtitle)?.text = "Choose any custom ink color for your signature"
         }
 
         binding.sliderSignOpacity.addOnChangeListener { _, value, _ ->
             binding.tvSignOpacityVal.text = "${value.toInt()}%"
             updateMiniatureSignaturePreview()
+        }
+
+        binding.sliderSignScale.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                applySignScale(value / 100f, updateSlider = false)
+            }
         }
 
         binding.chipGroupSignPage.setOnCheckedStateChangeListener { _, checkedIds ->
@@ -830,42 +875,32 @@ class PdfQuickToolController(
             refreshSignPagePreview()
         }
 
-        binding.chipGroupSignPlacement.setOnCheckedStateChangeListener { _, checkedIds ->
-            val isCustom = checkedIds.contains(R.id.chipPlacementCustom)
-            binding.layoutSignCustomLocation.visibility = if (isCustom) View.VISIBLE else View.GONE
-            val coords = when {
-                checkedIds.contains(R.id.chipPlacementBottomLeft) -> 8.0f to 6.0f
-                checkedIds.contains(R.id.chipPlacementBottomCenter) -> 35.0f to 6.0f
-                checkedIds.contains(R.id.chipPlacementTopLeft) -> 8.0f to 87.0f
-                checkedIds.contains(R.id.chipPlacementTopRight) -> 62.0f to 87.0f
-                checkedIds.contains(R.id.chipPlacementCenter) -> 35.0f to 46.0f
-                checkedIds.contains(R.id.chipPlacementBottomRight) -> 62.0f to 6.0f
-                else -> null
+        // Initialize ScaleGestureDetector for intuitive pinch-to-zoom resizing
+        scaleGestureDetector = ScaleGestureDetector(activity, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val newScale = (signScaleFactor * detector.scaleFactor).coerceIn(0.5f, 2.5f)
+                applySignScale(newScale, updateSlider = true)
+                return true
             }
-            if (coords != null) {
-                binding.sliderSignPosX.value = coords.first
-                binding.sliderSignPosY.value = coords.second
-                updateSignPlacementIndicator(coords.first, coords.second)
-            }
-        }
+        })
 
-        binding.sliderSignPosX.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                val yVal = binding.sliderSignPosY.value
-                updateSignPlacementIndicator(value, yVal)
-            }
-        }
-
-        binding.sliderSignPosY.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                val xVal = binding.sliderSignPosX.value
-                updateSignPlacementIndicator(xVal, value)
-            }
-        }
-
+        var isScaling = false
         binding.frameSignInteractiveContainer.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+            try {
+                scaleGestureDetector?.onTouchEvent(event)
+                if (event.pointerCount > 1) {
+                    isScaling = true
+                    return@setOnTouchListener true
+                }
+                if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
+                    isScaling = false
+                    binding.viewSignPlacementIndicator.animate()
+                        .scaleX(signScaleFactor)
+                        .scaleY(signScaleFactor)
+                        .setDuration(120)
+                        .start()
+                }
+                if (!isScaling && (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE)) {
                     val containerW = v.width.toFloat()
                     val containerH = v.height.toFloat()
                     if (containerW > 0 && containerH > 0) {
@@ -876,30 +911,33 @@ class PdfQuickToolController(
                         val top = (event.y - indicatorH / 2f).coerceIn(0f, (containerH - indicatorH).coerceAtLeast(0f))
 
                         val xPct = if (containerW > indicatorW) (left / (containerW - indicatorW)) * 100f else 0f
-                        // PDF coordinates have Y=0 at page bottom, touch coordinates have Y=0 at top
                         val yPct = if (containerH > indicatorH) (1.0f - (top / (containerH - indicatorH))) * 100f else 0f
 
-                        val clampedX = xPct.coerceIn(0f, 100f)
-                        val clampedY = yPct.coerceIn(0f, 100f)
-
-                        binding.sliderSignPosX.value = clampedX
-                        binding.sliderSignPosY.value = clampedY
-
-                        if (!binding.chipPlacementCustom.isChecked) {
-                            binding.chipPlacementCustom.isChecked = true
-                            binding.layoutSignCustomLocation.visibility = View.VISIBLE
-                        }
-                        updateSignPlacementIndicator(clampedX, clampedY)
+                        updateSignPlacementIndicator(xPct, yPct)
                     }
-                    true
                 }
-                else -> false
+            } catch (ignored: Exception) {
+                // Safeguard against any gesture calculation edge cases
             }
+            true
         }
     }
 
+    private fun applySignScale(scale: Float, updateSlider: Boolean) {
+        signScaleFactor = scale.coerceIn(0.5f, 2.5f)
+        binding.viewSignPlacementIndicator.scaleX = signScaleFactor
+        binding.viewSignPlacementIndicator.scaleY = signScaleFactor
+        binding.tvSignScaleVal.text = "${(signScaleFactor * 100).toInt()}%"
+        if (updateSlider) {
+            binding.sliderSignScale.value = (signScaleFactor * 100f).coerceIn(50f, 250f)
+        }
+        updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
+    }
+
     private fun updateSignPlacementIndicator(xPct: Float, yPct: Float) {
-        binding.tvSignCoordBadge.text = "X: ${xPct.toInt()}% | Y: ${yPct.toInt()}%"
+        signPosXPercent = xPct.coerceIn(0f, 100f)
+        signPosYPercent = yPct.coerceIn(0f, 100f)
+        binding.tvSignCoordBadge.text = "X: ${signPosXPercent.toInt()}% | Y: ${signPosYPercent.toInt()}% • ${(signScaleFactor * 100).toInt()}%"
         binding.frameSignInteractiveContainer.post {
             val containerW = binding.frameSignInteractiveContainer.width.toFloat()
             val containerH = binding.frameSignInteractiveContainer.height.toFloat()
@@ -907,8 +945,8 @@ class PdfQuickToolController(
             val indicatorH = binding.viewSignPlacementIndicator.height.toFloat()
 
             if (containerW > indicatorW && containerH > indicatorH) {
-                val transX = (containerW - indicatorW) * (xPct.coerceIn(0f, 100f) / 100f)
-                val transY = (containerH - indicatorH) * (1.0f - (yPct.coerceIn(0f, 100f) / 100f))
+                val transX = (containerW - indicatorW) * (signPosXPercent / 100f)
+                val transY = (containerH - indicatorH) * (1.0f - (signPosYPercent / 100f))
                 binding.viewSignPlacementIndicator.translationX = transX
                 binding.viewSignPlacementIndicator.translationY = transY
             }
@@ -1236,21 +1274,12 @@ class PdfQuickToolController(
                             else -> listOf((primaryDocPages - 1).coerceAtLeast(0))
                         }
 
-                        val sigWidth = 180f
-                        val sigHeight = 60f
-                        val (posX, posY) = when {
-                            binding.chipPlacementBottomLeft.isChecked -> 50f to 50f
-                            binding.chipPlacementBottomCenter.isChecked -> 207f to 50f
-                            binding.chipPlacementTopLeft.isChecked -> 50f to 730f
-                            binding.chipPlacementTopRight.isChecked -> 365f to 730f
-                            binding.chipPlacementCenter.isChecked -> 207f to 390f
-                            binding.chipPlacementCustom.isChecked -> {
-                                val xPct = (binding.sliderSignPosX.value / 100f).coerceIn(0f, 1f)
-                                val yPct = (binding.sliderSignPosY.value / 100f).coerceIn(0f, 1f)
-                                ((595f - sigWidth) * xPct) to ((842f - sigHeight) * yPct)
-                            }
-                            else -> 365f to 50f
-                        }
+                        val sigWidth = 180f * signScaleFactor
+                        val sigHeight = 60f * signScaleFactor
+                        val xPct = (signPosXPercent / 100f).coerceIn(0f, 1f)
+                        val yPct = (signPosYPercent / 100f).coerceIn(0f, 1f)
+                        val posX = ((595f - sigWidth) * xPct).coerceAtLeast(0f)
+                        val posY = ((842f - sigHeight) * yPct).coerceAtLeast(0f)
 
                         val placements = targetPages.map { pIndex ->
                             SignaturePlacement(
@@ -1507,8 +1536,8 @@ class PdfQuickToolController(
         binding.ivSignMiniaturePreview.visibility = View.GONE
         binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
         binding.ivSignPagePreview.setImageDrawable(null)
-        binding.sliderSignPosX.value = 70.0f
-        binding.sliderSignPosY.value = 10.0f
+        signPosXPercent = 70.0f
+        signPosYPercent = 10.0f
         updateSignPlacementIndicator(70.0f, 10.0f)
         mergePageAdapter?.setItems(emptyList())
         binding.etCustomMergeOrder.setText("")

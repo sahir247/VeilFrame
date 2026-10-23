@@ -1118,6 +1118,14 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Pure White" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipSignColorCustom"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:chipIcon="@drawable/ic_color_filter"
+                                android:text="Color Wheel..." />
                         </com.google.android.material.chip.ChipGroup>
                     </HorizontalScrollView>
 
@@ -1156,6 +1164,52 @@
                         android:valueTo="100.0"
                         android:value="100.0"
                         android:stepSize="5.0"
+                        android:layout_marginBottom="8dp" />
+
+                    <!-- Signature Size Slider -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="2dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="SIGNATURE SIZE"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:id="@+id/tvSignScaleVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="100%"
+                            android:textStyle="bold"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderSignScale"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="50.0"
+                        android:valueTo="250.0"
+                        android:value="100.0"
+                        android:stepSize="0.0"
+                        android:layout_marginBottom="2dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Use drag bar or pinch-to-zoom on the PDF preview"
+                        android:textSize="11sp"
+                        android:textColor="@color/vf_text_secondary"
                         android:layout_marginBottom="12dp" />
 
                     <!-- Target Page Selection -->
@@ -1229,82 +1283,7 @@
                             android:text="1" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Placement Position Selection -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="PLACEMENT POSITION"
-                        android:textColor="@color/vf_secondary"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.08"
-                        android:layout_marginBottom="6dp" />
-
-                    <HorizontalScrollView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:scrollbars="none"
-                        android:layout_marginBottom="8dp">
-
-                        <com.google.android.material.chip.ChipGroup
-                            android:id="@+id/chipGroupSignPlacement"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            app:singleSelection="true">
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementBottomRight"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text="Bottom Right" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementBottomCenter"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Bottom Center" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementBottomLeft"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Bottom Left" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementTopRight"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Top Right" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementTopLeft"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Top Left" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementCenter"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Center" />
-
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipPlacementCustom"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Custom Location" />
-                        </com.google.android.material.chip.ChipGroup>
-                    </HorizontalScrollView>
-
-                    <!-- Interactive Visual Placement Card (Acrobat-grade Touch/Drag) -->
+                    <!-- Interactive Visual Placement Card (Acrobat-grade Touch/Drag/Pinch-Zoom) -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardSignInteractivePlacement"
                         style="@style/Widget.Material3.CardView.Filled"
@@ -1333,7 +1312,7 @@
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
-                                    android:text="VISUAL PLACEMENT (TAP OR DRAG)"
+                                    android:text="SIGNATURE PLACEMENT (TOUCH &amp; DRAG)"
                                     android:textColor="@color/vf_secondary"
                                     android:textSize="11sp"
                                     android:textStyle="bold"
@@ -1343,7 +1322,7 @@
                                     android:id="@+id/tvSignCoordBadge"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="X: 70% | Y: 10%"
+                                    android:text="X: 70% | Y: 10% • 100%"
                                     android:textColor="?attr/colorPrimary"
                                     android:textSize="11sp"
                                     android:textStyle="bold" />
@@ -1352,7 +1331,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Touch anywhere on the page to position your signature directly"
+                                android:text="Drag signature to position • Pinch to resize or use the size slider"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp"
                                 android:layout_marginBottom="8dp" />
@@ -1361,7 +1340,7 @@
                             <FrameLayout
                                 android:id="@+id/frameSignInteractiveContainer"
                                 android:layout_width="match_parent"
-                                android:layout_height="220dp"
+                                android:layout_height="260dp"
                                 android:background="@color/vf_container_low"
                                 android:clipChildren="true">
 
@@ -1386,13 +1365,13 @@
                                 <com.google.android.material.card.MaterialCardView
                                     android:id="@+id/viewSignPlacementIndicator"
                                     style="@style/Widget.Material3.CardView.Filled"
-                                    android:layout_width="96dp"
-                                    android:layout_height="36dp"
+                                    android:layout_width="104dp"
+                                    android:layout_height="40dp"
                                     app:cardCornerRadius="8dp"
-                                    app:cardBackgroundColor="#CC2563EB"
+                                    app:cardBackgroundColor="#D92563EB"
                                     app:strokeColor="#FFFFFF"
                                     app:strokeWidth="1.5dp"
-                                    app:cardElevation="4dp">
+                                    app:cardElevation="6dp">
 
                                     <FrameLayout
                                         android:layout_width="match_parent"
@@ -1420,48 +1399,6 @@
                             </FrameLayout>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
-
-                    <!-- Custom Location Sliders -->
-                    <LinearLayout
-                        android:id="@+id/layoutSignCustomLocation"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:visibility="gone"
-                        android:layout_marginBottom="8dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Horizontal Position (X %)"
-                            android:textSize="11sp"
-                            android:textColor="@color/vf_text_secondary" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/sliderSignPosX"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:valueFrom="0.0"
-                            android:valueTo="100.0"
-                            android:value="70.0"
-                            android:stepSize="2.0" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Vertical Position from Bottom (Y %)"
-                            android:textSize="11sp"
-                            android:textColor="@color/vf_text_secondary" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/sliderSignPosY"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:valueFrom="0.0"
-                            android:valueTo="100.0"
-                            android:value="10.0"
-                            android:stepSize="2.0" />
-                    </LinearLayout>
                 </LinearLayout>
 
                 <!-- Panel E: METADATA INSPECTOR & STRIPPER -->
