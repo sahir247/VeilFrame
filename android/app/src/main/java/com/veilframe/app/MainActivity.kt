@@ -36,6 +36,8 @@ import com.veilframe.app.pdf.PdfSignatureController
 import com.veilframe.app.pdf.PdfUnlockController
 import com.veilframe.app.pdf.PdfSuiteCoordinator
 import com.veilframe.app.pdf.PdfQuickToolController
+import com.veilframe.app.pdf.PdfUnlockEngine
+import com.veilframe.app.pdf.PdfInitialCheck
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
@@ -86,9 +88,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
 
     // Modular Sub-Controllers & Feature Coordinators
-    private lateinit var safStorageManager: SafStorageManager
+    internal lateinit var safStorageManager: SafStorageManager
     private lateinit var consoleLogController: ConsoleLogController
-    private lateinit var workspaceHost: WorkspaceHost
+    internal lateinit var workspaceHost: WorkspaceHost
     internal lateinit var navigationController: MainNavigationController
     private lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
@@ -96,19 +98,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var libraryCoordinator: LibraryCoordinator
     private lateinit var toolsCatalogueCoordinator: ToolsCatalogueCoordinator
     private lateinit var settingsOverlayCoordinator: SettingsOverlayCoordinator
+    internal lateinit var homeFileIntakeCoordinator: com.veilframe.app.ui.intake.HomeFileIntakeCoordinator
 
     // Dedicated Media Studio Controllers
     private lateinit var safDestinationManager: SafDestinationManager
     private lateinit var videoPlayerController: VideoPlayerController
-    private lateinit var imageStudioController: ImageStudioController
-    private lateinit var videoStudioController: VideoStudioController
-    private lateinit var imageUpscalerController: ImageUpscalerController
-    private lateinit var markdownViewerController: MarkdownViewerController
+    internal lateinit var imageStudioController: ImageStudioController
+    internal lateinit var videoStudioController: VideoStudioController
+    internal lateinit var imageUpscalerController: ImageUpscalerController
+    internal lateinit var markdownViewerController: MarkdownViewerController
     private lateinit var docScannerController: DocumentScannerController
-    private lateinit var backgroundRemoverController: BackgroundRemoverController
-    private lateinit var motionLabController: MotionLabController
+    internal lateinit var backgroundRemoverController: BackgroundRemoverController
+    internal lateinit var motionLabController: MotionLabController
     private lateinit var imageQualityController: ImageQualityController
-    private lateinit var provenanceController: ProvenanceController
+    internal lateinit var provenanceController: ProvenanceController
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
     private var pendingImgStudioExportFile: File? = null
@@ -119,7 +122,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
 
     // Dedicated PDF Suite Coordinator
-    private lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
+    internal lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
@@ -1023,6 +1026,11 @@ class MainActivity : AppCompatActivity() {
             onOpenUrl = { url -> openWebUrl(url) },
             onShowAbout = { showAboutDialog() }
         )
+
+        homeFileIntakeCoordinator = com.veilframe.app.ui.intake.HomeFileIntakeCoordinator(
+            activity = this,
+            binding = binding
+        )
     }
 
     private fun initStudioWorkspaces() {
@@ -1317,159 +1325,16 @@ class MainActivity : AppCompatActivity() {
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
     }
 
-    private var currentHomeIntakeUri: Uri? = null
-
     internal fun handleHomeFileIntake(uri: Uri) {
-        currentHomeIntakeUri = uri
-        try {
-            safStorageManager.persistReadPermission(uri)
-        } catch (ignored: Exception) {}
-        var mimeType = contentResolver.getType(uri) ?: ""
-        val displayName = safStorageManager.getDisplayName(uri)
-        val sizeBytes = safStorageManager.queryFileSize(uri)
-        val sizeStr = safStorageManager.formatBytes(sizeBytes)
-
-        val candidateName = (displayName + " " + (uri.lastPathSegment ?: "") + " " + (uri.path ?: "")).lowercase(java.util.Locale.ROOT)
-        if (mimeType.isEmpty()) {
-            val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString()).ifEmpty {
-                candidateName.substringAfterLast('.', "")
-            }
-            if (ext.isNotEmpty()) {
-                mimeType = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase(java.util.Locale.ROOT)) ?: ""
-            }
-        }
-
-        binding.layoutHomeIntakePickers.visibility = View.GONE
-        binding.layoutHomeIntakeMounted.visibility = View.VISIBLE
-        binding.tvHomeIntakeFileName.text = displayName
-        binding.tvHomeIntakeMeta.text = if (sizeBytes > 0) "$sizeStr • ${mimeType.ifEmpty { "File" }}" else mimeType.ifEmpty { "Selected File" }
-
-        val isImage = mimeType.startsWith("image/") ||
-                candidateName.contains(".jpg") || candidateName.contains(".jpeg") || candidateName.contains(".png") ||
-                candidateName.contains(".webp") || candidateName.contains(".heic") || candidateName.contains(".heif") ||
-                candidateName.contains(".avif") || candidateName.contains(".bmp") || candidateName.contains(".gif")
-        val isVideo = mimeType.startsWith("video/") ||
-                candidateName.contains(".mp4") || candidateName.contains(".mkv") || candidateName.contains(".mov") ||
-                candidateName.contains(".avi") || candidateName.contains(".webm") || candidateName.contains(".3gp")
-        val isPdf = mimeType == "application/pdf" || candidateName.contains(".pdf")
-
-        if (isImage) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_image)
-            binding.btnSuggestEngine1.apply {
-                text = "Open in Image Studio"
-                setIconResource(R.drawable.ic_tab_image)
-                setOnClickListener {
-                    openImageStudio()
-                    imageStudioController.handleImagesSelected(listOf(uri))
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "AI Upscale"
-                setIconResource(R.drawable.ic_resize)
-                setOnClickListener {
-                    openImageUpscaler()
-                    workspaceHost.getOrInflateImageUpscaler()
-                    imageUpscalerController.handleImageSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Remove BG"
-                setIconResource(R.drawable.ic_crop)
-                setOnClickListener {
-                    openBackgroundRemover()
-                    workspaceHost.getOrInflateBackgroundRemover()
-                    backgroundRemoverController.handleImageSelected(uri)
-                }
-            }
-        } else if (isVideo) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_video)
-            binding.btnSuggestEngine1.apply {
-                text = "Launch Video Studio"
-                setIconResource(R.drawable.ic_tab_video)
-                setOnClickListener {
-                    openVideoStudio()
-                    videoStudioController.handleVideosSelected(listOf(uri))
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Clean Video"
-                setIconResource(R.drawable.ic_shield_video)
-                setOnClickListener {
-                    openTool(ToolMode.VIDEO_CLEANER)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Motion Lab"
-                setIconResource(R.drawable.ic_speed)
-                setOnClickListener {
-                    openMotionLab()
-                    workspaceHost.getOrInflateMotionLab()
-                    motionLabController.setSource(uri)
-                }
-            }
-        } else if (isPdf) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_pdf_file)
-            binding.btnSuggestEngine1.apply {
-                text = "PDF Quick Tool (Organize)"
-                setIconResource(R.drawable.ic_pdf_file)
-                setOnClickListener {
-                    pdfSuiteCoordinator.openQuickTool(com.veilframe.app.pdf.PdfQuickToolController.QuickMode.SPLIT)
-                    workspaceHost.getOrInflatePdfQuickTool()
-                    pdfSuiteCoordinator.quickToolController.handleFilesSelected(listOf(uri))
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Extract Text"
-                setIconResource(R.drawable.ic_tab_bundle)
-                setOnClickListener {
-                    pdfSuiteCoordinator.openExtractText()
-                    workspaceHost.getOrInflatePdfExtractText()
-                    pdfSuiteCoordinator.extractTextController.handlePdfSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Verify Signature"
-                setIconResource(R.drawable.ic_signature_valid)
-                setOnClickListener {
-                    openPdfSignature()
-                    workspaceHost.getOrInflatePdfSignature()
-                    pdfSignatureController.handlePdfSelected(uri)
-                }
-            }
-        } else {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_certificate)
-            binding.btnSuggestEngine1.apply {
-                text = "File Provenance & Verify"
-                setIconResource(R.drawable.ic_certificate)
-                setOnClickListener {
-                    openProvenance()
-                    workspaceHost.getOrInflateProvenance()
-                    provenanceController.handleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Code Bundler"
-                setIconResource(R.drawable.ic_tab_bundle)
-                setOnClickListener {
-                    openTool(ToolMode.AI_BUNDLE)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Scan Folder"
-                setIconResource(R.drawable.ic_tab_folder)
-                setOnClickListener {
-                    openTool(ToolMode.FOLDER_SCANNER)
-                }
-            }
-        }
+        homeFileIntakeCoordinator.handleHomeFileIntake(uri)
     }
 
+
+
+
+
     internal fun clearHomeFileIntake() {
-        currentHomeIntakeUri = null
-        binding.layoutHomeIntakeMounted.visibility = View.GONE
-        binding.layoutHomeIntakePickers.visibility = View.VISIBLE
+        homeFileIntakeCoordinator.clearHomeFileIntake()
     }
 
 
@@ -1549,7 +1414,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob = null
     }
 
-    private fun openTool(toolMode: ToolMode) {
+    internal fun openTool(toolMode: ToolMode) {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1562,7 +1427,7 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened ${toolSessionManager.getToolTitle(toolMode)} workspace.")
     }
 
-    private fun openImageStudio() {
+    internal fun openImageStudio() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1575,7 +1440,7 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Image Studio workspace.")
     }
 
-    private fun openVideoStudio() {
+    internal fun openVideoStudio() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1838,7 +1703,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleSingleFileSelected(uri: Uri) {
+    internal fun handleSingleFileSelected(uri: Uri) {
         val state = toolSessionManager.currentState
         state.selectedUri = uri
         state.isFolderSelected = false

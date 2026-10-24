@@ -28,6 +28,8 @@ class QuickFileIntakeOnDeviceTest {
     private lateinit var testVideoUri: Uri
     private lateinit var testPdfUri: Uri
 
+    private lateinit var testMarkdownUri: Uri
+
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
@@ -46,6 +48,11 @@ class QuickFileIntakeOnDeviceTest {
             if (!exists()) writeBytes(ByteArray(1024) { 0x77 })
         }
         testPdfUri = Uri.fromFile(pdfFile)
+
+        val mdFile = File(context.cacheDir, "test_sample_notes.md").apply {
+            if (!exists()) writeText("# Sample Markdown\n\nVeilFrame Intelligent Forensics")
+        }
+        testMarkdownUri = Uri.fromFile(mdFile)
     }
 
     @Test
@@ -104,15 +111,15 @@ class QuickFileIntakeOnDeviceTest {
             val btnEngine2 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine2)
             val btnEngine3 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine3)
 
-            assertEquals("Launch Video Studio", btnEngine1.text.toString())
-            assertEquals("Clean Video", btnEngine2.text.toString())
+            assertEquals("Open in Video Studio", btnEngine1.text.toString())
+            assertEquals("Remove Metadata", btnEngine2.text.toString())
             assertEquals("Motion Lab", btnEngine3.text.toString())
         }
         scenario.close()
     }
 
     @Test
-    fun testPdfFileIntakeRecommendsOrganizeAndExtract() {
+    fun testPdfFileIntakeRecommendsQuickToolAndSignature() {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         scenario.onActivity { activity ->
             activity.handleHomeFileIntake(testPdfUri)
@@ -121,9 +128,26 @@ class QuickFileIntakeOnDeviceTest {
             val btnEngine2 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine2)
             val btnEngine3 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine3)
 
-            assertEquals("PDF Quick Tool (Organize)", btnEngine1.text.toString())
+            assertEquals("PDF Quick Tool", btnEngine1.text.toString())
             assertEquals("Extract Text", btnEngine2.text.toString())
             assertEquals("Verify Signature", btnEngine3.text.toString())
+        }
+        scenario.close()
+    }
+
+    @Test
+    fun testMarkdownFileIntakeRecommendsViewerAndExporters() {
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity { activity ->
+            activity.handleHomeFileIntake(testMarkdownUri)
+
+            val btnEngine1 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine1)
+            val btnEngine2 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine2)
+            val btnEngine3 = activity.findViewById<MaterialButton>(R.id.btnSuggestEngine3)
+
+            assertEquals("View Markdown", btnEngine1.text.toString())
+            assertEquals("Save as PDF", btnEngine2.text.toString())
+            assertEquals("Save as DOCX", btnEngine3.text.toString())
         }
         scenario.close()
     }
@@ -169,6 +193,20 @@ class QuickFileIntakeOnDeviceTest {
                 val canvas = Canvas(bitmap)
                 card.draw(canvas)
                 FileOutputStream(File(context.cacheDir, "intake_card_pdf.png")).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+            }
+        }
+        Thread.sleep(1500)
+
+        scenario.onActivity { activity ->
+            activity.handleHomeFileIntake(testMarkdownUri)
+            val card = activity.findViewById<View>(R.id.cardHomeFileIntake)
+            card.post {
+                val bitmap = Bitmap.createBitmap(card.width, card.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                card.draw(canvas)
+                FileOutputStream(File(context.cacheDir, "intake_card_markdown.png")).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                 }
             }
