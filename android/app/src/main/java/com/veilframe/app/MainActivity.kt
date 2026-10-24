@@ -1243,6 +1243,9 @@ class MainActivity : AppCompatActivity() {
             binding.btnHomeIntakeVideo,
             binding.btnHomeIntakeDoc,
             binding.btnHomeIntakeBrowse,
+            binding.btnSuggestEngine1,
+            binding.btnSuggestEngine2,
+            binding.btnSuggestEngine3,
             binding.cardRecent1,
             binding.cardRecent2,
             binding.cardRecent3,
@@ -1316,30 +1319,48 @@ class MainActivity : AppCompatActivity() {
 
     private var currentHomeIntakeUri: Uri? = null
 
-    private fun handleHomeFileIntake(uri: Uri) {
+    internal fun handleHomeFileIntake(uri: Uri) {
         currentHomeIntakeUri = uri
-        val mimeType = contentResolver.getType(uri) ?: ""
+        try {
+            safStorageManager.persistReadPermission(uri)
+        } catch (ignored: Exception) {}
+        var mimeType = contentResolver.getType(uri) ?: ""
         val displayName = safStorageManager.getDisplayName(uri)
         val sizeBytes = safStorageManager.queryFileSize(uri)
         val sizeStr = safStorageManager.formatBytes(sizeBytes)
+
+        val candidateName = (displayName + " " + (uri.lastPathSegment ?: "") + " " + (uri.path ?: "")).lowercase(java.util.Locale.ROOT)
+        if (mimeType.isEmpty()) {
+            val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString()).ifEmpty {
+                candidateName.substringAfterLast('.', "")
+            }
+            if (ext.isNotEmpty()) {
+                mimeType = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase(java.util.Locale.ROOT)) ?: ""
+            }
+        }
 
         binding.layoutHomeIntakePickers.visibility = View.GONE
         binding.layoutHomeIntakeMounted.visibility = View.VISIBLE
         binding.tvHomeIntakeFileName.text = displayName
         binding.tvHomeIntakeMeta.text = if (sizeBytes > 0) "$sizeStr • ${mimeType.ifEmpty { "File" }}" else mimeType.ifEmpty { "Selected File" }
 
-        val isImage = mimeType.startsWith("image/") || displayName.endsWith(".jpg", true) || displayName.endsWith(".png", true) || displayName.endsWith(".webp", true) || displayName.endsWith(".heic", true)
-        val isVideo = mimeType.startsWith("video/") || displayName.endsWith(".mp4", true) || displayName.endsWith(".mkv", true) || displayName.endsWith(".mov", true) || displayName.endsWith(".avi", true)
-        val isPdf = mimeType == "application/pdf" || displayName.endsWith(".pdf", true)
+        val isImage = mimeType.startsWith("image/") ||
+                candidateName.contains(".jpg") || candidateName.contains(".jpeg") || candidateName.contains(".png") ||
+                candidateName.contains(".webp") || candidateName.contains(".heic") || candidateName.contains(".heif") ||
+                candidateName.contains(".avif") || candidateName.contains(".bmp") || candidateName.contains(".gif")
+        val isVideo = mimeType.startsWith("video/") ||
+                candidateName.contains(".mp4") || candidateName.contains(".mkv") || candidateName.contains(".mov") ||
+                candidateName.contains(".avi") || candidateName.contains(".webm") || candidateName.contains(".3gp")
+        val isPdf = mimeType == "application/pdf" || candidateName.contains(".pdf")
 
         if (isImage) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_image)
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_image)
             binding.btnSuggestEngine1.apply {
-                text = "Clean EXIF"
-                setIconResource(R.drawable.ic_shield_image)
+                text = "Open in Image Studio"
+                setIconResource(R.drawable.ic_tab_image)
                 setOnClickListener {
-                    openTool(ToolMode.IMAGE_CLEANER)
-                    handleSingleFileSelected(uri)
+                    openImageStudio()
+                    imageStudioController.handleImagesSelected(listOf(uri))
                 }
             }
             binding.btnSuggestEngine2.apply {
@@ -1361,21 +1382,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else if (isVideo) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_video)
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_video)
             binding.btnSuggestEngine1.apply {
+                text = "Launch Video Studio"
+                setIconResource(R.drawable.ic_tab_video)
+                setOnClickListener {
+                    openVideoStudio()
+                    videoStudioController.handleVideosSelected(listOf(uri))
+                }
+            }
+            binding.btnSuggestEngine2.apply {
                 text = "Clean Video"
                 setIconResource(R.drawable.ic_shield_video)
                 setOnClickListener {
                     openTool(ToolMode.VIDEO_CLEANER)
                     handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Video Studio"
-                setIconResource(R.drawable.ic_tab_video)
-                setOnClickListener {
-                    openVideoStudio()
-                    videoStudioController.handleVideosSelected(listOf(uri))
                 }
             }
             binding.btnSuggestEngine3.apply {
@@ -1390,7 +1411,25 @@ class MainActivity : AppCompatActivity() {
         } else if (isPdf) {
             binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_pdf_file)
             binding.btnSuggestEngine1.apply {
-                text = "Verify PDF"
+                text = "PDF Quick Tool (Organize)"
+                setIconResource(R.drawable.ic_pdf_file)
+                setOnClickListener {
+                    pdfSuiteCoordinator.openQuickTool(com.veilframe.app.pdf.PdfQuickToolController.QuickMode.SPLIT)
+                    workspaceHost.getOrInflatePdfQuickTool()
+                    pdfSuiteCoordinator.quickToolController.handleFilesSelected(listOf(uri))
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "Extract Text"
+                setIconResource(R.drawable.ic_tab_bundle)
+                setOnClickListener {
+                    pdfSuiteCoordinator.openExtractText()
+                    workspaceHost.getOrInflatePdfExtractText()
+                    pdfSuiteCoordinator.extractTextController.handlePdfSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Verify Signature"
                 setIconResource(R.drawable.ic_signature_valid)
                 setOnClickListener {
                     openPdfSignature()
@@ -1398,41 +1437,10 @@ class MainActivity : AppCompatActivity() {
                     pdfSignatureController.handlePdfSelected(uri)
                 }
             }
-            binding.btnSuggestEngine2.apply {
-                text = "PDF Studio"
-                setIconResource(R.drawable.ic_pdf_file)
-                setOnClickListener {
-                    openPdfStudio()
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Unlock PDF"
-                setIconResource(R.drawable.ic_lock_open)
-                setOnClickListener {
-                    openPdfUnlock()
-                    workspaceHost.getOrInflatePdfUnlock()
-                    pdfUnlockController.handlePdfSelected(uri)
-                }
-            }
         } else {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_folder)
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_certificate)
             binding.btnSuggestEngine1.apply {
-                text = "Code Bundler"
-                setIconResource(R.drawable.ic_tab_bundle)
-                setOnClickListener {
-                    openTool(ToolMode.AI_BUNDLE)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Scan Folder"
-                setIconResource(R.drawable.ic_tab_folder)
-                setOnClickListener {
-                    openTool(ToolMode.FOLDER_SCANNER)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Provenance"
+                text = "File Provenance & Verify"
                 setIconResource(R.drawable.ic_certificate)
                 setOnClickListener {
                     openProvenance()
@@ -1440,10 +1448,25 @@ class MainActivity : AppCompatActivity() {
                     provenanceController.handleFileSelected(uri)
                 }
             }
+            binding.btnSuggestEngine2.apply {
+                text = "Code Bundler"
+                setIconResource(R.drawable.ic_tab_bundle)
+                setOnClickListener {
+                    openTool(ToolMode.AI_BUNDLE)
+                    handleSingleFileSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Scan Folder"
+                setIconResource(R.drawable.ic_tab_folder)
+                setOnClickListener {
+                    openTool(ToolMode.FOLDER_SCANNER)
+                }
+            }
         }
     }
 
-    private fun clearHomeFileIntake() {
+    internal fun clearHomeFileIntake() {
         currentHomeIntakeUri = null
         binding.layoutHomeIntakeMounted.visibility = View.GONE
         binding.layoutHomeIntakePickers.visibility = View.VISIBLE

@@ -69,6 +69,11 @@ class SafStorageManager(private val context: Context) {
     }
 
     fun getDisplayName(uri: Uri): String {
+        if (uri.scheme == "file") {
+            val pathName = uri.lastPathSegment ?: File(uri.path ?: "").name
+            if (pathName.isNotBlank()) return pathName
+        }
+
         try {
             if (DocumentsContract.isTreeUri(uri)) {
                 val doc = DocumentFile.fromTreeUri(context, uri)
@@ -93,10 +98,23 @@ class SafStorageManager(private val context: Context) {
         } catch (_: Exception) {
             // SecurityException / provider failure
         }
+        if (name == "unknown_file") {
+            val fallback = uri.lastPathSegment ?: File(uri.path ?: "").name
+            if (fallback.isNotBlank()) {
+                name = fallback
+            }
+        }
         return name
     }
 
     fun queryFileSize(uri: Uri): Long {
+        if (uri.scheme == "file") {
+            try {
+                val f = File(uri.path ?: "")
+                if (f.exists()) return f.length()
+            } catch (_: Exception) {}
+        }
+
         try {
             if (DocumentsContract.isTreeUri(uri)) {
                 val doc = DocumentFile.fromTreeUri(context, uri)
