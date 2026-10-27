@@ -7,26 +7,46 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.cv.motion.FlowEstimator
+import com.veilframe.app.cv.motion.FrameSynthesizer
+import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
 import com.veilframe.app.media.JobType
 import com.veilframe.app.media.ProcessingJob
+import com.veilframe.app.media.rife.RifeModelManager
+import com.veilframe.app.media.rife.RifeNcnnNative
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.ReturnCode
+import org.opencv.imgcodecs.Imgcodecs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 import java.util.UUID
 
 /**
- * Android Foreground Service for heavy media cleaning and batch folder analysis.
+ * Android Foreground Service for heavy media cleaning, batch folder analysis,
+ * Motion Lab RIFE neural synthesis, and Video Stabilization.
  * Uses Android 15 mediaProcessing foreground service type on API 35+,
  * with graceful dataSync fallback for API 34 and below.
+ *
+ * Moving heavy synthesis and stabilization into this foreground service guarantees
+ * processing survival across incoming calls, screen locks, and app switching.
  */
 class VeilFrameProcessingService : Service() {
 
@@ -36,17 +56,35 @@ class VeilFrameProcessingService : Service() {
     private var isForegroundStarted = false
 
     companion object {
+        private const val TAG = "VeilFrameProcessing"
         const val CHANNEL_ID = "veilframe_media_processing"
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_PROCESS_VIDEO = "com.veilframe.action.PROCESS_VIDEO"
+        const val ACTION_PROCESS_MOTION_LAB = "com.veilframe.action.PROCESS_MOTION_LAB"
+        const val ACTION_PROCESS_STABILIZATION = "com.veilframe.action.PROCESS_STABILIZATION"
         const val ACTION_CANCEL_JOB = "com.veilframe.action.CANCEL_JOB"
+
         const val EXTRA_INPUT_PATH = "extra_input_path"
         const val EXTRA_OUTPUT_PATH = "extra_output_path"
         const val EXTRA_INPUT_URI = "extra_input_uri"
         const val EXTRA_OUTPUT_URI = "extra_output_uri"
         const val EXTRA_JOB_ID = "extra_job_id"
         const val EXTRA_JOB_TYPE = "extra_job_type"
+
+        const val EXTRA_MOTION_METHOD = "extra_motion_method"
+        const val EXTRA_MOTION_MULTIPLIER = "extra_motion_multiplier"
+        const val EXTRA_MOTION_TARGET_60FPS = "extra_motion_target_60fps"
+        const val EXTRA_STABILIZATION_MARGIN = "extra_stabilization_margin"
+
+        interface JobCallback {
+            fun onProgress(jobId: UUID, percent: Int, status: String) {}
+            fun onCompleted(jobId: UUID, outputPath: String) {}
+            fun onFailed(jobId: UUID, error: String) {}
+        }
+
+        @Volatile
+        var jobCallback: JobCallback? = null
 
         @Volatile
         var activeJob: ProcessingJob? = null
@@ -104,6 +142,50 @@ class VeilFrameProcessingService : Service() {
             }
             androidx.core.content.ContextCompat.startForegroundService(context, intent)
         }
+
+        fun startMotionLab(
+            context: Context,
+            inputUri: Uri,
+            outputPath: String,
+            method: String = "RIFE",
+            multiplier: Int = 2,
+            target60fps: Boolean = true,
+            jobId: UUID = UUID.randomUUID()
+        ) {
+            val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
+                action = ACTION_PROCESS_MOTION_LAB
+                putExtra(EXTRA_INPUT_URI, inputUri)
+                putExtra(EXTRA_OUTPUT_PATH, outputPath)
+                putExtra(EXTRA_INPUT_PATH, inputUri.toString())
+                putExtra(EXTRA_JOB_ID, jobId.toString())
+                putExtra(EXTRA_JOB_TYPE, JobType.MOTION_LAB_RIFE.name)
+                putExtra(EXTRA_MOTION_METHOD, method)
+                putExtra(EXTRA_MOTION_MULTIPLIER, multiplier)
+                putExtra(EXTRA_MOTION_TARGET_60FPS, target60fps)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun startVideoStabilization(
+            context: Context,
+            inputUri: Uri,
+            outputPath: String,
+            stabilizationMarginPercent: Int = 5,
+            jobId: UUID = UUID.randomUUID()
+        ) {
+            val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
+                action = ACTION_PROCESS_STABILIZATION
+                putExtra(EXTRA_INPUT_URI, inputUri)
+                putExtra(EXTRA_OUTPUT_PATH, outputPath)
+                putExtra(EXTRA_INPUT_PATH, inputUri.toString())
+                putExtra(EXTRA_JOB_ID, jobId.toString())
+                putExtra(EXTRA_JOB_TYPE, JobType.VIDEO_STABILIZATION.name)
+                putExtra(EXTRA_STABILIZATION_MARGIN, stabilizationMarginPercent)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
     }
 
     override fun onCreate() {
@@ -134,7 +216,7 @@ class VeilFrameProcessingService : Service() {
             isForegroundStarted = true
             true
         } catch (e: Exception) {
-            android.util.Log.e("VeilFrameProcessing", "startForeground failed: ${e.message}", e)
+            Log.e(TAG, "startForeground failed: ${e.message}", e)
             false
         }
     }
@@ -153,7 +235,6 @@ class VeilFrameProcessingService : Service() {
                 }
             }
             if (!isTargetJob) {
-                // Ignore mismatched cancel intent — do not cancel or stop foreground for an unrelated active job!
                 return START_NOT_STICKY
             }
             promoteToForeground("Cancelling processing...")
@@ -166,7 +247,7 @@ class VeilFrameProcessingService : Service() {
         synchronized(this) {
             val current = activeJob
             if (current != null && current.state == JobState.RUNNING) {
-                android.util.Log.w("VeilFrameProcessing", "Refusing duplicate start: job ${current.id} is already RUNNING")
+                Log.w(TAG, "Refusing duplicate start: job ${current.id} is already RUNNING")
                 if (!isForegroundStarted) {
                     promoteToForeground("Processing media with VeilFrame...")
                 }
@@ -211,18 +292,29 @@ class VeilFrameProcessingService : Service() {
         } catch (_: Exception) {
             UUID.randomUUID()
         }
-        val jobTypeStr = intent?.getStringExtra(EXTRA_JOB_TYPE) ?: JobType.VIDEO_COMPRESSION.name
+
+        val defaultJobType = when (intent?.action) {
+            ACTION_PROCESS_MOTION_LAB -> JobType.MOTION_LAB_RIFE
+            ACTION_PROCESS_STABILIZATION -> JobType.VIDEO_STABILIZATION
+            else -> JobType.VIDEO_COMPRESSION
+        }
+
+        val jobTypeStr = intent?.getStringExtra(EXTRA_JOB_TYPE) ?: defaultJobType.name
         val jobType = try {
             JobType.valueOf(jobTypeStr)
         } catch (_: Exception) {
-            JobType.VIDEO_COMPRESSION
+            defaultJobType
         }
 
-        // Android 15 (API 35+) mediaProcessing FGS type compliance
-        val promotionSuccess = promoteToForeground("Processing media with VeilFrame...")
+        val initialServiceMsg = when (intent?.action) {
+            ACTION_PROCESS_MOTION_LAB -> "Synthesizing motion frames with VeilFrame..."
+            ACTION_PROCESS_STABILIZATION -> "Stabilizing video with VeilFrame..."
+            else -> "Processing media with VeilFrame..."
+        }
+
+        val promotionSuccess = promoteToForeground(initialServiceMsg)
 
         if (!promotionSuccess) {
-            // Fail closed: do NOT begin background processing if foreground promotion fails
             synchronized(this) {
                 activeJob = ProcessingJob(
                     id = jobId,
@@ -249,7 +341,6 @@ class VeilFrameProcessingService : Service() {
         synchronized(this) {
             val current = activeJob
             if (current != null && current.state == JobState.RUNNING) {
-                // A job is already active; prevent concurrency collisions while satisfying OS FGS contract
                 return START_NOT_STICKY
             }
             activeJob = job
@@ -257,50 +348,29 @@ class VeilFrameProcessingService : Service() {
 
         currentExecutionJob = serviceScope.launch {
             try {
-                val effectiveInPath = if (inputUri.scheme == "content") {
-                    try {
-                        com.arthenica.ffmpegkit.FFmpegKitConfig.getSafParameterForRead(this@VeilFrameProcessingService, inputUri)
-                    } catch (_: Exception) {
-                        inputPath
+                when (intent?.action) {
+                    ACTION_PROCESS_MOTION_LAB -> {
+                        val method = intent.getStringExtra(EXTRA_MOTION_METHOD) ?: "RIFE"
+                        val multiplier = intent.getIntExtra(EXTRA_MOTION_MULTIPLIER, 2)
+                        val isTarget60fps = intent.getBooleanExtra(EXTRA_MOTION_TARGET_60FPS, true)
+                        executeMotionLab(jobId, inputUri, inputPath, outputPath, method, multiplier, isTarget60fps)
                     }
-                } else {
-                    inputPath
-                }
-
-                val effectiveOutPath = if (outputUri != null && outputUri.scheme == "content") {
-                    try {
-                        com.arthenica.ffmpegkit.FFmpegKitConfig.getSafParameterForWrite(this@VeilFrameProcessingService, outputUri)
-                    } catch (_: Exception) {
-                        outputPath
+                    ACTION_PROCESS_STABILIZATION -> {
+                        val margin = intent.getIntExtra(EXTRA_STABILIZATION_MARGIN, 5)
+                        executeVideoStabilization(jobId, inputUri, inputPath, outputPath, margin)
                     }
-                } else {
-                    outputPath
-                }
-
-                if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
-                    val ok = mediaBackend.cleanVideoCancellable(effectiveInPath, effectiveOutPath)
-                    synchronized(this@VeilFrameProcessingService) {
-                        if (activeJob?.id == jobId) {
-                            activeJob = if (ok) {
-                                activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
-                            } else {
-                                activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing failed in native media backend")
-                            }
-                        }
-                    }
-                } else {
-                    synchronized(this@VeilFrameProcessingService) {
-                        if (activeJob?.id == jobId) {
-                            activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Invalid input or output path")
-                        }
+                    else -> {
+                        executeVideoCleaning(jobId, inputUri, inputPath, outputUri, outputPath)
                     }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Foreground processing failed: ${e.message}", e)
                 synchronized(this@VeilFrameProcessingService) {
                     if (activeJob?.id == jobId) {
                         activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
                     }
                 }
+                jobCallback?.onFailed(jobId, e.message ?: "Processing failed")
             } finally {
                 val wasSuccess = synchronized(this@VeilFrameProcessingService) { activeJob?.state == JobState.COMPLETED }
                 try {
@@ -311,14 +381,360 @@ class VeilFrameProcessingService : Service() {
                         stopForeground(!wasSuccess)
                     }
                 } catch (_: Exception) {}
-                if (wasSuccess) {
-                    showCompletionNotification("Privacy Processing Finished", "Cleaned video ready")
-                }
                 stopSelf()
             }
         }
 
         return START_NOT_STICKY
+    }
+
+    private suspend fun executeVideoCleaning(
+        jobId: UUID,
+        inputUri: Uri,
+        inputPath: String,
+        outputUri: Uri?,
+        outputPath: String
+    ) {
+        val effectiveInPath = if (inputUri.scheme == "content") {
+            try {
+                FFmpegKitConfig.getSafParameterForRead(this, inputUri)
+            } catch (_: Exception) {
+                inputPath
+            }
+        } else {
+            inputPath
+        }
+
+        val effectiveOutPath = if (outputUri != null && outputUri.scheme == "content") {
+            try {
+                FFmpegKitConfig.getSafParameterForWrite(this, outputUri)
+            } catch (_: Exception) {
+                outputPath
+            }
+        } else {
+            outputPath
+        }
+
+        if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
+            val ok = mediaBackend.cleanVideoCancellable(effectiveInPath, effectiveOutPath)
+            synchronized(this) {
+                if (activeJob?.id == jobId) {
+                    activeJob = if (ok) {
+                        activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                    } else {
+                        activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing failed in native media backend")
+                    }
+                }
+            }
+            if (ok) {
+                jobCallback?.onCompleted(jobId, effectiveOutPath)
+                showCompletionNotification("Privacy Processing Finished", "Cleaned video ready")
+            } else {
+                jobCallback?.onFailed(jobId, "Native media backend cleaning failed")
+            }
+        } else {
+            synchronized(this) {
+                if (activeJob?.id == jobId) {
+                    activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Invalid input or output path")
+                }
+            }
+            jobCallback?.onFailed(jobId, "Invalid input or output path")
+        }
+    }
+
+    private suspend fun executeMotionLab(
+        jobId: UUID,
+        inputUri: Uri,
+        inputPath: String,
+        outputPath: String,
+        methodStr: String,
+        multiplier: Int,
+        isTarget60fps: Boolean
+    ) {
+        val workDir = File(cacheDir, "motionlab_${System.currentTimeMillis()}").apply { mkdirs() }
+        val framesDir = File(workDir, "frames").apply { mkdirs() }
+        val outDir = File(workDir, "out").apply { mkdirs() }
+        val inFile = File(workDir, "in.mp4")
+
+        try {
+            updateNotificationProgress("Preparing video source…", 5)
+            jobCallback?.onProgress(jobId, 5, "Preparing source…")
+
+            if (inputUri.scheme == "content") {
+                contentResolver.openInputStream(inputUri)?.use { input ->
+                    inFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Cannot open input video URI")
+            } else if (inputPath.isNotEmpty()) {
+                File(inputPath).copyTo(inFile, overwrite = true)
+            } else {
+                throw IllegalStateException("No valid input video specified")
+            }
+
+            CvRuntime.requireAvailable()
+
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(inFile.absolutePath)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
+            runCatching { retriever.release() }
+
+            updateNotificationProgress("Extracting video frames…", 15)
+            jobCallback?.onProgress(jobId, 15, "Extracting frames…")
+
+            val extractSession = FFmpegKit.executeWithArguments(
+                arrayOf(
+                    "-y",
+                    "-i", inFile.absolutePath,
+                    "-t", "30",
+                    "${framesDir.absolutePath}/f_%05d.png"
+                )
+            )
+            if (!ReturnCode.isSuccess(extractSession.returnCode)) {
+                throw IllegalStateException("Frame extraction failed (rc=${extractSession.returnCode})")
+            }
+
+            val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && f.name.endsWith(".png") }
+                ?.sortedBy { it.name } ?: emptyList()
+            if (frames.size < 2) throw IllegalStateException("Need at least 2 frames (extracted ${frames.size})")
+            if (frames.size > 900) throw IllegalStateException("${frames.size} frames exceeds the limit of 900")
+
+            val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, 30.0) else 0.0
+            val fps = if (effectiveDurationS > 0.1) {
+                (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
+            } else {
+                captureFps ?: 30f
+            }
+
+            val effectiveMultiplier = if (isTarget60fps) {
+                if (fps <= 20f) 4 else 2
+            } else {
+                multiplier
+            }
+
+            var useRife = false
+            if (methodStr.equals("RIFE", ignoreCase = true)) {
+                val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
+                try {
+                    if (!rifeManager.isModelReady()) {
+                        updateNotificationProgress("Downloading RIFE AI model…", 18)
+                        jobCallback?.onProgress(jobId, 18, "Downloading RIFE AI model…")
+                        val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
+                            updateNotificationProgress(msg, (18 + pct * 0.05).toInt())
+                        }
+                        if (dlResult.isSuccess) {
+                            useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                        }
+                    } else {
+                        useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "RIFE init failed; falling back to optical flow: ${t.message}")
+                    useRife = false
+                }
+            }
+
+            val estimator = if (!useRife) {
+                val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
+                    FlowEstimator.Algorithm.FARNEBACK
+                } else {
+                    FlowEstimator.Algorithm.DIS
+                }
+                FlowEstimator(algorithm = flowAlgo)
+            } else null
+            val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
+
+            var outIdx = 0
+            var prev = Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR)
+            if (prev.empty()) throw IllegalStateException("Initial frame unreadable")
+            Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
+
+            try {
+                for (i in 1 until frames.size) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
+                    if (cur.empty()) continue
+
+                    var bmp0: Bitmap? = null
+                    var bmp1: Bitmap? = null
+                    if (useRife) {
+                        bmp0 = BitmapFactory.decodeFile(frames[i - 1].absolutePath)
+                        bmp1 = BitmapFactory.decodeFile(frames[i].absolutePath)
+                    }
+
+                    try {
+                        for (k in 1 until effectiveMultiplier) {
+                            kotlin.coroutines.coroutineContext.ensureActive()
+                            val t = k.toDouble() / effectiveMultiplier
+                            var interpolatedSuccessfully = false
+                            if (useRife && bmp0 != null && bmp1 != null) {
+                                val synthBmp = RifeNcnnNative.nativeInterpolate(bmp0, bmp1, t.toFloat())
+                                if (synthBmp != null) {
+                                    val outFile = File(outDir, "o_%05d.png".format(outIdx++))
+                                    outFile.outputStream().use { fos ->
+                                        synthBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                                    }
+                                    synthBmp.recycle()
+                                    interpolatedSuccessfully = true
+                                }
+                            }
+
+                            if (!interpolatedSuccessfully && synthOptions != null) {
+                                val result = FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
+                                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
+                                result.frame.release()
+                                result.confidence.release()
+                                result.fallbackMask.release()
+                            }
+                        }
+                    } finally {
+                        bmp0?.recycle()
+                        bmp1?.recycle()
+                    }
+                    prev.release()
+                    prev = cur
+                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
+
+                    val synthPct = 25 + ((i.toFloat() / frames.size.toFloat()) * 60f).toInt().coerceIn(0, 60)
+                    updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
+                    jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
+                }
+            } finally {
+                if (useRife) {
+                    RifeNcnnNative.nativeRelease()
+                }
+                prev.release()
+            }
+
+            val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
+            val framerateStr = if (isTarget60fps) "60.000" else String.format(Locale.US, "%.3f", fps * effectiveMultiplier)
+            updateNotificationProgress("Encoding video ($framerateStr fps)…", 88)
+            jobCallback?.onProgress(jobId, 88, "Encoding video…")
+
+            val destFile = if (outputPath.isNotEmpty()) {
+                File(outputPath)
+            } else {
+                val exportDir = File(filesDir, "exports").apply { mkdirs() }
+                File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
+            }
+            destFile.parentFile?.mkdirs()
+
+            val encodeSession = FFmpegKit.executeWithArguments(
+                arrayOf(
+                    "-y",
+                    "-framerate", framerateStr,
+                    "-i", "${outDir.absolutePath}/o_%05d.png",
+                    "-i", inFile.absolutePath,
+                    "-map", "0:v",
+                    "-map", "1:a?",
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "21",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "copy",
+                    "-shortest",
+                    destFile.absolutePath
+                )
+            )
+            if (!ReturnCode.isSuccess(encodeSession.returnCode) || !destFile.exists() || destFile.length() == 0L) {
+                throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
+            }
+
+            synchronized(this) {
+                if (activeJob?.id == jobId) {
+                    activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                }
+            }
+            jobCallback?.onProgress(jobId, 100, "Complete")
+            jobCallback?.onCompleted(jobId, destFile.absolutePath)
+            showCompletionNotification("Motion Lab Finished", "Synthesized video ready")
+        } finally {
+            workDir.deleteRecursively()
+        }
+    }
+
+    private suspend fun executeVideoStabilization(
+        jobId: UUID,
+        inputUri: Uri,
+        inputPath: String,
+        outputPath: String,
+        marginPercent: Int
+    ) {
+        var tempInFile: File? = null
+        try {
+            updateNotificationProgress("Stabilizing video…", 10)
+            jobCallback?.onProgress(jobId, 10, "Analyzing motion…")
+
+            val effectiveInPath = if (inputUri.scheme == "content") {
+                val safPath = try {
+                    FFmpegKitConfig.getSafParameterForRead(this, inputUri)
+                } catch (_: Exception) {
+                    null
+                }
+                if (!safPath.isNullOrBlank()) {
+                    safPath
+                } else {
+                    val temp = File(cacheDir, "temp_stab_${System.currentTimeMillis()}.mp4")
+                    contentResolver.openInputStream(inputUri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw IllegalStateException("Cannot open input video for stabilization")
+                    tempInFile = temp
+                    temp.absolutePath
+                }
+            } else if (inputPath.isNotEmpty()) {
+                inputPath
+            } else {
+                throw IllegalStateException("No valid input video specified for stabilization")
+            }
+
+            val effectiveOutPath = if (outputPath.isNotEmpty()) {
+                outputPath
+            } else {
+                val exportDir = File(filesDir, "exports").apply { mkdirs() }
+                File(exportDir, "stabilized_${System.currentTimeMillis()}.mp4").absolutePath
+            }
+
+            CvRuntime.requireAvailable()
+
+            val clampedMargin = marginPercent.coerceIn(0, 20)
+            val deshakeFilter = VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedMargin)
+
+            val session = FFmpegKit.executeWithArguments(
+                arrayOf(
+                    "-y",
+                    "-i", effectiveInPath,
+                    "-vf", deshakeFilter,
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "20",
+                    "-c:a", "copy",
+                    effectiveOutPath
+                )
+            )
+
+            val ok = ReturnCode.isSuccess(session.returnCode) && File(effectiveOutPath).exists() && File(effectiveOutPath).length() > 0L
+            if (!ok) {
+                throw IllegalStateException("Video stabilization failed (rc=${session.returnCode})")
+            }
+
+            synchronized(this) {
+                if (activeJob?.id == jobId) {
+                    activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                }
+            }
+            jobCallback?.onProgress(jobId, 100, "Complete")
+            jobCallback?.onCompleted(jobId, effectiveOutPath)
+            showCompletionNotification("Video Stabilizer Finished", "Stabilized video ready")
+        } catch (e: Exception) {
+            synchronized(this) {
+                if (activeJob?.id == jobId) {
+                    activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
+                }
+            }
+            jobCallback?.onFailed(jobId, e.message ?: "Stabilization failed")
+            throw e
+        } finally {
+            tempInFile?.delete()
+        }
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -352,14 +768,20 @@ class VeilFrameProcessingService : Service() {
                 "VeilFrame Processing Engine",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows progress during video sanitization and bundle generation"
+                description = "Shows progress during video sanitization, synthesis and stabilization"
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
     }
 
-    private fun buildForegroundNotification(contentText: String): Notification {
+    private fun updateNotificationProgress(contentText: String, percent: Int) {
+        val notification = buildForegroundNotification(contentText, percent)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun buildForegroundNotification(contentText: String, progressPercent: Int = -1): Notification {
         val cancelIntent = android.app.PendingIntent.getService(
             this,
             0,
@@ -367,15 +789,20 @@ class VeilFrameProcessingService : Service() {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("VeilFrame Privacy Shield")
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("VeilFrame Processing Engine")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
-            .setProgress(100, 0, true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
-            .build()
+
+        if (progressPercent in 0..100) {
+            builder.setProgress(100, progressPercent, false)
+        } else {
+            builder.setProgress(100, 0, true)
+        }
+        return builder.build()
     }
 
     private fun showCompletionNotification(title: String, message: String) {

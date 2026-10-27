@@ -29,6 +29,12 @@ class UpscaleInferenceEngine(
         private val verifiedShaCache = ConcurrentHashMap<String, String>()
 
         /**
+         * Threshold (16 Megapixels) above which algorithmic scaling switches to the
+         * progressive disk-backed tile pipeline via StreamingPngWriter to prevent RAM-induced OOM.
+         */
+        const val STREAMING_PIXEL_THRESHOLD = 16_000_000L
+
+        /**
          * Capability-aware execution validator.
          * Validates scale compatibility, minimum input dimensions, and model-specific capability
          * constraints (e.g. rejecting arbitrary tiled super-resolution on CodeFormer and face restoration models).
@@ -160,32 +166,48 @@ class UpscaleInferenceEngine(
                     }
                 }
                 ModelType.ALGORITHMIC -> {
-                    listener?.onStatus("Applying ${model.name}...")
-                    listener?.onProgress(0, 1, 0)
-                    listener?.onStage("Rescaling", 0, 1)
-                    val fullSource = source.full()
-                    val ownsFullSource = source !is BitmapSource
-                    try {
-                        val targetW = srcW * targetScale
-                        val targetH = srcH * targetScale
-                        val cc = coroutineContext
-                        val checkpoint: () -> Unit = { cc.ensureActive() }
-                        val res = when (model.id) {
-                            "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
-                            "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
-                            else -> AlgorithmicUpscaler.scaleLanczos(fullSource, targetW, targetH, checkpoint)
-                        }
-                        val enhanced = if (params.detailEnhancement && params.detailStrength > 0f) {
-                            AdaptiveDetailEnhancer.enhance(res, params.detailStrength)
-                        } else {
-                            res
-                        }
-                        listener?.onProgress(1, 1, 100)
-                        listener?.onStage("Complete", 1, 1)
-                        UpscaleOutput.InMemory(enhanced)
-                    } finally {
-                        if (ownsFullSource && !fullSource.isRecycled) {
-                            fullSource.recycle()
+                    val targetW = srcW * targetScale
+                    val targetH = srcH * targetScale
+                    val totalPixels = targetW.toLong() * targetH.toLong()
+
+                    if (targetW > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        targetH > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        totalPixels > UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS
+                    ) {
+                        throw ResourceLimitExceededException(
+                            "Output (${targetW}x${targetH}) exceeds safe device pixel bounds (${UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS} px)."
+                        )
+                    }
+
+                    if (totalPixels > STREAMING_PIXEL_THRESHOLD) {
+                        // Progressive disk-backed tile pipeline: eliminates RAM-induced OOM on >16MP images & 8x upscaling
+                        upscaleAlgorithmicStreamed(source, model, targetScale, targetW, targetH, params, listener)
+                    } else {
+                        listener?.onStatus("Applying ${model.name}...")
+                        listener?.onProgress(0, 1, 0)
+                        listener?.onStage("Rescaling", 0, 1)
+                        val fullSource = source.full()
+                        val ownsFullSource = source !is BitmapSource
+                        try {
+                            val cc = coroutineContext
+                            val checkpoint: () -> Unit = { cc.ensureActive() }
+                            val res = when (model.id) {
+                                "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
+                                "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
+                                else -> AlgorithmicUpscaler.scaleLanczos(fullSource, targetW, targetH, checkpoint)
+                            }
+                            val enhanced = if (params.detailEnhancement && params.detailStrength > 0f) {
+                                AdaptiveDetailEnhancer.enhance(res, params.detailStrength)
+                            } else {
+                                res
+                            }
+                            listener?.onProgress(1, 1, 100)
+                            listener?.onStage("Complete", 1, 1)
+                            UpscaleOutput.InMemory(enhanced)
+                        } finally {
+                            if (ownsFullSource && !fullSource.isRecycled) {
+                                fullSource.recycle()
+                            }
                         }
                     }
                 }
@@ -285,6 +307,82 @@ class UpscaleInferenceEngine(
         } finally {
             regionSource.close()
             runCatching { streamed.file.delete() }
+        }
+    }
+
+    /**
+     * Progressive disk-backed tile pipeline via [StreamingPngWriter].
+     * Eliminates RAM-induced OOM on >16MP images and high-scale (e.g. 8x) upscaling
+     * by processing bounded horizontal strips and streaming output scanlines directly to disk.
+     */
+    private suspend fun upscaleAlgorithmicStreamed(
+        source: SourceAccess,
+        model: UpscaleModel,
+        targetScale: Int,
+        targetW: Int,
+        targetH: Int,
+        params: UpscaleInferenceParams,
+        listener: InferenceProgressListener?
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
+        val outDir = File(context.cacheDir, "upscale_streaming").apply { mkdirs() }
+        val jobId = java.util.UUID.randomUUID().toString()
+        val tempFile = File(outDir, "algorithmic_${jobId}.part")
+        val finalFile = File(outDir, "algorithmic_${jobId}.png")
+        val bandSrcH = 128
+        val rowPixels = IntArray(targetW)
+        var writer: StreamingPngWriter? = null
+        try {
+            listener?.onStatus("Streaming ${model.name} to disk (${targetW}x${targetH})...")
+            listener?.onStage("Disk-Backed Rescaling", 0, 1)
+            writer = StreamingPngWriter(tempFile, targetW, targetH, StreamingPngWriter.ColorType.RGBA)
+            var y0 = 0
+            val totalBands = (source.height + bandSrcH - 1) / bandSrcH
+            var bandIdx = 0
+            while (y0 < source.height) {
+                ensureActive()
+                val h = minOf(bandSrcH, source.height - y0)
+                val stripBmp = source.region(0, y0, source.width, h)
+                val scaledStrip = try {
+                    val cc = coroutineContext
+                    val checkpoint: () -> Unit = { cc.ensureActive() }
+                    when (model.id) {
+                        "nearest" -> AlgorithmicUpscaler.scaleNearest(stripBmp, targetW, h * targetScale, checkpoint)
+                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(stripBmp, targetW, h * targetScale)
+                        else -> AlgorithmicUpscaler.scaleLanczos(stripBmp, targetW, h * targetScale, checkpoint)
+                    }
+                } finally {
+                    stripBmp.recycle()
+                }
+                try {
+                    for (r in 0 until scaledStrip.height) {
+                        scaledStrip.getPixels(rowPixels, 0, targetW, 0, r, targetW, 1)
+                        writer.writeRow(rowPixels)
+                    }
+                } finally {
+                    scaledStrip.recycle()
+                }
+                y0 += h
+                bandIdx++
+                val pct = ((bandIdx.toFloat() / totalBands.toFloat()) * 100f).toInt().coerceIn(0, 99)
+                listener?.onProgress(bandIdx, totalBands, pct)
+                listener?.onStage("Disk-Backed Rescaling", bandIdx, totalBands)
+            }
+            writer.close()
+            NcnnUpscaleEngine.validatePngFile(tempFile, targetW, targetH)
+            NcnnUpscaleEngine.publishFileAtomically(tempFile, finalFile)
+            val preview = com.veilframe.app.media.MediaDecoder.decodeSampledFile(finalFile)
+            val enhancedPreview = if (params.detailEnhancement && params.detailStrength > 0f) {
+                preview?.let { AdaptiveDetailEnhancer.enhance(it, params.detailStrength) } ?: preview
+            } else {
+                preview
+            }
+            listener?.onProgress(totalBands, totalBands, 100)
+            listener?.onStage("Complete", totalBands, totalBands)
+            UpscaleOutput.Streamed(finalFile, enhancedPreview, targetW, targetH)
+        } catch (t: Throwable) {
+            runCatching { writer?.abort() }
+            runCatching { tempFile.delete() }
+            throw t
         }
     }
 }

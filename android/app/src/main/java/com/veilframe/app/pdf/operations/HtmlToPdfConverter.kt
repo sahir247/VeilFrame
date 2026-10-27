@@ -60,14 +60,13 @@ class HtmlToPdfConverter {
             onProgress(0.1f)
             
             val webView = WebView(context).apply {
-                @SuppressLint("SetJavaScriptEnabled")
-                settings.javaScriptEnabled = true
+                settings.javaScriptEnabled = false
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.builtInZoomControls = false
-                settings.domStorageEnabled = true
+                settings.domStorageEnabled = false
                 settings.blockNetworkImage = false
                 settings.loadsImagesAutomatically = true
             }
@@ -167,13 +166,12 @@ class HtmlToPdfConverter {
             onProgress(0.1f)
             
             val webView = WebView(context).apply {
-                @SuppressLint("SetJavaScriptEnabled")
-                settings.javaScriptEnabled = true
+                settings.javaScriptEnabled = false
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
-                settings.domStorageEnabled = true
+                settings.domStorageEnabled = false
             }
             
             onProgress(0.2f)

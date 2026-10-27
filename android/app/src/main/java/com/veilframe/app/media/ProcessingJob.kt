@@ -9,7 +9,9 @@ enum class JobType {
     WHATSAPP_STATUS,
     METADATA_STRIP,
     UPSCALE,
-    AI_ANALYZE
+    AI_ANALYZE,
+    MOTION_LAB_RIFE,
+    VIDEO_STABILIZATION
 }
 
 enum class JobState {

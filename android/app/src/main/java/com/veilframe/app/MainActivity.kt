@@ -236,7 +236,7 @@ class MainActivity : AppCompatActivity() {
 
     // Studio SAF Pickers
     private val imgStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             imageStudioController.handleImagesSelected(uris)
@@ -244,7 +244,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val imgStudioAddMoreLauncher = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             imageStudioController.handleImagesAdded(uris)
@@ -252,7 +252,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val vidStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             videoStudioController.handleVideosSelected(uris)
@@ -269,7 +269,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val vidStudioAddMoreLauncher = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             videoStudioController.handleVideosAdded(uris)
@@ -348,7 +348,7 @@ class MainActivity : AppCompatActivity() {
 
     // Dedicated Tools SAF and Photo Picker Activity Result Launchers
     private val homePhotoPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             handleHomeFileIntake(uri)
@@ -356,7 +356,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val homeVideoPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             handleHomeFileIntake(uri)
@@ -429,7 +429,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val docScannerPhotosLauncher = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
             workspaceHost.getOrInflateDocScanner()
@@ -467,7 +467,7 @@ class MainActivity : AppCompatActivity() {
 
     // Dedicated Background Remover Activity Result Launchers
     private val bgRemoverPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             workspaceHost.getOrInflateBackgroundRemover()
@@ -496,7 +496,7 @@ class MainActivity : AppCompatActivity() {
 
     // Dedicated Image Quality Activity Result Launcher
     private val qualityPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             imageQualityController.handleImageSelected(uri)
@@ -1065,8 +1065,16 @@ class MainActivity : AppCompatActivity() {
             binding = binding.layoutImageStudio,
             safManager = safDestinationManager,
             scope = lifecycleScope,
-            onPickImageRequest = { imgStudioPickerLauncher.launch("image/*") },
-            onAddMoreImageRequest = { imgStudioAddMoreLauncher.launch("image/*") },
+            onPickImageRequest = {
+                imgStudioPickerLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                )
+            },
+            onAddMoreImageRequest = {
+                imgStudioAddMoreLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                )
+            },
             onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
                 pendingImgStudioExportFile = file
@@ -1091,8 +1099,16 @@ class MainActivity : AppCompatActivity() {
             playerController = videoPlayerController,
             safManager = safDestinationManager,
             scope = lifecycleScope,
-            onPickVideoRequest = { vidStudioPickerLauncher.launch("video/*") },
-            onAddMoreVideoRequest = { vidStudioAddMoreLauncher.launch("video/*") },
+            onPickVideoRequest = {
+                vidStudioPickerLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
+                )
+            },
+            onAddMoreVideoRequest = {
+                vidStudioAddMoreLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
+                )
+            },
             onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
                 pendingVidStudioExportFile = file
@@ -1114,7 +1130,11 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = binding.layoutImageQuality,
             scope = lifecycleScope,
-            onPickImageRequest = { qualityPickerLauncher.launch("image/*") },
+            onPickImageRequest = {
+                qualityPickerLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                )
+            },
             onShareReportRequest = { reportText ->
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
@@ -1159,7 +1179,11 @@ class MainActivity : AppCompatActivity() {
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
             onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
-            onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
+            onChoosePhotosRequest = {
+                docScannerPhotosLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                )
+            },
             onExportFileRequest = { file, mime ->
                 pendingDocScannerExportFile = file
                 docScannerExportLauncher.launch(file.name to mime)
@@ -1190,7 +1214,11 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = bgBinding,
             scope = lifecycleScope,
-            onPickImageRequest = { bgRemoverPickerLauncher.launch("image/*") },
+            onPickImageRequest = {
+                bgRemoverPickerLauncher.launch(
+                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+                )
+            },
             onExportPngRequest = { file ->
                 pendingBgRemoverExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
@@ -1294,8 +1322,16 @@ class MainActivity : AppCompatActivity() {
         interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
 
         // Home Action Dashboard - Universal File Intake Pickers
-        binding.btnHomeIntakePhoto.setOnClickListener { homePhotoPickerLauncher.launch("image/*") }
-        binding.btnHomeIntakeVideo.setOnClickListener { homeVideoPickerLauncher.launch("video/*") }
+        binding.btnHomeIntakePhoto.setOnClickListener {
+            homePhotoPickerLauncher.launch(
+                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+            )
+        }
+        binding.btnHomeIntakeVideo.setOnClickListener {
+            homeVideoPickerLauncher.launch(
+                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
+            )
+        }
         binding.btnHomeIntakeDoc.setOnClickListener { homeDocPickerLauncher.launch(arrayOf("application/pdf", "text/*", "application/*")) }
         binding.btnHomeIntakeBrowse.setOnClickListener { homeFilePickerLauncher.launch(arrayOf("*/*")) }
         binding.btnHomeIntakeClear.setOnClickListener { clearHomeFileIntake() }
@@ -1365,7 +1401,9 @@ class MainActivity : AppCompatActivity() {
             cameraDisabledReason = "Select an existing image from Photos or Files to inspect quality"
         ) { _ ->
             openImageQuality()
-            qualityPickerLauncher.launch("image/*")
+            qualityPickerLauncher.launch(
+                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
+            )
         }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
     }
 

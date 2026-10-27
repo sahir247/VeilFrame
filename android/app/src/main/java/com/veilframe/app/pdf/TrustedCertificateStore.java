@@ -97,11 +97,11 @@ public final class TrustedCertificateStore {
             audit.put("userNote", userNote.trim());
         }
 
-        boolean saved = preferences.edit()
+        preferences.edit()
                 .putString(fp, encoded)
                 .putString(AUDIT_PREFIX + fp, audit.toString())
-                .commit();
-        if (!saved || !isTrusted(certificate)) {
+                .apply();
+        if (!isTrusted(certificate)) {
             throw new IllegalStateException("Could not persist or verify the trust record.");
         }
     }
@@ -125,8 +125,8 @@ public final class TrustedCertificateStore {
         certificate.checkValidity(new java.util.Date());
         String fp = fingerprint(certificate);
         String encoded = Base64.encodeToString(certificate.getEncoded(), Base64.NO_WRAP);
-        boolean saved = preferences.edit().putString(CA_PREFIX + fp, encoded).commit();
-        if (!saved || !isTrustedCertificateAuthority(certificate)) {
+        preferences.edit().putString(CA_PREFIX + fp, encoded).apply();
+        if (!isTrustedCertificateAuthority(certificate)) {
             throw new IllegalStateException("Could not persist or verify the CA trust anchor.");
         }
     }
