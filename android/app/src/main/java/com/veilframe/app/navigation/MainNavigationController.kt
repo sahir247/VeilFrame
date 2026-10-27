@@ -136,7 +136,11 @@ class MainNavigationController(
         }
     }
 
+    @Volatile
+    private var isHandlingWorkStatePrompt = false
+
     fun performBackNavigation(onProceed: () -> Unit = { doActualBackNavigation() }) {
+        if (isHandlingWorkStatePrompt) return
         val mainAct = activity as? MainActivity
         val contract = mainAct?.getActiveToolWorkContract(currentScreen)
         val isRootScreen = currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY
@@ -145,57 +149,89 @@ class MainNavigationController(
             if (contract.isProcessing) {
                 if (contract.supportsBackgroundExecution) {
                     // Option to work in background for Image Upscale, Motion Lab, and Video Studio
+                    isHandlingWorkStatePrompt = true
                     com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                         .setTitle("Active Task Running")
                         .setMessage("Processing is currently active. Would you like to let it finish in the background, or cancel and discard now?")
                         .setPositiveButton("Work in Background") { _, _ ->
+                            isHandlingWorkStatePrompt = false
                             contract.moveToBackground()
                             onProceed()
                         }
                         .setNeutralButton("Leave & Discard") { _, _ ->
+                            isHandlingWorkStatePrompt = false
                             contract.discardAndReleaseAllResources()
                             onProceed()
                         }
-                        .setNegativeButton("Stay", null)
+                        .setNegativeButton("Stay") { _, _ ->
+                            isHandlingWorkStatePrompt = false
+                        }
+                        .setOnCancelListener {
+                            isHandlingWorkStatePrompt = false
+                        }
                         .show()
                     return
                 } else {
                     // Non-backgroundable active processing
+                    isHandlingWorkStatePrompt = true
                     com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                         .setTitle("Cancel Active Work?")
                         .setMessage("A task is currently running. Leaving now will cancel the process immediately and discard unsaved results.")
                         .setPositiveButton("Leave & Discard") { _, _ ->
+                            isHandlingWorkStatePrompt = false
                             contract.discardAndReleaseAllResources()
                             onProceed()
                         }
-                        .setNegativeButton("Stay", null)
+                        .setNegativeButton("Stay") { _, _ ->
+                            isHandlingWorkStatePrompt = false
+                        }
+                        .setOnCancelListener {
+                            isHandlingWorkStatePrompt = false
+                        }
                         .show()
                     return
                 }
             } else if (contract.hasPickedMedia() || contract.hasUnsavedWork()) {
                 // Media is picked or unsaved work exists
+                isHandlingWorkStatePrompt = true
                 com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                     .setTitle("Unsaved Work")
                     .setMessage("You have unsaved changes or media loaded in this tool. Are you sure you want to leave?")
                     .setPositiveButton("Leave & Discard") { _, _ ->
+                        isHandlingWorkStatePrompt = false
                         contract.discardAndReleaseAllResources()
                         onProceed()
                     }
-                    .setNegativeButton("Stay", null)
+                    .setNegativeButton("Stay") { _, _ ->
+                        isHandlingWorkStatePrompt = false
+                    }
+                    .setOnCancelListener {
+                        isHandlingWorkStatePrompt = false
+                    }
                     .show()
                 return
             }
         } else if (!isRootScreen && mainAct?.hasActiveProcessing() == true) {
             // General active service fallback
+            isHandlingWorkStatePrompt = true
             com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
                 .setTitle("Active Task Running")
                 .setMessage("A background task is currently running. How would you like to proceed?")
-                .setPositiveButton("Run in Background") { _, _ -> onProceed() }
+                .setPositiveButton("Run in Background") { _, _ ->
+                    isHandlingWorkStatePrompt = false
+                    onProceed()
+                }
                 .setNeutralButton("Cancel & Leave") { _, _ ->
+                    isHandlingWorkStatePrompt = false
                     mainAct.cancelAllActiveProcessing()
                     onProceed()
                 }
-                .setNegativeButton("Stay", null)
+                .setNegativeButton("Stay") { _, _ ->
+                    isHandlingWorkStatePrompt = false
+                }
+                .setOnCancelListener {
+                    isHandlingWorkStatePrompt = false
+                }
                 .show()
             return
         }
@@ -210,45 +246,49 @@ class MainNavigationController(
      */
     fun navigateBackFromWorkspace() {
         performBackNavigation {
-            val destination = if (screenBackStack.isNotEmpty()) {
-                screenBackStack.removeLast()
-            } else {
-                workspaceOriginScreen
+            popWorkspaceAndNavigate()
+        }
+    }
+
+    private fun popWorkspaceAndNavigate() {
+        val destination = if (screenBackStack.isNotEmpty()) {
+            screenBackStack.removeLast()
+        } else {
+            workspaceOriginScreen
+        }
+        isNavigatingBack = true
+        try {
+            previousScreen = currentScreen
+            when (destination) {
+                ScreenState.TOOLS -> showToolsScreen()
+                ScreenState.LIBRARY -> showLibraryScreen()
+                ScreenState.TOOL -> showToolScreen()
+                ScreenState.IMAGE_UPSCALER -> showImageUpscalerScreen()
+                ScreenState.IMAGE_STUDIO -> showImageStudioScreen()
+                ScreenState.VIDEO_STUDIO -> showVideoStudioScreen()
+                ScreenState.QR_STUDIO -> showQrStudioScreen()
+                ScreenState.BACKGROUND_REMOVER -> showBackgroundRemoverScreen()
+                ScreenState.DOCUMENT_SCANNER_ENTRY,
+                ScreenState.DOCUMENT_SCANNER_CAMERA,
+                ScreenState.DOCUMENT_SCANNER_PAGES,
+                ScreenState.DOCUMENT_SCANNER_EDITOR,
+                ScreenState.DOCUMENT_SCANNER_EXPORT -> showDocumentScannerScreen(destination)
+                ScreenState.MOTION_LAB -> showMotionLabScreen()
+                ScreenState.IMAGE_QUALITY -> showImageQualityScreen()
+                ScreenState.PROVENANCE -> showProvenanceScreen()
+                ScreenState.PDF_SIGNATURE -> showPdfSignatureScreen()
+                ScreenState.PDF_UNLOCK -> showPdfUnlockScreen()
+                ScreenState.PDF_STUDIO -> showPdfStudioScreen()
+                ScreenState.PDF_WATERMARK -> showPdfWatermarkScreen()
+                ScreenState.PDF_EXTRACT_TEXT -> showPdfExtractTextScreen()
+                ScreenState.PDF_EXTRACT_PAGES -> showPdfExtractPagesScreen()
+                ScreenState.PDF_FLATTEN -> showPdfFlattenScreen()
+                ScreenState.PDF_IMPOSITION -> showPdfImpositionScreen()
+                ScreenState.PDF_QUICK_TOOL -> showPdfQuickToolScreen()
+                else -> showHomeScreen()
             }
-            isNavigatingBack = true
-            try {
-                previousScreen = currentScreen
-                when (destination) {
-                    ScreenState.TOOLS -> showToolsScreen()
-                    ScreenState.LIBRARY -> showLibraryScreen()
-                    ScreenState.TOOL -> showToolScreen()
-                    ScreenState.IMAGE_UPSCALER -> showImageUpscalerScreen()
-                    ScreenState.IMAGE_STUDIO -> showImageStudioScreen()
-                    ScreenState.VIDEO_STUDIO -> showVideoStudioScreen()
-                    ScreenState.QR_STUDIO -> showQrStudioScreen()
-                    ScreenState.BACKGROUND_REMOVER -> showBackgroundRemoverScreen()
-                    ScreenState.DOCUMENT_SCANNER_ENTRY,
-                    ScreenState.DOCUMENT_SCANNER_CAMERA,
-                    ScreenState.DOCUMENT_SCANNER_PAGES,
-                    ScreenState.DOCUMENT_SCANNER_EDITOR,
-                    ScreenState.DOCUMENT_SCANNER_EXPORT -> showDocumentScannerScreen(destination)
-                    ScreenState.MOTION_LAB -> showMotionLabScreen()
-                    ScreenState.IMAGE_QUALITY -> showImageQualityScreen()
-                    ScreenState.PROVENANCE -> showProvenanceScreen()
-                    ScreenState.PDF_SIGNATURE -> showPdfSignatureScreen()
-                    ScreenState.PDF_UNLOCK -> showPdfUnlockScreen()
-                    ScreenState.PDF_STUDIO -> showPdfStudioScreen()
-                    ScreenState.PDF_WATERMARK -> showPdfWatermarkScreen()
-                    ScreenState.PDF_EXTRACT_TEXT -> showPdfExtractTextScreen()
-                    ScreenState.PDF_EXTRACT_PAGES -> showPdfExtractPagesScreen()
-                    ScreenState.PDF_FLATTEN -> showPdfFlattenScreen()
-                    ScreenState.PDF_IMPOSITION -> showPdfImpositionScreen()
-                    ScreenState.PDF_QUICK_TOOL -> showPdfQuickToolScreen()
-                    else -> showHomeScreen()
-                }
-            } finally {
-                isNavigatingBack = false
-            }
+        } finally {
+            isNavigatingBack = false
         }
     }
 
@@ -257,11 +297,11 @@ class MainNavigationController(
             if (onMarkdownBackPressed()) {
                 return
             }
-            navigateBackFromWorkspace()
+            popWorkspaceAndNavigate()
         } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
             showHomeScreen()
         } else if (currentScreen != ScreenState.HOME) {
-            navigateBackFromWorkspace()
+            popWorkspaceAndNavigate()
         } else {
             activity.finish()
         }

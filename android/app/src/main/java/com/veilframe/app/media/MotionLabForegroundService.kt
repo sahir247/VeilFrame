@@ -43,7 +43,16 @@ class MotionLabForegroundService : Service() {
         @Volatile
         private var lastProgressUpdateMs: Long = 0L
 
+        fun isVeilFrameServiceRunning(): Boolean {
+            val active = com.veilframe.app.VeilFrameProcessingService.activeJob
+            return active != null && active.type == JobType.MOTION_LAB_RIFE && active.state == JobState.RUNNING
+        }
+
         fun start(context: Context, label: String) {
+            if (isVeilFrameServiceRunning()) {
+                Log.i(TAG, "VeilFrameProcessingService is already active; suppressing duplicate MotionLabForegroundService")
+                return
+            }
             lastProgressUpdateMs = 0L
             val intent = Intent(context, MotionLabForegroundService::class.java).apply {
                 action = ACTION_START
@@ -61,6 +70,11 @@ class MotionLabForegroundService : Service() {
         }
 
         fun updateProgress(context: Context, label: String, percent: Int) {
+            val active = com.veilframe.app.VeilFrameProcessingService.activeJob
+            if (active != null && active.type == JobType.MOTION_LAB_RIFE &&
+                active.state == JobState.RUNNING) {
+                return
+            }
             val now = android.os.SystemClock.elapsedRealtime()
             if (percent in 1..99 && now - lastProgressUpdateMs < 400L) return
             lastProgressUpdateMs = now
