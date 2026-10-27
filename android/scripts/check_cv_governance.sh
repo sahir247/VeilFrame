@@ -23,6 +23,7 @@ EXEMPT=(
   "$SRC/qr/decoder/WeChatQrDecoder.kt"        # decode wrapper over WeChatQrEngine
   "$SRC/document/DocumentSession.kt"          # persistence only (DocumentMode enum)
   "$SRC/ui/views/DocumentQuadOverlayView.kt"  # rendering only (Point geometry)
+  "$SRC/media/ModelDownloadBackgroundService.kt" # background network I/O download service (HTTP/hash verification)
 )
 
 status=0

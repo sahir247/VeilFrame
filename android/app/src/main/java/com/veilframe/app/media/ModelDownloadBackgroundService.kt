@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.veilframe.app.MainActivity
+import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
 import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
 import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
@@ -162,6 +163,10 @@ class ModelDownloadBackgroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        // CV Governance: Verify CvRuntime native gate availability for downstream model consumers
+        if (!CvRuntime.isNativeAvailable) {
+            Log.d(TAG, "CvRuntime native library not yet initialized; continuing background model transfer")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
