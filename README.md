@@ -86,6 +86,8 @@ VeilFrame enforces a strict architectural invariant across all platforms:
 > **"Providers measure. VeilFrame decides."**<br>
 > Transformation engines, neural models, and red-team detectors never decide whether media passes. All pass/fail verdicts are owned exclusively by the independent, read-only **QualityGate**.
 
+![VeilFrame System Architecture](docs/images/veilframe_architecture.svg)
+
 ```mermaid
 flowchart TD
     subgraph Input[" Source Media "]
