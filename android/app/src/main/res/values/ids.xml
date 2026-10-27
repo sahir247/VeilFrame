@@ -12,4 +12,6 @@
     <item name="vf_tag_stagger_runnable" type="id" />
     <!-- View tag key: original unscaled text size in px for optical typography scaling -->
     <item name="vf_tag_base_text_size" type="id" />
+    <!-- View tag key: slider haptics listener attached flag -->
+    <item name="vf_tag_slider_haptics" type="id" />
 </resources>

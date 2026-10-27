@@ -530,6 +530,7 @@ class WorkspaceHost(
     }
 
     private fun applyInsetsToDefault(view: View) {
+        com.veilframe.app.ui.haptics.SliderHapticsHelper.attachRecursively(view)
         WorkspaceInsets.apply(
             root = view,
             statusBarTop = cachedInsets.statusBarTop,
