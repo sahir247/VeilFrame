@@ -132,6 +132,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Background download and verification for AI neural network models -->
+        <service
+            android:name=".media.ModelDownloadBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Motion Lab optical flow frame interpolation and export -->
         <service
             android:name=".media.MotionLabForegroundService"

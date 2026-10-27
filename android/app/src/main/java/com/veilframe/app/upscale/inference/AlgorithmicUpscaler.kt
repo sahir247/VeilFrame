@@ -60,6 +60,50 @@ object AlgorithmicUpscaler {
         return result
     }
 
+    /**
+     * High-performance Lanczos resampling.
+     * When OpenCV native runtime is available, executes 4-lobe Lanczos interpolation (INTER_LANCZOS4)
+     * accelerated via ARM NEON SIMD vector instructions.
+     * Transparently falls back to [scaleLanczos3] on non-native JVM test hosts.
+     */
+    fun scaleLanczos(
+        source: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        checkpoint: (() -> Unit)? = null
+    ): Bitmap {
+        // 1. Native ARM NEON SIMD Lanczos-4 via libveilframe_ncnn.so (16KB page-aligned)
+        if (NcnnNative.isAvailable) {
+            val nativeResampled = NcnnNative.scaleLanczos4(source, targetWidth, targetHeight)
+            if (nativeResampled != null) return nativeResampled
+        }
+
+        // 2. In-tree OpenCV fallback
+        if (com.veilframe.app.cv.core.CvRuntime.initialize()) {
+            try {
+                val srcMat = org.opencv.core.Mat()
+                org.opencv.android.Utils.bitmapToMat(source, srcMat)
+                val dstMat = org.opencv.core.Mat()
+                org.opencv.imgproc.Imgproc.resize(
+                    srcMat,
+                    dstMat,
+                    org.opencv.core.Size(targetWidth.toDouble(), targetHeight.toDouble()),
+                    0.0,
+                    0.0,
+                    org.opencv.imgproc.Imgproc.INTER_LANCZOS4
+                )
+                val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                org.opencv.android.Utils.matToBitmap(dstMat, result)
+                srcMat.release()
+                dstMat.release()
+                return result
+            } catch (t: Throwable) {
+                // fall through to Kotlin Lanczos3
+            }
+        }
+        return scaleLanczos3(source, targetWidth, targetHeight, checkpoint)
+    }
+
     fun scaleLanczos3(
         source: Bitmap,
         targetWidth: Int,

@@ -163,4 +163,11 @@ class AppUpdateManagerTest {
         }
         assertEquals(AppUpdateManager.ManifestSignatureStatus.Invalid, AppUpdateManager.checkManifestSignature(invalidSigJson))
     }
+
+    @Test
+    fun testAppUpdateDownloadService_BackgroundPromotionConstants() {
+        assertEquals("com.veilframe.action.PROMOTE_UPDATE_TO_BACKGROUND", AppUpdateDownloadService.ACTION_PROMOTE_TO_BACKGROUND)
+        assertEquals("extra_run_in_background", AppUpdateDownloadService.EXTRA_RUN_IN_BACKGROUND)
+        assertFalse(AppUpdateDownloadService.isDownloading)
+    }
 }

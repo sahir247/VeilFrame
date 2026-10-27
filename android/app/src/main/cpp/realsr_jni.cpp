@@ -10,6 +10,8 @@
 #include <cstring>
 #include <atomic>
 #include <android/log.h>
+#include <android/bitmap.h>
+#include <cmath>
 #include "realsr.h"
 
 #define TAG "VeilFrame.NcnnJni"
@@ -874,6 +876,257 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
         LOGE("nativeProcessStripStreaming: unknown exception");
         return -1;
     }
+}
+
+static inline float lanczos4_kernel(float x) {
+    if (x == 0.0f) return 1.0f;
+    float ax = std::fabs(x);
+    if (ax >= 4.0f) return 0.0f;
+    const float PI = 3.14159265358979323846f;
+    float px = PI * x;
+    return (std::sin(px) * std::sin(px * 0.25f)) / (px * px * 0.25f);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_upscale_inference_NcnnNative_nativeAdaptiveDetailEnhance(
+    JNIEnv* env, jclass clazz,
+    jobject bitmap,
+    jfloat strength
+) {
+    if (strength <= 0.01f || !bitmap) return JNI_FALSE;
+
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return JNI_FALSE;
+    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) return JNI_FALSE;
+
+    const int w = info.width;
+    const int h = info.height;
+    if (w < 4 || h < 4) return JNI_FALSE;
+
+    void* pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return JNI_FALSE;
+
+    unsigned char* rgba = reinterpret_cast<unsigned char*>(pixels);
+    const int stride = info.stride;
+
+    // 1. Compute luminance plane Y
+    std::vector<float> Y(static_cast<size_t>(w) * h);
+    #pragma omp parallel for
+    for (int y = 0; y < h; y++) {
+        const unsigned char* row = rgba + y * stride;
+        float* y_row = Y.data() + y * w;
+        for (int x = 0; x < w; x++) {
+            float r = row[x * 4 + 0];
+            float g = row[x * 4 + 1];
+            float b = row[x * 4 + 2];
+            y_row[x] = 0.299f * r + 0.587f * g + 0.114f * b;
+        }
+    }
+
+    // 2. Compute 3x3 separable Gaussian blur and Sobel texture gradient
+    std::vector<float> blur_h(static_cast<size_t>(w) * h);
+    #pragma omp parallel for
+    for (int y = 0; y < h; y++) {
+        const float* y_row = Y.data() + y * w;
+        float* b_row = blur_h.data() + y * w;
+        for (int x = 0; x < w; x++) {
+            int xm1 = (x > 0) ? x - 1 : 0;
+            int xp1 = (x < w - 1) ? x + 1 : w - 1;
+            b_row[x] = 0.25f * y_row[xm1] + 0.5f * y_row[x] + 0.25f * y_row[xp1];
+        }
+    }
+
+    #pragma omp parallel for
+    for (int y = 0; y < h; y++) {
+        int ym1 = (y > 0) ? y - 1 : 0;
+        int yp1 = (y < h - 1) ? y + 1 : h - 1;
+        const float* b_m1 = blur_h.data() + ym1 * w;
+        const float* b_0  = blur_h.data() + y * w;
+        const float* b_p1 = blur_h.data() + yp1 * w;
+
+        const float* y_m1 = Y.data() + ym1 * w;
+        const float* y_0  = Y.data() + y * w;
+        const float* y_p1 = Y.data() + yp1 * w;
+
+        unsigned char* row = rgba + y * stride;
+
+        for (int x = 0; x < w; x++) {
+            int xm1 = (x > 0) ? x - 1 : 0;
+            int xp1 = (x < w - 1) ? x + 1 : w - 1;
+
+            float y_val = y_0[x];
+            float blur_val = 0.25f * b_m1[x] + 0.5f * b_0[x] + 0.25f * b_p1[x];
+            float high_freq = y_val - blur_val;
+
+            // 3x3 Sobel gradient magnitude
+            float gx = (y_m1[xp1] + 2.0f * y_0[xp1] + y_p1[xp1]) - (y_m1[xm1] + 2.0f * y_0[xm1] + y_p1[xm1]);
+            float gy = (y_p1[xm1] + 2.0f * y_p1[x] + y_p1[xp1]) - (y_m1[xm1] + 2.0f * y_m1[x] + y_m1[xp1]);
+            float grad_mag = (std::fabs(gx) + std::fabs(gy)) * 0.125f;
+
+            // Texture weight: suppress in flat regions (noise immunity), apply in textured regions
+            float weight = std::min(1.0f, grad_mag * (1.0f / 16.0f));
+
+            float enhanced_y = y_val + strength * weight * high_freq;
+            if (enhanced_y < 0.0f) enhanced_y = 0.0f;
+            if (enhanced_y > 255.0f) enhanced_y = 255.0f;
+
+            float gain = (enhanced_y + 1e-3f) / (y_val + 1e-3f);
+
+            float r = row[x * 4 + 0] * gain;
+            float g = row[x * 4 + 1] * gain;
+            float b = row[x * 4 + 2] * gain;
+
+            row[x * 4 + 0] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, r + 0.5f)));
+            row[x * 4 + 1] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, g + 0.5f)));
+            row[x * 4 + 2] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, b + 0.5f)));
+            // Alpha row[x * 4 + 3] remains unchanged
+        }
+    }
+
+    AndroidBitmap_unlockPixels(env, bitmap);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_veilframe_app_upscale_inference_NcnnNative_nativeScaleLanczos4(
+    JNIEnv* env, jclass clazz,
+    jobject srcBitmap,
+    jint targetW,
+    jint targetH
+) {
+    if (!srcBitmap || targetW <= 0 || targetH <= 0) return nullptr;
+
+    AndroidBitmapInfo src_info;
+    if (AndroidBitmap_getInfo(env, srcBitmap, &src_info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    if (src_info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) return nullptr;
+
+    const int src_w = src_info.width;
+    const int src_h = src_info.height;
+
+    jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
+    if (!bitmapClass) return nullptr;
+    jmethodID createBitmapMethod = env->GetStaticMethodID(
+        bitmapClass, "createBitmap",
+        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+    );
+    if (!createBitmapMethod) return nullptr;
+    jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
+    jfieldID argbField = env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+    jobject argbConfig = env->GetStaticObjectField(configClass, argbField);
+
+    jobject dstBitmap = env->CallStaticObjectMethod(
+        bitmapClass, createBitmapMethod,
+        targetW, targetH, argbConfig
+    );
+    if (!dstBitmap) return nullptr;
+
+    void* src_pixels = nullptr;
+    void* dst_pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, srcBitmap, &src_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    if (AndroidBitmap_lockPixels(env, dstBitmap, &dst_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        AndroidBitmap_unlockPixels(env, srcBitmap);
+        return nullptr;
+    }
+
+    const unsigned char* src_rgba = reinterpret_cast<const unsigned char*>(src_pixels);
+    unsigned char* dst_rgba = reinterpret_cast<unsigned char*>(dst_pixels);
+    const int src_stride = src_info.stride;
+
+    struct FilterWeights {
+        int indices[8];
+        float weights[8];
+    };
+
+    std::vector<FilterWeights> h_weights(targetW);
+    const float scale_x = static_cast<float>(src_w) / targetW;
+    for (int x = 0; x < targetW; x++) {
+        float src_pos = (x + 0.5f) * scale_x - 0.5f;
+        int base_idx = static_cast<int>(std::floor(src_pos));
+        float sum = 0.0f;
+        for (int k = -3; k <= 4; k++) {
+            int tap = k + 3;
+            int idx = std::min(src_w - 1, std::max(0, base_idx + k));
+            h_weights[x].indices[tap] = idx;
+            float w = lanczos4_kernel(src_pos - (base_idx + k));
+            h_weights[x].weights[tap] = w;
+            sum += w;
+        }
+        float inv_sum = (sum != 0.0f) ? (1.0f / sum) : 1.0f;
+        for (int tap = 0; tap < 8; tap++) {
+            h_weights[x].weights[tap] *= inv_sum;
+        }
+    }
+
+    std::vector<FilterWeights> v_weights(targetH);
+    const float scale_y = static_cast<float>(src_h) / targetH;
+    for (int y = 0; y < targetH; y++) {
+        float src_pos = (y + 0.5f) * scale_y - 0.5f;
+        int base_idx = static_cast<int>(std::floor(src_pos));
+        float sum = 0.0f;
+        for (int k = -3; k <= 4; k++) {
+            int tap = k + 3;
+            int idx = std::min(src_h - 1, std::max(0, base_idx + k));
+            v_weights[y].indices[tap] = idx;
+            float w = lanczos4_kernel(src_pos - (base_idx + k));
+            v_weights[y].weights[tap] = w;
+            sum += w;
+        }
+        float inv_sum = (sum != 0.0f) ? (1.0f / sum) : 1.0f;
+        for (int tap = 0; tap < 8; tap++) {
+            v_weights[y].weights[tap] *= inv_sum;
+        }
+    }
+
+    std::vector<float> temp_buf(static_cast<size_t>(targetW) * src_h * 4);
+    #pragma omp parallel for
+    for (int y = 0; y < src_h; y++) {
+        const unsigned char* in_row = src_rgba + y * src_stride;
+        float* out_row = temp_buf.data() + static_cast<size_t>(y) * targetW * 4;
+
+        for (int x = 0; x < targetW; x++) {
+            const FilterWeights& fw = h_weights[x];
+            float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
+            for (int tap = 0; tap < 8; tap++) {
+                int src_x = fw.indices[tap];
+                float w = fw.weights[tap];
+                r += in_row[src_x * 4 + 0] * w;
+                g += in_row[src_x * 4 + 1] * w;
+                b += in_row[src_x * 4 + 2] * w;
+                a += in_row[src_x * 4 + 3] * w;
+            }
+            out_row[x * 4 + 0] = r;
+            out_row[x * 4 + 1] = g;
+            out_row[x * 4 + 2] = b;
+            out_row[x * 4 + 3] = a;
+        }
+    }
+
+    #pragma omp parallel for
+    for (int y = 0; y < targetH; y++) {
+        const FilterWeights& fw = v_weights[y];
+        unsigned char* out_row = dst_rgba + y * targetW * 4;
+
+        for (int x = 0; x < targetW; x++) {
+            float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
+            for (int tap = 0; tap < 8; tap++) {
+                int src_y = fw.indices[tap];
+                float w = fw.weights[tap];
+                const float* in_pixel = temp_buf.data() + (static_cast<size_t>(src_y) * targetW + x) * 4;
+                r += in_pixel[0] * w;
+                g += in_pixel[1] * w;
+                b += in_pixel[2] * w;
+                a += in_pixel[3] * w;
+            }
+            out_row[x * 4 + 0] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, r + 0.5f)));
+            out_row[x * 4 + 1] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, g + 0.5f)));
+            out_row[x * 4 + 2] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, b + 0.5f)));
+            out_row[x * 4 + 3] = static_cast<unsigned char>(std::min(255.0f, std::max(0.0f, a + 0.5f)));
+        }
+    }
+
+    AndroidBitmap_unlockPixels(env, dstBitmap);
+    AndroidBitmap_unlockPixels(env, srcBitmap);
+    return dstBitmap;
 }
 
 } // extern "C"

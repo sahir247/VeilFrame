@@ -46,33 +46,36 @@ class CelBackgroundRemover(
             NcnnMattingNative.MODEL_TYPE_MODNET
         }
 
-        val initSuccess = if (model.isBundled) {
-            NcnnMattingNative.nativeInit(
-                context.assets,
-                "models/u2netp/${model.paramFileName}",
-                "models/u2netp/${model.fileName}",
-                modelType,
-                true,
-                true
-            )
-        } else {
-            if (!repository.isModelReady(model)) {
-                throw IllegalStateException("Model ${model.displayName} is not downloaded or incomplete. Download it in Model Manager first.")
+        val isLoaded = NcnnMattingNative.isModelLoaded(modelType)
+        if (!isLoaded) {
+            val initSuccess = if (model.isBundled) {
+                NcnnMattingNative.nativeInit(
+                    context.assets,
+                    "models/u2netp/${model.paramFileName}",
+                    "models/u2netp/${model.fileName}",
+                    modelType,
+                    true,
+                    true
+                )
+            } else {
+                if (!repository.isModelReady(model)) {
+                    throw IllegalStateException("Model ${model.displayName} is not downloaded or incomplete. Download it in Model Manager first.")
+                }
+                val binFile = repository.getModelFile(model)
+                val paramFile = repository.getParamFile(model)
+                NcnnMattingNative.nativeInit(
+                    null,
+                    paramFile.absolutePath,
+                    binFile.absolutePath,
+                    modelType,
+                    true,
+                    false
+                )
             }
-            val binFile = repository.getModelFile(model)
-            val paramFile = repository.getParamFile(model)
-            NcnnMattingNative.nativeInit(
-                null,
-                paramFile.absolutePath,
-                binFile.absolutePath,
-                modelType,
-                true,
-                false
-            )
-        }
 
-        if (!initSuccess) {
-            throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
+            if (!initSuccess) {
+                throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
+            }
         }
 
         onProgress(RembgProgress(30, "Decoding image…"))
@@ -90,7 +93,7 @@ class CelBackgroundRemover(
             onProgress(RembgProgress(55, "Running neural matting…"))
             ensureActive()
 
-            maskBitmap = NcnnMattingNative.nativeProcess(rgbaBitmap, modelType, true)
+            maskBitmap = MultiPersonMattingEngine.process(context, rgbaBitmap, modelType, useGpu = true)
                 ?: throw IllegalStateException("Native neural matting returned null mask for ${model.displayName}")
 
             onProgress(RembgProgress(80, "Building cutout…"))

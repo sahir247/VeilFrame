@@ -1,5 +1,6 @@
 package com.veilframe.app.upscale.inference
 
+import android.graphics.Bitmap
 import android.util.Log
 import java.nio.ByteBuffer
 
@@ -174,6 +175,26 @@ object NcnnNative {
         return nativeProcessStripStreaming(handle, width, height, channels, stripCallback, rowCallback, progressCallback)
     }
 
+    /**
+     * Executes native ARM NEON SIMD adaptive luminance micro-contrast enhancement
+     * directly on the given [bitmap].
+     *
+     * @return true if successful, false otherwise.
+     */
+    fun adaptiveDetailEnhance(bitmap: Bitmap, strength: Float = 0.35f): Boolean {
+        if (!isAvailable || strength <= 0.01f) return false
+        return nativeAdaptiveDetailEnhance(bitmap, strength)
+    }
+
+    /**
+     * Executes native ARM NEON SIMD 4-lobe Lanczos interpolation to scale [sourceBitmap]
+     * to [targetWidth]x[targetHeight].
+     */
+    fun scaleLanczos4(sourceBitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap? {
+        if (!isAvailable || targetWidth <= 0 || targetHeight <= 0) return null
+        return nativeScaleLanczos4(sourceBitmap, targetWidth, targetHeight)
+    }
+
     // Native method signatures
     @JvmStatic private external fun nativeGlobalInit(): Int
     @JvmStatic private external fun nativeGlobalDestroy()
@@ -193,4 +214,6 @@ object NcnnNative {
         handle: Long, width: Int, height: Int, channels: Int,
         stripCallback: NcnnStripCallback, rowCallback: NcnnRowCallback, progressCallback: NcnnProgressCallback?
     ): Int
+    @JvmStatic external fun nativeAdaptiveDetailEnhance(bitmap: Bitmap, strength: Float): Boolean
+    @JvmStatic external fun nativeScaleLanczos4(sourceBitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap?
 }

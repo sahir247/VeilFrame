@@ -589,6 +589,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Log.i("VeilFrame", "POST_NOTIFICATIONS permission declined by user.")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
@@ -612,6 +620,17 @@ class MainActivity : AppCompatActivity() {
 
         com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
         val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+
+        // Native notification permission prompt on 1st time launch (Android 13+ / API 33+)
+        val hasPromptedNotifications = prefs.getBoolean("has_prompted_notification_permission", false)
+        if (!hasPromptedNotifications) {
+            prefs.edit().putBoolean("has_prompted_notification_permission", true).apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
 
         // Restore cached changelog if available
         val cachedTag = prefs.getString("cached_changelog_tag", null)

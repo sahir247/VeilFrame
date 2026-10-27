@@ -29,8 +29,26 @@ object NcnnMattingNative {
     external fun nativeProcess(
         srcBitmap: Bitmap,
         modelType: Int,
+        useGpu: Boolean,
+        letterbox: Boolean
+    ): Bitmap?
+
+    @JvmStatic
+    fun nativeProcess(
+        srcBitmap: Bitmap,
+        modelType: Int,
+        useGpu: Boolean
+    ): Bitmap? = nativeProcess(srcBitmap, modelType, useGpu, letterbox = false)
+
+    @JvmStatic
+    external fun nativeProcessLegacy(
+        srcBitmap: Bitmap,
+        modelType: Int,
         useGpu: Boolean
     ): Bitmap?
+
+    @JvmStatic
+    external fun isModelLoaded(modelType: Int): Boolean
 
     @JvmStatic
     external fun nativeRelease()

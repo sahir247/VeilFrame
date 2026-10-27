@@ -24,11 +24,13 @@ import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
 import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
 import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
+import com.veilframe.app.databinding.DialogModelRequiredBinding
 import com.veilframe.app.databinding.DialogRembgModelManagerBinding
 import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
 import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.ui.views.BeforeAfterSplitView
+import com.veilframe.app.ui.views.RefineBrushCanvasView
 import androidx.core.content.ContextCompat
 import android.content.res.ColorStateList
 import kotlinx.coroutines.CoroutineScope
@@ -77,8 +79,17 @@ class BackgroundRemoverController(
     private var currentSaveCutoutState: SaveCutoutState = SaveCutoutState.IDLE
     private var saveStateJob: Job? = null
 
-    /** Selected AI model (defaults to recommended BiRefNet Lite) */
-    private var currentModel: RembgModel = RembgModel.DEFAULT
+    enum class RembgMode {
+        HYBRID,
+        U2NETP,
+        MODNET
+    }
+
+    var currentMode: RembgMode = RembgMode.HYBRID
+        private set
+
+    /** Selected AI model (defaults to bundled U^2-Net-P) */
+    private var currentModel: RembgModel = RembgModel.U2NETP
 
     /** Last error message if processing failed */
     private var lastFailure: String? = null
@@ -95,7 +106,11 @@ class BackgroundRemoverController(
 
     fun init() {
         binding.toolbarBgRemover.setNavigationOnClickListener {
-            onNavigateBack()
+            if (isRefineMode) {
+                exitRefineMode(applyEdits = false)
+            } else {
+                onNavigateBack()
+            }
         }
 
         binding.btnBgModelManager.setOnClickListener {
@@ -104,6 +119,33 @@ class BackgroundRemoverController(
 
         binding.btnBgChangeModel.setOnClickListener {
             showModelManagerDialog(binding.btnBgChangeModel)
+        }
+
+        binding.toggleGroupMattingMode.check(
+            when (currentMode) {
+                RembgMode.HYBRID -> binding.btnModeSelectHybrid.id
+                RembgMode.U2NETP -> binding.btnModeSelectU2Net.id
+                RembgMode.MODNET -> binding.btnModeSelectModNet.id
+            }
+        )
+        binding.toggleGroupMattingMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                currentMode = when (checkedId) {
+                    binding.btnModeSelectU2Net.id -> {
+                        currentModel = RembgModel.U2NETP
+                        RembgMode.U2NETP
+                    }
+                    binding.btnModeSelectModNet.id -> {
+                        currentModel = RembgModel.MODNET
+                        RembgMode.MODNET
+                    }
+                    else -> {
+                        currentModel = if (repository.isModelReady(RembgModel.MODNET)) RembgModel.MODNET else RembgModel.U2NETP
+                        RembgMode.HYBRID
+                    }
+                }
+                updateActiveModelBadge()
+            }
         }
 
         binding.btnBgPickImage.setOnClickListener {
@@ -130,6 +172,10 @@ class BackgroundRemoverController(
             exportImage()
         }
 
+        binding.btnBgRefineBrush.setOnClickListener {
+            enterRefineMode()
+        }
+
         binding.chipGroupBgBackdrop.setOnCheckedStateChangeListener { _, checkedIds ->
             val mode = when {
                 checkedIds.contains(binding.chipBackdropWhite.id) ->
@@ -142,24 +188,66 @@ class BackgroundRemoverController(
             binding.splitViewBgCompare.backgroundMode = mode
         }
 
-        // Reset cutout when edge options change so user can re-run with new parameters
-        binding.switchTightenEdges.setOnCheckedChangeListener { _, _ ->
-            if (sourceBytes != null && resultBitmap != null) {
-                resultBitmap = null
-                updateUi()
-            }
-        }
-        binding.switchFeatherEdges.setOnCheckedChangeListener { _, _ ->
-            if (sourceBytes != null && resultBitmap != null) {
-                resultBitmap = null
-                updateUi()
-            }
-        }
+        // Reset cutout when trim options change so user can re-run with new parameters
         binding.switchTrimTransparent.setOnCheckedChangeListener { _, _ ->
             if (sourceBytes != null && resultBitmap != null) {
                 resultBitmap = null
                 updateUi()
             }
+        }
+
+        // Picsart-style manual brush refine listeners
+        binding.toggleGroupBrushMode.check(binding.btnModeErase.id)
+        binding.toggleGroupBrushMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                when (checkedId) {
+                    binding.btnModeErase.id -> binding.refineBrushCanvas.brushMode = RefineBrushCanvasView.BrushMode.ERASE
+                    binding.btnModeRestore.id -> binding.refineBrushCanvas.brushMode = RefineBrushCanvasView.BrushMode.RESTORE
+                }
+            }
+        }
+
+        binding.sliderBrushSize.addOnChangeListener { _, value, _ ->
+            binding.refineBrushCanvas.brushRadiusPx = value
+            binding.tvBrushSizeVal.text = "${value.toInt()} px"
+            binding.refineBrushCanvas.showStrokePreview(value, keepVisible = true)
+        }
+
+        binding.sliderBrushSize.addOnSliderTouchListener(object : com.google.android.material.slider.Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: com.google.android.material.slider.Slider) {
+                binding.refineBrushCanvas.showStrokePreview(slider.value, keepVisible = true)
+            }
+
+            override fun onStopTrackingTouch(slider: com.google.android.material.slider.Slider) {
+                binding.refineBrushCanvas.hideStrokePreview()
+            }
+        })
+
+        binding.refineBrushCanvas.onHistoryChangedListener = { canUndo, canRedo ->
+            binding.btnRefineUndo.isEnabled = canUndo
+            binding.btnRefineRedo.isEnabled = canRedo
+            binding.btnRefineUndo.alpha = if (canUndo) 1.0f else 0.4f
+            binding.btnRefineRedo.alpha = if (canRedo) 1.0f else 0.4f
+        }
+
+        binding.btnRefineUndo.setOnClickListener {
+            binding.refineBrushCanvas.undo()
+        }
+
+        binding.btnRefineRedo.setOnClickListener {
+            binding.refineBrushCanvas.redo()
+        }
+
+        binding.btnRefineResetZoom.setOnClickListener {
+            binding.refineBrushCanvas.resetView()
+        }
+
+        binding.btnRefineCancel.setOnClickListener {
+            exitRefineMode(applyEdits = false)
+        }
+
+        binding.btnRefineDone.setOnClickListener {
+            exitRefineMode(applyEdits = true)
         }
 
         VeilFrameInteraction.bindWorkspace(binding.root)
@@ -169,6 +257,7 @@ class BackgroundRemoverController(
 
     fun cleanup() {
         try {
+            binding.refineBrushCanvas.cleanup()
             sessionManager.closeAll()
             downloadManager.cancelDownload()
             sourceBitmap?.recycle()
@@ -219,16 +308,6 @@ class BackgroundRemoverController(
                     val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
                     sourceFileName = rawName.substringBeforeLast('.', rawName)
                     updateUi()
-
-                    // Inform user if model needs to be downloaded before they tap Remove Background
-                    if (!repository.isModelReady(currentModel)) {
-                        Toast.makeText(
-                            activity,
-                            "AI model ${currentModel.displayName} needs to be downloaded first",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        showModelManagerDialog(binding.cardBgActiveModel)
-                    }
                 } else {
                     Toast.makeText(activity, "Could not decode image", Toast.LENGTH_SHORT).show()
                 }
@@ -238,25 +317,184 @@ class BackgroundRemoverController(
 
     private fun executeRemoval() {
         val bytes = sourceBytes ?: return
-        if (!repository.isModelReady(currentModel)) {
-            Toast.makeText(
-                activity,
-                "Model ${currentModel.displayName} is not downloaded yet",
-                Toast.LENGTH_SHORT
-            ).show()
-            showModelManagerDialog(binding.cardBgActiveModel)
+
+        if (currentMode == RembgMode.MODNET && !repository.isModelReady(RembgModel.MODNET)) {
+            showRequiredModelDownloadDialog(
+                title = "MODNet HD Model Required",
+                message = "MODNet HD Portrait Matting (12.9 MB) is required to run in MODNet mode. Download it now to continue, or switch to the bundled U²-Net-P model instantly.",
+                targetModel = RembgModel.MODNET,
+                originView = binding.btnBgExecuteRemoval,
+                onProceedWithBundled = {
+                    currentMode = RembgMode.U2NETP
+                    currentModel = RembgModel.U2NETP
+                    binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
+                    updateActiveModelBadge()
+                    runRemovalPipeline(bytes)
+                }
+            )
             return
+        }
+
+        if (currentMode == RembgMode.HYBRID && !repository.isModelReady(RembgModel.MODNET)) {
+            showRequiredModelDownloadDialog(
+                title = "Enhance Hybrid with HD Portrait Model?",
+                message = "MODNet HD Portrait Model (12.9 MB) enables Hybrid Mode to perform sub-pixel human hair matting while keeping U²-Net-P for objects.\n\nWould you like to download MODNet now, or proceed immediately with the bundled engine?",
+                targetModel = RembgModel.MODNET,
+                originView = binding.btnBgExecuteRemoval,
+                onProceedWithBundled = {
+                    runRemovalPipeline(bytes)
+                }
+            )
+            return
+        }
+
+        runRemovalPipeline(bytes)
+    }
+
+    private fun showRequiredModelDownloadDialog(
+        title: String,
+        message: String,
+        targetModel: RembgModel,
+        originView: View? = null,
+        onProceedWithBundled: () -> Unit
+    ) {
+        val dialogBinding = DialogModelRequiredBinding.inflate(LayoutInflater.from(activity))
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setView(dialogBinding.root)
+            .setCancelable(true)
+            .create()
+
+        dialogBinding.tvModelReqTitle.text = title
+        dialogBinding.tvModelReqMessage.text = message
+        dialogBinding.btnModelReqDownload.text = "Download & Process"
+        dialogBinding.btnModelReqUseLanczos.text = "Use Bundled U²-Net-P (Instant)"
+
+        dialogBinding.btnModelReqClose.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
+        dialogBinding.btnModelReqCancel.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
+
+        dialogBinding.btnModelReqUseLanczos.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+            onProceedWithBundled()
+        }
+
+        val reqListener = object : ModelDownloadBackgroundService.DownloadListener {
+            override fun onProgress(modelId: String, downloaded: Long, total: Long, percent: Int, speedBytesPerSec: Long) {
+                if (modelId != targetModel.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        val speedMb = speedBytesPerSec / (1024.0 * 1024.0)
+                        dialogBinding.progressModelReq.isIndeterminate = false
+                        dialogBinding.progressModelReq.progress = percent
+                        dialogBinding.tvModelReqProgressStatus.text =
+                            String.format(Locale.US, "Downloading %s: %d%% (%.1f MB/s)", targetModel.displayName, percent, speedMb)
+                    }
+                }
+            }
+
+            override fun onVerifying(modelId: String) {
+                if (modelId != targetModel.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.isIndeterminate = true
+                        dialogBinding.tvModelReqProgressStatus.text = "Verifying integrity…"
+                    }
+                }
+            }
+
+            override fun onSuccess(modelId: String, modelType: String) {
+                if (modelId != targetModel.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+                    }
+                    updateActiveModelBadge()
+                    Toast.makeText(activity, "${targetModel.displayName} ready! Starting removal…", Toast.LENGTH_SHORT).show()
+                    sourceBytes?.let { bytes ->
+                        runRemovalPipeline(bytes)
+                    }
+                }
+            }
+
+            override fun onError(modelId: String, error: String) {
+                if (modelId != targetModel.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.visibility = View.GONE
+                        dialogBinding.tvModelReqProgressStatus.text = "Download failed: $error"
+                        dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
+                        dialogBinding.btnModelReqDownload.isEnabled = true
+                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                    }
+                }
+            }
+
+            override fun onCancelled(modelId: String) {
+                if (modelId != targetModel.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.visibility = View.GONE
+                        dialogBinding.btnModelReqDownload.isEnabled = true
+                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                    }
+                }
+            }
+        }
+        ModelDownloadBackgroundService.addListener(reqListener)
+
+        dialog.setOnDismissListener {
+            ModelDownloadBackgroundService.removeListener(reqListener)
+            if (ModelDownloadBackgroundService.isDownloading(targetModel.id)) {
+                ModelDownloadBackgroundService.promoteToBackground(activity)
+                Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        dialogBinding.btnModelReqDownload.setOnClickListener {
+            dialogBinding.progressModelReq.visibility = View.VISIBLE
+            dialogBinding.progressModelReq.isIndeterminate = true
+            dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
+            dialogBinding.tvModelReqProgressStatus.text = "Connecting to download server…"
+            dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_blue))
+            dialogBinding.btnModelReqDownload.isEnabled = false
+            dialogBinding.btnModelReqUseLanczos.isEnabled = false
+            ModelDownloadBackgroundService.startDownload(activity, "REMBG", targetModel.id, targetModel.displayName, runInBackground = false)
+        }
+
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
+    }
+
+    private fun runRemovalPipeline(bytes: ByteArray) {
+        val effectiveModel = when (currentMode) {
+            RembgMode.U2NETP -> RembgModel.U2NETP
+            RembgMode.MODNET -> RembgModel.MODNET
+            RembgMode.HYBRID -> {
+                if (repository.isModelReady(RembgModel.MODNET)) {
+                    RembgModel.MODNET
+                } else {
+                    RembgModel.U2NETP
+                }
+            }
         }
 
         binding.cardBgProcessingOverlay.visibility = View.VISIBLE
         binding.progressBgInference.isIndeterminate = false
         binding.progressBgInference.progress = 10
         binding.tvBgProgressPercent.text = "10%"
-        binding.tvBgProgressMessage.text = "Loading ${currentModel.displayName}…"
+        binding.tvBgProgressMessage.text = when (currentMode) {
+            RembgMode.HYBRID -> "Running Hybrid Engine (YOLO + ${effectiveModel.displayName})…"
+            else -> "Loading ${effectiveModel.displayName}…"
+        }
 
         val trim = binding.switchTrimTransparent.isChecked
-        val tighten = binding.switchTightenEdges.isChecked
-        val feather = binding.switchFeatherEdges.isChecked
+        val tighten = false
+        val feather = false
 
         // Governed execution: INTERACTIVE lane + memory admission check via CvRuntime.
         val srcBmp = sourceBitmap
@@ -271,13 +509,12 @@ class BackgroundRemoverController(
                 memoryEstimate = estimate,
                 timeoutMs = 60_000L,
             ) { ctx ->
-                // Native gate + cooperative cancellation checks
-                CvRuntime.requireAvailable()
+                // Cooperative cancellation check
                 ctx.ensureActive()
 
                 remover.removeBackground(
                     imageBytes = bytes,
-                    model = currentModel,
+                    model = effectiveModel,
                     trim = trim,
                     tightenEdges = tighten,
                     featherEdges = feather,
@@ -336,7 +573,73 @@ class BackgroundRemoverController(
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
         }
 
-        fun refreshCards() {
+        lateinit var refreshCards: () -> Unit
+
+        val managerListener = object : ModelDownloadBackgroundService.DownloadListener {
+            override fun onProgress(modelId: String, downloaded: Long, total: Long, percent: Int, speedBytesPerSec: Long) {
+                if (modelId != RembgModel.MODNET.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelIsNet.visibility = View.VISIBLE
+                        dialogBinding.progressModelIsNet.isIndeterminate = false
+                        dialogBinding.progressModelIsNet.progress = percent
+                        dialogBinding.btnDownloadModelIsNet.isEnabled = false
+                        dialogBinding.btnRedownloadModelIsNet.isEnabled = false
+                    }
+                }
+            }
+
+            override fun onVerifying(modelId: String) {
+                if (modelId != RembgModel.MODNET.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelIsNet.visibility = View.VISIBLE
+                        dialogBinding.progressModelIsNet.isIndeterminate = true
+                    }
+                }
+            }
+
+            override fun onSuccess(modelId: String, modelType: String) {
+                if (modelId != RembgModel.MODNET.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        refreshCards()
+                    }
+                    updateActiveModelBadge()
+                    Toast.makeText(activity, "MODNet ready!", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onError(modelId: String, error: String) {
+                if (modelId != RembgModel.MODNET.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        refreshCards()
+                        Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
+            override fun onCancelled(modelId: String) {
+                if (modelId != RembgModel.MODNET.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        refreshCards()
+                    }
+                }
+            }
+        }
+        ModelDownloadBackgroundService.addListener(managerListener)
+
+        dialog.setOnDismissListener {
+            ModelDownloadBackgroundService.removeListener(managerListener)
+            if (ModelDownloadBackgroundService.isAnyDownloading()) {
+                ModelDownloadBackgroundService.promoteToBackground(activity)
+                Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        refreshCards = {
             val usedBytes = repository.getTotalStorageUsedBytes()
             val availBytes = repository.getAvailableStorageBytes()
             val usedMb = String.format(Locale.US, "%.1f MB", usedBytes / (1024.0 * 1024.0))
@@ -353,7 +656,7 @@ class BackgroundRemoverController(
             dialogBinding.btnDeleteModelBiRefNet.visibility = View.GONE
             dialogBinding.btnRedownloadModelBiRefNet.visibility = View.GONE
             dialogBinding.btnSelectModelBiRefNet.visibility = View.VISIBLE
-            if (currentModel == RembgModel.U2NETP) {
+            if (currentMode == RembgMode.U2NETP) {
                 dialogBinding.btnSelectModelBiRefNet.text = "Active"
                 dialogBinding.btnSelectModelBiRefNet.isEnabled = false
             } else {
@@ -370,7 +673,7 @@ class BackgroundRemoverController(
                 dialogBinding.btnDeleteModelIsNet.visibility = View.VISIBLE
                 dialogBinding.btnRedownloadModelIsNet.visibility = View.VISIBLE
                 dialogBinding.btnSelectModelIsNet.visibility = View.VISIBLE
-                if (currentModel == RembgModel.MODNET) {
+                if (currentMode == RembgMode.MODNET) {
                     dialogBinding.btnSelectModelIsNet.text = "Active"
                     dialogBinding.btnSelectModelIsNet.isEnabled = false
                 } else {
@@ -386,6 +689,18 @@ class BackgroundRemoverController(
                 dialogBinding.btnSelectModelIsNet.visibility = View.GONE
             }
 
+            val isModNetDownloading = ModelDownloadBackgroundService.isDownloading(RembgModel.MODNET.id)
+            if (isModNetDownloading) {
+                dialogBinding.progressModelIsNet.visibility = View.VISIBLE
+                dialogBinding.progressModelIsNet.isIndeterminate = true
+                dialogBinding.btnDownloadModelIsNet.isEnabled = false
+                dialogBinding.btnRedownloadModelIsNet.isEnabled = false
+            } else {
+                dialogBinding.progressModelIsNet.visibility = View.GONE
+                dialogBinding.btnDownloadModelIsNet.isEnabled = true
+                dialogBinding.btnRedownloadModelIsNet.isEnabled = true
+            }
+
             // Card 3: Hidden
             dialogBinding.cardModelU2Net.visibility = View.GONE
         }
@@ -394,47 +709,14 @@ class BackgroundRemoverController(
             progressView.visibility = View.VISIBLE
             progressView.isIndeterminate = true
             triggerButton.isEnabled = false
-
-            scope.launch {
-                val result = downloadManager.downloadModel(model, object : RembgModelDownloadManager.DownloadListener {
-                    override fun onProgress(downloadedBytes: Long, totalBytes: Long, speedBytesPerSec: Long) {
-                        scope.launch(Dispatchers.Main) {
-                            if (totalBytes > 0) {
-                                progressView.isIndeterminate = false
-                                progressView.progress = ((downloadedBytes * 100) / totalBytes).toInt()
-                            }
-                        }
-                    }
-
-                    override fun onSuccess(model: RembgModel, destinationFile: File) {
-                        scope.launch(Dispatchers.Main) {
-                            progressView.visibility = View.GONE
-                            triggerButton.isEnabled = true
-                            refreshCards()
-                            updateActiveModelBadge()
-                            Toast.makeText(activity, "${model.displayName} ready!", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-
-                    override fun onError(error: String) {
-                        scope.launch(Dispatchers.Main) {
-                            progressView.visibility = View.GONE
-                            triggerButton.isEnabled = true
-                            Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                })
-
-                if (result.isSuccess) {
-                    currentModel = model
-                    updateActiveModelBadge()
-                }
-            }
+            ModelDownloadBackgroundService.startDownload(activity, "REMBG", model.id, model.displayName, runInBackground = false)
         }
 
         // U2Net-P (Card 1) listeners
         dialogBinding.btnSelectModelBiRefNet.setOnClickListener {
+            currentMode = RembgMode.U2NETP
             currentModel = RembgModel.U2NETP
+            binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -454,16 +736,21 @@ class BackgroundRemoverController(
             download(RembgModel.MODNET, dialogBinding.progressModelIsNet, dialogBinding.btnRedownloadModelIsNet)
         }
         dialogBinding.btnDeleteModelIsNet.setOnClickListener {
+            ModelDownloadBackgroundService.cancelDownload(activity, RembgModel.MODNET.id)
             repository.deleteModel(RembgModel.MODNET)
             sessionManager.closeSession(RembgModel.MODNET)
-            if (currentModel == RembgModel.MODNET) {
-                currentModel = RembgModel.U2NETP
+            if (currentMode == RembgMode.MODNET) {
+                currentMode = RembgMode.HYBRID
+                binding.toggleGroupMattingMode.check(binding.btnModeSelectHybrid.id)
             }
+            currentModel = RembgModel.U2NETP
             refreshCards()
             updateActiveModelBadge()
         }
         dialogBinding.btnSelectModelIsNet.setOnClickListener {
+            currentMode = RembgMode.MODNET
             currentModel = RembgModel.MODNET
+            binding.toggleGroupMattingMode.check(binding.btnModeSelectModNet.id)
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -478,17 +765,89 @@ class BackgroundRemoverController(
     }
 
     private fun updateActiveModelBadge() {
-        binding.tvBgCurrentModelName.text = currentModel.displayName
-        val isReady = repository.isModelReady(currentModel)
-        if (isReady) {
-            binding.tvBgModelBadge.text = "Ready"
-            binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-            binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
-        } else {
-            binding.tvBgModelBadge.text = "Download Needed"
-            binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
-            binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_warn)
+        val isModNetReady = repository.isModelReady(RembgModel.MODNET)
+        when (currentMode) {
+            RembgMode.HYBRID -> {
+                binding.tvBgCurrentModelName.text = "⚡ Hybrid (Smart Auto)"
+                if (isModNetReady) {
+                    binding.tvBgModelBadge.text = "Studio Ready"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                } else {
+                    binding.tvBgModelBadge.text = "Bundled Engine"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_primary))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                }
+                binding.tvBgModelDescription.text = "Intelligently routes humans, animals & objects for crisp edge preservation. Uses MODNet for portraits when available, U²-Net-P for objects."
+            }
+            RembgMode.U2NETP -> {
+                binding.tvBgCurrentModelName.text = "U²-Net-P (Bundled)"
+                binding.tvBgModelBadge.text = "Ready (Bundled)"
+                binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                binding.tvBgModelDescription.text = "Fast, general-purpose saliency model for objects, animals & scenes. Zero downloads needed."
+            }
+            RembgMode.MODNET -> {
+                binding.tvBgCurrentModelName.text = "MODNet (HD Portrait)"
+                if (isModNetReady) {
+                    binding.tvBgModelBadge.text = "Installed (12.9 MB)"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                } else {
+                    binding.tvBgModelBadge.text = "Download Needed"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_warn)
+                }
+                binding.tvBgModelDescription.text = "Sub-pixel portrait matting model. Ideal for fine human hair, fingers and transparent clothing."
+            }
         }
+    }
+
+    var isRefineMode: Boolean = false
+        private set
+
+    fun enterRefineMode() {
+        val src = sourceBitmap ?: return
+        val res = resultBitmap ?: return
+
+        isRefineMode = true
+        binding.splitViewBgCompare.visibility = View.GONE
+        binding.containerBgControls.visibility = View.GONE
+        binding.cardBgActionDock.visibility = View.GONE
+
+        binding.refineBrushCanvas.visibility = View.VISIBLE
+        binding.cardBgRefineDock.visibility = View.VISIBLE
+
+        binding.refineBrushCanvas.setBitmaps(src, res)
+        binding.toolbarBgRemover.title = "Refine Cutout"
+        binding.toolbarBgRemover.subtitle = "Erase residue or restore details"
+    }
+
+    fun exitRefineMode(applyEdits: Boolean) {
+        if (applyEdits) {
+            val edited = binding.refineBrushCanvas.getRefinedBitmap()
+            if (edited != null) {
+                val prev = resultBitmap
+                resultBitmap = edited
+                if (prev !== resultBitmap) {
+                    prev?.recycle()
+                }
+                binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
+                Toast.makeText(activity, "Refinement applied successfully", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        isRefineMode = false
+        binding.refineBrushCanvas.visibility = View.GONE
+        binding.cardBgRefineDock.visibility = View.GONE
+
+        binding.splitViewBgCompare.visibility = View.VISIBLE
+        binding.containerBgControls.visibility = View.VISIBLE
+        binding.cardBgActionDock.visibility = View.VISIBLE
+
+        binding.toolbarBgRemover.title = "Background Remover"
+        binding.toolbarBgRemover.subtitle = "On-Device Neural Matting"
+        updateUi()
     }
 
     private fun updateSaveCutoutButton() {
@@ -499,6 +858,7 @@ class BackgroundRemoverController(
             binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             binding.btnBgSavePng.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
+            binding.btnBgRefineBrush.visibility = View.GONE
             return
         }
 
@@ -507,6 +867,7 @@ class BackgroundRemoverController(
         binding.btnBgExecuteRemoval.isEnabled = true
         binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_surface_variant)
 
+        binding.btnBgRefineBrush.visibility = if (!isRefineMode) View.VISIBLE else View.GONE
         binding.btnBgSavePng.visibility = View.VISIBLE
         when (currentSaveCutoutState) {
             SaveCutoutState.IDLE -> {

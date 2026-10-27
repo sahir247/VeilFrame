@@ -59,6 +59,7 @@ class MotionLabController(
     private var sourceUri: Uri? = null
     val currentSourceUri: Uri? get() = sourceUri
     private var multiplier = 2
+    private var isTarget60fps = true
     private var method = MotionMethod.RIFE
     private var job: Job? = null
     override val isProcessing: Boolean get() = job?.isActive == true
@@ -80,9 +81,24 @@ class MotionLabController(
             FFmpegKit.cancel()
             setStatus("Cancelling…")
         }
-        binding.chipMotion2x.setOnClickListener { multiplier = 2 }
-        binding.chipMotion4x.setOnClickListener { multiplier = 4 }
-        binding.chipMotionRife.setOnClickListener { method = MotionMethod.RIFE }
+        binding.chipMotion60fps.setOnClickListener {
+            isTarget60fps = true
+            multiplier = 2
+        }
+        binding.chipMotion2x.setOnClickListener {
+            isTarget60fps = false
+            multiplier = 2
+        }
+        binding.chipMotion4x.setOnClickListener {
+            isTarget60fps = false
+            multiplier = 4
+        }
+        binding.chipMotionRife.setOnClickListener {
+            method = MotionMethod.RIFE
+            binding.chipMotion60fps.isChecked = true
+            isTarget60fps = true
+            multiplier = 2
+        }
         binding.chipMotionFast.setOnClickListener { method = MotionMethod.DIS }
         binding.chipMotionQuality.setOnClickListener { method = MotionMethod.FARNEBACK }
         binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
@@ -101,7 +117,8 @@ class MotionLabController(
 
     override fun moveToBackground() {
         if (isProcessing) {
-            MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x) in background")
+            val label = if (isTarget60fps) "Motion Lab (60 fps) in background" else "Motion Lab (${multiplier}x) in background"
+            MotionLabForegroundService.start(activity, label)
         }
     }
 
@@ -170,7 +187,8 @@ class MotionLabController(
         binding.btnMotionLabRun.isEnabled = false
 
         MotionLabForegroundService.cancelHook = { cancel() }
-        MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x)")
+        val serviceLabel = if (isTarget60fps) "Motion Lab (60 fps)" else "Motion Lab (${multiplier}x)"
+        MotionLabForegroundService.start(activity, serviceLabel)
 
         job = scope.launch(Dispatchers.IO) {
             val workDir = File(activity.cacheDir, "motionlab/${System.currentTimeMillis()}")
@@ -215,6 +233,12 @@ class MotionLabController(
                     (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
                 } else {
                     captureFps ?: 30f
+                }
+
+                val effectiveMultiplier = if (isTarget60fps) {
+                    if (fps <= 20f) 4 else 2
+                } else {
+                    multiplier
                 }
 
                 var useRife = false
@@ -288,8 +312,8 @@ class MotionLabController(
                         }
 
                         try {
-                            for (k in 1 until multiplier) {
-                                val t = k.toDouble() / multiplier
+                            for (k in 1 until effectiveMultiplier) {
+                                val t = k.toDouble() / effectiveMultiplier
                                 var interpolatedSuccessfully = false
                                 if (useRife && bmp0 != null && bmp1 != null) {
                                     val synthBmp = com.veilframe.app.media.rife.RifeNcnnNative.nativeInterpolate(
@@ -330,10 +354,11 @@ class MotionLabController(
                 }
                 prev.release()
 
-                setStatus("Encoding ${String.format(Locale.US, "%.2f", fps * multiplier)} fps video…")
+                val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
+                setStatus("Encoding ${String.format(Locale.US, "%.2f", finalFps)} fps video…")
                 val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
                 val resultFile = File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-                val framerateStr = String.format(Locale.US, "%.3f", fps * multiplier)
+                val framerateStr = if (isTarget60fps) "60.000" else String.format(Locale.US, "%.3f", fps * effectiveMultiplier)
                 val encodeArgs = arrayOf(
                     "-y",
                     "-framerate", framerateStr,
@@ -360,7 +385,7 @@ class MotionLabController(
                 outputFile = resultFile
                 MotionLabForegroundService.notifyComplete(
                     activity,
-                    "Motion Lab (${multiplier}x) finished",
+                    if (isTarget60fps) "Motion Lab (60 fps) finished" else "Motion Lab (${effectiveMultiplier}x) finished",
                     resultFile.absolutePath
                 )
                 val mb = resultFile.length() / (1024.0 * 1024.0)
@@ -368,7 +393,7 @@ class MotionLabController(
                     binding.containerMotionLabProgress.visibility = View.GONE
                     binding.cardMotionLabResult.visibility = View.VISIBLE
                     binding.tvMotionLabResultInfo.text =
-                        "${frames.size} → $outIdx frames · ${String.format(Locale.US, "%.1f", fps)} → ${String.format(Locale.US, "%.1f", fps * multiplier)} fps · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
+                        "${frames.size} → $outIdx frames · ${String.format(Locale.US, "%.1f", fps)} → ${String.format(Locale.US, "%.1f", finalFps)} fps · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
                     binding.btnMotionLabRun.isEnabled = true
                 }
             } catch (e: InterruptedException) {
@@ -442,6 +467,11 @@ class MotionLabController(
         job?.cancel()
         sourceUri = null
         outputFile = null
+        isTarget60fps = true
+        multiplier = 2
+        method = MotionMethod.RIFE
+        binding.chipMotion60fps.isChecked = true
+        binding.chipMotionRife.isChecked = true
         binding.containerMotionLabProgress.visibility = View.GONE
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabRun.isEnabled = false

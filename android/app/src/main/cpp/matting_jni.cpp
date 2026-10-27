@@ -90,96 +90,25 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
     return JNI_TRUE;
 }
 
-#include <cmath>
-#include <vector>
-
-// Fast Separable Box Filter (O(1) per pixel moving sum)
-static void box_filter_separable(const float* src, float* dst, int w, int h, int r) {
-    std::vector<float> tmp(w * h);
-    #pragma omp parallel for
-    for (int y = 0; y < h; y++) {
-        const float* row_src = src + y * w;
-        float* row_tmp = tmp.data() + y * w;
-        float sum = 0.0f;
-        for (int x = -r; x <= r; x++) {
-            int cx = std::max(0, std::min(w - 1, x));
-            sum += row_src[cx];
-        }
-        row_tmp[0] = sum;
-        for (int x = 1; x < w; x++) {
-            int prev_x = std::max(0, x - 1 - r);
-            int next_x = std::min(w - 1, x + r);
-            sum += row_src[next_x] - row_src[prev_x];
-            row_tmp[x] = sum;
-        }
-    }
-
-    const float scale = 1.0f / ((2 * r + 1) * (2 * r + 1));
-    #pragma omp parallel for
-    for (int x = 0; x < w; x++) {
-        float sum = 0.0f;
-        for (int y = -r; y <= r; y++) {
-            int cy = std::max(0, std::min(h - 1, y));
-            sum += tmp[cy * w + x];
-        }
-        dst[0 * w + x] = sum * scale;
-        for (int y = 1; y < h; y++) {
-            int prev_y = std::max(0, y - 1 - r);
-            int next_y = std::min(h - 1, y + r);
-            sum += tmp[next_y * w + x] - tmp[prev_y * w + x];
-            dst[y * w + x] = sum * scale;
-        }
-    }
-}
-
-// Guided Filter edge refinement: aligns alpha mask boundaries to photographic color edges
-static void guided_filter(
-    const float* I,
-    const float* p,
-    float* q,
-    int w, int h,
-    int r, float eps
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_isModelLoaded(
+    JNIEnv* env, jclass clazz,
+    jint modelType
 ) {
-    const int n = w * h;
-    std::vector<float> mean_I(n), mean_p(n), corr_I(n), corr_Ip(n);
-    std::vector<float> a(n), b(n), mean_a(n), mean_b(n);
-
-    for (int i = 0; i < n; i++) {
-        corr_I[i] = I[i] * I[i];
-        corr_Ip[i] = I[i] * p[i];
-    }
-
-    box_filter_separable(I, mean_I.data(), w, h, r);
-    box_filter_separable(p, mean_p.data(), w, h, r);
-    box_filter_separable(corr_I.data(), corr_I.data(), w, h, r);
-    box_filter_separable(corr_Ip.data(), corr_Ip.data(), w, h, r);
-
-    for (int i = 0; i < n; i++) {
-        float var = corr_I[i] - mean_I[i] * mean_I[i];
-        float cov = corr_Ip[i] - mean_I[i] * mean_p[i];
-        a[i] = cov / (var + eps);
-        b[i] = mean_p[i] - a[i] * mean_I[i];
-    }
-
-    box_filter_separable(a.data(), mean_a.data(), w, h, r);
-    box_filter_separable(b.data(), mean_b.data(), w, h, r);
-
-    for (int i = 0; i < n; i++) {
-        float val = mean_a[i] * I[i] + mean_b[i];
-        if (val < 0.0f) val = 0.0f;
-        if (val > 1.0f) val = 1.0f;
-        // Smoothstep contrast enhancement for clean separation
-        val = val * val * (3.0f - 2.0f * val);
-        q[i] = val;
-    }
+    std::lock_guard<std::mutex> lock(g_matting_mutex);
+    ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
+    return (net != nullptr) ? JNI_TRUE : JNI_FALSE;
 }
+
+#include <cmath>
 
 JNIEXPORT jobject JNICALL
 Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
     JNIEnv* env, jclass clazz,
     jobject srcBitmap,
     jint modelType,
-    jboolean useGpu
+    jboolean useGpu,
+    jboolean letterbox
 ) {
     std::lock_guard<std::mutex> lock(g_matting_mutex);
 
@@ -209,21 +138,35 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         return nullptr;
     }
 
-    // Extract guidance luminance [0, 1] before unlocking source
-    std::vector<float> guidance(src_w * src_h);
-    const unsigned char* src_u8 = reinterpret_cast<const unsigned char*>(src_pixels);
-    for (int i = 0; i < src_w * src_h; i++) {
-        guidance[i] = (src_u8[i * 4 + 0] * 0.299f + src_u8[i * 4 + 1] * 0.587f + src_u8[i * 4 + 2] * 0.114f) * (1.0f / 255.0f);
+    const int target = (modelType == MODEL_U2NETP) ? 320 : 512;
+
+    int scaled_w = target;
+    int scaled_h = target;
+    int pad_left = 0, pad_right = 0, pad_top = 0, pad_bottom = 0;
+
+    if (letterbox) {
+        // Aspect-preserving letterbox scale with constant border padding
+        const float scale = std::min(static_cast<float>(target) / src_w, static_cast<float>(target) / src_h);
+        scaled_w = std::min(target, std::max(1, static_cast<int>(std::round(src_w * scale))));
+        scaled_h = std::min(target, std::max(1, static_cast<int>(std::round(src_h * scale))));
+
+        pad_left = (target - scaled_w) / 2;
+        pad_right = target - scaled_w - pad_left;
+        pad_top = (target - scaled_h) / 2;
+        pad_bottom = target - scaled_h - pad_top;
+
+        LOGI("Letterbox matting: src=%dx%d, scaled=%dx%d, pad=[top=%d, bot=%d, left=%d, right=%d], target=%d",
+             src_w, src_h, scaled_w, scaled_h, pad_top, pad_bottom, pad_left, pad_right, target);
+    } else {
+        LOGI("Direct resize matting: src=%dx%d -> %dx%d (full tensor utilization)",
+             src_w, src_h, target, target);
     }
 
-    const int target_w = (modelType == MODEL_U2NETP) ? 320 : 512;
-    const int target_h = (modelType == MODEL_U2NETP) ? 320 : 512;
-
-    ncnn::Mat in = ncnn::Mat::from_pixels_resize(
+    ncnn::Mat in_scaled = ncnn::Mat::from_pixels_resize(
         reinterpret_cast<const unsigned char*>(src_pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         src_w, src_h,
-        target_w, target_h
+        scaled_w, scaled_h
     );
 
     AndroidBitmap_unlockPixels(env, srcBitmap);
@@ -232,12 +175,24 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         // ImageNet mean/std
         const float mean_vals[3] = {0.485f * 255.f, 0.456f * 255.f, 0.406f * 255.f};
         const float norm_vals[3] = {1.0f / (0.229f * 255.f), 1.0f / (0.224f * 255.f), 1.0f / (0.225f * 255.f)};
-        in.substract_mean_normalize(mean_vals, norm_vals);
+        in_scaled.substract_mean_normalize(mean_vals, norm_vals);
     } else {
         // MODNet [-1.0, 1.0]
         const float mean_vals[3] = {127.5f, 127.5f, 127.5f};
         const float norm_vals[3] = {0.0078431f, 0.0078431f, 0.0078431f};
-        in.substract_mean_normalize(mean_vals, norm_vals);
+        in_scaled.substract_mean_normalize(mean_vals, norm_vals);
+    }
+
+    ncnn::Mat in;
+    if (letterbox && (pad_top > 0 || pad_bottom > 0 || pad_left > 0 || pad_right > 0)) {
+        // 0.0f in normalized space is exact neutral gray / ImageNet mean
+        ncnn::copy_make_border(
+            in_scaled, in,
+            pad_top, pad_bottom, pad_left, pad_right,
+            ncnn::BORDER_CONSTANT, 0.0f
+        );
+    } else {
+        in = in_scaled;
     }
 
     ncnn::Extractor ex = net->create_extractor();
@@ -254,39 +209,52 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         return nullptr;
     }
 
-    // For U2NETP, out0 contains raw logits before sigmoid.
-    // Apply sigmoid and min-max normalization across the probability map.
+    // Unpad output to recover active aspect region when letterboxing
+    ncnn::Mat out_unpadded;
+    if (letterbox && (pad_top > 0 || pad_bottom > 0 || pad_left > 0 || pad_right > 0)) {
+        ncnn::copy_cut_border(
+            out, out_unpadded,
+            pad_top, pad_bottom, pad_left, pad_right
+        );
+    } else {
+        out_unpadded = out;
+    }
+
+    // Activation & Normalization handling:
     if (modelType == MODEL_U2NETP) {
-        float* ptr = out.channel(0);
+        // For U2-Net-P: Saliency networks output uncalibrated relative energy scores.
+        // We apply sigmoid and official U2-Net dynamic range normalization (normPRED from Qin et al. 2020)
+        // so that secondary subjects and thin extremities (legs, limbs) are scaled into visible alpha.
+        float* ptr = out_unpadded.channel(0);
         float min_val = 1e9f;
         float max_val = -1e9f;
-        const int out_size = out.w * out.h;
-        for (int i = 0; i < out_size; i++) {
+        const int size = out_unpadded.w * out_unpadded.h;
+        for (int i = 0; i < size; i++) {
             float s = 1.0f / (1.0f + expf(-ptr[i]));
             ptr[i] = s;
             if (s < min_val) min_val = s;
             if (s > max_val) max_val = s;
         }
         float range = max_val - min_val;
-        if (range < 1e-6f) range = 1e-6f;
-        for (int i = 0; i < out_size; i++) {
-            ptr[i] = (ptr[i] - min_val) / range;
+        if (range > 1e-4f) {
+            for (int i = 0; i < size; i++) {
+                ptr[i] = (ptr[i] - min_val) / range;
+            }
+        }
+    } else {
+        // MODNet already outputs continuous alpha matte in [0.0, 1.0]
+        float* ptr = out_unpadded.channel(0);
+        const int size = out_unpadded.w * out_unpadded.h;
+        #pragma omp parallel for
+        for (int i = 0; i < size; i++) {
+            if (ptr[i] < 0.0f) ptr[i] = 0.0f;
+            if (ptr[i] > 1.0f) ptr[i] = 1.0f;
         }
     }
 
-    // Upscale output alpha matte to source dimensions
+    // Upscale output alpha matte directly to source dimensions
     ncnn::Mat alpha_full;
-    ncnn::resize_bilinear(out, alpha_full, src_w, src_h);
-
-    // Apply photographic Guided Filter refinement
-    std::vector<float> refined_alpha(src_w * src_h);
-    guided_filter(
-        guidance.data(),
-        reinterpret_cast<const float*>(alpha_full.data),
-        refined_alpha.data(),
-        src_w, src_h,
-        4, 1e-3f
-    );
+    ncnn::resize_bilinear(out_unpadded, alpha_full, src_w, src_h);
 
     // Create Java Bitmap for the mask (ARGB_8888)
     jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
@@ -320,11 +288,13 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         return nullptr;
     }
 
+    const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
     unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
     const int total_pixels = src_w * src_h;
 
+    #pragma omp parallel for
     for (int i = 0; i < total_pixels; i++) {
-        float val = refined_alpha[i];
+        float val = alpha_data[i];
         if (val < 0.0f) val = 0.0f;
         if (val > 1.0f) val = 1.0f;
         const unsigned char a = static_cast<unsigned char>(val * 255.0f);
@@ -333,6 +303,144 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         rgba_out[i * 4 + 1] = 255; // G
         rgba_out[i * 4 + 2] = 255; // B
         rgba_out[i * 4 + 3] = a;   // Alpha
+    }
+
+    AndroidBitmap_unlockPixels(env, maskBitmap);
+    return maskBitmap;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegacy(
+    JNIEnv* env, jclass clazz,
+    jobject srcBitmap,
+    jint modelType,
+    jboolean useGpu
+) {
+    std::lock_guard<std::mutex> lock(g_matting_mutex);
+
+    ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
+    if (!net) {
+        LOGE("Model %d not initialized in nativeProcessLegacy", modelType);
+        return nullptr;
+    }
+
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("AndroidBitmap_getInfo failed");
+        return nullptr;
+    }
+
+    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+        LOGE("Source bitmap format must be RGBA_8888");
+        return nullptr;
+    }
+
+    const int src_w = info.width;
+    const int src_h = info.height;
+
+    void* src_pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, srcBitmap, &src_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("AndroidBitmap_lockPixels failed");
+        return nullptr;
+    }
+
+    const int target_w = (modelType == MODEL_U2NETP) ? 320 : 512;
+    const int target_h = (modelType == MODEL_U2NETP) ? 320 : 512;
+
+    // UNPATCHED / LEGACY: Anamorphic direct stretch to square without preserving aspect ratio
+    ncnn::Mat in = ncnn::Mat::from_pixels_resize(
+        reinterpret_cast<const unsigned char*>(src_pixels),
+        ncnn::Mat::PIXEL_RGBA2RGB,
+        src_w, src_h,
+        target_w, target_h
+    );
+
+    AndroidBitmap_unlockPixels(env, srcBitmap);
+
+    if (modelType == MODEL_U2NETP) {
+        const float mean_vals[3] = {0.485f * 255.f, 0.456f * 255.f, 0.406f * 255.f};
+        const float norm_vals[3] = {1.0f / (0.229f * 255.f), 1.0f / (0.224f * 255.f), 1.0f / (0.225f * 255.f)};
+        in.substract_mean_normalize(mean_vals, norm_vals);
+    } else {
+        const float mean_vals[3] = {127.5f, 127.5f, 127.5f};
+        const float norm_vals[3] = {0.0078431f, 0.0078431f, 0.0078431f};
+        in.substract_mean_normalize(mean_vals, norm_vals);
+    }
+
+    ncnn::Extractor ex = net->create_extractor();
+    ex.set_light_mode(true);
+
+    const char* in_blob = (modelType == MODEL_U2NETP) ? "in0" : "input";
+    const char* out_blob = (modelType == MODEL_U2NETP) ? "out0" : "output";
+
+    ex.input(in_blob, in);
+    ncnn::Mat out;
+    int ret_extract = ex.extract(out_blob, out);
+    if (ret_extract != 0) {
+        LOGE("NCNN extract failed with code %d", ret_extract);
+        return nullptr;
+    }
+
+    // UNPATCHED / LEGACY: Double-sigmoid + min-max stretch on U2NETP
+    if (modelType == MODEL_U2NETP) {
+        float* ptr = out.channel(0);
+        float min_val = 1e9f;
+        float max_val = -1e9f;
+        const int out_size = out.w * out.h;
+        for (int i = 0; i < out_size; i++) {
+            float s = 1.0f / (1.0f + expf(-ptr[i]));
+            ptr[i] = s;
+            if (s < min_val) min_val = s;
+            if (s > max_val) max_val = s;
+        }
+        float range = max_val - min_val;
+        if (range < 1e-6f) range = 1e-6f;
+        for (int i = 0; i < out_size; i++) {
+            ptr[i] = (ptr[i] - min_val) / range;
+        }
+    }
+
+    // Direct bilinear stretch back to src_w x src_h (anamorphic)
+    ncnn::Mat alpha_full;
+    ncnn::resize_bilinear(out, alpha_full, src_w, src_h);
+
+    jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
+    jmethodID createBitmap = env->GetStaticMethodID(
+        bitmapClass,
+        "createBitmap",
+        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+    );
+
+    jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
+    jfieldID argb8888Field = env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+    jobject configObj = env->GetStaticObjectField(configClass, argb8888Field);
+
+    jobject maskBitmap = env->CallStaticObjectMethod(bitmapClass, createBitmap, src_w, src_h, configObj);
+    if (!maskBitmap) {
+        LOGE("Failed to allocate legacy mask bitmap");
+        return nullptr;
+    }
+
+    void* mask_pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, maskBitmap, &mask_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("AndroidBitmap_lockPixels failed on legacy maskBitmap");
+        return nullptr;
+    }
+
+    const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
+    unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
+    const int total_pixels = src_w * src_h;
+
+    #pragma omp parallel for
+    for (int i = 0; i < total_pixels; i++) {
+        float val = alpha_data[i];
+        if (val < 0.0f) val = 0.0f;
+        if (val > 1.0f) val = 1.0f;
+        const unsigned char a = static_cast<unsigned char>(val * 255.0f);
+        rgba_out[i * 4 + 0] = 255;
+        rgba_out[i * 4 + 1] = 255;
+        rgba_out[i * 4 + 2] = 255;
+        rgba_out[i * 4 + 3] = a;
     }
 
     AndroidBitmap_unlockPixels(env, maskBitmap);

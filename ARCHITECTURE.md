@@ -573,25 +573,26 @@ The media compression subsystem (`veilframe.core.media_compressor`) exposes high
 
 ---
 
-## AI Image Upscaler Subsystem (v2.2.7 Architecture)
+## AI Image Upscaler Subsystem (v2.3.0 Architecture)
 
-VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`), operating under 100% offline local privacy guarantees:
+VeilFrame v2.3.0 elevates the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`) to native Tencent NCNN C++ with dedicated Vulkan compute queues and zero ONNX dependencies, operating under 100% offline local privacy guarantees:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                   AI IMAGE UPSCALER & ADAPTIVE INFERENCE SUBSYSTEM (v2.2.9)                      │
+│                   AI IMAGE UPSCALER & ADAPTIVE INFERENCE SUBSYSTEM (v2.3.0)                      │
 ├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
 │        POINT 7 MODEL REGISTRY        │        ADAPTIVE EXECUTION & BENCHMARKING ENGINE           │
 │                                      │                                                           │
-│ • Real-ESRGAN General 2× (33.8 MB)   │ • Hardware-Aware Discovery (NNAPI, CPU/XNNPACK)           │
-│   Residual-in-Residual Dense Blocks  │ • Decoupled Dual-Domain Memory Budgeting (Java + Native)  │
-│ • Real-ESRGAN General 4× (33.8 MB)   │ • Progressive Worker Concurrency Search (Uncapped)       │
-│   Maximum photographic detail        │ • Pure Unpenalized Throughput & Scaling Efficiency        │
+│ • Real-ESRGAN General 2× (33.8 MB)   │ • Tencent NCNN Native C++ Engine (Zero ONNX Dependencies) │
+│   Residual-in-Residual Dense Blocks  │ • Dedicated Vulkan Compute Queues (Adreno & Mali-G615)    │
+│ • Real-ESRGAN General 4× (33.8 MB)   │ • Decoupled Dual-Domain Memory Budgeting (Java + Native)  │
+│   Maximum photographic detail        │ • Progressive Worker Concurrency Search (Uncapped)        │
 │ • Real-ESRGAN Anime 4× (9.1 MB)      │ • Adaptive Thermal Ladder (8 -> 6 -> 4 -> 3 -> 2 -> 1)    │
-│   Crisp edges & vibrant illustration │ • Zero-QNN Standard Runtime (Zero Vendor Proprietary Libs)│
-│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Benchmark-Gated EP Selection with Persistent Cache      │
-│ • Bicubic Spline (Built-in)          │ • Streaming Band Processing (StreamingPngWriter to Disk)  │
-│ • Nearest Neighbor (Built-in)        │ • Material 3 Expressive Motion System (Spring Physics)    │
+│   Crisp edges & vibrant illustration │ • RealSR / NCNN Native JNI Pipeline (Direct Bitmaps)      │
+│ • AnimeVideo-v3 2× / 4× NCNN Models  │ • Benchmark-Gated EP Selection with Persistent Cache      │
+│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Streaming Band Processing (StreamingPngWriter to Disk)  │
+│ • Bicubic Spline (Built-in)          │ • Material 3 Expressive Motion System (Spring Physics)    │
+│ • Nearest Neighbor (Built-in)        │ • Background Model Download Service with Status Bar Alerts│
 └──────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
@@ -742,7 +743,7 @@ VeilFrame v2.2.8 integrates the **QR Code Studio (8th Tool)** (`com.veilframe.ap
 
 ## Mobile Shell & Modular Workspace Architecture (ADR 0004)
 
-VeilFrame v2.2.9 locks the architectural design for the Android application shell redesign ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)). The application architecture remains rooted in native **XML layouts, ViewBinding, and Material 3 components**, strictly rejecting a premature Jetpack Compose rewrite while extending the existing controller foundations:
+VeilFrame v2.3.0 locks the architectural design for the Android application shell redesign ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)). The application architecture remains rooted in native **XML layouts, ViewBinding, and Material 3 components**, strictly rejecting a premature Jetpack Compose rewrite while extending the existing controller foundations:
 
 ```text
                                  ┌────────────────────────┐
@@ -766,10 +767,10 @@ VeilFrame v2.2.9 locks the architectural design for the Android application shel
       ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┬──────────────────┐
       ▼                  ▼                   ▼                   ▼                  ▼                  ▼
 [ IMAGE STUDIO ]  [ VIDEO STUDIO ]    [ QR STUDIO ]      [ DOC SCANNER ]     [ BG REMOVER ]     [ MOTION LAB ]
-(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • Before/After     • DIS / Farnebäck
-• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • 48dp Touch       • 2× / 4× FPS
-• Denoise/Enhance • Transcode Engine  • EF Parity        • Page Manager      • Dual Pan/Zoom    • Flat Pairwise Mat
-                                                         • Shared Editor     • Alpha Masks      • MediaStore Out
+(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • NCNN U^2-Net-P   • RIFE v4 AI (60fps)
+• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • Dual Pan/Zoom    • DIS / Farnebäck
+• Denoise/Enhance • Transcode Engine  • EF Parity        • Page Manager      • Trimap & Guided  • 2× / 4× FPS
+                                                         • Shared Editor     • Refine Brush     • MediaStore Out
                                                          • PDF/Img Export
 ```
 

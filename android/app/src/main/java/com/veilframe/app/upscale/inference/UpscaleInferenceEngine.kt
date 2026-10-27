@@ -123,7 +123,7 @@ class UpscaleInferenceEngine(
                         listener = listener
                     )
 
-                    if (!scalePlan.requiresRefinement) {
+                    val unenhanced = if (!scalePlan.requiresRefinement) {
                         aiPassOutput
                     } else {
                         // Streamed refinement pass from the NCNN intermediate output
@@ -143,6 +143,21 @@ class UpscaleInferenceEngine(
                         listener?.onStage("Refinement", 0, 1)
                         refineStreamedOutput(aiPassOutput, refineScale, finalW, finalH)
                     }
+
+                    if (params.detailEnhancement && params.detailStrength > 0f) {
+                        when (unenhanced) {
+                            is UpscaleOutput.InMemory -> {
+                                val enhanced = AdaptiveDetailEnhancer.enhance(unenhanced.bitmap, params.detailStrength)
+                                UpscaleOutput.InMemory(enhanced)
+                            }
+                            is UpscaleOutput.Streamed -> {
+                                val enhancedPreview = unenhanced.preview?.let { AdaptiveDetailEnhancer.enhance(it, params.detailStrength) }
+                                unenhanced.copy(preview = enhancedPreview)
+                            }
+                        }
+                    } else {
+                        unenhanced
+                    }
                 }
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
@@ -158,11 +173,16 @@ class UpscaleInferenceEngine(
                         val res = when (model.id) {
                             "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
                             "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
-                            else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH, checkpoint)
+                            else -> AlgorithmicUpscaler.scaleLanczos(fullSource, targetW, targetH, checkpoint)
+                        }
+                        val enhanced = if (params.detailEnhancement && params.detailStrength > 0f) {
+                            AdaptiveDetailEnhancer.enhance(res, params.detailStrength)
+                        } else {
+                            res
                         }
                         listener?.onProgress(1, 1, 100)
                         listener?.onStage("Complete", 1, 1)
-                        UpscaleOutput.InMemory(res)
+                        UpscaleOutput.InMemory(enhanced)
                     } finally {
                         if (ownsFullSource && !fullSource.isRecycled) {
                             fullSource.recycle()
@@ -239,7 +259,7 @@ class UpscaleInferenceEngine(
                 val h = minOf(bandSrcH, streamed.height - y0)
                 val stripBmp = regionSource.region(0, y0, streamed.width, h)
                 val scaledStrip = try {
-                    AlgorithmicUpscaler.scaleBicubic(stripBmp, finalW, h * refineScale)
+                    AlgorithmicUpscaler.scaleLanczos(stripBmp, finalW, h * refineScale)
                 } finally {
                     stripBmp.recycle()
                 }

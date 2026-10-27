@@ -8,13 +8,17 @@ package com.veilframe.app.upscale.inference
  * @property strength Conditioning factor [0..100] for strength-aware models (e.g. FBCNN deblocking).
  * @property enableChunking Whether to partition large images into streaming disk chunks.
  * @property parallelWorkers Number of concurrent tile worker coroutines (clamped to available CPU cores).
+ * @property detailEnhancement Whether to apply adaptive edge-preserving high-frequency texture restoration.
+ * @property detailStrength Intensity factor [0.0..1.0] for micro-texture restoration (default 0.35f).
  */
 data class UpscaleInferenceParams(
     val chunkSize: Int = 512,
     val overlap: Int = 32,
     val strength: Float = 65f,
     val enableChunking: Boolean = true,
-    val parallelWorkers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
+    val parallelWorkers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4),
+    val detailEnhancement: Boolean = true,
+    val detailStrength: Float = 0.35f
 ) {
     init {
         require(chunkSize > 0) { "chunkSize must be positive: $chunkSize" }
@@ -26,6 +30,7 @@ data class UpscaleInferenceParams(
         }
         require(strength in 0f..100f) { "strength must be between 0 and 100: $strength" }
         require(parallelWorkers in 0..8) { "parallelWorkers must be in 0..8: $parallelWorkers" }
+        require(detailStrength in 0f..1f) { "detailStrength must be between 0 and 1: $detailStrength" }
     }
 
     companion object {

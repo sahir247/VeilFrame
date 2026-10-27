@@ -500,8 +500,140 @@ class PiiNcnnEngine(
         iouThreshold: Float = 0.45f
     ): List<PiiDetection> = emptyList()
 
+    /**
+     * Detects all salient subject entities (humans, faces, animals, vehicles, furniture, items)
+     * using the full 80-class COCO classification of YOLOv8n combined with UltraFace RFB-320.
+     */
+    fun detectSalientSubjects(
+        bitmap: Bitmap,
+        confThreshold: Float = 0.35f,
+        iouThreshold: Float = 0.45f
+    ): List<SalientSubject> {
+        val candidates = mutableListOf<SalientSubject>()
+
+        val rgbaBitmap = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
+        else bitmap.copy(Bitmap.Config.ARGB_8888, true)
+
+        try {
+            // 1. Detect faces via UltraFace RFB-320 NCNN
+            val faceResults = PiiNcnnNative.nativeDetectFaces(rgbaBitmap, confThreshold, iouThreshold)
+            if (faceResults != null && faceResults.isNotEmpty()) {
+                val stride = 6
+                val numBoxes = faceResults.size / stride
+                for (i in 0 until numBoxes) {
+                    val score = faceResults[i * stride + 1]
+                    val x1 = faceResults[i * stride + 2]
+                    val y1 = faceResults[i * stride + 3]
+                    val x2 = faceResults[i * stride + 4]
+                    val y2 = faceResults[i * stride + 5]
+                    candidates.add(
+                        SalientSubject(
+                            rect = RectF(minOf(x1, x2), minOf(y1, y2), maxOf(x1, x2), maxOf(y1, y2)),
+                            category = SubjectCategory.PERSON,
+                            label = "face",
+                            score = score
+                        )
+                    )
+                }
+            }
+
+            // 2. Detect objects / animals / people via YOLOv8n NCNN across all 80 COCO classes
+            val piiResults = PiiNcnnNative.nativeDetectPii(rgbaBitmap, confThreshold, iouThreshold)
+            if (piiResults != null && piiResults.isNotEmpty()) {
+                val stride = 6
+                val numBoxes = piiResults.size / stride
+                for (i in 0 until numBoxes) {
+                    val clsId = piiResults[i * stride].toInt()
+                    val score = piiResults[i * stride + 1]
+                    val x1 = piiResults[i * stride + 2]
+                    val y1 = piiResults[i * stride + 3]
+                    val x2 = piiResults[i * stride + 4]
+                    val y2 = piiResults[i * stride + 5]
+
+                    val label = CocoClassMetadata.LABELS.getOrElse(clsId) { "object" }
+                    val category = CocoClassMetadata.getCategory(clsId)
+
+                    candidates.add(
+                        SalientSubject(
+                            rect = RectF(minOf(x1, x2), minOf(y1, y2), maxOf(x1, x2), maxOf(y1, y2)),
+                            category = category,
+                            label = label,
+                            score = score
+                        )
+                    )
+                }
+            }
+        } catch (_: UnsatisfiedLinkError) {
+        } finally {
+            if (rgbaBitmap !== bitmap) {
+                rgbaBitmap.recycle()
+            }
+        }
+
+        val sorted = candidates.sortedByDescending { it.score }.toMutableList()
+        val keep = mutableListOf<SalientSubject>()
+        while (sorted.isNotEmpty()) {
+            val best = sorted.removeAt(0)
+            keep.add(best)
+            val iterator = sorted.iterator()
+            while (iterator.hasNext()) {
+                val other = iterator.next()
+                if (other.category == best.category && calculateIoU(best.rect, other.rect) > iouThreshold) {
+                    iterator.remove()
+                }
+            }
+        }
+        return keep
+    }
+
     override fun close() {
         runCatching { PiiNcnnNative.nativeRelease() }
+    }
+}
+
+/**
+ * Generic semantic subject categories recognized across YOLOv8n (80 COCO classes) and UltraFace.
+ */
+enum class SubjectCategory {
+    PERSON,
+    ANIMAL,
+    VEHICLE,
+    FURNITURE,
+    OBJECT
+}
+
+/**
+ * An individual localized salient subject entity with semantic categorization.
+ */
+data class SalientSubject(
+    val rect: RectF,
+    val category: SubjectCategory,
+    val label: String,
+    val score: Float
+)
+
+object CocoClassMetadata {
+    val LABELS = arrayOf(
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+        "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+        "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",
+        "backpack", "umbrella", "handbag", "tie", "suitcase",
+        "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+        "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl",
+        "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake",
+        "chair", "couch", "potted plant", "bed", "dining table", "toilet",
+        "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+        "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+    )
+
+    fun getCategory(classId: Int): SubjectCategory {
+        return when (classId) {
+            0 -> SubjectCategory.PERSON
+            in 14..23 -> SubjectCategory.ANIMAL
+            in 1..8 -> SubjectCategory.VEHICLE
+            in 56..61 -> SubjectCategory.FURNITURE
+            else -> SubjectCategory.OBJECT
+        }
     }
 }
 

@@ -1,16 +1,17 @@
 {
-  "versionCode": 229,
-  "versionName": "2.2.9",
-  "tag": "v2.2.9",
+  "versionCode": 230,
+  "versionName": "2.3.0",
+  "tag": "v2.3.0",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "Material 3 Expressive UI: spring-physics motion (VfSprings v3.1), emphasized typography, surface-container ladders, and unified WorkspaceInsets",
-    "Motion Lab (Alpha): frame interpolation and 2x/4x FPS synthesis powered by native optical flow (DIS / Farnebäck)",
-    "Document Scanner: real-time EMA QuadStabilizer, per-page exposure/contrast/saturation Adjust dialog, and progressive PDF export",
-    "Background Remover: direct MediaStore gallery exports (Pictures/VeilFrame) with persistent Library synchronization",
-    "AI Upscaler: streaming band processing for huge images, dynamic memory governor (6–16 GB devices), Lanczos-3 precomputed kernels, and fail-closed quantized-model pipeline (FP16/INT8)",
-    "CV Reliability: Phase B6 cancellation checkpoints across all computer vision primitives and OpenCV 4.14.0 + WeChatQRCode in-tree SDK"
+    "Motion Lab: RIFE v4 AI neural frame synthesis with dedicated 60 FPS target mode and optical flow fallback (DIS / Farnebäck)",
+    "NCNN Migration: Complete on-device migration to Tencent NCNN native C++ engine with zero ONNX dependencies",
+    "Hardware Acceleration: Multi-vendor Vulkan compute validation across Qualcomm Adreno and MediaTek Dimensity (Mali-G615 MC2)",
+    "PDF Studio: Symmetrical uniform card sizing and high-precision smooth Bézier signature pad with 3.5x supersampling",
+    "Background Downloads: Foreground download service with silent in-dialog progress and auto-promotion to system notifications on backgrounding",
+    "Adaptive Detail Enhancer: Dual-model hybrid background removal with trimap + guided alpha filter and interactive touch refine brush/eraser",
+    "System Permissions: Android 13+ (API 33+) runtime notification permission prompt on initial launch"
   ]
 }

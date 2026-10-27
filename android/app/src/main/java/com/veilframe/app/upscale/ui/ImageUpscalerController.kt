@@ -26,6 +26,7 @@ import com.veilframe.app.databinding.ItemUpscaleModelCardBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MorphDialogController
+import com.veilframe.app.media.ModelDownloadBackgroundService
 import com.veilframe.app.upscale.download.ModelDownloadManager
 import com.veilframe.app.upscale.inference.BitmapSource
 import com.veilframe.app.upscale.inference.SourceAccess
@@ -815,64 +816,86 @@ class ImageUpscalerController(
             sourceAccess?.let { src -> executeUpscaling(src, UpscaleModelRegistry.LANCZOS, targetScale) }
         }
 
+        val reqListener = object : ModelDownloadBackgroundService.DownloadListener {
+            override fun onProgress(modelId: String, downloaded: Long, total: Long, percent: Int, speedBytesPerSec: Long) {
+                if (modelId != model.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        val speedMb = speedBytesPerSec / (1024.0 * 1024.0)
+                        dialogBinding.progressModelReq.isIndeterminate = false
+                        dialogBinding.progressModelReq.progress = percent
+                        dialogBinding.tvModelReqProgressStatus.text =
+                            String.format(Locale.US, "Downloading: %d%% (%.1f MB/s)", percent, speedMb)
+                    }
+                }
+            }
+
+            override fun onVerifying(modelId: String) {
+                if (modelId != model.id) return
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.isIndeterminate = true
+                        dialogBinding.tvModelReqProgressStatus.text = "Verifying SHA-256 integrity..."
+                    }
+                }
+            }
+
+            override fun onSuccess(modelId: String, modelType: String) {
+                if (modelId != model.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+                    }
+                    updateModelDisplay()
+                    onLog("[UPSCALER] Model ${model.name} successfully downloaded and verified.")
+                    sourceAccess?.let { src -> executeUpscaling(src, model, targetScale) }
+                }
+            }
+
+            override fun onError(modelId: String, error: String) {
+                if (modelId != model.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.visibility = View.GONE
+                        dialogBinding.tvModelReqProgressStatus.text = "Download failed: $error"
+                        dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
+                        dialogBinding.btnModelReqDownload.isEnabled = true
+                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                    }
+                    onLog("[UPSCALER] Download error: $error")
+                }
+            }
+
+            override fun onCancelled(modelId: String) {
+                if (modelId != model.id) return
+                ModelDownloadBackgroundService.removeListener(this)
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        dialogBinding.progressModelReq.visibility = View.GONE
+                        dialogBinding.btnModelReqDownload.isEnabled = true
+                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                    }
+                }
+            }
+        }
+        ModelDownloadBackgroundService.addListener(reqListener)
+
+        dialog.setOnDismissListener {
+            ModelDownloadBackgroundService.removeListener(reqListener)
+            if (ModelDownloadBackgroundService.isDownloading(model.id)) {
+                ModelDownloadBackgroundService.promoteToBackground(activity)
+                Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         dialogBinding.btnModelReqDownload.setOnClickListener {
             dialogBinding.progressModelReq.visibility = View.VISIBLE
             dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
             dialogBinding.btnModelReqDownload.isEnabled = false
             dialogBinding.btnModelReqUseLanczos.isEnabled = false
-
-            downloadJob = scope.launch {
-                try {
-                    val res = downloadManager.downloadModel(model, object : ModelDownloadManager.DownloadListener {
-                        override fun onProgress(downloadedBytes: Long, totalBytes: Long, speedBytesPerSec: Long) {
-                            scope.launch(Dispatchers.Main) {
-                                val pct = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
-                                val speedMb = speedBytesPerSec / (1024.0 * 1024.0)
-                                dialogBinding.progressModelReq.isIndeterminate = false
-                                dialogBinding.progressModelReq.progress = pct
-                                dialogBinding.tvModelReqProgressStatus.text =
-                                    String.format(Locale.US, "Downloading: %d%% (%.1f MB/s)", pct, speedMb)
-                            }
-                        }
-
-                        override fun onVerifying() {
-                            scope.launch(Dispatchers.Main) {
-                                dialogBinding.progressModelReq.isIndeterminate = true
-                                dialogBinding.tvModelReqProgressStatus.text = "Verifying SHA-256 integrity..."
-                            }
-                        }
-
-                        override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                            scope.launch(Dispatchers.Main) {
-                                MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-                                updateModelDisplay()
-                                onLog("[UPSCALER] Model ${m.name} successfully downloaded and verified.")
-                                sourceAccess?.let { src -> executeUpscaling(src, m, targetScale) }
-                            }
-                        }
-
-                        override fun onError(error: String) {
-                            scope.launch(Dispatchers.Main) {
-                                dialogBinding.progressModelReq.visibility = View.GONE
-                                dialogBinding.tvModelReqProgressStatus.text = "Download failed: $error"
-                                dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
-                                dialogBinding.btnModelReqDownload.isEnabled = true
-                                dialogBinding.btnModelReqUseLanczos.isEnabled = true
-                                onLog("[UPSCALER] Download error: $error")
-                            }
-                        }
-                    })
-                } finally {
-                    withContext(NonCancellable + Dispatchers.Main) {
-                        downloadJob = null
-                        if (isCancelling) {
-                            isCancelling = false
-                            upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
-                            updateUIState()
-                        }
-                    }
-                }
-            }
+            ModelDownloadBackgroundService.startDownload(activity, "UPSCALE", model.id, model.name, runInBackground = false)
         }
 
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
@@ -1312,10 +1335,53 @@ class ImageUpscalerController(
             .setCancelable(true)
             .create()
 
-        val dialogDownloadJobs = mutableMapOf<String, Job>()
+        val allNcnnModels = (UpscaleModelRegistry.NCNN_MODELS + UpscaleModelRegistry.ALL_MODELS.filter { it.isImported }).distinctBy { it.id }
+
+        lateinit var refreshCards: () -> Unit
+
+        val managerListener = object : ModelDownloadBackgroundService.DownloadListener {
+            override fun onProgress(modelId: String, downloaded: Long, total: Long, percent: Int, speedBytesPerSec: Long) {
+                activity.runOnUiThread {
+                    if (dialog.isShowing) refreshCards()
+                }
+            }
+
+            override fun onVerifying(modelId: String) {
+                activity.runOnUiThread {
+                    if (dialog.isShowing) refreshCards()
+                }
+            }
+
+            override fun onSuccess(modelId: String, modelType: String) {
+                activity.runOnUiThread {
+                    if (dialog.isShowing) refreshCards()
+                    updateModelDisplay()
+                }
+            }
+
+            override fun onError(modelId: String, error: String) {
+                activity.runOnUiThread {
+                    if (dialog.isShowing) {
+                        refreshCards()
+                        Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+
+            override fun onCancelled(modelId: String) {
+                activity.runOnUiThread {
+                    if (dialog.isShowing) refreshCards()
+                }
+            }
+        }
+        ModelDownloadBackgroundService.addListener(managerListener)
+
         dialog.setOnDismissListener {
-            dialogDownloadJobs.values.forEach { it.cancel() }
-            dialogDownloadJobs.clear()
+            ModelDownloadBackgroundService.removeListener(managerListener)
+            if (ModelDownloadBackgroundService.isAnyDownloading()) {
+                ModelDownloadBackgroundService.promoteToBackground(activity)
+                Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
+            }
         }
 
         dialogBinding.btnModelManagerClose.setOnClickListener {
@@ -1327,9 +1393,7 @@ class ImageUpscalerController(
             showCustomModelImportInstructionsDialog()
         }
 
-        val allNcnnModels = (UpscaleModelRegistry.NCNN_MODELS + UpscaleModelRegistry.ALL_MODELS.filter { it.isImported }).distinctBy { it.id }
-
-        fun refreshCards() {
+        refreshCards = {
             val usedBytes = repository.getTotalStorageUsedBytes()
             val availBytes = repository.getAvailableStorageBytes()
             val usedMb = String.format(Locale.US, "%.1f MB", usedBytes / (1024.0 * 1024.0))
@@ -1363,9 +1427,10 @@ class ImageUpscalerController(
                     cardBinding.btnItemModelDelete.visibility = View.GONE
                 }
 
-                val activeJob = dialogDownloadJobs[model.id]
-                if (activeJob != null && activeJob.isActive) {
+                val isDownloading = ModelDownloadBackgroundService.isDownloading(model.id)
+                if (isDownloading) {
                     cardBinding.progressItemModel.visibility = View.VISIBLE
+                    cardBinding.progressItemModel.isIndeterminate = true
                     cardBinding.btnItemModelDownload.isEnabled = false
                 } else {
                     cardBinding.progressItemModel.visibility = View.GONE
@@ -1374,52 +1439,13 @@ class ImageUpscalerController(
 
                 cardBinding.btnItemModelDownload.setOnClickListener {
                     cardBinding.progressItemModel.visibility = View.VISIBLE
+                    cardBinding.progressItemModel.isIndeterminate = true
                     cardBinding.btnItemModelDownload.isEnabled = false
-                    dialogDownloadJobs[model.id]?.cancel()
-
-                    val job = scope.launch {
-                        downloadManager.downloadModel(model, object : ModelDownloadManager.DownloadListener {
-                            override fun onProgress(d: Long, t: Long, s: Long) {
-                                scope.launch(Dispatchers.Main) {
-                                    if (dialog.isShowing && t > 0) {
-                                        cardBinding.progressItemModel.isIndeterminate = false
-                                        cardBinding.progressItemModel.progress = ((d * 100) / t).toInt()
-                                    }
-                                }
-                            }
-                            override fun onVerifying() {
-                                scope.launch(Dispatchers.Main) {
-                                    if (dialog.isShowing) cardBinding.progressItemModel.isIndeterminate = true
-                                }
-                            }
-                            override fun onSuccess(m: UpscaleModel, destinationFile: File) {
-                                scope.launch(Dispatchers.Main) {
-                                    dialogDownloadJobs.remove(model.id)
-                                    if (dialog.isShowing) {
-                                        cardBinding.progressItemModel.visibility = View.GONE
-                                        refreshCards()
-                                    }
-                                    updateModelDisplay()
-                                }
-                            }
-                            override fun onError(error: String) {
-                                scope.launch(Dispatchers.Main) {
-                                    dialogDownloadJobs.remove(model.id)
-                                    if (dialog.isShowing) {
-                                        cardBinding.progressItemModel.visibility = View.GONE
-                                        cardBinding.btnItemModelDownload.isEnabled = true
-                                        Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        })
-                    }
-                    dialogDownloadJobs[model.id] = job
+                    ModelDownloadBackgroundService.startDownload(activity, "UPSCALE", model.id, model.name, runInBackground = false)
                 }
 
                 cardBinding.btnItemModelDelete.setOnClickListener {
-                    dialogDownloadJobs[model.id]?.cancel()
-                    dialogDownloadJobs.remove(model.id)
+                    ModelDownloadBackgroundService.cancelDownload(activity, model.id)
                     repository.deleteModel(model.id)
                     refreshCards()
                     updateModelDisplay()

@@ -145,13 +145,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioMerge"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -162,7 +164,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -178,6 +180,8 @@
                                 android:text="Merge PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -186,6 +190,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Combine multiple PDFs"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -195,7 +202,8 @@
                         android:id="@+id/cardStudioSplit"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -206,7 +214,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -222,6 +230,8 @@
                                 android:text="Split PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -230,6 +240,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Separate pages or ranges"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -242,13 +255,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioReorder"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -259,7 +274,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -275,6 +290,8 @@
                                 android:text="Reorder Pages"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -283,6 +300,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Rearrange page sequence"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -292,7 +312,8 @@
                         android:id="@+id/cardStudioRotate"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -303,7 +324,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -319,6 +340,8 @@
                                 android:text="Rotate Pages"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -327,6 +350,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="90°, 180°, 270° modulo"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -339,13 +365,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioDelete"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -356,7 +384,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -372,6 +400,8 @@
                                 android:text="Delete Pages"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -380,6 +410,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Remove unwanted sheets"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -389,7 +422,8 @@
                         android:id="@+id/cardStudioExtractPages"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -400,7 +434,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -416,6 +450,8 @@
                                 android:text="Extract Pages"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -424,6 +460,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="As PDF or image gallery"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -448,13 +487,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioCompress"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -465,7 +506,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -481,6 +522,8 @@
                                 android:text="Compress PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -489,6 +532,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Dual engine size reducer"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -498,7 +544,8 @@
                         android:id="@+id/cardStudioPdfToImage"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -509,7 +556,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -525,6 +572,8 @@
                                 android:text="PDF to Image"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -533,6 +582,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="WebP, PNG, JPEG with DPI"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -545,13 +597,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioImageToPdf"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -562,7 +616,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -578,6 +632,8 @@
                                 android:text="Image to PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -586,6 +642,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Multi-photo document maker"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -595,7 +654,8 @@
                         android:id="@+id/cardStudioExtractText"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -606,7 +666,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -622,6 +682,8 @@
                                 android:text="Extract Text &amp; OCR"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -630,6 +692,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="In-place Google ML Kit OCR"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -642,13 +707,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioHtmlToPdf"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -659,7 +726,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -675,6 +742,8 @@
                                 android:text="HTML to PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -683,6 +752,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Web page or raw markup"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -692,7 +764,8 @@
                         android:id="@+id/cardStudioDocToPdf"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -703,7 +776,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -719,6 +792,8 @@
                                 android:text="DOC to PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -727,6 +802,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="DOCX &amp; XLSX converter"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -751,13 +829,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioLock"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -768,7 +848,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -784,6 +864,8 @@
                                 android:text="Lock PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -792,6 +874,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="256-bit AES encryption"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -801,7 +886,8 @@
                         android:id="@+id/cardStudioUnlock"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -812,7 +898,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -828,6 +914,8 @@
                                 android:text="Unlock PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -836,6 +924,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Strip password security"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -848,13 +939,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="10dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioWatermark"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -865,7 +958,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -881,6 +974,8 @@
                                 android:text="Watermark Studio"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -889,6 +984,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Tamper-proof mesh &amp; live preview"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -898,7 +996,8 @@
                         android:id="@+id/cardStudioSign"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -909,7 +1008,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -925,6 +1024,8 @@
                                 android:text="Sign PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -933,6 +1034,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Touch Bézier canvas stamping"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -945,13 +1049,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioFlatten"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -962,7 +1068,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -978,6 +1084,8 @@
                                 android:text="Flatten PDF"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -986,6 +1094,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="Before vs After live preview"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -995,7 +1106,8 @@
                         android:id="@+id/cardStudioMetadata"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -1006,7 +1118,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -1022,6 +1134,8 @@
                                 android:text="PDF Metadata"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -1030,6 +1144,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="View, edit &amp; strip traces"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -1054,13 +1171,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardStudioImposition"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
@@ -1071,7 +1190,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -1087,6 +1206,8 @@
                                 android:text="Print Studio"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -1095,6 +1216,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="N-Up, booklets, mini-zines"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
@@ -1104,7 +1228,8 @@
                         android:id="@+id/cardStudioFillForms"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
+                        android:minHeight="112dp"
                         android:layout_weight="1"
                         android:layout_marginStart="5dp"
                         android:clickable="true"
@@ -1115,7 +1240,7 @@
 
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:orientation="vertical"
                             android:padding="14dp">
 
@@ -1131,6 +1256,8 @@
                                 android:text="Fill Forms"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
+                                android:maxLines="1"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_primary"
                                 android:layout_marginTop="8dp" />
 
@@ -1139,6 +1266,9 @@
                                 android:layout_height="wrap_content"
                                 android:text="AcroForm interactive editing"
                                 android:textSize="11sp"
+                                android:lines="2"
+                                android:maxLines="2"
+                                android:ellipsize="end"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />
                         </LinearLayout>
