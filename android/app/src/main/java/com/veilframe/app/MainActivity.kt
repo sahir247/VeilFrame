@@ -89,10 +89,10 @@ class MainActivity : AppCompatActivity() {
 
     // Modular Sub-Controllers & Feature Coordinators
     internal lateinit var safStorageManager: SafStorageManager
-    private lateinit var consoleLogController: ConsoleLogController
+    internal lateinit var consoleLogController: ConsoleLogController
     internal lateinit var workspaceHost: WorkspaceHost
     internal lateinit var navigationController: MainNavigationController
-    private lateinit var toolSessionManager: ToolSessionManager
+    internal lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
     private lateinit var appUpdateManager: AppUpdateManager
     private lateinit var libraryCoordinator: LibraryCoordinator
@@ -107,495 +107,23 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var videoStudioController: VideoStudioController
     internal lateinit var imageUpscalerController: ImageUpscalerController
     internal lateinit var markdownViewerController: MarkdownViewerController
-    private lateinit var docScannerController: DocumentScannerController
+    internal lateinit var docScannerController: DocumentScannerController
     internal lateinit var backgroundRemoverController: BackgroundRemoverController
     internal lateinit var motionLabController: MotionLabController
-    private lateinit var imageQualityController: ImageQualityController
+    internal lateinit var imageQualityController: ImageQualityController
     internal lateinit var provenanceController: ProvenanceController
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
-    private var pendingImgStudioExportFile: File? = null
-    private var pendingVidStudioExportFile: File? = null
-    private var pendingDocScannerExportFile: File? = null
-    private var pendingBgRemoverExportFile: File? = null
-    private var pendingPdfSignatureSaveBytes: ByteArray? = null
-    private var pendingPdfUnlockSaveBytes: ByteArray? = null
+    val isPdfSignatureControllerInitialized: Boolean get() = ::pdfSignatureController.isInitialized
 
     // Dedicated PDF Suite Coordinator
     internal lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
-    // Markdown file picker launcher
-    private val markdownPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val name = safStorageManager.getDisplayName(uri)?.lowercase(Locale.ROOT) ?: ""
-            if (name.isNotEmpty() && !name.endsWith(".md") && !name.endsWith(".markdown")) {
-                Toast.makeText(this, "Please select a valid Markdown (.md) file", Toast.LENGTH_SHORT).show()
-            } else {
-                safStorageManager.persistReadPermission(uri)
-                openMarkdownViewer(uri)
-            }
-        }
-    }
+    // Activity Result Launchers
+    internal val launchers = com.veilframe.app.launchers.MainActivityLaunchers(this)
 
-    private var pendingMarkdownSaveContent: String? = null
-
-    // Markdown Save As export launcher (Storage Access Framework)
-    private val markdownSaveAsLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/markdown")
-    ) { destUri ->
-        val content = pendingMarkdownSaveContent
-        if (destUri != null && content != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val success = try {
-                    val stream = contentResolver.openOutputStream(destUri, "wt")
-                    if (stream != null) {
-                        stream.use { out ->
-                            out.write(content.toByteArray(Charsets.UTF_8))
-                            out.flush()
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                } catch (e: Exception) {
-                    Log.e("VeilFrame", "Save As write failed: ${e.message}", e)
-                    false
-                }
-                withContext(Dispatchers.Main) {
-                    if (success) {
-                        val name = DocumentFile.fromSingleUri(this@MainActivity, destUri)?.name ?: "Document.md"
-                        markdownViewerController.onDocumentSavedAs(destUri, name)
-                    } else {
-                        Toast.makeText(this@MainActivity, "Save As write failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-        pendingMarkdownSaveContent = null
-    }
-
-    // Multi-format export launcher (Storage Access Framework)
-    private val exportDocumentLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destinationUri ->
-        if (destinationUri != null) {
-            val sourceFile = toolSessionManager.currentState.lastGeneratedFile
-            if (sourceFile != null && sourceFile.exists()) {
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val success = safStorageManager.copyFileToUri(sourceFile, destinationUri)
-                    withContext(Dispatchers.Main) {
-                        if (success) {
-                            consoleLogController.log("[EXPORT] Artifact written to storage: ${destinationUri.lastPathSegment ?: destinationUri.path}")
-                            Toast.makeText(this@MainActivity, "Saved to device storage", Toast.LENGTH_LONG).show()
-                        } else {
-                            consoleLogController.log("[ERR] Failed to write exported file to destination.")
-                            Toast.makeText(this@MainActivity, "Export write failed", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Media Studio SAF Export Launchers
-    private val imgStudioExportLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val file = pendingImgStudioExportFile
-        pendingImgStudioExportFile = null
-        if (destUri != null && file != null && file.exists()) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val ok = safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) Toast.makeText(this@MainActivity, "Image saved to device storage", Toast.LENGTH_LONG).show()
-                    else Toast.makeText(this@MainActivity, "Export failed", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private val vidStudioExportLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val file = pendingVidStudioExportFile
-        pendingVidStudioExportFile = null
-        if (destUri != null && file != null && file.exists()) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val ok = safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) Toast.makeText(this@MainActivity, "Video saved to device storage", Toast.LENGTH_LONG).show()
-                    else Toast.makeText(this@MainActivity, "Export failed", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    // Studio SAF Pickers
-    private val imgStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            imageStudioController.handleImagesSelected(uris)
-        }
-    }
-
-    private val imgStudioAddMoreLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            imageStudioController.handleImagesAdded(uris)
-        }
-    }
-
-    private val vidStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            videoStudioController.handleVideosSelected(uris)
-        }
-    }
-
-    private val motionLabPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            workspaceHost.getOrInflateMotionLab()
-            motionLabController.setSource(uri)
-        }
-    }
-
-    private val vidStudioAddMoreLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            videoStudioController.handleVideosAdded(uris)
-        }
-    }
-
-    private val imgFolderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            imageStudioController.onDestinationFolderSelected(uri)
-        }
-    }
-
-    private val vidFolderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            videoStudioController.onDestinationFolderSelected(uri)
-        }
-    }
-
-    private fun handleImageUpscalerResult(uri: Uri?, sourceName: String) {
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            workspaceHost.getOrInflateImageUpscaler()
-            imageUpscalerController.handleImageSelected(uri)
-        } else {
-            consoleLogController.log("[UPSCALER] $sourceName returned no image.")
-        }
-    }
-
-    private val imgUpscalerDocumentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        handleImageUpscalerResult(uri, "System document picker")
-    }
-
-    private val imgUpscalerVisualMediaLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        handleImageUpscalerResult(uri, "Visual photo picker")
-    }
-
-    private fun openImageUpscalerPicker() {
-        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
-            val options = arrayOf("Photo Gallery", "Browse Files & Storage (SAF)")
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle("Select Image Source")
-                .setItems(options) { _, which ->
-                    if (which == 0) {
-                        try {
-                            imgUpscalerVisualMediaLauncher.launch(
-                                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                            )
-                        } catch (e: Exception) {
-                            consoleLogController.log("[UPSCALER] PhotoPicker launch failed: ${e.message}")
-                            imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
-                        }
-                    } else {
-                        imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
-                    }
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        } else {
-            imgUpscalerDocumentLauncher.launch(arrayOf("image/*"))
-        }
-    }
-
-    private val modelPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            workspaceHost.getOrInflateImageUpscaler()
-            imageUpscalerController.handleCustomModelImport(uri)
-        }
-    }
-
-    // Dedicated Tools SAF and Photo Picker Activity Result Launchers
-    private val homePhotoPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            handleHomeFileIntake(uri)
-        }
-    }
-
-    private val homeVideoPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            handleHomeFileIntake(uri)
-        }
-    }
-
-    private val homeDocPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            handleHomeFileIntake(uri)
-        }
-    }
-
-    private val homeFilePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            handleHomeFileIntake(uri)
-        }
-    }
-
-    private val visualMediaPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            handleSingleFileSelected(uri)
-        }
-    }
-
-    private val filePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            handleSingleFileSelected(uri)
-        }
-    }
-
-    private val folderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadWritePermission(uri)
-            handleFolderSelected(uri)
-        }
-    }
-
-    // Dedicated Document Scanner Activity Result Launchers
-    private val docScannerCameraPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            workspaceHost.getOrInflateDocScanner()
-            docScannerController.openCameraViewfinder()
-        } else {
-            Toast.makeText(this, "Camera permission is required to scan documents", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private val docScannerCameraLauncher = registerForActivityResult(
-        ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) {
-            workspaceHost.getOrInflateDocScanner()
-            docScannerController.handleCameraPhotoCaptured(bitmap)
-        }
-    }
-
-    private val docScannerPhotosLauncher = registerForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            workspaceHost.getOrInflateDocScanner()
-            docScannerController.handlePhotosImported(uris)
-        }
-    }
-
-    private val docScannerFilesLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            workspaceHost.getOrInflateDocScanner()
-            docScannerController.handlePhotosImported(uris)
-        }
-    }
-
-    private val docScannerExportLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val file = pendingDocScannerExportFile
-        pendingDocScannerExportFile = null
-        if (destUri != null && file != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val ok = safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) {
-                        Toast.makeText(this@MainActivity, "PDF saved to storage", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Failed to save PDF to storage", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-
-    // Dedicated Background Remover Activity Result Launchers
-    private val bgRemoverPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            workspaceHost.getOrInflateBackgroundRemover()
-            backgroundRemoverController.handleImageSelected(uri)
-        }
-    }
-
-    private val bgRemoverExportLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val file = pendingBgRemoverExportFile
-        pendingBgRemoverExportFile = null
-        if (destUri != null && file != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val ok = safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) {
-                        Toast.makeText(this@MainActivity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Failed to save PNG cutout to storage", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-
-    // Dedicated Image Quality Activity Result Launcher
-    private val qualityPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            imageQualityController.handleImageSelected(uri)
-        }
-    }
-
-    // Dedicated Provenance Activity Result Launcher
-    private val provenancePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            workspaceHost.getOrInflateProvenance()
-            provenanceController.handleFileSelected(uri)
-        }
-    }
-
-    // Dedicated PDF Signature Activity Result Launchers
-    private val pdfSignaturePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            workspaceHost.getOrInflatePdfSignature()
-            pdfSignatureController.handlePdfSelected(uri)
-        }
-    }
-
-    private val pdfSignatureSaveLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val bytes = pendingPdfSignatureSaveBytes
-        pendingPdfSignatureSaveBytes = null
-        if (destUri != null && bytes != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Validated PDF saved to storage", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-
-    private val pdfCaCertPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            if (::pdfSignatureController.isInitialized) {
-                pdfSignatureController.handleCaCertImported(uri)
-            }
-        }
-    }
-
-    // Dedicated PDF Unlock Activity Result Launchers
-    private val pdfUnlockPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            workspaceHost.getOrInflatePdfUnlock()
-            pdfUnlockController.handlePdfSelected(uri)
-        }
-    }
-
-    private val pdfUnlockSaveLauncher = registerForActivityResult(
-        CreateDocumentWithMime()
-    ) { destUri ->
-        val bytes = pendingPdfUnlockSaveBytes
-        pendingPdfUnlockSaveBytes = null
-        if (destUri != null && bytes != null) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Unlocked PDF saved to storage", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (!isGranted) {
-            Log.i("VeilFrame", "POST_NOTIFICATIONS permission declined by user.")
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -625,11 +153,7 @@ class MainActivity : AppCompatActivity() {
         val hasPromptedNotifications = prefs.getBoolean("has_prompted_notification_permission", false)
         if (!hasPromptedNotifications) {
             prefs.edit().putBoolean("has_prompted_notification_permission", true).apply()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
+            launchers.launchNotificationPermission()
         }
 
         // Restore cached changelog if available
@@ -716,6 +240,7 @@ class MainActivity : AppCompatActivity() {
         initStudioWorkspaces()
         setupListeners()
         VeilFrameInteraction.bindWorkspace(binding.root)
+        com.veilframe.app.ui.haptics.SliderHapticsHelper.attachRecursively(binding.root)
 
         binding.layoutSettingsPanel.tvSettingsUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
 
@@ -749,52 +274,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent == null) return
-        val dest = intent.getStringExtra("extra_navigate_destination")
-        if (!dest.isNullOrEmpty()) {
-            when (dest) {
-                "IMAGE_UPSCALER" -> navigationController.showImageUpscalerScreen()
-                "MOTION_LAB" -> navigationController.showMotionLabScreen()
-                "VIDEO_STUDIO" -> navigationController.showVideoStudioScreen()
-            }
-            return
-        }
-        val action = intent.action
-        val type = intent.type ?: ""
-        val uri: Uri? = if (action == Intent.ACTION_SEND) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra(Intent.EXTRA_STREAM)
-            } ?: intent.data
-        } else if (action == Intent.ACTION_VIEW) {
-            intent.data
-        } else {
-            null
-        }
-
-        if (uri != null) {
-            safStorageManager.persistReadPermission(uri)
-            val displayName = DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: ""
-            val nameLower = displayName.lowercase(Locale.ROOT)
-            val isMarkdown = nameLower.endsWith(".md") ||
-                    nameLower.endsWith(".markdown") ||
-                    nameLower.endsWith(".mdown") ||
-                    nameLower.endsWith(".mkdn") ||
-                    type == "text/markdown" ||
-                    (type == "text/plain" && (nameLower.endsWith(".md") || nameLower.endsWith(".markdown")))
-
-            if (isMarkdown) {
-                openMarkdownViewer(uri, displayName)
-            } else if (type.startsWith("video/") || nameLower.endsWith(".mp4") || nameLower.endsWith(".webm") || nameLower.endsWith(".mkv") || nameLower.endsWith(".mov") || nameLower.endsWith(".avi")) {
-                openVideoStudio()
-                videoStudioController.handleVideoSelected(uri)
-            } else if (type.startsWith("image/") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") || nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".heif") || nameLower.endsWith(".avif") || nameLower.endsWith(".bmp") || nameLower.endsWith(".tiff") || nameLower.endsWith(".tif") || nameLower.endsWith(".gif")) {
-                openImageStudio()
-                imageStudioController.handleImageSelected(uri)
-            }
-        }
+        com.veilframe.app.navigation.MainActivityIntentHandler.handle(this, intent)
     }
 
     override fun onResume() {
@@ -951,7 +431,7 @@ class MainActivity : AppCompatActivity() {
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
             onOpenFilePicker = { openFilePickerForCurrentTool() },
-            onOpenFolderPicker = { folderPickerLauncher.launch(null) },
+            onOpenFolderPicker = { launchers.launchFolderPicker() },
             onLog = { msg -> consoleLogController.log(msg) },
             getImageStudioController = { if (::imageStudioController.isInitialized) imageStudioController else null },
             getVideoStudioController = { if (::videoStudioController.isInitialized) videoStudioController else null }
@@ -973,11 +453,10 @@ class MainActivity : AppCompatActivity() {
                 navigationController.navigateBackFromWorkspace()
             },
             onOpenMarkdownFileRequest = {
-                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown"))
+                launchers.launchMarkdownPicker()
             },
             onSaveAsMarkdownRequest = { suggestedName, content ->
-                pendingMarkdownSaveContent = content
-                markdownSaveAsLauncher.launch(suggestedName)
+                launchers.launchMarkdownSaveAs(suggestedName, content)
             }
         )
         markdownViewerController.init()
@@ -1066,20 +545,15 @@ class MainActivity : AppCompatActivity() {
             safManager = safDestinationManager,
             scope = lifecycleScope,
             onPickImageRequest = {
-                imgStudioPickerLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                )
+                launchers.launchImgStudioPicker()
             },
             onAddMoreImageRequest = {
-                imgStudioAddMoreLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                )
+                launchers.launchImgStudioAddMore()
             },
-            onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
+            onPickFolderRequest = { launchers.launchImgFolderPicker() },
             onExportFileRequest = { file ->
-                pendingImgStudioExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
-                imgStudioExportLauncher.launch(file.name to mime)
+                launchers.launchImgStudioExport(file, mime)
             },
             onShareFileRequest = { file, mime ->
                 shareStudioFile(file, mime)
@@ -1100,20 +574,15 @@ class MainActivity : AppCompatActivity() {
             safManager = safDestinationManager,
             scope = lifecycleScope,
             onPickVideoRequest = {
-                vidStudioPickerLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
-                )
+                launchers.launchVidStudioPicker()
             },
             onAddMoreVideoRequest = {
-                vidStudioAddMoreLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
-                )
+                launchers.launchVidStudioAddMore()
             },
-            onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
+            onPickFolderRequest = { launchers.launchVidFolderPicker() },
             onExportFileRequest = { file ->
-                pendingVidStudioExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
-                vidStudioExportLauncher.launch(file.name to mime)
+                launchers.launchVidStudioExport(file, mime)
             },
             onShareFileRequest = { file, mime ->
                 shareStudioFile(file, mime)
@@ -1131,9 +600,7 @@ class MainActivity : AppCompatActivity() {
             binding = binding.layoutImageQuality,
             scope = lifecycleScope,
             onPickImageRequest = {
-                qualityPickerLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                )
+                launchers.launchQualityPicker()
             },
             onShareReportRequest = { reportText ->
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
@@ -1156,17 +623,11 @@ class MainActivity : AppCompatActivity() {
             onBackRequested = {
                 navigationController.navigateBackFromWorkspace()
             },
-            onPickImageRequested = { openImageUpscalerPicker() },
+            onPickImageRequested = { launchers.openImageUpscalerPicker() },
             onLog = { msg -> consoleLogController.log(msg) }
         ).apply {
             onImportCustomModelRequested = {
-                modelPickerLauncher.launch(
-                    arrayOf(
-                        "application/zip",
-                        "application/x-zip-compressed",
-                        "application/octet-stream"
-                    )
-                )
+                launchers.launchModelPicker()
             }
         }
         imageUpscalerController.init()
@@ -1180,19 +641,16 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
             onChoosePhotosRequest = {
-                docScannerPhotosLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                )
+                launchers.launchDocScannerPhotos()
             },
             onExportFileRequest = { file, mime ->
-                pendingDocScannerExportFile = file
-                docScannerExportLauncher.launch(file.name to mime)
+                launchers.launchDocScannerExport(file, mime)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
             },
             onRequestCameraPermission = {
-                docScannerCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                launchers.launchDocScannerCameraPermission()
             }
         ).apply { init() }
     }
@@ -1202,7 +660,7 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = motionBinding,
             scope = lifecycleScope,
-            onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
+            onPickVideoRequest = { launchers.launchMotionLabPicker() },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
             }
@@ -1215,14 +673,11 @@ class MainActivity : AppCompatActivity() {
             binding = bgBinding,
             scope = lifecycleScope,
             onPickImageRequest = {
-                bgRemoverPickerLauncher.launch(
-                    PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-                )
+                launchers.launchBgRemoverPicker()
             },
             onExportPngRequest = { file ->
-                pendingBgRemoverExportFile = file
                 val mime = safStorageManager.getExportMimeType(file)
-                bgRemoverExportLauncher.launch(file.name to mime)
+                launchers.launchBgRemoverExport(file, mime)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
@@ -1236,7 +691,7 @@ class MainActivity : AppCompatActivity() {
             binding = provBinding,
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
-            onPickFileRequest = { provenancePickerLauncher.launch(arrayOf("*/*")) },
+            onPickFileRequest = { launchers.launchProvenancePicker() },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
             }
@@ -1248,16 +703,15 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = sigBinding,
             scope = lifecycleScope,
-            onPickPdfRequest = { pdfSignaturePickerLauncher.launch(arrayOf("application/pdf")) },
+            onPickPdfRequest = { launchers.launchPdfSignaturePicker() },
             onSavePdfRequest = { bytes, fileName ->
-                pendingPdfSignatureSaveBytes = bytes
-                pdfSignatureSaveLauncher.launch(fileName to "application/pdf")
+                launchers.launchPdfSignatureSave(fileName, bytes)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
             },
             onImportCaCertRequest = {
-                pdfCaCertPickerLauncher.launch(arrayOf("application/x-x509-ca-cert", "application/pkix-cert", "*/*"))
+                launchers.launchPdfCaCertPicker()
             },
             onOpenPdfStudio = {
                 openPdfStudio()
@@ -1270,10 +724,9 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = unlockBinding,
             scope = lifecycleScope,
-            onPickPdfRequest = { pdfUnlockPickerLauncher.launch(arrayOf("application/pdf")) },
+            onPickPdfRequest = { launchers.launchPdfUnlockPicker() },
             onSavePdfRequest = { bytes, fileName ->
-                pendingPdfUnlockSaveBytes = bytes
-                pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+                launchers.launchPdfUnlockSave(fileName, bytes)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
@@ -1323,17 +776,13 @@ class MainActivity : AppCompatActivity() {
 
         // Home Action Dashboard - Universal File Intake Pickers
         binding.btnHomeIntakePhoto.setOnClickListener {
-            homePhotoPickerLauncher.launch(
-                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-            )
+            launchers.launchHomePhotoPicker()
         }
         binding.btnHomeIntakeVideo.setOnClickListener {
-            homeVideoPickerLauncher.launch(
-                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly).build()
-            )
+            launchers.launchHomeVideoPicker()
         }
-        binding.btnHomeIntakeDoc.setOnClickListener { homeDocPickerLauncher.launch(arrayOf("application/pdf", "text/*", "application/*")) }
-        binding.btnHomeIntakeBrowse.setOnClickListener { homeFilePickerLauncher.launch(arrayOf("*/*")) }
+        binding.btnHomeIntakeDoc.setOnClickListener { launchers.launchHomeDocPicker() }
+        binding.btnHomeIntakeBrowse.setOnClickListener { launchers.launchHomeFilePicker() }
         binding.btnHomeIntakeClear.setOnClickListener { clearHomeFileIntake() }
 
         // Home Action Dashboard - Pinned / Recent Engines (2x2 Grid)
@@ -1348,7 +797,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Target Pickers inside Tool
-        binding.btnPickFolder.setOnClickListener { folderPickerLauncher.launch(null) }
+        binding.btnPickFolder.setOnClickListener { launchers.launchFolderPicker() }
         binding.btnPickFile.setOnClickListener { openFilePickerForCurrentTool() }
         binding.btnClearTarget.setOnClickListener { toolSessionManager.clearSelectedTarget(logMessage = true) }
         binding.btnChangeTarget.setOnClickListener { openFilePickerForCurrentTool() }
@@ -1401,9 +850,7 @@ class MainActivity : AppCompatActivity() {
             cameraDisabledReason = "Select an existing image from Photos or Files to inspect quality"
         ) { _ ->
             openImageQuality()
-            qualityPickerLauncher.launch(
-                PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()
-            )
+            launchers.launchQualityPicker()
         }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
     }
 
@@ -1447,7 +894,7 @@ class MainActivity : AppCompatActivity() {
         val file = toolSessionManager.currentState.lastGeneratedFile
         if (file != null && file.exists()) {
             val mimeType = safStorageManager.getExportMimeType(file)
-            exportDocumentLauncher.launch(file.name to mimeType)
+            launchers.launchExportDocument(file.name, mimeType)
         } else {
             Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
         }
@@ -1731,33 +1178,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openFilePickerForCurrentTool() {
-        when (toolSessionManager.currentToolMode) {
-            ToolMode.VIDEO_CLEANER -> {
-                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
-                    visualMediaPickerLauncher.launch(
-                        PickVisualMediaRequest.Builder()
-                            .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                            .build()
-                    )
-                } else {
-                    filePickerLauncher.launch(arrayOf("video/*"))
-                }
-            }
-            ToolMode.IMAGE_CLEANER -> {
-                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
-                    visualMediaPickerLauncher.launch(
-                        PickVisualMediaRequest.Builder()
-                            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            .build()
-                    )
-                } else {
-                    filePickerLauncher.launch(arrayOf("image/*"))
-                }
-            }
-            else -> {
-                filePickerLauncher.launch(arrayOf("*/*"))
-            }
-        }
+        launchers.openFilePickerForCurrentTool(toolSessionManager.currentToolMode)
     }
 
     internal fun handleSingleFileSelected(uri: Uri) {
@@ -1796,7 +1217,7 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[TARGET] Mounted file: ${state.selectedPathDisplay} (${safStorageManager.formatBytes(state.targetTotalBytes)})")
     }
 
-    private fun handleFolderSelected(uri: Uri) {
+    internal fun handleFolderSelected(uri: Uri) {
         val state = toolSessionManager.currentState
         state.selectedUri = uri
         state.isFolderSelected = true
@@ -1899,7 +1320,7 @@ class MainActivity : AppCompatActivity() {
         MainDialogHelper.showMarkdownStudioEntryDialog(
             activity = this,
             onOpenExisting = {
-                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown"))
+                launchers.launchMarkdownPicker()
             },
             onCreateNew = {
                 navigationController.showMarkdownViewerScreen()
