@@ -110,7 +110,7 @@ public final class TrustedCertificateStore {
         preferences.edit()
                 .remove(fingerprint)
                 .remove(AUDIT_PREFIX + fingerprint)
-                .commit();
+                .apply();
     }
 
     /** Store a CA certificate as an explicit app-local PKIX trust anchor. */
@@ -167,7 +167,7 @@ public final class TrustedCertificateStore {
 
     public void removeTrustedCertificateAuthority(String fingerprint) {
         if (fingerprint == null || fingerprint.trim().isEmpty()) return;
-        preferences.edit().remove(CA_PREFIX + fingerprint).commit();
+        preferences.edit().remove(CA_PREFIX + fingerprint).apply();
     }
 
 

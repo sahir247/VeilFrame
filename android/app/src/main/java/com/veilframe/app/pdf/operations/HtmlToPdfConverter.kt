@@ -1,5 +1,6 @@
 package com.veilframe.app.pdf.operations
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
@@ -59,7 +60,10 @@ class HtmlToPdfConverter {
             onProgress(0.1f)
             
             val webView = WebView(context).apply {
+                @SuppressLint("SetJavaScriptEnabled")
                 settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.builtInZoomControls = false
@@ -163,7 +167,10 @@ class HtmlToPdfConverter {
             onProgress(0.1f)
             
             val webView = WebView(context).apply {
+                @SuppressLint("SetJavaScriptEnabled")
                 settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.domStorageEnabled = true

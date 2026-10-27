@@ -24,6 +24,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.veilframe.app.R
+import com.veilframe.app.databinding.DialogMarkdownTocBinding
 import com.veilframe.app.databinding.LayoutMarkdownViewerBinding
 import com.veilframe.app.storage.SafStorageManager
 import kotlinx.coroutines.Dispatchers
@@ -699,19 +700,17 @@ class MarkdownViewerController(
         }
 
         val dialog = BottomSheetDialog(activity)
-        val view = activity.layoutInflater.inflate(R.layout.dialog_markdown_toc, null)
+        val dialogBinding = DialogMarkdownTocBinding.inflate(activity.layoutInflater)
 
-        val recycler = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recyclerToc)
-        recycler.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(activity)
-        recycler.adapter = TocAdapter(state.tableOfContents) { item ->
+        dialogBinding.recyclerToc.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(activity)
+        dialogBinding.recyclerToc.adapter = TocAdapter(state.tableOfContents) { item ->
             scrollToHeading(item.id)
             dialog.dismiss()
         }
 
-        val btnClose = view.findViewById<View>(R.id.btnCloseToc)
-        btnClose?.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnCloseToc.setOnClickListener { dialog.dismiss() }
 
-        dialog.setContentView(view)
+        dialog.setContentView(dialogBinding.root)
         dialog.show()
     }
 

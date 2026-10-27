@@ -2,6 +2,7 @@ package com.veilframe.app.qr.validation
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import java.util.Locale
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.decoder.DecodeResult
@@ -259,7 +260,7 @@ object ScanabilityValidator {
         }
 
         if (!contrastReport.isContrastAdequate) {
-            warnings.add("Low luminance separation (${String.format("%.2f", contrastReport.separation)}); modules may blend into background.")
+            warnings.add("Low luminance separation (${String.format(Locale.US, "%.2f", contrastReport.separation)}); modules may blend into background.")
             if (!decodeMatches) {
                 suggestions.add(RepairReason.INCREASE_CONTRAST)
             }
@@ -276,7 +277,7 @@ object ScanabilityValidator {
             warnings.add("Logo overlaps critical protected function patterns (finders/timing).")
             suggestions.add(RepairReason.REDUCE_LOGO_SIZE)
         } else if (!logoReport.isWithinErrorCorrectionCapacity) {
-            warnings.add("Logo occludes ${String.format("%.1f", logoReport.affectedDataFraction * 100)}% of data modules, exceeding error correction recovery capacity.")
+            warnings.add("Logo occludes ${String.format(Locale.US, "%.1f", logoReport.affectedDataFraction * 100)}% of data modules, exceeding error correction recovery capacity.")
             suggestions.add(RepairReason.ELEVATE_ERROR_CORRECTION)
             suggestions.add(RepairReason.REDUCE_LOGO_SIZE)
         }

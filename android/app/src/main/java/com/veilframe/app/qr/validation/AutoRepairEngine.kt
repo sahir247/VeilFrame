@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.validation
 
 import android.graphics.Color
+import java.util.Locale
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.encoder.QrEncoder
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
@@ -63,7 +64,7 @@ object AutoRepairEngine {
                         design = design.copy(
                             moduleStyle = design.moduleStyle.copy(scale = newScale)
                         )
-                        changes.add("Increased module fill scale to ${String.format("%.2f", newScale)}")
+                        changes.add("Increased module fill scale to ${String.format(Locale.US, "%.2f", newScale)}")
                     }
                 }
 
@@ -74,7 +75,7 @@ object AutoRepairEngine {
                         design = design.copy(
                             logo = logo.copy(scaleFraction = newFraction)
                         )
-                        changes.add("Reduced logo size to ${String.format("%.0f", newFraction * 100)}% to protect scanability")
+                        changes.add("Reduced logo size to ${String.format(Locale.US, "%.0f", newFraction * 100)}% to protect scanability")
                     }
                 }
 

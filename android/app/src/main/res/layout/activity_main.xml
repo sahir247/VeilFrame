@@ -1949,7 +1949,8 @@
     <!-- ================================================================= -->
     <include
         android:id="@+id/layoutVideoStudio"
-        layout="@layout/layout_video_studio" />
+        layout="@layout/layout_video_studio"
+        tools:ignore="DuplicateIncludedIds" />
 
     <!-- ================================================================= -->
     <!-- 6. MARKDOWN VIEWER WORKSPACE                                      -->

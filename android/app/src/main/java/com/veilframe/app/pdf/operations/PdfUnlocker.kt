@@ -3,6 +3,7 @@ package com.veilframe.app.pdf.operations
 import android.content.Context
 import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -90,6 +91,8 @@ class PdfUnlocker {
                 inputStream.use { stream ->
                     PDDocument.load(stream, password, MemoryUsageSetting.setupTempFileOnly())
                 }
+            } catch (e: InvalidPasswordException) {
+                return@withContext Result.failure(UnlockError.IncorrectPassword)
             } catch (e: Exception) {
                 val message = e.message?.lowercase() ?: ""
                 when {
@@ -162,6 +165,8 @@ class PdfUnlocker {
             
         } catch (e: UnlockError) {
             Result.failure(e)
+        } catch (e: InvalidPasswordException) {
+            Result.failure(UnlockError.IncorrectPassword)
         } catch (e: Exception) {
             val message = e.message?.lowercase() ?: ""
             when {
