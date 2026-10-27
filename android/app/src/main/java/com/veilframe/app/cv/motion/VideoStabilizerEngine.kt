@@ -434,16 +434,16 @@ class VideoStabilizerEngine(
         try {
             for (frame in frames) {
                 val currGray = Mat()
-                    try {
-                        when (frame.channels()) {
-                            1 -> frame.copyTo(currGray)
-                            3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
-                            4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
-                            else -> frame.copyTo(currGray)
-                        }
-                    } catch (_: Throwable) {
-                        // In non-native or mocked environments, proceed with uncolored Mat
+                try {
+                    when (frame.channels()) {
+                        1 -> frame.copyTo(currGray)
+                        3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                        4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
+                        else -> frame.copyTo(currGray)
                     }
+                } catch (_: Throwable) {
+                    // In non-native or mocked environments, proceed with uncolored Mat
+                }
 
                 if (prevGray != null) {
                     val motion = estimator.estimateMotion(prevGray, currGray)
@@ -572,14 +572,14 @@ class VideoStabilizerEngine(
         try {
             for (frame in frames) {
                 val currGray = Mat()
-                    try {
-                        when (frame.channels()) {
-                            1 -> frame.copyTo(currGray)
-                            3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
-                            4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
-                            else -> frame.copyTo(currGray)
-                        }
-                    } catch (_: Throwable) {}
+                try {
+                    when (frame.channels()) {
+                        1 -> frame.copyTo(currGray)
+                        3 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGR2GRAY)
+                        4 -> Imgproc.cvtColor(frame, currGray, Imgproc.COLOR_BGRA2GRAY)
+                        else -> frame.copyTo(currGray)
+                    }
+                } catch (_: Throwable) {}
 
                 if (prevGray != null) {
                     val motion = estimator.estimateMotion(prevGray, currGray)

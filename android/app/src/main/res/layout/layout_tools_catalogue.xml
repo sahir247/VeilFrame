@@ -1201,7 +1201,6 @@
                         android:layout_height="28dp"
                         android:contentDescription="PDF Studio Hub"
                         android:src="@drawable/ic_pdf_file"
-                        android:tint="?attr/colorPrimary"
                         app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
@@ -1277,7 +1276,6 @@
                                 android:layout_height="24dp"
                                 android:contentDescription="Verify PDF"
                                 android:src="@drawable/ic_signature_valid"
-                                android:tint="?attr/colorPrimary"
                                 app:tint="?attr/colorPrimary" />
                         </LinearLayout>
 
@@ -1337,7 +1335,6 @@
                                 android:layout_height="24dp"
                                 android:contentDescription="Unlock PDF"
                                 android:src="@drawable/ic_lock_open"
-                                android:tint="?attr/colorPrimary"
                                 app:tint="?attr/colorPrimary" />
                         </LinearLayout>
 

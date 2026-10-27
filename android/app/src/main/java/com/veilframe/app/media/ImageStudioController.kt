@@ -768,7 +768,7 @@ class ImageStudioController(
                 withContext(Dispatchers.Main) {
                     binding.layoutImgProgress.visibility = View.GONE
                     if (activeGeneration == gen) {
-                        Toast.makeText(activity, "PII ONNX Engine unavailable", Toast.LENGTH_LONG).show()
+                        Toast.makeText(activity, "PII Detection Engine unavailable", Toast.LENGTH_LONG).show()
                     }
                 }
                 return@launch

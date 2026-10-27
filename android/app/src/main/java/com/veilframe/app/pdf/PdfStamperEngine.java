@@ -24,6 +24,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDSignatureField;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -176,7 +177,7 @@ public final class PdfStamperEngine {
         try {
             String originalContent;
             try (InputStream in = cosStream.createInputStream()) {
-                originalContent = new String(in.readAllBytes(), StandardCharsets.ISO_8859_1);
+                originalContent = new String(toByteArray(in), StandardCharsets.ISO_8859_1);
             }
 
             String modifiedContent = replaceUnverifiedText(originalContent);
@@ -231,7 +232,7 @@ public final class PdfStamperEngine {
                             COSStream n4Stream = (COSStream) existingN4;
                             String n4Content;
                             try (InputStream in = n4Stream.createInputStream()) {
-                                n4Content = new String(in.readAllBytes(), StandardCharsets.ISO_8859_1);
+                                n4Content = new String(toByteArray(in), StandardCharsets.ISO_8859_1);
                             }
                             // Authoritative Adobe Acrobat DC status title formatting (/n4 in DigSig.api):
                             // Uses Helvetica-Bold (HeBo atom 0x18014FF40) and exact geometry scaling.
@@ -290,7 +291,7 @@ public final class PdfStamperEngine {
                             COSStream n2Stream = (COSStream) existingN2;
                             String n2Content;
                             try (InputStream in = n2Stream.createInputStream()) {
-                                n2Content = new String(in.readAllBytes(), StandardCharsets.ISO_8859_1);
+                                n2Content = new String(toByteArray(in), StandardCharsets.ISO_8859_1);
                             }
                             String modN2 = n2Content;
                             // 1. Strip spurious (IST) line completely in compact signatures (Aadhaar parity with authentic Adobe DC)
@@ -524,5 +525,15 @@ public final class PdfStamperEngine {
             }
             catalog.removeItem(COSName.getPDFName("Perms"));
         } catch (Exception ignored) { }
+    }
+
+    private static byte[] toByteArray(InputStream in) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] data = new byte[4096];
+        int nRead;
+        while ((nRead = in.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        return buffer.toByteArray();
     }
 }
