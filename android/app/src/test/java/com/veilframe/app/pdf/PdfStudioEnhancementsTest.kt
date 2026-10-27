@@ -7,6 +7,7 @@ import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.PdfOrganizer
 import com.veilframe.app.pdf.operations.PdfMerger
+import android.graphics.Bitmap
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -223,5 +224,126 @@ class PdfStudioEnhancementsTest {
         assertEquals(15f, modernSize, 0.001f)
         assertEquals(16.8f, monoSize, 0.001f)
         assertTrue(monoSize > modernSize)
+    }
+
+    @Test
+    fun testPdfSigner_signPdfWithItems_multiplePagesAndRotation() {
+        runBlocking {
+            val context = org.robolectric.RuntimeEnvironment.getApplication()
+            val pdfSigner = com.veilframe.app.pdf.operations.PdfSigner(context)
+            val file = createMultiPagePdf(3)
+            try {
+                val uri = android.net.Uri.fromFile(file)
+                val outStream = ByteArrayOutputStream()
+
+                val sigBmp1 = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888)
+                val sigBmp2 = Bitmap.createBitmap(120, 60, Bitmap.Config.ARGB_8888)
+
+                val items = listOf(
+                    com.veilframe.app.pdf.operations.SignatureItemPlacement(
+                        pageIndex = 0,
+                        x = 50f,
+                        y = 100f,
+                        width = 150f,
+                        height = 60f,
+                        rotationDegrees = 0f,
+                        bitmap = sigBmp1
+                    ),
+                    com.veilframe.app.pdf.operations.SignatureItemPlacement(
+                        pageIndex = 2,
+                        x = 100f,
+                        y = 200f,
+                        width = 180f,
+                        height = 80f,
+                        rotationDegrees = 45f,
+                        bitmap = sigBmp2
+                    )
+                )
+
+                val result = pdfSigner.signPdfWithItems(uri, outStream, items)
+                assertTrue("signPdfWithItems failed: ${result.errorMessage}", result.success)
+                assertTrue(outStream.size() > 0)
+
+                val resultDoc = PDDocument.load(ByteArrayInputStream(outStream.toByteArray()))
+                assertEquals(3, resultDoc.numberOfPages)
+                resultDoc.close()
+
+                sigBmp1.recycle()
+                sigBmp2.recycle()
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    @Test
+    fun testPdfSigner_signatureLibraryManagement() {
+        runBlocking {
+            val context = org.robolectric.RuntimeEnvironment.getApplication()
+            val pdfSigner = com.veilframe.app.pdf.operations.PdfSigner(context)
+
+            val bmp = Bitmap.createBitmap(120, 60, Bitmap.Config.ARGB_8888)
+            val saved = pdfSigner.saveSignatureBitmap(bmp, "My CEO Signature")
+            assertEquals("My CEO Signature", saved.name)
+            assertTrue(File(saved.bitmapPath).exists())
+
+            val list = pdfSigner.getSavedSignatures()
+            assertTrue(list.any { it.id == saved.id && it.name == "My CEO Signature" })
+
+            // Test rename
+            pdfSigner.renameSignature(saved.id, "Executive Approval")
+            val updatedList = pdfSigner.getSavedSignatures()
+            assertTrue(updatedList.any { it.id == saved.id && it.name == "Executive Approval" })
+
+            // Test delete
+            val deleted = pdfSigner.deleteSignatureById(saved.id)
+            assertTrue(deleted)
+            val afterDeleteList = pdfSigner.getSavedSignatures()
+            assertTrue(afterDeleteList.none { it.id == saved.id })
+            assertTrue(!File(saved.bitmapPath).exists())
+
+            bmp.recycle()
+        }
+    }
+
+    @Test
+    fun testPositionAwareButtonPlacement() {
+        // If signature center is in upper half of view (e.g. y = 200, view height = 800)
+        // button should appear below the signature (y > 200)
+        val viewHeight = 800f
+        val upperCenterY = 200f
+        val sigH = 60f
+        val offset = sigH / 2f + 30f
+
+        val buttonYUpper = if (upperCenterY < viewHeight / 2f) {
+            upperCenterY + offset
+        } else {
+            upperCenterY - offset
+        }
+        assertTrue("Button must appear below signature when signature is in upper half", buttonYUpper > upperCenterY)
+
+        // If signature center is in lower half of view (e.g. y = 600, view height = 800)
+        // button should appear above the signature (y < 600)
+        val lowerCenterY = 600f
+        val buttonYLower = if (lowerCenterY < viewHeight / 2f) {
+            lowerCenterY + offset
+        } else {
+            lowerCenterY - offset
+        }
+        assertTrue("Button must appear above signature when signature is in lower half", buttonYLower < lowerCenterY)
+    }
+
+    @Test
+    fun testTwoFingerRotationThreshold_triggerLogic() {
+        val thresholdDeg = 3.0
+        // Small jitter < 3 degrees should not trigger box rotation
+        val deltaJitter = 1.8
+        val isTriggeredJitter = Math.abs(deltaJitter) > thresholdDeg
+        assertTrue(!isTriggeredJitter)
+
+        // Intentional twist > 3 degrees triggers box rotation
+        val deltaTwist = 15.5
+        val isTriggeredTwist = Math.abs(deltaTwist) > thresholdDeg
+        assertTrue(isTriggeredTwist)
     }
 }

@@ -1390,7 +1390,7 @@
                                             android:layout_width="wrap_content"
                                             android:layout_height="wrap_content"
                                             android:layout_gravity="center"
-                                            android:text="✍ Signature"
+                                            android:text="Signature"
                                             android:textColor="#FFFFFF"
                                             android:textSize="11sp"
                                             android:textStyle="bold" />
@@ -1469,13 +1469,19 @@
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="Web URL or Raw HTML Content">
+                        android:hint="HTML Code (e.g. &lt;h1&gt;Document Title&lt;/h1&gt;)">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etSourceInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:minLines="3" />
+                            android:minLines="8"
+                            android:maxLines="20"
+                            android:gravity="top|start"
+                            android:fontFamily="monospace"
+                            android:textSize="12sp"
+                            android:inputType="textMultiLine"
+                            android:hint="Type or paste HTML code here..." />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
@@ -1494,4 +1500,107 @@
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
     </LinearLayout>
+
+    <!-- Full-screen Hardware-Accelerated Interactive Signing Canvas Overlay -->
+    <FrameLayout
+        android:id="@+id/layoutPdfSignCanvasOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground"
+        android:elevation="16dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- Canvas Top Bar with Pen SVG, Plus SVG, Dropdown/Reuse, Manage, Save SVG, Cross SVG -->
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbarSignCanvas"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:background="?attr/colorSurface"
+                app:title="Sign PDF"
+                app:titleTextColor="?attr/colorOnSurface">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="end"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingEnd="4dp">
+
+                    <!-- Draw new signature (Pen SVG) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasPen"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Draw New Signature"
+                        app:icon="@drawable/ic_edit"
+                        app:iconTint="?attr/colorOnSurface" />
+
+                    <!-- Add signature box (Plus SVG) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasPlus"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Add Another Signature"
+                        app:icon="@drawable/ic_add"
+                        app:iconTint="?attr/colorOnSurface" />
+
+                    <!-- Reuse Saved Signatures Dropdown -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasSavedDropdown"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Reuse Saved Signature"
+                        app:icon="@drawable/ic_sign_pdf"
+                        app:iconTint="?attr/colorOnSurface" />
+
+                    <!-- Manage Signatures -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasManage"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Manage Signatures"
+                        app:icon="@drawable/ic_settings"
+                        app:iconTint="?attr/colorOnSurface" />
+
+                    <!-- Save & Export PDF (Save SVG) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasSave"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Save and Export Signed PDF"
+                        app:icon="@drawable/ic_action_save"
+                        app:iconTint="?attr/colorPrimary" />
+
+                    <!-- Exit Canvas (Cross SVG) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSignCanvasClose"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:contentDescription="Exit Canvas"
+                        app:icon="@drawable/ic_close"
+                        app:iconTint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </com.google.android.material.appbar.MaterialToolbar>
+
+            <!-- Interactive Hardware-Accelerated Multi-Page PDF Canvas -->
+            <com.veilframe.app.pdf.ui.PdfSignCanvasView
+                android:id="@+id/pdfSignCanvasView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+        </LinearLayout>
+    </FrameLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

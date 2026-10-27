@@ -64,7 +64,7 @@ class PdfStudioController(
             ToolCardEntry("pdf_to_image", binding.cardStudioPdfToImage, "PDF to Image", "convert", listOf("webp", "png", "jpeg", "export")),
             ToolCardEntry("image_to_pdf", binding.cardStudioImageToPdf, "Image to PDF", "convert", listOf("photo", "camera", "picture", "maker")),
             ToolCardEntry("extract_text", binding.cardStudioExtractText, "Extract Text & OCR", "convert", listOf("ocr", "mlkit", "text", "txt", "copy")),
-            ToolCardEntry("html_to_pdf", binding.cardStudioHtmlToPdf, "HTML to PDF", "convert", listOf("web", "url", "website", "markup")),
+            ToolCardEntry("html_to_pdf", binding.cardStudioHtmlToPdf, "HTML to PDF", "convert", listOf("html", "code", "markup", "tags")),
             ToolCardEntry("doc_to_pdf", binding.cardStudioDocToPdf, "DOC to PDF", "convert", listOf("word", "docx", "excel", "xlsx", "office")),
             ToolCardEntry("lock", binding.cardStudioLock, "Lock PDF", "security", listOf("encrypt", "password", "protect", "aes")),
             ToolCardEntry("unlock", binding.cardStudioUnlock, "Unlock PDF", "security", listOf("decrypt", "remove password", "security")),

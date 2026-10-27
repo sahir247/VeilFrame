@@ -13,12 +13,16 @@ import android.view.View
 import android.content.res.ColorStateList
 import com.veilframe.app.qr.ui.QrColorPickerDialog
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.veilframe.app.pdf.ui.SignaturePadView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -88,7 +92,7 @@ class PdfQuickToolController(
         LOCK("Lock PDF", "256-bit AES encryption & permissions", "Encrypt & Save PDF"),
         SIGN("Sign PDF", "Touch Bézier canvas signature stamping", "Stamp Signature & Export"),
         FILL_FORMS("Fill Forms", "Interactive AcroForm values editing", "Apply Form Values & Export"),
-        HTML_TO_PDF("HTML to PDF", "Convert web page or HTML to PDF", "Render HTML to PDF"),
+        HTML_TO_PDF("HTML to PDF", "Convert HTML code to PDF document", "Convert HTML to PDF"),
         DOC_TO_PDF("DOC to PDF", "Offline DOCX & XLSX conversion", "Convert Office to PDF"),
         PDF_TO_IMAGE("PDF to Image", "Batch export pages to WebP/PNG/JPG", "Export Page Images"),
         IMAGE_TO_PDF("Image to PDF", "Compile gallery photos into PDF", "Compile PDF"),
@@ -262,7 +266,8 @@ class PdfQuickToolController(
             QuickMode.HTML_TO_PDF -> {
                 binding.cardQuickToolPicker.visibility = View.GONE
                 binding.panelParamSourceInput.visibility = View.VISIBLE
-                binding.tilSourceInput.hint = "Web URL or HTML string (e.g. https://...)"
+                binding.tilSourceInput.hint = "HTML Code (e.g. <h1>Title</h1><p>...</p>)"
+                binding.etSourceInput.hint = "Type or paste raw HTML markup code here..."
             }
             QuickMode.DOC_TO_PDF -> {
                 binding.tvQuickToolPickPrompt.text = "Select Office Document"
@@ -884,13 +889,31 @@ class PdfQuickToolController(
             }
         })
 
+        binding.cardSignInteractivePlacement.setOnClickListener {
+            openPdfSignCanvas()
+        }
+
         var isScaling = false
+        var downX = 0f
+        var downY = 0f
+        var isDrag = false
+
         binding.frameSignInteractiveContainer.setOnTouchListener { v, event ->
             try {
                 scaleGestureDetector?.onTouchEvent(event)
                 if (event.pointerCount > 1) {
                     isScaling = true
                     return@setOnTouchListener true
+                }
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    downX = event.x
+                    downY = event.y
+                    isDrag = false
+                }
+                if (event.action == MotionEvent.ACTION_MOVE) {
+                    if (kotlin.math.hypot((event.x - downX).toDouble(), (event.y - downY).toDouble()) > 10) {
+                        isDrag = true
+                    }
                 }
                 if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
                     isScaling = false
@@ -899,6 +922,11 @@ class PdfQuickToolController(
                         .scaleY(signScaleFactor)
                         .setDuration(120)
                         .start()
+
+                    if (!isDrag && event.action == MotionEvent.ACTION_UP) {
+                        openPdfSignCanvas()
+                        return@setOnTouchListener true
+                    }
                 }
                 if (!isScaling && (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE)) {
                     val containerW = v.width.toFloat()
@@ -917,10 +945,11 @@ class PdfQuickToolController(
                     }
                 }
             } catch (ignored: Exception) {
-                // Safeguard against any gesture calculation edge cases
             }
             true
         }
+
+        setupSignCanvasOverlay()
     }
 
     private fun applySignScale(scale: Float, updateSlider: Boolean) {
@@ -989,6 +1018,403 @@ class PdfQuickToolController(
                     binding.ivSignPagePreview.setImageBitmap(bmp)
                 } else {
                     binding.ivSignPagePreview.setImageResource(R.drawable.ic_pdf_file)
+                }
+            }
+        }
+    }
+
+    private fun openPdfSignCanvas() {
+        val uri = selectedUris.firstOrNull()
+        if (uri == null) {
+            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        binding.layoutPdfSignCanvasOverlay.visibility = View.VISIBLE
+        binding.pdfSignCanvasView.setDocument(uri)
+
+        val currentSigBmp = binding.viewSignaturePad.getSignatureBitmap(
+            targetColor = selectedSignColor,
+            opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+        )
+        if (currentSigBmp != null) {
+            binding.pdfSignCanvasView.addSignature(currentSigBmp)
+        }
+    }
+
+    private fun setupSignCanvasOverlay() {
+        binding.btnSignCanvasClose.setOnClickListener {
+            binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+        }
+
+        binding.btnSignCanvasPen.setOnClickListener {
+            showDrawSignatureDialog()
+        }
+
+        binding.btnSignCanvasPlus.setOnClickListener {
+            addNewOrDuplicateSignature()
+        }
+
+        binding.btnSignCanvasSavedDropdown.setOnClickListener {
+            showReuseSavedSignaturesMenu()
+        }
+
+        binding.btnSignCanvasManage.setOnClickListener {
+            showManageSignaturesDialog()
+        }
+
+        binding.btnSignCanvasSave.setOnClickListener {
+            executeCanvasSignExport()
+        }
+
+        binding.pdfSignCanvasView.onSaveSignatureClicked = { bitmap ->
+            showSaveSignatureNameDialog(bitmap)
+        }
+    }
+
+    private fun showDrawSignatureDialog() {
+        val padContainer = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 16)
+        }
+
+        val pad = SignaturePadView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (200 * activity.resources.displayMetrics.density).toInt()
+            )
+            setBackgroundColor(Color.parseColor("#18181C"))
+            setInkColor(selectedSignColor)
+        }
+
+        val btnClear = com.google.android.material.button.MaterialButton(
+            activity,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "Clear Ink"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (8 * activity.resources.displayMetrics.density).toInt()
+            }
+            setOnClickListener { pad.clear() }
+        }
+
+        padContainer.addView(pad)
+        padContainer.addView(btnClear)
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Draw New Signature")
+            .setView(padContainer)
+            .setPositiveButton("Add to PDF") { _, _ ->
+                val bmp = pad.getSignatureBitmap(targetColor = selectedSignColor)
+                if (bmp != null) {
+                    binding.pdfSignCanvasView.addSignature(bmp)
+                } else {
+                    Toast.makeText(activity, "Signature is empty", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun addNewOrDuplicateSignature() {
+        val selected = binding.pdfSignCanvasView.selectedBox
+        if (selected != null) {
+            binding.pdfSignCanvasView.addSignature(selected.bitmap, selected.pageIndex)
+            return
+        }
+        val currentSigBmp = binding.viewSignaturePad.getSignatureBitmap(
+            targetColor = selectedSignColor,
+            opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+        )
+        if (currentSigBmp != null) {
+            binding.pdfSignCanvasView.addSignature(currentSigBmp)
+        } else {
+            showDrawSignatureDialog()
+        }
+    }
+
+    private fun showSaveSignatureNameDialog(bitmap: Bitmap) {
+        val existingCount = pdfSigner.getSavedSignatures().size
+        val editText = com.google.android.material.textfield.TextInputEditText(activity).apply {
+            setText("Signature ${existingCount + 1}")
+            selectAll()
+        }
+        val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
+            hint = "Signature Name"
+            setPadding(48, 16, 48, 16)
+            addView(editText)
+        }
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Save Signature to Library")
+            .setView(til)
+            .setPositiveButton("Save") { _, _ ->
+                val name = editText.text?.toString()?.trim().orEmpty()
+                scope.launch(Dispatchers.IO) {
+                    pdfSigner.saveSignatureBitmap(bitmap, name)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showReuseSavedSignaturesMenu() {
+        val signatures = pdfSigner.getSavedSignatures()
+        if (signatures.isEmpty()) {
+            Toast.makeText(activity, "No saved signatures. Draw and save one first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val container = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 16)
+        }
+        val scroll = ScrollView(activity).apply {
+            addView(container)
+        }
+
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle("Reuse Saved Signature")
+            .setView(scroll)
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        for (sig in signatures) {
+            val itemRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(16, 16, 16, 16)
+                isClickable = true
+                isFocusable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+            }
+
+            val thumb = ImageView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    (72 * activity.resources.displayMetrics.density).toInt(),
+                    (40 * activity.resources.displayMetrics.density).toInt()
+                ).apply {
+                    marginEnd = (16 * activity.resources.displayMetrics.density).toInt()
+                }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.parseColor("#26262B"))
+                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                if (bmp != null) setImageBitmap(bmp)
+            }
+
+            val textLayout = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val title = TextView(activity).apply {
+                text = sig.name
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            val date = TextView(activity).apply {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                text = sdf.format(java.util.Date(sig.createdAt))
+                textSize = 11f
+                setTextColor(Color.parseColor("#9E9E9E"))
+            }
+
+            textLayout.addView(title)
+            textLayout.addView(date)
+            itemRow.addView(thumb)
+            itemRow.addView(textLayout)
+
+            itemRow.setOnClickListener {
+                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                if (bmp != null) {
+                    binding.pdfSignCanvasView.addSignature(bmp)
+                }
+                dialog.dismiss()
+            }
+
+            container.addView(itemRow)
+        }
+
+        dialog.show()
+    }
+
+    private fun showManageSignaturesDialog() {
+        fun buildDialog() {
+            val signatures = pdfSigner.getSavedSignatures()
+            val container = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 16, 16, 16)
+            }
+
+            val scroll = ScrollView(activity).apply {
+                addView(container)
+            }
+
+            val dialog = MaterialAlertDialogBuilder(activity)
+                .setTitle("Manage Saved Signatures (${signatures.size})")
+                .setView(scroll)
+                .setPositiveButton("Done", null)
+                .create()
+
+            if (signatures.isEmpty()) {
+                val emptyTv = TextView(activity).apply {
+                    text = "No saved signatures yet. Sign a PDF and tap the save button beside any signature."
+                    setTextColor(Color.parseColor("#9E9E9E"))
+                    textSize = 13f
+                    setPadding(32, 32, 32, 32)
+                    gravity = android.view.Gravity.CENTER
+                }
+                container.addView(emptyTv)
+            } else {
+                for (sig in signatures) {
+                    val row = LinearLayout(activity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        setPadding(12, 12, 12, 12)
+                    }
+
+                    val thumb = ImageView(activity).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            (64 * activity.resources.displayMetrics.density).toInt(),
+                            (36 * activity.resources.displayMetrics.density).toInt()
+                        ).apply {
+                            marginEnd = (12 * activity.resources.displayMetrics.density).toInt()
+                        }
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        setBackgroundColor(Color.parseColor("#26262B"))
+                        val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                        if (bmp != null) setImageBitmap(bmp)
+                    }
+
+                    val textLayout = LinearLayout(activity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+
+                    val title = TextView(activity).apply {
+                        text = sig.name
+                        textSize = 13f
+                        setTextColor(Color.WHITE)
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                    }
+                    val date = TextView(activity).apply {
+                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                        text = sdf.format(java.util.Date(sig.createdAt))
+                        textSize = 10f
+                        setTextColor(Color.parseColor("#9E9E9E"))
+                    }
+
+                    textLayout.addView(title)
+                    textLayout.addView(date)
+
+                    val btnRename = com.google.android.material.button.MaterialButton(
+                        activity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle
+                    ).apply {
+                        text = "Rename"
+                        textSize = 11f
+                        setOnClickListener {
+                            val editName = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                                setText(sig.name)
+                                selectAll()
+                            }
+                            val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
+                                hint = "Rename Signature"
+                                setPadding(48, 16, 48, 16)
+                                addView(editName)
+                            }
+                            MaterialAlertDialogBuilder(activity)
+                                .setTitle("Rename Signature")
+                                .setView(til)
+                                .setPositiveButton("Save") { _, _ ->
+                                    val newName = editName.text?.toString()?.trim().orEmpty()
+                                    if (newName.isNotBlank()) {
+                                        pdfSigner.renameSignature(sig.id, newName)
+                                        dialog.dismiss()
+                                        buildDialog()
+                                    }
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        }
+                    }
+
+                    val btnDelete = com.google.android.material.button.MaterialButton(
+                        activity,
+                        null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle
+                    ).apply {
+                        text = "Delete"
+                        textSize = 11f
+                        setTextColor(Color.parseColor("#EF4444"))
+                        setStrokeColorResource(android.R.color.holo_red_dark)
+                        setOnClickListener {
+                            pdfSigner.deleteSignatureById(sig.id)
+                            dialog.dismiss()
+                            buildDialog()
+                        }
+                    }
+
+                    row.addView(thumb)
+                    row.addView(textLayout)
+                    row.addView(btnRename)
+                    row.addView(btnDelete)
+                    container.addView(row)
+                }
+            }
+
+            dialog.show()
+        }
+
+        buildDialog()
+    }
+
+    private fun executeCanvasSignExport() {
+        val uri = selectedUris.firstOrNull() ?: return
+        val placements = binding.pdfSignCanvasView.getAllPlacements()
+        if (placements.isEmpty()) {
+            Toast.makeText(activity, "Please place at least one signature on the document", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (isExecuting) return
+        isExecuting = true
+        binding.btnSignCanvasSave.isEnabled = false
+        val origText = binding.btnQuickToolExecute.text.toString()
+
+        activeJob = scope.launch(Dispatchers.IO) {
+            try {
+                val outStream = ByteArrayOutputStream()
+                val base = primaryDocName.removeSuffix(".pdf")
+                val result = pdfSigner.signPdfWithItems(
+                    inputUri = uri,
+                    outputStream = outStream,
+                    items = placements
+                )
+                withContext(Dispatchers.Main) {
+                    binding.btnSignCanvasSave.isEnabled = true
+                    if (result.success) {
+                        binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+                        finishExecution(true, outStream.toByteArray(), "${base}_signed.pdf", origText)
+                    } else {
+                        isExecuting = false
+                        Toast.makeText(activity, "Export failed: ${result.errorMessage}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.btnSignCanvasSave.isEnabled = true
+                    isExecuting = false
+                    Toast.makeText(activity, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1247,56 +1673,68 @@ class PdfQuickToolController(
                     }
                     QuickMode.SIGN -> {
                         val uri = selectedUris.first()
-                        val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-                        val sigBmp = withContext(Dispatchers.Main) {
-                            binding.viewSignaturePad.getSignatureBitmap(
-                                targetColor = selectedSignColor,
-                                opacity = opacity
+                        val canvasPlacements = withContext(Dispatchers.Main) {
+                            binding.pdfSignCanvasView.getAllPlacements()
+                        }
+
+                        val result = if (canvasPlacements.isNotEmpty()) {
+                            pdfSigner.signPdfWithItems(
+                                inputUri = uri,
+                                outputStream = outStream,
+                                items = canvasPlacements
+                            )
+                        } else {
+                            val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+                            val sigBmp = withContext(Dispatchers.Main) {
+                                binding.viewSignaturePad.getSignatureBitmap(
+                                    targetColor = selectedSignColor,
+                                    opacity = opacity
+                                )
+                            }
+                            if (sigBmp == null) {
+                                withContext(Dispatchers.Main) {
+                                    isExecuting = false
+                                    binding.btnQuickToolExecute.isEnabled = true
+                                    binding.btnQuickToolExecute.text = origText
+                                    Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
+                                }
+                                return@launch
+                            }
+
+                            val targetPages = when {
+                                binding.chipSignPageFirst.isChecked -> listOf(0)
+                                binding.chipSignPageAll.isChecked -> (0 until primaryDocPages).toList()
+                                binding.chipSignPageCustom.isChecked -> {
+                                    val inputPage = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                                    listOf((inputPage - 1).coerceIn(0, primaryDocPages - 1))
+                                }
+                                else -> listOf((primaryDocPages - 1).coerceAtLeast(0))
+                            }
+
+                            val sigWidth = 180f * signScaleFactor
+                            val sigHeight = 60f * signScaleFactor
+                            val xPct = (signPosXPercent / 100f).coerceIn(0f, 1f)
+                            val yPct = (signPosYPercent / 100f).coerceIn(0f, 1f)
+                            val posX = ((595f - sigWidth) * xPct).coerceAtLeast(0f)
+                            val posY = ((842f - sigHeight) * yPct).coerceAtLeast(0f)
+
+                            val placements = targetPages.map { pIndex ->
+                                SignaturePlacement(
+                                    pageIndex = pIndex,
+                                    x = posX,
+                                    y = posY,
+                                    width = sigWidth,
+                                    height = sigHeight
+                                )
+                            }
+
+                            pdfSigner.addSignatureBitmaps(
+                                inputUri = uri,
+                                outputStream = outStream,
+                                signatureBitmap = sigBmp,
+                                placements = placements
                             )
                         }
-                        if (sigBmp == null) {
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
-                            }
-                            return@launch
-                        }
-
-                        val targetPages = when {
-                            binding.chipSignPageFirst.isChecked -> listOf(0)
-                            binding.chipSignPageAll.isChecked -> (0 until primaryDocPages).toList()
-                            binding.chipSignPageCustom.isChecked -> {
-                                val inputPage = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                                listOf((inputPage - 1).coerceIn(0, primaryDocPages - 1))
-                            }
-                            else -> listOf((primaryDocPages - 1).coerceAtLeast(0))
-                        }
-
-                        val sigWidth = 180f * signScaleFactor
-                        val sigHeight = 60f * signScaleFactor
-                        val xPct = (signPosXPercent / 100f).coerceIn(0f, 1f)
-                        val yPct = (signPosYPercent / 100f).coerceIn(0f, 1f)
-                        val posX = ((595f - sigWidth) * xPct).coerceAtLeast(0f)
-                        val posY = ((842f - sigHeight) * yPct).coerceAtLeast(0f)
-
-                        val placements = targetPages.map { pIndex ->
-                            SignaturePlacement(
-                                pageIndex = pIndex,
-                                x = posX,
-                                y = posY,
-                                width = sigWidth,
-                                height = sigHeight
-                            )
-                        }
-
-                        val result = pdfSigner.addSignatureBitmaps(
-                            inputUri = uri,
-                            outputStream = outStream,
-                            signatureBitmap = sigBmp,
-                            placements = placements
-                        )
                         withContext(Dispatchers.Main) {
                             finishExecution(result.success, outStream.toByteArray(), "${base}_signed.pdf", origText)
                         }
@@ -1308,18 +1746,20 @@ class PdfQuickToolController(
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please enter URL or HTML content", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "Please enter HTML code", Toast.LENGTH_SHORT).show()
                             }
                             return@launch
                         }
 
-                        val result = if (input.startsWith("http://") || input.startsWith("https://")) {
-                            htmlConverter.convertUrlToPdf(activity, input, outStream)
+                        val htmlContent = if (!input.contains("<html", ignoreCase = true) && !input.contains("<!doctype", ignoreCase = true)) {
+                            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>body{font-family:sans-serif;padding:24px;line-height:1.6;color:#222;}</style></head><body>$input</body></html>"
                         } else {
-                            htmlConverter.convertHtmlToPdf(activity, input, outStream)
+                            input
                         }
+
+                        val result = htmlConverter.convertHtmlToPdf(activity, htmlContent, outStream)
                         withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "rendered_web.pdf", origText)
+                            finishExecution(result.isSuccess, outStream.toByteArray(), "html_document.pdf", origText)
                         }
                     }
                     QuickMode.DOC_TO_PDF -> {

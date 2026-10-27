@@ -84,6 +84,12 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     private var lastTouchY = 0f
     private var isMultiTouch = false
     private var isDrawing = false
+    private var hasPendingDot = false
+    private var pendingDotX = 0f
+    private var pendingDotY = 0f
+    private var hasMultiTouchMid = false
+    private var multiTouchLastX = 0f
+    private var multiTouchLastY = 0f
 
     // Paints
     private val erasePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -357,13 +363,40 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         scaleDetector.onTouchEvent(event)
         gestureDetector.onTouchEvent(event)
 
-        if (event.pointerCount > 1) {
-            if (isDrawing) {
-                // User put second finger down while drawing: cancel active 1-finger stroke to prevent stray artifacts
-                isDrawing = false
-                strokePath.reset()
-            }
+        if (event.pointerCount >= 2 || event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+            // Two or more fingers present: strictly pan/zoom, completely suppress eraser or restore actions
+            isDrawing = false
+            hasPendingDot = false
+            strokePath.reset()
             isMultiTouch = true
+            showCursor = false
+
+            val midX = (event.getX(0) + event.getX(1)) / 2f
+            val midY = (event.getY(0) + event.getY(1)) / 2f
+
+            if (event.actionMasked == MotionEvent.ACTION_MOVE && hasMultiTouchMid) {
+                if (!scaleDetector.isInProgress) {
+                    val dx = midX - multiTouchLastX
+                    val dy = midY - multiTouchLastY
+                    translationX += dx
+                    translationY += dy
+                    clampTranslations()
+                    updateViewMatrix()
+                }
+            }
+            multiTouchLastX = midX
+            multiTouchLastY = midY
+            hasMultiTouchMid = true
+
+            invalidate()
+            return true
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) {
+            hasMultiTouchMid = false
+            isMultiTouch = true // Remain locked in multi-touch mode until all fingers are lifted
+            isDrawing = false
+            hasPendingDot = false
             showCursor = false
             invalidate()
             return true
@@ -382,39 +415,52 @@ class RefineBrushCanvasView @JvmOverloads constructor(
                 strokePath.moveTo(bmpPt.x, bmpPt.y)
                 lastTouchX = bmpPt.x
                 lastTouchY = bmpPt.y
+                pendingDotX = bmpPt.x
+                pendingDotY = bmpPt.y
+                hasPendingDot = true
 
-                // Pre-draw single point/dot if user just taps
-                applyStrokeSegment(bmpPt.x, bmpPt.y, bmpPt.x, bmpPt.y)
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 cursorX = event.x
                 cursorY = event.y
-                showCursor = true
 
                 if (isDrawing && !isMultiTouch) {
+                    showCursor = true
                     val bmpPt = mapScreenToBitmap(event.x, event.y)
-                    // Bezier quad to smooth stroke
-                    val midX = (lastTouchX + bmpPt.x) / 2f
-                    val midY = (lastTouchY + bmpPt.y) / 2f
-                    strokePath.quadTo(lastTouchX, lastTouchY, midX, midY)
+                    val dist = kotlin.math.hypot((bmpPt.x - pendingDotX).toDouble(), (bmpPt.y - pendingDotY).toDouble()).toFloat()
 
-                    applyStrokeSegment(lastTouchX, lastTouchY, bmpPt.x, bmpPt.y)
-                    lastTouchX = bmpPt.x
-                    lastTouchY = bmpPt.y
-                    invalidate()
+                    if (dist > 3f || !hasPendingDot) {
+                        hasPendingDot = false
+                        val midX = (lastTouchX + bmpPt.x) / 2f
+                        val midY = (lastTouchY + bmpPt.y) / 2f
+                        strokePath.quadTo(lastTouchX, lastTouchY, midX, midY)
+
+                        applyStrokeSegment(lastTouchX, lastTouchY, bmpPt.x, bmpPt.y)
+                        lastTouchX = bmpPt.x
+                        lastTouchY = bmpPt.y
+                        invalidate()
+                    }
                 }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
-                if (isDrawing && !isMultiTouch) {
-                    strokePath.reset()
-                    isDrawing = false
-                    saveUndoState()
+                if (!isMultiTouch) {
+                    if (hasPendingDot && isDrawing) {
+                        // User performed a genuine single-finger tap dot
+                        applyStrokeSegment(pendingDotX, pendingDotY, pendingDotX, pendingDotY)
+                        saveUndoState()
+                    } else if (isDrawing) {
+                        saveUndoState()
+                    }
                 }
+                strokePath.reset()
+                isDrawing = false
+                hasPendingDot = false
                 isMultiTouch = false
+                hasMultiTouchMid = false
                 showCursor = false
                 invalidate()
                 return true

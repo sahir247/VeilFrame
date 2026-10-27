@@ -750,7 +750,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Web page or raw markup"
+                                android:text="Convert HTML code to PDF document"
                                 android:textSize="11sp"
                                 android:lines="2"
                                 android:maxLines="2"
