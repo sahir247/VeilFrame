@@ -11,10 +11,18 @@ import android.view.View
 import android.widget.Toast
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.veilframe.app.R
+import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutMotionLabBinding
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.veilframe.app.VeilFrameProcessingService
@@ -46,10 +54,10 @@ class MotionLabController(
     private val onNavigateBack: () -> Unit,
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
 
-    private companion object {
+    companion object {
         const val TAG = "VeilFrame.MotionLab"
-        const val MAX_DURATION_S = 30
-        const val MAX_FRAMES = 900
+        const val MAX_DURATION_S = 60
+        const val MAX_FRAMES = 1800
     }
 
     enum class MotionMethod {
@@ -60,6 +68,7 @@ class MotionLabController(
 
     private var sourceUri: Uri? = null
     val currentSourceUri: Uri? get() = sourceUri
+    private var videoDurationMs: Long = 0L
     private var multiplier = 2
     private var isTarget60fps = true
     private var method = MotionMethod.RIFE
@@ -98,12 +107,10 @@ class MotionLabController(
         }
         binding.chipMotionRife.setOnClickListener {
             method = MotionMethod.RIFE
-            binding.chipMotion60fps.isChecked = true
-            isTarget60fps = true
-            multiplier = 2
         }
         binding.chipMotionFast.setOnClickListener { method = MotionMethod.DIS }
         binding.chipMotionQuality.setOnClickListener { method = MotionMethod.FARNEBACK }
+        binding.btnMotionLabTrim.setOnClickListener { openTrimDialog() }
         binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
@@ -119,7 +126,9 @@ class MotionLabController(
     }
 
     override fun moveToBackground() {
-        if (isProcessing) {
+        // VeilFrameProcessingService is already running in foreground for activeJobId.
+        // Only start MotionLabForegroundService if a local coroutine job is active without VeilFrameProcessingService.
+        if (activeJobId == null && job?.isActive == true) {
             val label = if (isTarget60fps) "Motion Lab (60 fps) in background" else "Motion Lab (${multiplier}x) in background"
             MotionLabForegroundService.start(activity, label)
         }
@@ -141,7 +150,7 @@ class MotionLabController(
     }
 
     fun setSource(uri: Uri) {
-        if (job?.isActive == true) return
+        if (job?.isActive == true || activeJobId != null) return
         sourceUri = uri
         outputFile = null
         binding.cardMotionLabResult.visibility = View.GONE
@@ -150,22 +159,26 @@ class MotionLabController(
             retriever.setDataSource(activity, uri)
             val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val captureFps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
-            runCatching { retriever.release() } // release() is API 29+; minSdk 26
+            runCatching { retriever.release() }
 
+            videoDurationMs = durationMs
             val name = queryDisplayName(uri) ?: "video"
             val durationS = durationMs / 1000
-            if (durationS > MAX_DURATION_S) {
-                binding.tvMotionLabSource.text = "$name — ${durationS}s: too long (Alpha limit ${MAX_DURATION_S}s)"
-                binding.btnMotionLabRun.isEnabled = false
-                return
-            }
             val fpsLabel = if (captureFps != null) " · ~${"%.1f".format(captureFps)} fps" else ""
-            binding.tvMotionLabSource.text = "$name · ${durationS}s$fpsLabel"
-            binding.btnMotionLabRun.isEnabled = true
+
+            binding.btnMotionLabTrim.visibility = View.VISIBLE
+            if (durationS > MAX_DURATION_S) {
+                binding.tvMotionLabSource.text = "$name — ${durationS}s exceeds limit (${MAX_DURATION_S}s). Please trim a segment using button below."
+                binding.btnMotionLabRun.isEnabled = false
+            } else {
+                binding.tvMotionLabSource.text = "$name · ${durationS}s$fpsLabel"
+                binding.btnMotionLabRun.isEnabled = true
+            }
         } catch (e: Exception) {
             Log.e(TAG, "setSource failed", e)
             binding.tvMotionLabSource.text = "Could not read that video: ${e.message}"
             binding.btnMotionLabRun.isEnabled = false
+            binding.btnMotionLabTrim.visibility = View.GONE
         }
     }
 
@@ -180,11 +193,270 @@ class MotionLabController(
 
     private fun setProgress(done: Int, total: Int) {
         val pct = if (total > 0) (done * 100 / total).coerceIn(0, 100) else 0
-        MotionLabForegroundService.updateProgress(activity, "Synthesising frames ($done/$total)", pct)
+        if (activeJobId == null) {
+            MotionLabForegroundService.updateProgress(activity, "Synthesising frames ($done/$total)", pct)
+        }
         scope.launch(Dispatchers.Main) {
             binding.progressMotionLab.isIndeterminate = false
             if (total > 0) {
                 binding.progressMotionLab.setProgressCompat(pct, true)
+            }
+        }
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val totalSec = ms / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        val tenths = (ms % 1000) / 100
+        return String.format(Locale.US, "%02d:%02d.%d", min, sec, tenths)
+    }
+
+    private fun updateRangeSliderSafely(
+        slider: com.google.android.material.slider.RangeSlider,
+        from: Float,
+        to: Float,
+        startVal: Float,
+        endVal: Float
+    ) {
+        val safeTo = if (to <= from) from + 1f else to
+        val safeStart = startVal.coerceIn(from, safeTo)
+        val safeEnd = endVal.coerceIn(safeStart, safeTo)
+        slider.valueFrom = from
+        slider.valueTo = safeTo
+        slider.values = listOf(safeStart, safeEnd)
+    }
+
+    private fun openTrimDialog() {
+        val currentUri = sourceUri ?: return
+        val dialogBinding = DialogVideoTrimBinding.inflate(activity.layoutInflater)
+        val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+
+        val trimPlayer = ExoPlayer.Builder(activity).build()
+        dialogBinding.trimPlayerView.player = trimPlayer
+        val mediaItem = MediaItem.fromUri(currentUri)
+        trimPlayer.setMediaItem(mediaItem)
+        trimPlayer.prepare()
+
+        val durSec = (videoDurationMs / 1000.0).toFloat().coerceAtLeast(1f)
+        val initialEndSec = durSec.coerceAtMost(MAX_DURATION_S.toFloat())
+        updateRangeSliderSafely(dialogBinding.rangeSliderTrim, 0f, durSec, 0f, initialEndSec)
+
+        dialogBinding.tvTrimStartTime.text = "00:00.0"
+        dialogBinding.tvTrimEndTime.text = formatDuration((initialEndSec * 1000).toLong())
+        dialogBinding.tvTrimDuration.text = formatDuration((initialEndSec * 1000).toLong())
+        dialogBinding.tvTrimPlayheadPosition.text = "00:00.0"
+
+        var lastStartSec = 0f
+        var lastEndSec = initialEndSec
+
+        trimPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                dialogBinding.btnTrimPlayPause.setIconResource(
+                    if (isPlaying) R.drawable.ic_action_pause else R.drawable.ic_action_play
+                )
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                dialogBinding.trimBufferingBar.visibility =
+                    if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+            }
+        })
+
+        // Live scrub seeking with visual preview
+        dialogBinding.rangeSliderTrim.addOnChangeListener { slider, _, fromUser ->
+            val sSec = slider.values[0]
+            val eSec = slider.values[1]
+            val sMs = (sSec * 1000).toLong()
+            val eMs = (eSec * 1000).toLong()
+            dialogBinding.tvTrimStartTime.text = formatDuration(sMs)
+            dialogBinding.tvTrimEndTime.text = formatDuration(eMs)
+            dialogBinding.tvTrimDuration.text = formatDuration((eMs - sMs).coerceAtLeast(0))
+
+            if (fromUser) {
+                if (Math.abs(sSec - lastStartSec) > 0.02f) {
+                    lastStartSec = sSec
+                    trimPlayer.pause()
+                    trimPlayer.seekTo(sMs)
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(sMs)
+                } else if (Math.abs(eSec - lastEndSec) > 0.02f) {
+                    lastEndSec = eSec
+                    trimPlayer.pause()
+                    trimPlayer.seekTo(eMs)
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(eMs)
+                }
+            }
+        }
+
+        dialogBinding.btnTrimPlayPause.setOnClickListener {
+            if (trimPlayer.isPlaying) {
+                trimPlayer.pause()
+            } else {
+                val curPos = trimPlayer.currentPosition
+                val sMs = (dialogBinding.rangeSliderTrim.values[0] * 1000).toLong()
+                val eMs = (dialogBinding.rangeSliderTrim.values[1] * 1000).toLong()
+                if (curPos < sMs || curPos >= eMs) {
+                    trimPlayer.seekTo(sMs)
+                }
+                trimPlayer.play()
+            }
+        }
+
+        val tickerJob = scope.launch(Dispatchers.Main) {
+            while (isActive) {
+                if (trimPlayer.isPlaying) {
+                    val curPos = trimPlayer.currentPosition
+                    val sMs = (dialogBinding.rangeSliderTrim.values[0] * 1000).toLong()
+                    val eMs = (dialogBinding.rangeSliderTrim.values[1] * 1000).toLong()
+                    if (curPos >= eMs) {
+                        trimPlayer.seekTo(sMs)
+                    }
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(curPos)
+                }
+                delay(100L)
+            }
+        }
+
+        dialogBinding.chipTrimStory15.setOnClickListener {
+            val e = 15f.coerceAtMost(durSec)
+            dialogBinding.rangeSliderTrim.values = listOf(0f, e)
+            trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
+        }
+        dialogBinding.chipTrimStatus30.setOnClickListener {
+            val e = 30f.coerceAtMost(durSec)
+            dialogBinding.rangeSliderTrim.values = listOf(0f, e)
+            trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
+        }
+        dialogBinding.chipTrimMiddle.setOnClickListener {
+            val targetLen = MAX_DURATION_S.toFloat().coerceAtMost(durSec)
+            val midStart = ((durSec - targetLen) / 2f).coerceAtLeast(0f)
+            val midEnd = (midStart + targetLen).coerceAtMost(durSec)
+            dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
+            val seekMs = (midStart * 1000).toLong()
+            trimPlayer.seekTo(seekMs)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(seekMs)
+        }
+        dialogBinding.chipTrimFull.setOnClickListener {
+            val e = MAX_DURATION_S.toFloat().coerceAtMost(durSec)
+            dialogBinding.rangeSliderTrim.values = listOf(0f, e)
+            trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
+        }
+
+        fun cleanup() {
+            tickerJob.cancel()
+            trimPlayer.stop()
+            trimPlayer.release()
+            dialogBinding.trimPlayerView.player = null
+        }
+
+        dialog.setOnDismissListener { cleanup() }
+        dialogBinding.btnTrimClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnTrimCancel.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnTrimReset.setOnClickListener {
+            dialogBinding.rangeSliderTrim.values = listOf(0f, initialEndSec)
+            trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
+        }
+
+        dialogBinding.btnTrimApply.setOnClickListener {
+            val sSec = dialogBinding.rangeSliderTrim.values[0]
+            val eSec = dialogBinding.rangeSliderTrim.values[1]
+            val clipDurSec = eSec - sSec
+            if (clipDurSec > MAX_DURATION_S) {
+                Toast.makeText(activity, "Selected clip (${clipDurSec.toInt()}s) exceeds limit of ${MAX_DURATION_S}s", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (clipDurSec < 0.5f) {
+                Toast.makeText(activity, "Clip too short (minimum 0.5s)", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            dialog.dismiss()
+            executeTrim(currentUri, sSec, clipDurSec)
+        }
+
+        dialog.show()
+    }
+
+    private fun executeTrim(inputUri: Uri, startSec: Float, durationSec: Float) {
+        binding.containerMotionLabProgress.visibility = View.VISIBLE
+        binding.progressMotionLab.isIndeterminate = true
+        binding.tvMotionLabStatus.text = "Trimming clip via FFmpeg…"
+        binding.btnMotionLabRun.isEnabled = false
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Ensure local input file for FFmpeg fast seeking
+                val localInputFile = if (inputUri.scheme == "file") {
+                    File(inputUri.path ?: "")
+                } else {
+                    val temp = File(activity.cacheDir, "motion_temp_in_${System.currentTimeMillis()}.mp4")
+                    activity.contentResolver.openInputStream(inputUri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    temp
+                }
+
+                if (!localInputFile.exists() || localInputFile.length() == 0L) {
+                    throw IllegalStateException("Failed to read source video for trimming")
+                }
+
+                val trimmedFile = File(activity.cacheDir, "motion_clip_${System.currentTimeMillis()}.mp4")
+                val startStr = String.format(Locale.US, "%.3f", startSec)
+                val durStr = String.format(Locale.US, "%.3f", durationSec)
+
+                // 1. Attempt ultra-fast stream copy
+                val copyArgs = arrayOf(
+                    "-y",
+                    "-ss", startStr,
+                    "-i", localInputFile.absolutePath,
+                    "-t", durStr,
+                    "-c", "copy",
+                    "-avoid_negative_ts", "make_zero",
+                    trimmedFile.absolutePath
+                )
+                val copySession = FFmpegKit.executeWithArguments(copyArgs)
+                val copySuccess = ReturnCode.isSuccess(copySession.returnCode) && trimmedFile.exists() && trimmedFile.length() > 0
+
+                val finalSuccess = if (copySuccess) {
+                    true
+                } else {
+                    // 2. Fallback to ultrafast libx264 re-encode
+                    trimmedFile.delete()
+                    val encArgs = arrayOf(
+                        "-y",
+                        "-ss", startStr,
+                        "-i", localInputFile.absolutePath,
+                        "-t", durStr,
+                        "-c:v", "libx264",
+                        "-preset", "ultrafast",
+                        "-crf", "18",
+                        "-c:a", "copy",
+                        trimmedFile.absolutePath
+                    )
+                    val encSession = FFmpegKit.executeWithArguments(encArgs)
+                    ReturnCode.isSuccess(encSession.returnCode) && trimmedFile.exists() && trimmedFile.length() > 0
+                }
+
+                withContext(Dispatchers.Main) {
+                    binding.containerMotionLabProgress.visibility = View.GONE
+                    if (finalSuccess) {
+                        setSource(Uri.fromFile(trimmedFile))
+                        Toast.makeText(activity, "Clip trimmed (${String.format(Locale.US, "%.1f", durationSec)}s)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(activity, "Trim failed. Please try another segment.", Toast.LENGTH_LONG).show()
+                        binding.btnMotionLabRun.isEnabled = false
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "executeTrim error", e)
+                withContext(Dispatchers.Main) {
+                    binding.containerMotionLabProgress.visibility = View.GONE
+                    Toast.makeText(activity, "Trim error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -326,6 +598,7 @@ class MotionLabController(
         binding.containerMotionLabProgress.visibility = View.GONE
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabRun.isEnabled = false
+        binding.btnMotionLabTrim.visibility = View.GONE
         binding.tvMotionLabSource.text = "No video selected"
     }
 }

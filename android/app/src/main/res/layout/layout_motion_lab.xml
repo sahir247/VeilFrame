@@ -105,6 +105,16 @@
                         android:text="No video selected"
                         android:textAppearance="@style/TextAppearance.VeilFrame.Body.Sub"
                         android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMotionLabTrim"
+                        style="@style/Widget.VeilFrame.Button.Action"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Trim Video Clip"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_trim" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

@@ -3,8 +3,11 @@
 #include <android/bitmap.h>
 #include "rife/rife.h"
 #include "gpu.h"
+#include "cpu.h"
 #include <mutex>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 #define TAG "VeilFrame.RifeNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -13,6 +16,16 @@
 static std::mutex g_rife_mutex;
 static RIFE* g_rife = nullptr;
 static int g_rife_gpuid = -1;
+
+// Cached global references for zero reflection overhead per frame
+static jclass g_bitmapClass = nullptr;
+static jmethodID g_createBitmapMethod = nullptr;
+static jobject g_argbConfig = nullptr;
+
+// Reusable persistent buffers across frames (mutex-protected)
+static std::vector<unsigned char> g_rgb0;
+static std::vector<unsigned char> g_rgb1;
+static std::vector<unsigned char> g_rgb_out;
 
 extern "C" {
 
@@ -44,15 +57,19 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     int gpu_count = (useGpu) ? ncnn::get_gpu_count() : 0;
     g_rife_gpuid = (useGpu && gpu_count > 0) ? 0 : -1;
 
+    // Detect CPU big cores for maximum throughput
+    int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
+    if (cpu_threads > 4) cpu_threads = 4; // Balance thermal headroom on mobile
+
     // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4
-    g_rife = new RIFE(g_rife_gpuid, false, false, false, 4, false, true);
+    g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true);
 
     int ret = g_rife->load(dir_str);
     if (ret != 0 && g_rife_gpuid >= 0) {
-        LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP", ret);
+        LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
         delete g_rife;
         g_rife_gpuid = -1;
-        g_rife = new RIFE(-1, false, false, false, 4, false, true);
+        g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
         ret = g_rife->load(dir_str);
     }
     if (ret != 0) {
@@ -62,7 +79,31 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
         return JNI_FALSE;
     }
 
-    LOGI("RIFE v4 engine initialized successfully (GPU: %d)", g_rife_gpuid);
+    // Cache JNI reflection targets globally
+    if (!g_bitmapClass) {
+        jclass bCls = env->FindClass("android/graphics/Bitmap");
+        if (bCls) {
+            g_bitmapClass = (jclass)env->NewGlobalRef(bCls);
+            g_createBitmapMethod = env->GetStaticMethodID(
+                g_bitmapClass, "createBitmap",
+                "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+            );
+        }
+    }
+    if (!g_argbConfig) {
+        jclass cCls = env->FindClass("android/graphics/Bitmap$Config");
+        if (cCls) {
+            jfieldID argbField = env->GetStaticFieldID(cCls, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+            if (argbField) {
+                jobject cfg = env->GetStaticObjectField(cCls, argbField);
+                if (cfg) {
+                    g_argbConfig = env->NewGlobalRef(cfg);
+                }
+            }
+        }
+    }
+
+    LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d)", g_rife_gpuid, cpu_threads);
     return JNI_TRUE;
 }
 
@@ -92,6 +133,8 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
 
     const int w = info0.width;
     const int h = info0.height;
+    const int pixel_count = w * h;
+    const size_t needed_bytes = static_cast<size_t>(pixel_count) * 3;
 
     void* pixels0 = nullptr;
     void* pixels1 = nullptr;
@@ -100,28 +143,34 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    std::vector<unsigned char> rgb0(w * h * 3);
-    std::vector<unsigned char> rgb1(w * h * 3);
+    // Reuse persistent preallocated buffers
+    if (g_rgb0.size() < needed_bytes) g_rgb0.resize(needed_bytes);
+    if (g_rgb1.size() < needed_bytes) g_rgb1.resize(needed_bytes);
+    if (g_rgb_out.size() < needed_bytes) g_rgb_out.resize(needed_bytes);
+
     const unsigned char* p0 = reinterpret_cast<const unsigned char*>(pixels0);
     const unsigned char* p1 = reinterpret_cast<const unsigned char*>(pixels1);
-    const int pixel_count = w * h;
+    unsigned char* d0 = g_rgb0.data();
+    unsigned char* d1 = g_rgb1.data();
+
     for (int i = 0; i < pixel_count; i++) {
-        rgb0[i * 3 + 0] = p0[i * 4 + 0];
-        rgb0[i * 3 + 1] = p0[i * 4 + 1];
-        rgb0[i * 3 + 2] = p0[i * 4 + 2];
-        rgb1[i * 3 + 0] = p1[i * 4 + 0];
-        rgb1[i * 3 + 1] = p1[i * 4 + 1];
-        rgb1[i * 3 + 2] = p1[i * 4 + 2];
+        const int i4 = i * 4;
+        const int i3 = i * 3;
+        d0[i3 + 0] = p0[i4 + 0];
+        d0[i3 + 1] = p0[i4 + 1];
+        d0[i3 + 2] = p0[i4 + 2];
+        d1[i3 + 0] = p1[i4 + 0];
+        d1[i3 + 1] = p1[i4 + 1];
+        d1[i3 + 2] = p1[i4 + 2];
     }
 
     AndroidBitmap_unlockPixels(env, bitmap0);
     AndroidBitmap_unlockPixels(env, bitmap1);
 
-    ncnn::Mat in0(w, h, reinterpret_cast<void*>(rgb0.data()), (size_t)3u, 1);
-    ncnn::Mat in1(w, h, reinterpret_cast<void*>(rgb1.data()), (size_t)3u, 1);
+    ncnn::Mat in0(w, h, reinterpret_cast<void*>(g_rgb0.data()), (size_t)3u, 1);
+    ncnn::Mat in1(w, h, reinterpret_cast<void*>(g_rgb1.data()), (size_t)3u, 1);
 
-    std::vector<unsigned char> rgb_buffer(w * h * 3);
-    ncnn::Mat outimage(w, h, rgb_buffer.data(), (size_t)3u, 1);
+    ncnn::Mat outimage(w, h, g_rgb_out.data(), (size_t)3u, 1);
     int ret = g_rife->process(in0, in1, timestep, outimage);
 
     if (ret != 0) {
@@ -129,26 +178,14 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    // Allocate result Bitmap
-    jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
-    if (!bitmapClass) return nullptr;
+    if (!g_bitmapClass || !g_createBitmapMethod || !g_argbConfig) {
+        LOGE("Bitmap creation JNI references not initialized");
+        return nullptr;
+    }
 
-    jmethodID createBitmapMethod = env->GetStaticMethodID(
-        bitmapClass, "createBitmap",
-        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
-    );
-    if (!createBitmapMethod) return nullptr;
-
-    jclass configClass = env->FindClass("android/graphics/Bitmap$Config");
-    if (!configClass) return nullptr;
-
-    jfieldID argbField = env->GetStaticFieldID(configClass, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
-    if (!argbField) return nullptr;
-
-    jobject argbConfig = env->GetStaticObjectField(configClass, argbField);
     jobject outBitmap = env->CallStaticObjectMethod(
-        bitmapClass, createBitmapMethod,
-        w, h, argbConfig
+        g_bitmapClass, g_createBitmapMethod,
+        w, h, g_argbConfig
     );
     if (!outBitmap) return nullptr;
 
@@ -157,13 +194,15 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    const unsigned char* rgb_out = rgb_buffer.data();
+    const unsigned char* rgb_out = g_rgb_out.data();
     unsigned char* p_out = reinterpret_cast<unsigned char*>(out_pixels);
     for (int i = 0; i < pixel_count; i++) {
-        p_out[i * 4 + 0] = rgb_out[i * 3 + 0];
-        p_out[i * 4 + 1] = rgb_out[i * 3 + 1];
-        p_out[i * 4 + 2] = rgb_out[i * 3 + 2];
-        p_out[i * 4 + 3] = 255;
+        const int i4 = i * 4;
+        const int i3 = i * 3;
+        p_out[i4 + 0] = rgb_out[i3 + 0];
+        p_out[i4 + 1] = rgb_out[i3 + 1];
+        p_out[i4 + 2] = rgb_out[i3 + 2];
+        p_out[i4 + 3] = 255;
     }
     AndroidBitmap_unlockPixels(env, outBitmap);
 
@@ -179,7 +218,22 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeRelease(
         delete g_rife;
         g_rife = nullptr;
     }
-    LOGI("RIFE engine released");
+    if (g_bitmapClass) {
+        env->DeleteGlobalRef(g_bitmapClass);
+        g_bitmapClass = nullptr;
+        g_createBitmapMethod = nullptr;
+    }
+    if (g_argbConfig) {
+        env->DeleteGlobalRef(g_argbConfig);
+        g_argbConfig = nullptr;
+    }
+    g_rgb0.clear();
+    g_rgb0.shrink_to_fit();
+    g_rgb1.clear();
+    g_rgb1.shrink_to_fit();
+    g_rgb_out.clear();
+    g_rgb_out.shrink_to_fit();
+    LOGI("RIFE engine released and buffers reclaimed");
 }
 
 } // extern "C"

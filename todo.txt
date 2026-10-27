@@ -1,20 +1,19 @@
-the html to pdf is meant for html code to pdf
-not a website to pdf
-see pdf_tools repo for guidence
-and also sign pdf
-it is failing to export
-and the preview section is too static with just 1 page
-when tapped into it make a full hardware accelarated canvas with full pdf
-the top bar will have button as a pen svg follow by a plus that will be used to add another sign, save for saving pdf and a cross for exiting the canvas
-and taping on the signature box will give option
-eg a rotate option in a corner on the sign box and a option to copy so user can make unlimited copy but the cpoy will be poped as a boxed button and svg only, when pressed the signature, make it appear in upper side of pdf(position aware.. if the signature is in top of pdf then the button will appear in bottom) and tapping outside the button or signature will make the button dissappear
-and the rotate will be sticked in a corner 
-when pressing the corner of the signature box and moving finger 
-the box will rotate accordingly
-also if pressed wil two finger and rotating finger after a certain threshhold(not pinching)
-and  add option to add multiple signature in one seassion
-and also a small button to save signature beside the signature box with optional name popup and a manage signature section just like model manager
-and when siging new pdf after saving signature
-give a drop down with name and a small preview to reuse old signs
-
-then when pressing,dragging the canvas in bg remover with two fingers , no eraser or restore should work, it will be for zooming,drag up,down,side etc
+refractor mainactivity kt and activity main xml for maintainability
+then do a proper ux enhancement across app
+and in the motion lap using rife4 user can still select 2x 4x but
+and also for other user can select 60 fps for other fallback method
+and then see rife implimentation from scratch and do a full inspection
+cause it is slow as hell
+and also only 30 second limit
+if exceed then video is rejected
+find a good limit (use the source of scratch for finding)
+and also if limit present then user should be able to select the duration of a long clip
+leverage ffmpeg usage for that
+and also video preview should be share, not blind trimming
+and in slider across the app
+add a bit of haptics
+lastly
+backgroud run tool ask 2 times permission to run in background
+i noticed in motion lab especially
+find other with same problem
+and then it shows 2 diffrent notification as well for the same tool

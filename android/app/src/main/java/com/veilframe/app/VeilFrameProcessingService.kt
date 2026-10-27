@@ -481,24 +481,26 @@ class VeilFrameProcessingService : Service() {
             updateNotificationProgress("Extracting video frames…", 15)
             jobCallback?.onProgress(jobId, 15, "Extracting frames…")
 
+            val maxSeconds = 60
             val extractSession = FFmpegKit.executeWithArguments(
                 arrayOf(
                     "-y",
                     "-i", inFile.absolutePath,
-                    "-t", "30",
-                    "${framesDir.absolutePath}/f_%05d.png"
+                    "-t", maxSeconds.toString(),
+                    "-q:v", "2",
+                    "${framesDir.absolutePath}/f_%05d.jpg"
                 )
             )
             if (!ReturnCode.isSuccess(extractSession.returnCode)) {
                 throw IllegalStateException("Frame extraction failed (rc=${extractSession.returnCode})")
             }
 
-            val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && f.name.endsWith(".png") }
+            val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && (f.name.endsWith(".jpg") || f.name.endsWith(".png")) }
                 ?.sortedBy { it.name } ?: emptyList()
             if (frames.size < 2) throw IllegalStateException("Need at least 2 frames (extracted ${frames.size})")
-            if (frames.size > 900) throw IllegalStateException("${frames.size} frames exceeds the limit of 900")
+            if (frames.size > 1800) throw IllegalStateException("${frames.size} frames exceeds the maximum limit of 1800")
 
-            val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, 30.0) else 0.0
+            val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, maxSeconds.toDouble()) else 0.0
             val fps = if (effectiveDurationS > 0.1) {
                 (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
             } else {
@@ -508,7 +510,7 @@ class VeilFrameProcessingService : Service() {
             val effectiveMultiplier = if (isTarget60fps) {
                 if (fps <= 20f) 4 else 2
             } else {
-                multiplier
+                multiplier.coerceIn(2, 4)
             }
 
             var useRife = false
@@ -544,21 +546,39 @@ class VeilFrameProcessingService : Service() {
             val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
 
             var outIdx = 0
-            var prev = Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR)
-            if (prev.empty()) throw IllegalStateException("Initial frame unreadable")
-            Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
+            var prevBmp: Bitmap? = if (useRife) BitmapFactory.decodeFile(frames[0].absolutePath) else null
+            var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
+
+            if (useRife && prevBmp != null) {
+                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                outFile.outputStream().use { fos ->
+                    prevBmp!!.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                }
+            } else if (prevMat != null && !prevMat.empty()) {
+                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), prevMat)
+            } else {
+                throw IllegalStateException("Initial frame unreadable")
+            }
 
             try {
                 for (i in 1 until frames.size) {
                     kotlin.coroutines.coroutineContext.ensureActive()
-                    val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
-                    if (cur.empty()) continue
 
-                    var bmp0: Bitmap? = null
-                    var bmp1: Bitmap? = null
+                    var curBmp: Bitmap? = null
+                    var curMat: org.opencv.core.Mat? = null
+
                     if (useRife) {
-                        bmp0 = BitmapFactory.decodeFile(frames[i - 1].absolutePath)
-                        bmp1 = BitmapFactory.decodeFile(frames[i].absolutePath)
+                        curBmp = BitmapFactory.decodeFile(frames[i].absolutePath)
+                        if (curBmp == null || prevBmp == null) {
+                            curBmp?.recycle()
+                            continue
+                        }
+                    } else {
+                        curMat = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
+                        if (curMat == null || curMat.empty()) {
+                            curMat?.release()
+                            continue
+                        }
                     }
 
                     try {
@@ -566,33 +586,41 @@ class VeilFrameProcessingService : Service() {
                             kotlin.coroutines.coroutineContext.ensureActive()
                             val t = k.toDouble() / effectiveMultiplier
                             var interpolatedSuccessfully = false
-                            if (useRife && bmp0 != null && bmp1 != null) {
-                                val synthBmp = RifeNcnnNative.nativeInterpolate(bmp0, bmp1, t.toFloat())
+
+                            if (useRife && prevBmp != null && curBmp != null) {
+                                val synthBmp = RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
                                 if (synthBmp != null) {
-                                    val outFile = File(outDir, "o_%05d.png".format(outIdx++))
+                                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
                                     outFile.outputStream().use { fos ->
-                                        synthBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                                        synthBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
                                     }
                                     synthBmp.recycle()
                                     interpolatedSuccessfully = true
                                 }
                             }
 
-                            if (!interpolatedSuccessfully && synthOptions != null) {
-                                val result = FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
-                                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
+                            if (!interpolatedSuccessfully && synthOptions != null && prevMat != null && curMat != null) {
+                                val result = FrameSynthesizer.synthesize(prevMat, curMat, t, synthOptions)
+                                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), result.frame)
                                 result.frame.release()
                                 result.confidence.release()
                                 result.fallbackMask.release()
                             }
                         }
                     } finally {
-                        bmp0?.recycle()
-                        bmp1?.recycle()
+                        if (useRife && curBmp != null) {
+                            val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                            outFile.outputStream().use { fos ->
+                                curBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                            }
+                            prevBmp?.recycle()
+                            prevBmp = curBmp
+                        } else if (curMat != null) {
+                            Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), curMat)
+                            prevMat?.release()
+                            prevMat = curMat
+                        }
                     }
-                    prev.release()
-                    prev = cur
-                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
 
                     val synthPct = 25 + ((i.toFloat() / frames.size.toFloat()) * 60f).toInt().coerceIn(0, 60)
                     updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
@@ -601,8 +629,10 @@ class VeilFrameProcessingService : Service() {
             } finally {
                 if (useRife) {
                     RifeNcnnNative.nativeRelease()
+                    prevBmp?.recycle()
+                } else {
+                    prevMat?.release()
                 }
-                prev.release()
             }
 
             val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
@@ -622,7 +652,7 @@ class VeilFrameProcessingService : Service() {
                 arrayOf(
                     "-y",
                     "-framerate", framerateStr,
-                    "-i", "${outDir.absolutePath}/o_%05d.png",
+                    "-i", "${outDir.absolutePath}/o_%05d.jpg",
                     "-i", inFile.absolutePath,
                     "-map", "0:v",
                     "-map", "1:a?",
