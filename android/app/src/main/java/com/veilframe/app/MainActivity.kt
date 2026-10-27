@@ -36,6 +36,8 @@ import com.veilframe.app.pdf.PdfSignatureController
 import com.veilframe.app.pdf.PdfUnlockController
 import com.veilframe.app.pdf.PdfSuiteCoordinator
 import com.veilframe.app.pdf.PdfQuickToolController
+import com.veilframe.app.pdf.PdfUnlockEngine
+import com.veilframe.app.pdf.PdfInitialCheck
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
@@ -86,9 +88,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
 
     // Modular Sub-Controllers & Feature Coordinators
-    private lateinit var safStorageManager: SafStorageManager
+    internal lateinit var safStorageManager: SafStorageManager
     private lateinit var consoleLogController: ConsoleLogController
-    private lateinit var workspaceHost: WorkspaceHost
+    internal lateinit var workspaceHost: WorkspaceHost
     internal lateinit var navigationController: MainNavigationController
     private lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
@@ -96,19 +98,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var libraryCoordinator: LibraryCoordinator
     private lateinit var toolsCatalogueCoordinator: ToolsCatalogueCoordinator
     private lateinit var settingsOverlayCoordinator: SettingsOverlayCoordinator
+    internal lateinit var homeFileIntakeCoordinator: com.veilframe.app.ui.intake.HomeFileIntakeCoordinator
 
     // Dedicated Media Studio Controllers
     private lateinit var safDestinationManager: SafDestinationManager
     private lateinit var videoPlayerController: VideoPlayerController
-    private lateinit var imageStudioController: ImageStudioController
-    private lateinit var videoStudioController: VideoStudioController
-    private lateinit var imageUpscalerController: ImageUpscalerController
-    private lateinit var markdownViewerController: MarkdownViewerController
+    internal lateinit var imageStudioController: ImageStudioController
+    internal lateinit var videoStudioController: VideoStudioController
+    internal lateinit var imageUpscalerController: ImageUpscalerController
+    internal lateinit var markdownViewerController: MarkdownViewerController
     private lateinit var docScannerController: DocumentScannerController
-    private lateinit var backgroundRemoverController: BackgroundRemoverController
-    private lateinit var motionLabController: MotionLabController
+    internal lateinit var backgroundRemoverController: BackgroundRemoverController
+    internal lateinit var motionLabController: MotionLabController
     private lateinit var imageQualityController: ImageQualityController
-    private lateinit var provenanceController: ProvenanceController
+    internal lateinit var provenanceController: ProvenanceController
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
     private var pendingImgStudioExportFile: File? = null
@@ -119,7 +122,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
 
     // Dedicated PDF Suite Coordinator
-    private lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
+    internal lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
 
@@ -586,6 +589,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Log.i("VeilFrame", "POST_NOTIFICATIONS permission declined by user.")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
@@ -609,6 +620,17 @@ class MainActivity : AppCompatActivity() {
 
         com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
         val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+
+        // Native notification permission prompt on 1st time launch (Android 13+ / API 33+)
+        val hasPromptedNotifications = prefs.getBoolean("has_prompted_notification_permission", false)
+        if (!hasPromptedNotifications) {
+            prefs.edit().putBoolean("has_prompted_notification_permission", true).apply()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
 
         // Restore cached changelog if available
         val cachedTag = prefs.getString("cached_changelog_tag", null)
@@ -1023,6 +1045,11 @@ class MainActivity : AppCompatActivity() {
             onOpenUrl = { url -> openWebUrl(url) },
             onShowAbout = { showAboutDialog() }
         )
+
+        homeFileIntakeCoordinator = com.veilframe.app.ui.intake.HomeFileIntakeCoordinator(
+            activity = this,
+            binding = binding
+        )
     }
 
     private fun initStudioWorkspaces() {
@@ -1243,6 +1270,9 @@ class MainActivity : AppCompatActivity() {
             binding.btnHomeIntakeVideo,
             binding.btnHomeIntakeDoc,
             binding.btnHomeIntakeBrowse,
+            binding.btnSuggestEngine1,
+            binding.btnSuggestEngine2,
+            binding.btnSuggestEngine3,
             binding.cardRecent1,
             binding.cardRecent2,
             binding.cardRecent3,
@@ -1314,139 +1344,16 @@ class MainActivity : AppCompatActivity() {
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
     }
 
-    private var currentHomeIntakeUri: Uri? = null
-
-    private fun handleHomeFileIntake(uri: Uri) {
-        currentHomeIntakeUri = uri
-        val mimeType = contentResolver.getType(uri) ?: ""
-        val displayName = safStorageManager.getDisplayName(uri)
-        val sizeBytes = safStorageManager.queryFileSize(uri)
-        val sizeStr = safStorageManager.formatBytes(sizeBytes)
-
-        binding.layoutHomeIntakePickers.visibility = View.GONE
-        binding.layoutHomeIntakeMounted.visibility = View.VISIBLE
-        binding.tvHomeIntakeFileName.text = displayName
-        binding.tvHomeIntakeMeta.text = if (sizeBytes > 0) "$sizeStr • ${mimeType.ifEmpty { "File" }}" else mimeType.ifEmpty { "Selected File" }
-
-        val isImage = mimeType.startsWith("image/") || displayName.endsWith(".jpg", true) || displayName.endsWith(".png", true) || displayName.endsWith(".webp", true) || displayName.endsWith(".heic", true)
-        val isVideo = mimeType.startsWith("video/") || displayName.endsWith(".mp4", true) || displayName.endsWith(".mkv", true) || displayName.endsWith(".mov", true) || displayName.endsWith(".avi", true)
-        val isPdf = mimeType == "application/pdf" || displayName.endsWith(".pdf", true)
-
-        if (isImage) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_image)
-            binding.btnSuggestEngine1.apply {
-                text = "Clean EXIF"
-                setIconResource(R.drawable.ic_shield_image)
-                setOnClickListener {
-                    openTool(ToolMode.IMAGE_CLEANER)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "AI Upscale"
-                setIconResource(R.drawable.ic_resize)
-                setOnClickListener {
-                    openImageUpscaler()
-                    workspaceHost.getOrInflateImageUpscaler()
-                    imageUpscalerController.handleImageSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Remove BG"
-                setIconResource(R.drawable.ic_crop)
-                setOnClickListener {
-                    openBackgroundRemover()
-                    workspaceHost.getOrInflateBackgroundRemover()
-                    backgroundRemoverController.handleImageSelected(uri)
-                }
-            }
-        } else if (isVideo) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_shield_video)
-            binding.btnSuggestEngine1.apply {
-                text = "Clean Video"
-                setIconResource(R.drawable.ic_shield_video)
-                setOnClickListener {
-                    openTool(ToolMode.VIDEO_CLEANER)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Video Studio"
-                setIconResource(R.drawable.ic_tab_video)
-                setOnClickListener {
-                    openVideoStudio()
-                    videoStudioController.handleVideosSelected(listOf(uri))
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Motion Lab"
-                setIconResource(R.drawable.ic_speed)
-                setOnClickListener {
-                    openMotionLab()
-                    workspaceHost.getOrInflateMotionLab()
-                    motionLabController.setSource(uri)
-                }
-            }
-        } else if (isPdf) {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_pdf_file)
-            binding.btnSuggestEngine1.apply {
-                text = "Verify PDF"
-                setIconResource(R.drawable.ic_signature_valid)
-                setOnClickListener {
-                    openPdfSignature()
-                    workspaceHost.getOrInflatePdfSignature()
-                    pdfSignatureController.handlePdfSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "PDF Studio"
-                setIconResource(R.drawable.ic_pdf_file)
-                setOnClickListener {
-                    openPdfStudio()
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Unlock PDF"
-                setIconResource(R.drawable.ic_lock_open)
-                setOnClickListener {
-                    openPdfUnlock()
-                    workspaceHost.getOrInflatePdfUnlock()
-                    pdfUnlockController.handlePdfSelected(uri)
-                }
-            }
-        } else {
-            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_folder)
-            binding.btnSuggestEngine1.apply {
-                text = "Code Bundler"
-                setIconResource(R.drawable.ic_tab_bundle)
-                setOnClickListener {
-                    openTool(ToolMode.AI_BUNDLE)
-                    handleSingleFileSelected(uri)
-                }
-            }
-            binding.btnSuggestEngine2.apply {
-                text = "Scan Folder"
-                setIconResource(R.drawable.ic_tab_folder)
-                setOnClickListener {
-                    openTool(ToolMode.FOLDER_SCANNER)
-                }
-            }
-            binding.btnSuggestEngine3.apply {
-                text = "Provenance"
-                setIconResource(R.drawable.ic_certificate)
-                setOnClickListener {
-                    openProvenance()
-                    workspaceHost.getOrInflateProvenance()
-                    provenanceController.handleFileSelected(uri)
-                }
-            }
-        }
+    internal fun handleHomeFileIntake(uri: Uri) {
+        homeFileIntakeCoordinator.handleHomeFileIntake(uri)
     }
 
-    private fun clearHomeFileIntake() {
-        currentHomeIntakeUri = null
-        binding.layoutHomeIntakeMounted.visibility = View.GONE
-        binding.layoutHomeIntakePickers.visibility = View.VISIBLE
+
+
+
+
+    internal fun clearHomeFileIntake() {
+        homeFileIntakeCoordinator.clearHomeFileIntake()
     }
 
 
@@ -1526,7 +1433,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob = null
     }
 
-    private fun openTool(toolMode: ToolMode) {
+    internal fun openTool(toolMode: ToolMode) {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1539,7 +1446,7 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened ${toolSessionManager.getToolTitle(toolMode)} workspace.")
     }
 
-    private fun openImageStudio() {
+    internal fun openImageStudio() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1552,7 +1459,7 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Image Studio workspace.")
     }
 
-    private fun openVideoStudio() {
+    internal fun openVideoStudio() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
@@ -1815,7 +1722,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleSingleFileSelected(uri: Uri) {
+    internal fun handleSingleFileSelected(uri: Uri) {
         val state = toolSessionManager.currentState
         state.selectedUri = uri
         state.isFolderSelected = false

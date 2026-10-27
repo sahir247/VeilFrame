@@ -11,7 +11,7 @@ class AppVersionProviderTest {
     fun testVersionNameSourcesFromBuildConfig() {
         val versionName = AppVersionProvider.getVersionName()
         assertEquals(BuildConfig.VERSION_NAME, versionName)
-        assertEquals("2.2.9", versionName)
+        assertEquals("2.3.0", versionName)
         assertTrue(versionName.isNotEmpty())
     }
 
@@ -19,13 +19,13 @@ class AppVersionProviderTest {
     fun testDisplayVersionFormatting() {
         val display = AppVersionProvider.getDisplayVersion()
         assertEquals("v${BuildConfig.VERSION_NAME}", display)
-        assertEquals("v2.2.9", display)
+        assertEquals("v2.3.0", display)
     }
 
     @Test
     fun testUserAgentFormatting() {
         val userAgent = AppVersionProvider.getUserAgent()
         assertEquals("VeilFrame-Android/${BuildConfig.VERSION_NAME}", userAgent)
-        assertEquals("VeilFrame-Android/2.2.9", userAgent)
+        assertEquals("VeilFrame-Android/2.3.0", userAgent)
     }
 }

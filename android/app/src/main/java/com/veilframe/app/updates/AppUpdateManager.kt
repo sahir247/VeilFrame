@@ -791,6 +791,7 @@ class AppUpdateManager(
             .setTitle(if (isRepairMode) "Repairing VeilFrame" else "Downloading Update")
             .setView(container)
             .setPositiveButton("Run in Background") { dialog, _ ->
+                AppUpdateDownloadService.promoteToBackground(activity)
                 dialog.dismiss()
                 Toast.makeText(activity, "Download continuing in background. Check notifications.", Toast.LENGTH_SHORT).show()
             }
@@ -798,7 +799,13 @@ class AppUpdateManager(
                 AppUpdateDownloadService.cancelDownload(activity)
                 Toast.makeText(activity, "Download cancelled", Toast.LENGTH_SHORT).show()
             }
-            .setCancelable(false)
+            .setCancelable(true)
+            .setOnDismissListener {
+                activeDownloadDialog = null
+                if (AppUpdateDownloadService.isDownloading) {
+                    AppUpdateDownloadService.promoteToBackground(activity)
+                }
+            }
             .create()
 
         activeDownloadDialog = downloadDialog

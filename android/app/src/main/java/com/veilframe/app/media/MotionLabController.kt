@@ -50,10 +50,17 @@ class MotionLabController(
         const val MAX_FRAMES = 900
     }
 
+    enum class MotionMethod {
+        RIFE,
+        DIS,
+        FARNEBACK
+    }
+
     private var sourceUri: Uri? = null
     val currentSourceUri: Uri? get() = sourceUri
     private var multiplier = 2
-    private var qualityMode = false
+    private var isTarget60fps = true
+    private var method = MotionMethod.RIFE
     private var job: Job? = null
     override val isProcessing: Boolean get() = job?.isActive == true
     override val supportsBackgroundExecution: Boolean get() = true
@@ -74,10 +81,26 @@ class MotionLabController(
             FFmpegKit.cancel()
             setStatus("Cancelling…")
         }
-        binding.chipMotion2x.setOnClickListener { multiplier = 2 }
-        binding.chipMotion4x.setOnClickListener { multiplier = 4 }
-        binding.chipMotionFast.setOnClickListener { qualityMode = false }
-        binding.chipMotionQuality.setOnClickListener { qualityMode = true }
+        binding.chipMotion60fps.setOnClickListener {
+            isTarget60fps = true
+            multiplier = 2
+        }
+        binding.chipMotion2x.setOnClickListener {
+            isTarget60fps = false
+            multiplier = 2
+        }
+        binding.chipMotion4x.setOnClickListener {
+            isTarget60fps = false
+            multiplier = 4
+        }
+        binding.chipMotionRife.setOnClickListener {
+            method = MotionMethod.RIFE
+            binding.chipMotion60fps.isChecked = true
+            isTarget60fps = true
+            multiplier = 2
+        }
+        binding.chipMotionFast.setOnClickListener { method = MotionMethod.DIS }
+        binding.chipMotionQuality.setOnClickListener { method = MotionMethod.FARNEBACK }
         binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
@@ -94,7 +117,8 @@ class MotionLabController(
 
     override fun moveToBackground() {
         if (isProcessing) {
-            MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x) in background")
+            val label = if (isTarget60fps) "Motion Lab (60 fps) in background" else "Motion Lab (${multiplier}x) in background"
+            MotionLabForegroundService.start(activity, label)
         }
     }
 
@@ -163,7 +187,8 @@ class MotionLabController(
         binding.btnMotionLabRun.isEnabled = false
 
         MotionLabForegroundService.cancelHook = { cancel() }
-        MotionLabForegroundService.start(activity, "Motion Lab (${multiplier}x)")
+        val serviceLabel = if (isTarget60fps) "Motion Lab (60 fps)" else "Motion Lab (${multiplier}x)"
+        MotionLabForegroundService.start(activity, serviceLabel)
 
         job = scope.launch(Dispatchers.IO) {
             val workDir = File(activity.cacheDir, "motionlab/${System.currentTimeMillis()}")
@@ -210,49 +235,130 @@ class MotionLabController(
                     captureFps ?: 30f
                 }
 
-                setStatus("Synthesising motion frames (${if (qualityMode) "Farnebäck" else "DIS"})…")
-                val estimator = com.veilframe.app.cv.motion.FlowEstimator(
-                    algorithm = if (qualityMode) {
-                        com.veilframe.app.cv.motion.FlowEstimator.Algorithm.FARNEBACK
-                    } else {
-                        com.veilframe.app.cv.motion.FlowEstimator.Algorithm.DIS
+                val effectiveMultiplier = if (isTarget60fps) {
+                    if (fps <= 20f) 4 else 2
+                } else {
+                    multiplier
+                }
+
+                var useRife = false
+                if (method == MotionMethod.RIFE) {
+                    val rifeManager = com.veilframe.app.media.rife.RifeModelManager(activity)
+                    try {
+                        if (!rifeManager.isModelReady()) {
+                            setStatus("Downloading RIFE AI model on first run…")
+                            val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
+                                setStatus(msg)
+                                setProgress(pct, 100)
+                            }
+                            if (dlResult.isSuccess) {
+                                useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
+                                    rifeManager.modelDir.absolutePath,
+                                    useGpu = true
+                                )
+                            }
+                        } else {
+                            useRife = com.veilframe.app.media.rife.RifeNcnnNative.nativeInit(
+                                rifeManager.modelDir.absolutePath,
+                                useGpu = true
+                            )
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "RIFE initialization fell back to optical flow: ${t.message}")
+                        useRife = false
                     }
-                )
-                val synthOptions = com.veilframe.app.cv.motion.FrameSynthesizer.Options(estimator = estimator)
+                    if (!useRife) {
+                        setStatus("RIFE unavailable, falling back to DIS…")
+                    }
+                }
+
+                val methodName = when {
+                    useRife -> "RIFE v4 Neural AI"
+                    method == MotionMethod.FARNEBACK -> "Farnebäck"
+                    else -> "DIS"
+                }
+                setStatus("Synthesising motion frames ($methodName)…")
+                val estimator = if (!useRife) {
+                    com.veilframe.app.cv.motion.FlowEstimator(
+                        algorithm = if (method == MotionMethod.FARNEBACK) {
+                            com.veilframe.app.cv.motion.FlowEstimator.Algorithm.FARNEBACK
+                        } else {
+                            com.veilframe.app.cv.motion.FlowEstimator.Algorithm.DIS
+                        }
+                    )
+                } else null
+                val synthOptions = if (estimator != null) com.veilframe.app.cv.motion.FrameSynthesizer.Options(estimator = estimator) else null
 
                 var outIdx = 0
                 var prev = Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR)
                 if (prev.empty()) throw IllegalStateException("Frame 0 unreadable")
                 Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
 
-                for (i in 1 until frames.size) {
-                    if (cancelRequested) { prev.release(); throw InterruptedException("Cancelled") }
-                    val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
-                    if (cur.empty()) { prev.release(); throw IllegalStateException("Frame $i unreadable") }
-                    if (cur.size() != prev.size()) {
-                        prev.release(); cur.release()
-                        throw IllegalStateException("Frame size changed mid-video — cannot interpolate mixed resolutions")
+                try {
+                    for (i in 1 until frames.size) {
+                        if (cancelRequested) { prev.release(); throw InterruptedException("Cancelled") }
+                        val cur = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
+                        if (cur.empty()) { prev.release(); throw IllegalStateException("Frame $i unreadable") }
+                        if (cur.size() != prev.size()) {
+                            prev.release(); cur.release()
+                            throw IllegalStateException("Frame size changed mid-video — cannot interpolate mixed resolutions")
+                        }
+
+                        var bmp0: android.graphics.Bitmap? = null
+                        var bmp1: android.graphics.Bitmap? = null
+                        if (useRife) {
+                            bmp0 = android.graphics.BitmapFactory.decodeFile(frames[i - 1].absolutePath)
+                            bmp1 = android.graphics.BitmapFactory.decodeFile(frames[i].absolutePath)
+                        }
+
+                        try {
+                            for (k in 1 until effectiveMultiplier) {
+                                val t = k.toDouble() / effectiveMultiplier
+                                var interpolatedSuccessfully = false
+                                if (useRife && bmp0 != null && bmp1 != null) {
+                                    val synthBmp = com.veilframe.app.media.rife.RifeNcnnNative.nativeInterpolate(
+                                        bmp0, bmp1, t.toFloat()
+                                    )
+                                    if (synthBmp != null) {
+                                        val outFile = File(outDir, "o_%05d.png".format(outIdx++))
+                                        outFile.outputStream().use { fos ->
+                                            synthBmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos)
+                                        }
+                                        synthBmp.recycle()
+                                        interpolatedSuccessfully = true
+                                    }
+                                }
+
+                                if (!interpolatedSuccessfully && synthOptions != null) {
+                                    val result = com.veilframe.app.cv.motion.FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
+                                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
+                                    result.frame.release()
+                                    result.confidence.release()
+                                    result.fallbackMask.release()
+                                }
+                                if (cancelRequested) { prev.release(); cur.release(); throw InterruptedException("Cancelled") }
+                            }
+                        } finally {
+                            bmp0?.recycle()
+                            bmp1?.recycle()
+                        }
+                        prev.release()
+                        prev = cur
+                        Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
+                        setProgress(i, frames.size - 1)
                     }
-                    for (k in 1 until multiplier) {
-                        val t = k.toDouble() / multiplier
-                        val result = com.veilframe.app.cv.motion.FrameSynthesizer.synthesize(prev, cur, t, synthOptions)
-                        Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), result.frame)
-                        result.frame.release()
-                        result.confidence.release()
-                        result.fallbackMask.release()
-                        if (cancelRequested) { prev.release(); cur.release(); throw InterruptedException("Cancelled") }
+                } finally {
+                    if (useRife) {
+                        com.veilframe.app.media.rife.RifeNcnnNative.nativeRelease()
                     }
-                    prev.release()
-                    prev = cur
-                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.png".format(outIdx++), prev)
-                    setProgress(i, frames.size - 1)
                 }
                 prev.release()
 
-                setStatus("Encoding ${String.format(Locale.US, "%.2f", fps * multiplier)} fps video…")
+                val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
+                setStatus("Encoding ${String.format(Locale.US, "%.2f", finalFps)} fps video…")
                 val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
                 val resultFile = File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-                val framerateStr = String.format(Locale.US, "%.3f", fps * multiplier)
+                val framerateStr = if (isTarget60fps) "60.000" else String.format(Locale.US, "%.3f", fps * effectiveMultiplier)
                 val encodeArgs = arrayOf(
                     "-y",
                     "-framerate", framerateStr,
@@ -279,7 +385,7 @@ class MotionLabController(
                 outputFile = resultFile
                 MotionLabForegroundService.notifyComplete(
                     activity,
-                    "Motion Lab (${multiplier}x) finished",
+                    if (isTarget60fps) "Motion Lab (60 fps) finished" else "Motion Lab (${effectiveMultiplier}x) finished",
                     resultFile.absolutePath
                 )
                 val mb = resultFile.length() / (1024.0 * 1024.0)
@@ -287,7 +393,7 @@ class MotionLabController(
                     binding.containerMotionLabProgress.visibility = View.GONE
                     binding.cardMotionLabResult.visibility = View.VISIBLE
                     binding.tvMotionLabResultInfo.text =
-                        "${frames.size} → $outIdx frames · ${String.format(Locale.US, "%.1f", fps)} → ${String.format(Locale.US, "%.1f", fps * multiplier)} fps · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
+                        "${frames.size} → $outIdx frames · ${String.format(Locale.US, "%.1f", fps)} → ${String.format(Locale.US, "%.1f", finalFps)} fps · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
                     binding.btnMotionLabRun.isEnabled = true
                 }
             } catch (e: InterruptedException) {
@@ -361,6 +467,11 @@ class MotionLabController(
         job?.cancel()
         sourceUri = null
         outputFile = null
+        isTarget60fps = true
+        multiplier = 2
+        method = MotionMethod.RIFE
+        binding.chipMotion60fps.isChecked = true
+        binding.chipMotionRife.isChecked = true
         binding.containerMotionLabProgress.visibility = View.GONE
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabRun.isEnabled = false

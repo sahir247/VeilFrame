@@ -83,6 +83,11 @@ class ToolWorkStateNavigationContractTest {
         assertEquals("com.veilframe.action.CANCEL_UPDATE_DOWNLOAD", AppUpdateDownloadService.ACTION_CANCEL_DOWNLOAD)
         assertEquals("com.veilframe.action.INSTALL_UPDATE", AppUpdateDownloadService.ACTION_INSTALL_UPDATE)
 
+        // ModelDownloadBackgroundService
+        assertEquals("veilframe_model_downloads", com.veilframe.app.media.ModelDownloadBackgroundService.CHANNEL_ID)
+        assertEquals("com.veilframe.action.CANCEL_MODEL_DOWNLOAD", com.veilframe.app.media.ModelDownloadBackgroundService.ACTION_CANCEL_DOWNLOAD)
+        assertEquals("com.veilframe.action.START_MODEL_DOWNLOAD", com.veilframe.app.media.ModelDownloadBackgroundService.ACTION_START_DOWNLOAD)
+
         // MotionLabForegroundService
         assertEquals("veilframe_motion_lab", MotionLabForegroundService.CHANNEL_ID)
         assertEquals("com.veilframe.action.MOTION_CANCEL", MotionLabForegroundService.ACTION_CANCEL)
@@ -114,6 +119,7 @@ class ToolWorkStateNavigationContractTest {
 
         val expectedServices = listOf(
             "com.veilframe.app.updates.AppUpdateDownloadService" to "dataSync",
+            "com.veilframe.app.media.ModelDownloadBackgroundService" to "dataSync",
             "com.veilframe.app.media.MotionLabForegroundService" to "mediaProcessing|dataSync",
             "com.veilframe.app.media.VideoStudioForegroundService" to "mediaProcessing|dataSync",
             "com.veilframe.app.upscale.UpscaleForegroundService" to "mediaProcessing|dataSync",

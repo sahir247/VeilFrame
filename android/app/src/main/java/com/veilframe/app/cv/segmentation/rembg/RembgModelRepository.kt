@@ -1,14 +1,13 @@
 package com.veilframe.app.cv.segmentation.rembg
 
 import android.content.Context
-import android.os.Environment
 import android.os.StatFs
 import java.io.File
 
 /**
- * Manages physical storage, presence checks, and lifecycle of downloaded ONNX models.
- * Models are stored in private internal files directory (context.filesDir/models/rembg),
- * completely isolated from external storage and guaranteed not to be shipped in the APK.
+ * Manages physical storage, presence checks, and lifecycle of background removal models.
+ * Bundled models (U^2-Net-P) are stored in APK assets and are always ready.
+ * Downloaded models (MODNet) are stored in context.filesDir/models/rembg.
  */
 class RembgModelRepository(
     private val context: Context,
@@ -19,17 +18,29 @@ class RembgModelRepository(
     fun getModelFile(model: RembgModel): File =
         File(modelsDir, model.fileName)
 
+    fun getParamFile(model: RembgModel): File =
+        File(modelsDir, model.paramFileName)
+
     fun isModelReady(model: RembgModel): Boolean {
-        val file = getModelFile(model)
-        return file.exists() && file.length() >= model.minBytes
+        if (model.isBundled) return true
+        val binFile = getModelFile(model)
+        val paramFile = getParamFile(model)
+        return binFile.exists() && binFile.length() >= model.minBytes &&
+            paramFile.exists() && paramFile.length() > 500
     }
 
-    fun getCachedSizeBytes(model: RembgModel): Long =
-        getModelFile(model).takeIf { it.exists() }?.length() ?: 0L
+    fun getCachedSizeBytes(model: RembgModel): Long {
+        if (model.isBundled) return model.estimatedSizeBytes
+        val bin = getModelFile(model).takeIf { it.exists() }?.length() ?: 0L
+        val param = getParamFile(model).takeIf { it.exists() }?.length() ?: 0L
+        return bin + param
+    }
 
     fun deleteModel(model: RembgModel): Boolean {
-        val file = getModelFile(model)
-        return file.exists() && file.delete()
+        if (model.isBundled) return false // Cannot delete bundled APK asset
+        val f1 = getModelFile(model).let { it.exists() && it.delete() }
+        val f2 = getParamFile(model).let { it.exists() && it.delete() }
+        return f1 || f2
     }
 
     fun clearAllModels() {
@@ -41,7 +52,7 @@ class RembgModelRepository(
 
     fun getTotalStorageUsedBytes(): Long {
         var total = 0L
-        RembgModel.entries.forEach { model ->
+        RembgModel.entries.filter { !it.isBundled }.forEach { model ->
             total += getCachedSizeBytes(model)
         }
         return total

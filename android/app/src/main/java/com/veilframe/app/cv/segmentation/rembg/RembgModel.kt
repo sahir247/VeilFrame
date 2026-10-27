@@ -1,72 +1,69 @@
 package com.veilframe.app.cv.segmentation.rembg
 
+import java.util.Locale
+
 /**
- * Supported ONNX neural background removal models from rembg / Cel.
- * None of these models are shipped with the APK; all are downloaded on-demand.
+ * Supported NCNN neural background removal models.
+ * U^2-Net-P is bundled directly within the APK assets (2.28 MB) for instant zero-network operation.
+ * MODNet (~13.5 MB) is downloadable on demand for high-definition portrait & hair matting.
  */
 enum class RembgModel(
     val id: String,
     val displayName: String,
     val description: String,
     val fileName: String,
-    val downloadUrl: String,
-    val minBytes: Long,
+    val paramFileName: String,
+    val downloadUrl: String = "",
+    val paramDownloadUrl: String = "",
+    val minBytes: Long = 0L,
     val estimatedSizeBytes: Long,
     val inputWidth: Int,
     val inputHeight: Int,
-    val mean: FloatArray,
-    val std: FloatArray,
-    val needsSigmoidOutput: Boolean = false,
+    val isBundled: Boolean = false,
     val isRecommended: Boolean = false,
+    val needsSigmoidOutput: Boolean = false,
+    val mean: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f),
+    val std: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f),
     val sha256: String = "",
 ) {
-    BIREFNET_GENERAL_LITE(
-        id = "birefnet-general-lite",
-        displayName = "BiRefNet Lite",
-        description = "Best quality and speed • SOTA high-resolution matting",
-        fileName = "birefnet-general-lite.onnx",
-        downloadUrl = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
-        minBytes = 180_000_000L,
-        estimatedSizeBytes = 197_000_000L,
-        inputWidth = 1024,
-        inputHeight = 1024,
-        mean = floatArrayOf(0.485f, 0.456f, 0.406f),
-        std = floatArrayOf(0.229f, 0.224f, 0.225f),
-        needsSigmoidOutput = true,
-        isRecommended = true,
-    ),
-    ISNET_GENERAL(
-        id = "isnet-general-use",
-        displayName = "ISNet General",
-        description = "Great for people, hair, and fine edges",
-        fileName = "isnet-general-use.onnx",
-        downloadUrl = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx",
-        minBytes = 140_000_000L,
-        estimatedSizeBytes = 175_000_000L,
-        inputWidth = 1024,
-        inputHeight = 1024,
-        mean = floatArrayOf(0.5f, 0.5f, 0.5f),
-        std = floatArrayOf(1.0f, 1.0f, 1.0f),
-    ),
-    U2NET_HUMAN(
-        id = "u2net_human_seg",
-        displayName = "U2Net Human",
-        description = "Optimized for human portraits (lightweight 320px)",
-        fileName = "u2net_human_seg.onnx",
-        downloadUrl = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx",
-        minBytes = 140_000_000L,
-        estimatedSizeBytes = 176_000_000L,
+    U2NETP(
+        id = "u2netp",
+        displayName = "U^2-Net-P (Bundled)",
+        description = "Instant offline portrait & object matting (Bundled in APK)",
+        fileName = "u2netp.ncnn.bin",
+        paramFileName = "u2netp.ncnn.param",
+        estimatedSizeBytes = 2_350_000L,
         inputWidth = 320,
         inputHeight = 320,
-        mean = floatArrayOf(0.485f, 0.456f, 0.406f),
-        std = floatArrayOf(0.229f, 0.224f, 0.225f),
+        isBundled = true,
+        isRecommended = true,
+    ),
+    MODNET(
+        id = "modnet",
+        displayName = "MODNet (HD Matting)",
+        description = "High-definition human portrait & fine-hair matting (Downloadable)",
+        fileName = "modnet.ncnn.bin",
+        paramFileName = "modnet.ncnn.param",
+        downloadUrl = "https://raw.githubusercontent.com/FeiGeChuanShu/ncnn_Android_matting/main/android/app/src/main/assets/mobilenetv2.bin",
+        paramDownloadUrl = "https://raw.githubusercontent.com/FeiGeChuanShu/ncnn_Android_matting/main/android/app/src/main/assets/mobilenetv2.param",
+        minBytes = 12_000_000L,
+        estimatedSizeBytes = 12_959_008L,
+        inputWidth = 512,
+        inputHeight = 512,
+        isBundled = false,
+        isRecommended = false,
     );
 
     val sizeMbFormatted: String
-        get() = String.format(java.util.Locale.US, "%.1f MB", estimatedSizeBytes / (1024.0 * 1024.0))
+        get() = String.format(Locale.US, "%.1f MB", estimatedSizeBytes / (1024.0 * 1024.0))
 
     companion object {
-        val DEFAULT = BIREFNET_GENERAL_LITE
+        val DEFAULT = U2NETP
+
+        // Compatibility aliases for legacy tests and references
+        val BIREFNET_GENERAL_LITE = U2NETP
+        val ISNET_GENERAL = MODNET
+        val U2NET_HUMAN = U2NETP
 
         fun fromId(id: String): RembgModel =
             entries.firstOrNull { it.id == id } ?: DEFAULT

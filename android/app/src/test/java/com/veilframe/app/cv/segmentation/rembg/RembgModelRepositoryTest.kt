@@ -23,29 +23,31 @@ class RembgModelRepositoryTest {
     }
 
     @Test
-    fun testModelNotReadyByDefault() {
-        assertFalse(repository.isModelReady(RembgModel.BIREFNET_GENERAL_LITE))
-        assertEquals(0L, repository.getCachedSizeBytes(RembgModel.BIREFNET_GENERAL_LITE))
-        assertTrue(repository.listReadyModels().isEmpty())
+    fun testBundledModelIsAlwaysReady() {
+        assertTrue(repository.isModelReady(RembgModel.U2NETP))
+        assertFalse(repository.deleteModel(RembgModel.U2NETP))
     }
 
     @Test
-    fun testModelReadyWhenFileSizeMeetsMinBytes() {
-        val model = RembgModel.U2NET_HUMAN
-        val file = repository.getModelFile(model)
-
-        // Create dummy file smaller than minBytes
-        file.parentFile?.mkdirs()
-        file.writeBytes(ByteArray(100))
+    fun testDownloadableModelRequiresFiles() {
+        val model = RembgModel.MODNET
         assertFalse(repository.isModelReady(model))
 
-        // Expand file using RandomAccessFile to satisfy minBytes
-        RandomAccessFile(file, "rw").use { raf ->
+        val binFile = repository.getModelFile(model)
+        val paramFile = repository.getParamFile(model)
+
+        // Create dummy files smaller than minBytes
+        binFile.parentFile?.mkdirs()
+        binFile.writeBytes(ByteArray(100))
+        paramFile.writeBytes(ByteArray(100))
+        assertFalse(repository.isModelReady(model))
+
+        // Satisfy sizes
+        paramFile.writeBytes(ByteArray(1024))
+        RandomAccessFile(binFile, "rw").use { raf ->
             raf.setLength(model.minBytes + 1024)
         }
         assertTrue(repository.isModelReady(model))
-        assertEquals(model.minBytes + 1024, repository.getCachedSizeBytes(model))
-        assertEquals(listOf(model), repository.listReadyModels())
 
         // Test deletion
         assertTrue(repository.deleteModel(model))

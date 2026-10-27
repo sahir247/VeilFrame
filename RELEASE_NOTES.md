@@ -1,5 +1,46 @@
 # VeilFrame Release Notes
 
+## v2.3.0 — October 2026 (Stable)
+
+**Major Release: Motion Lab RIFE v4 AI Neural 60 FPS Synthesis, Full Tencent NCNN Native C++ Migration (Zero ONNX), Multi-Vendor Hardware Validation (Adreno & Mali-G615), Adaptive Detail Enhancer with Touch Brush/Eraser, Smooth Vector PDF Signature Pad, Uniform PDF Studio Hub, and Silent Foreground/Background Download Engine.**
+
+### New Features & Highlights
+
+1. **Motion Lab: RIFE v4 AI Neural Frame Interpolation with 60 FPS Target Mode**:
+   - **Neural Frame Synthesis:** Integrated RIFE v4 (Real-Time Intermediate Flow Estimation) AI model alongside OpenCV DIS and Farnebäck optical flow algorithms.
+   - **Target 60 FPS Mode:** Dedicated "60 fps" rate option, selected by default whenever RIFE is active, dynamically computing required intermediate temporal frames ($t=0.5$ for 24–30 FPS source; $t=0.25, 0.5, 0.75$ for $\le 20$ FPS source).
+   - **Clean MediaStore Video Export:** Final interpolated streams encoded via universal YUV420p FFmpeg pipeline and committed directly to `Movies/VeilFrame` in the system gallery.
+
+2. **Full Tencent NCNN Native C++ Migration & Complete ONNX Elimination**:
+   - **Zero ONNX Dependencies:** Completely eliminated ONNX Runtime Android libraries and `.onnx` models, slashing binary bloat and memory footprint while guaranteeing full privacy.
+   - **Native U^2-Net-P Matting:** JNI matting engine (`matting_jni.cpp`) executing quantized U^2-Net-P for lightning-fast on-device human and portrait segmentation.
+   - **Native UltraFace PII Detection:** High-speed face detection for PII redaction running natively via NCNN C++.
+   - **Native RealSR Super-Resolution:** 2×, 3×, and 4× upscaling powered by NCNN C++ with Vulkan compute pipelines.
+
+3. **Multi-Vendor Physical Hardware & Vulkan Compute Validation**:
+   - **Broad Android Fleet Verification:** Validated on Qualcomm Snapdragon (Adreno 730/740) and MediaTek Dimensity 7300 (`motorola edge 50 neo`, Mali-G615 MC2) running Android 16.
+   - **Vulkan Hardware Acceleration:** Verified dual Vulkan compute queues (`queueC=0[2]`, `queueT=0[2]`) with 100% tile boundary continuity under 48-tile 5K super-resolution workloads.
+
+4. **Adaptive Detail Enhancer & Interactive Canvas Touch Refinement**:
+   - **Dual-Model Hybrid Background Removal:** Combines coarse segmentation with morphological trimap generation and guided alpha filtration.
+   - **Interactive Refine Canvas (`RefineBrushCanvasView`):** Touch refinement workspace with brush and eraser tools, real-time concentric circular stroke width slider preview overlay, pan/zoom gesture isolation, and full multi-level undo/redo stack.
+
+5. **PDF Studio Hub Uniformity & Smooth Vector Signature Pad**:
+   - **Symmetrical 10-Card Hub:** Enforced uniform `112dp` card height and consistent 2-line descriptions across all PDF tool cards.
+   - **Smooth Bézier Signature Pad (`SignaturePadView`):** High-precision vector signature pad with Catmull-Rom cubic Bézier curve smoothing, velocity-sensitive stroke width tapering, tap-dot generation, and isolated touch event routing preventing canvas-scroll collisions.
+   - **3.5× Supersampled Vector Export:** Crisp PDFBox vector signature embedding with zero pixelation or staircasing.
+
+6. **Foreground/Background Download Engine & Notification Streamlining**:
+   - **Resilient Background Service (`ModelDownloadBackgroundService`):** Background model download and update management with lifecycle persistence across UI navigation.
+   - **Silent In-Dialog Experience:** Suppresses redundant notifications while the user is actively viewing the download dialog, promoting to system notifications only when the application is backgrounded.
+   - **Clean Status Copy:** Removed legacy `" • Safe to close app"` text and simplified completion alerts to `"Ready to install."` and `"${modelName} ready to use."`.
+
+7. **System Security & Runtime Permissions**:
+   - **Android 13+ Notification Prompt:** Native `POST_NOTIFICATIONS` runtime permission request displayed on initial application launch.
+   - **Monotonic Version Governance:** Centralized `AppVersionProvider` and monotonically incremented `versionCode = 230` / `v2.3.0`.
+
+---
+
 ## v2.2.9 — October 2026 (Stable)
 
 **Major Release: Material 3 Expressive UI v3.0, Motion Lab (Optical Flow 2×/4× FPS), Video Studio Instant Preview & YUV420p, QR Code Studio EFQRCode Parity & Vector SVG, Document Scanner Adjust & Stabilization, AI Upscaler Streaming, and OpenCV 4.14.0 Native Engine.**

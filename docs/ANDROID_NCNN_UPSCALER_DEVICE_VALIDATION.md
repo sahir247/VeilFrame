@@ -1,6 +1,6 @@
 # Android NCNN Upscaler — Device Validation Gate
 
-This document serves as the formal release gate for the VeilFrame NCNN neural upscaler subsystem executing on physical target hardware. It records actual on-device benchmarks, numerical precision verification, memory profiles, and multimodal visual inspection across multiple real-world neural super-resolution models on Snapdragon 8 Gen 5 / Elite (Qualcomm Adreno 829 GPU).
+This document serves as the formal release gate for the VeilFrame NCNN neural upscaler subsystem executing on physical target hardware. It records actual on-device benchmarks, numerical precision verification, memory profiles, and multimodal visual inspection across multiple real-world neural super-resolution models on both Qualcomm Snapdragon 8 Elite (Adreno 829 GPU) and MediaTek Dimensity 7300 (ARM Mali-G615 MC2 GPU).
 
 > **Audit-fix branch status (2026-10-15):** The APK hash and measurements below are historical evidence for the exact binary listed in Section 2; they do not validate later source changes on `fix/ncnn-audit-hardening`. The audit-fix branch must be rebuilt and the device suite rerun before its code is considered release-validated. The Android **15 ms per-tile yield** and **10 ms per-band yield** described in Section 4 remain intentional scheduling mitigations and must not be removed or reduced without a new controlled physical-device A/B validation and UI responsiveness evidence.
 
@@ -259,19 +259,68 @@ All 36 input/output artifacts were pulled and visually audited:
 
 ---
 
-## 8. Pass / Fail Release Assessment
+## 8. Physical MediaTek Hardware Execution Matrix (ARM Mali-G615 MC2 GPU)
+
+### Hardware & Platform Profile
+- **Target Device**: Physical Motorola edge 50 neo (`vienna_g_sys` / `vienna`)
+- **Platform / SoC**: MediaTek Dimensity 7300 (`mt6878`, 4nm TSMC process)
+- **CPU Subsystem**: 8 cores (4× ARM Cortex-A78 @ 2.5 GHz + 4× ARM Cortex-A55 @ 2.0 GHz)
+- **Android OS**: Android 16 (API Level 36, Build `W1UI36H.39-25-11-4`)
+- **Target ABI**: `arm64-v8a` (64-bit native ARMv8-A + NEON + FP16 vector instructions)
+- **GPU Accelerator**: ARM Mali-G615 MC2
+- **Graphics Driver**: OpenGL ES 3.2 `v1.r44p1-01eac0.148b774f93332d7e562320793fb6c4c9`
+- **Vulkan Subsystem**: Vulkan 1.3.0 (Driver Version `4206592`, Level 1, Compute Enabled)
+- **Unified RAM**: 8 GB LPDDR (7,608,552 kB MemTotal)
+- **NCNN Driver Probe**: `[0 Mali-G615 MC2] queueC=0[2] queueT=0[2] rebar=1 r-score=9` (1 Vulkan GPU detected)
+
+### Real-World Curated Corpus Execution Matrix (Mali-G615 MC2 GPU)
+
+All tests were executed on the physical Motorola device via `am instrument` test runners (`com.veilframe.app.upscale.NcnnDeviceValidationTest`).
+
+| Case ID | Content Type & Degradation | Model | Input Dim | Output Dim | Duration (GPU) | PSS Delta | Verification Evidence | Output File Size |
+|---|---|---|---|---|---|---|---|---|
+| `01_photo_face_texture_4x` | Compressed photo avatar with heavy block artifacts | `realesrgan-x4plus` | 179×179 (RGB) | 716×716 | 13,857 ms* | +952.8 MB | RASTER & DECODE VERIFIED | 824,886 B |
+| `02_anime_compression_4x` | Anime character portrait with JPEG ringing around line-art | `animevideov3-x4` | 220×220 (RGB) | 880×880 | 1,823 ms | -63.5 MB | RASTER & DECODE VERIFIED | 1,670,084 B |
+| `03_street_landscape_2x` | Overcast winter tree branches with high-frequency noise | `animevideov3-x2` | 512×256 (RGB) | 1024×512 | 2,596 ms | +5.1 MB | RASTER & DECODE VERIFIED | 853,621 B |
+| `04_children_alpha_transparency_2x` | Real photograph of children thumbs-up with alpha transparency cutout | `animevideov3-x2` | 566×350 (RGBA) | 1132×700 | 3,179 ms | +7.1 MB | RASTER & DECODE VERIFIED | 1,416,940 B |
+| `05_phone_wallpaper_4x` | Full-screen phone wallpaper from device Downloads, downscaled 4× | `realesrgan-x4plus` | 480×300 (RGB) | 1920×1200 | 40,959 ms | +25.4 MB | RASTER & DECODE VERIFIED | 4,641,674 B |
+| `06_large_texture_4x` | High-complexity brick architecture texture with mortar & foliage | `realesrgan-x4plus` | 448×640 (RGB) | 1792×2560 | 77,546 ms | +91.5 MB | RASTER & DECODE VERIFIED | 11,464,828 B |
+| `07_user_wa_clash_4x` | User WhatsApp screenshot (`IMG-20261013-WA0005.jpg`), 48 tiles, 5K upscale | `realesrgan-x4plus` | 1280×960 (RGB) | 5120×3840 | 311,891 ms (311.9s) | +743.8 MB | RASTER & DECODE VERIFIED | 48,586,330 B |
+
+*\*Note: Case 01 includes cold Vulkan compute pipeline creation and initial shader compilation on the Mali-G615 driver.*
+
+Total real-world test suite runtime on physical MediaTek hardware: **456.6 seconds** across all 7 high-resolution real-world cases. Output upscaled sizes range from 0.72 MP up to **19.66 Megapixels (5K)**.
+
+### Engineering Insights & Mali-Specific Validation
+1. **SRVGGNet Compute Throughput on Mali-G615**:
+   - `animevideov3-x4` and `animevideov3-x2` complete in **1.8s to 3.2s**, demonstrating excellent real-time responsiveness on the Mali-G615 2-core compute architecture.
+2. **Deep RRDBNet Scalability & Stability**:
+   - The 23-block `realesrgan-x4plus` model executed 48 full tiles ($8 \times 6$ grid at $160 \times 160$) on the 5K image without GPU watchdog timeout or driver panic.
+   - The 15 ms per-tile and 10 ms per-band yields preserved Android system compositor responsiveness throughout the 5.2-minute continuous execution.
+3. **Supplementary Safety & Edge-Case Gates on Mali Device**:
+   - `test01_ProbeHardwareAndVulkan`: **PASS** (0.222s) — correctly detected ARM Mali-G615 MC2 Vulkan compute device.
+   - `test03_CancellationSafety`: **PASS** — verified immediate cancellation and clean deletion of intermediate `.part` files in `upscale_streaming`.
+   - `test05_SmallAndSingleColumnInputs`: **PASS** — verified 1×1, 2×3, 63×65, 65×63, 127×129 odd and non-square inputs execute without crashing or producing black outputs.
+   - `test06_AlphaRampHasNoTileBoundaryDiscontinuity`: **PASS** — verified alpha ramp continuity around tile borders with `maxStep <= 3`.
+   - `NcnnMigrationOnDeviceTest` (U^2-Net-P Matting, Aspect-Preserving Letterboxing, UltraFace PII): **PASS** (3/3 tests in 1.97s).
+
+---
+
+## 9. Pass / Fail Release Assessment
 
 | Release Criterion | Status | Evidence Level |
 |---|---|---|
 | Native JNI Lifecycle & Crash Freedom | **PASS** | CODE & RASTER VERIFIED |
 | Qualcomm Adreno 829 Vulkan Acceleration | **PASS** | CODE & RASTER VERIFIED |
+| MediaTek Dimensity 7300 ARM Mali-G615 MC2 Vulkan Acceleration | **PASS** | CODE & RASTER VERIFIED |
 | Adreno 800-series FP32 Numerical Stability (Zero NaNs) | **PASS** | RASTER & DECODE VERIFIED |
+| Mali-G615 FP32 Numerical Stability (Zero Black Pixels) | **PASS** | RASTER & DECODE VERIFIED |
 | Multi-Model Registry & Loading (`x4plus`, `animev3-x4`, `animev3-x2`) | **PASS** | UNIT TEST & RASTER VERIFIED |
 | Real-World Image Quality (No Black Pixels, No Tile Seams) | **PASS** | RASTER & DECODE VERIFIED |
 | RGBA Alpha Transparency Bicubic Channel Fidelity | **PASS** | RASTER & DECODE VERIFIED |
+| 48-Tile 5K High-Resolution Stress Test (Adreno 829 & Mali-G615) | **PASS** | RASTER & DECODE VERIFIED |
 | Extended 18-Case ARM-on-x86_64 Emulator Matrix | **PASS** (18/18) | RASTER & DECODE VERIFIED |
 | Cancellation & Clean Cache Teardown | **PASS** | UNIT TEST VERIFIED |
 | Independent PNG CRC32 & zlib Stream Validation | **PASS** | DECODE VERIFIED |
 
-**GATE DECISION**: **PASSED FOR ADRENO / QUALCOMM PHYSICAL HARDWARE & ARM TRANSLATION EMULATOR DEPLOYMENT**.
-*(ARM Mali physical device validation to be recorded upon connecting a Mali-based test unit).*
+**GATE DECISION**: **PASSED FOR BOTH QUALCOMM SNAPDRAGON (ADRENO 829) AND MEDIATEK DIMENSITY (ARM MALI-G615 MC2) PHYSICAL TARGET HARDWARE, AS WELL AS ARM TRANSLATION EMULATOR DEPLOYMENTS**.

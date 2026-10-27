@@ -155,12 +155,17 @@ class PdfSignatureController(
         }
     }
 
-    fun loadPdfBytes(bytes: ByteArray, fileName: String) {
+    fun loadPdfBytes(bytes: ByteArray, fileName: String, password: String = "") {
         currentPdfBytes = bytes
         currentPdfName = fileName
-        currentPassword = ""
+        currentPassword = password
         rectifiedPdfBytes = null
         isSaved = false
+
+        if (password.isNotEmpty()) {
+            runInspection(bytes, fileName, password)
+            return
+        }
 
         // Check if password protected
         val check = PdfUnlockEngine.checkEncryption(bytes)

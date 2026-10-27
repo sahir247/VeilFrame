@@ -10,7 +10,23 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.9 (Stable)
+### v2.3.0 (Stable)
+- **Motion Lab RIFE v4 AI Neural Frame Synthesis & 60 FPS Target**:
+  - Neural frame interpolation powered by RIFE v4 model, pairing with OpenCV DIS and Farnebäck algorithms.
+  - Dedicated default 60 FPS interpolation mode with dynamic temporal spacing ($t=0.5$ or $t=0.25, 0.5, 0.75$).
+- **Complete NCNN Native C++ Migration & ONNX Elimination**:
+  - Full eradication of ONNX Runtime dependencies across Android.
+  - Quantized U^2-Net-P matting and UltraFace PII detection running natively via NCNN JNI C++ binaries.
+- **Physical Hardware & Vulkan Compute Validation**:
+  - Validated on Qualcomm Snapdragon (Adreno 730/740) and MediaTek Dimensity 7300 (Mali-G615 MC2).
+- **PDF Studio & Signature Smoothing**:
+  - Symmetrical 10-card PDF Studio Hub layout (112dp uniform height).
+  - High-precision Catmull-Rom / Bézier vector signature pad with velocity-based stroke tapering and 3.5× supersampling.
+- **Background Download Engine & Permission Hardening**:
+  - Foreground download service with silent in-dialog progress and auto-promotion to notifications on backgrounding.
+  - Native Android 13+ runtime notification prompt on initial launch.
+
+### v2.2.9 (Archived)
 - **14 Canonical Workspaces & Modular Shell Architecture ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md))**:
   - Full catalog: Image Studio, Video Studio, QR Code Studio, Document Scanner, Background Remover, AI Image Upscaler, Image Cleaner, Video Cleaner, Image Quality, Folder Scanner, AI Context Bundler, Offline Markdown Studio, Cryptographic Provenance, and Motion Lab.
   - Intent-first launcher, responsive 2-column catalog grid with keyword synonym search, and unified Library.

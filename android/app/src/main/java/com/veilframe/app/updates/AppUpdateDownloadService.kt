@@ -54,6 +54,7 @@ class AppUpdateDownloadService : Service() {
         const val ACTION_START_DOWNLOAD = "com.veilframe.action.START_UPDATE_DOWNLOAD"
         const val ACTION_CANCEL_DOWNLOAD = "com.veilframe.action.CANCEL_UPDATE_DOWNLOAD"
         const val ACTION_INSTALL_UPDATE = "com.veilframe.action.INSTALL_UPDATE"
+        const val ACTION_PROMOTE_TO_BACKGROUND = "com.veilframe.action.PROMOTE_UPDATE_TO_BACKGROUND"
 
         const val EXTRA_DOWNLOAD_URL = "extra_download_url"
         const val EXTRA_APK_NAME = "extra_apk_name"
@@ -61,6 +62,7 @@ class AppUpdateDownloadService : Service() {
         const val EXTRA_TOTAL_BYTES = "extra_total_bytes"
         const val EXTRA_IS_REPAIR = "extra_is_repair"
         const val EXTRA_APK_PATH = "extra_apk_path"
+        const val EXTRA_RUN_IN_BACKGROUND = "extra_run_in_background"
 
         @Volatile
         var downloadListener: DownloadListener? = null
@@ -83,7 +85,8 @@ class AppUpdateDownloadService : Service() {
             apkName: String,
             expectedSha256: String,
             totalBytes: Long,
-            isRepair: Boolean = false
+            isRepair: Boolean = false,
+            runInBackground: Boolean = false
         ) {
             val intent = Intent(context, AppUpdateDownloadService::class.java).apply {
                 action = ACTION_START_DOWNLOAD
@@ -92,6 +95,26 @@ class AppUpdateDownloadService : Service() {
                 putExtra(EXTRA_EXPECTED_SHA256, expectedSha256)
                 putExtra(EXTRA_TOTAL_BYTES, totalBytes)
                 putExtra(EXTRA_IS_REPAIR, isRepair)
+                putExtra(EXTRA_RUN_IN_BACKGROUND, runInBackground)
+            }
+            try {
+                if (runInBackground) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to start update download service: ${e.message}")
+            }
+        }
+
+        fun promoteToBackground(context: Context) {
+            val intent = Intent(context, AppUpdateDownloadService::class.java).apply {
+                action = ACTION_PROMOTE_TO_BACKGROUND
             }
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -100,7 +123,7 @@ class AppUpdateDownloadService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to start update download service: ${e.message}")
+                Log.w(TAG, "Failed to promote update download service: ${e.message}")
             }
         }
 
@@ -205,10 +228,24 @@ class AppUpdateDownloadService : Service() {
     private var downloadJob: Job? = null
     private var lastNotificationUpdateMs: Long = 0L
 
+    @Volatile
+    private var isBackgroundMode: Boolean = false
+
+    @Volatile
+    private var lastDownloaded: Long = 0L
+
+    @Volatile
+    private var lastTotalBytes: Long = 0L
+
+    @Volatile
+    private var lastPercent: Int = 0
+
+    @Volatile
+    private var currentIsRepair: Boolean = false
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startAsForeground("Preparing download…", 0, isIndeterminate = true, isRepair = false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -219,7 +256,37 @@ class AppUpdateDownloadService : Service() {
                 val expectedSha256 = intent.getStringExtra(EXTRA_EXPECTED_SHA256) ?: ""
                 val totalBytes = intent.getLongExtra(EXTRA_TOTAL_BYTES, 0L)
                 val isRepair = intent.getBooleanExtra(EXTRA_IS_REPAIR, false)
+                val runInBackground = intent.getBooleanExtra(EXTRA_RUN_IN_BACKGROUND, false)
+                currentIsRepair = isRepair
+                lastTotalBytes = totalBytes
+                if (runInBackground) {
+                    isBackgroundMode = true
+                    startAsForeground(
+                        if (isRepair) "Downloading repair package…" else "Downloading update…",
+                        percent = 0,
+                        isIndeterminate = (totalBytes <= 0L),
+                        isRepair = isRepair
+                    )
+                }
                 executeDownload(url, apkName, expectedSha256, totalBytes, isRepair)
+            }
+            ACTION_PROMOTE_TO_BACKGROUND -> {
+                isBackgroundMode = true
+                if (isDownloading) {
+                    val label = if (lastTotalBytes > 0) {
+                        "${formatBytes(lastDownloaded)} / ${formatBytes(lastTotalBytes)} ($lastPercent%)"
+                    } else if (lastDownloaded > 0) {
+                        "${formatBytes(lastDownloaded)} downloaded"
+                    } else {
+                        if (currentIsRepair) "Downloading repair package…" else "Downloading update…"
+                    }
+                    startAsForeground(
+                        label,
+                        lastPercent,
+                        isIndeterminate = (lastTotalBytes <= 0L),
+                        isRepair = currentIsRepair
+                    )
+                }
             }
             ACTION_CANCEL_DOWNLOAD -> {
                 handleCancellation()
@@ -268,12 +335,14 @@ class AppUpdateDownloadService : Service() {
         val stagingFile = File(cacheDir, "update_staging_${System.currentTimeMillis()}.apk")
         currentStagingFile = stagingFile
 
-        startAsForeground(
-            if (isRepair) "Downloading repair package…" else "Downloading update…",
-            percent = 0,
-            isIndeterminate = (totalBytesExpected <= 0L),
-            isRepair = isRepair
-        )
+        if (isBackgroundMode) {
+            startAsForeground(
+                if (isRepair) "Downloading repair package…" else "Downloading update…",
+                percent = 0,
+                isIndeterminate = (totalBytesExpected <= 0L),
+                isRepair = isRepair
+            )
+        }
 
         downloadJob = serviceScope.launch {
             try {
@@ -330,12 +399,17 @@ class AppUpdateDownloadService : Service() {
                             downloaded += bytesRead
 
                             val percent = if (totalLength > 0) ((downloaded * 100) / totalLength).toInt().coerceIn(0, 100) else 0
+                            lastDownloaded = downloaded
+                            lastTotalBytes = totalLength
+                            lastPercent = percent
                             downloadListener?.onProgress(downloaded, totalLength, percent)
 
-                            val now = android.os.SystemClock.elapsedRealtime()
-                            if (now - lastNotificationUpdateMs >= 350L || percent == 100) {
-                                lastNotificationUpdateMs = now
-                                updateProgressNotification(downloaded, totalLength, percent, isRepair)
+                            if (isBackgroundMode) {
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                if (now - lastNotificationUpdateMs >= 350L || percent == 100) {
+                                    lastNotificationUpdateMs = now
+                                    updateProgressNotification(downloaded, totalLength, percent, isRepair)
+                                }
                             }
                         }
                     }
@@ -417,10 +491,11 @@ class AppUpdateDownloadService : Service() {
     }
 
     private fun updateProgressNotification(downloaded: Long, total: Long, percent: Int, isRepair: Boolean) {
+        if (!isBackgroundMode) return
         val label = if (total > 0) {
-            "${formatBytes(downloaded)} / ${formatBytes(total)} ($percent%) • Safe to close app"
+            "${formatBytes(downloaded)} / ${formatBytes(total)} ($percent%)"
         } else {
-            "${formatBytes(downloaded)} downloaded • Safe to close app"
+            "${formatBytes(downloaded)} downloaded"
         }
         val notification = buildProgressNotification(label, percent, isIndeterminate = (total <= 0), isRepair = isRepair)
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
@@ -457,10 +532,11 @@ class AppUpdateDownloadService : Service() {
     }
 
     private fun showDownloadCompleteNotification(apkFile: File, isRepair: Boolean) {
+        if (!isBackgroundMode) return
         val installPendingIntent = createInstallPendingIntent(apkFile)
 
         val title = if (isRepair) "VeilFrame Repair Ready" else "VeilFrame Update Ready"
-        val content = "Downloaded and verified. Tap Install to proceed."
+        val content = "Ready to install."
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
@@ -478,6 +554,7 @@ class AppUpdateDownloadService : Service() {
     }
 
     private fun showDownloadFailedNotification(errorMsg: String, isRepair: Boolean) {
+        if (!isBackgroundMode) return
         val title = if (isRepair) "Repair Download Failed" else "Update Download Failed"
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)

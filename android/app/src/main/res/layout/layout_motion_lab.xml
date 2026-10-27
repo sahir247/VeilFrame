@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MOTION LAB — optical-flow frame interpolation workspace (v2.2.9, Alpha).
+  MOTION LAB — optical-flow and AI neural frame interpolation workspace (v2.3.0, Stable).
   Device feedback: "make optical flow another tool." Wires the previously dormant
   cv/motion stack (FlowEstimator + FrameSynthesizer, ADR 0006-governed) behind a
   dedicated workspace: pick a video → synthesize intermediate frames → re-encode
@@ -135,11 +135,18 @@
                         app:selectionRequired="true">
 
                         <com.google.android.material.chip.Chip
-                            android:id="@+id/chipMotion2x"
+                            android:id="@+id/chipMotion60fps"
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:checked="true"
+                            android:text="60 fps" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMotion2x"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             android:text="2× frames" />
 
                         <com.google.android.material.chip.Chip
@@ -159,11 +166,18 @@
                         app:selectionRequired="true">
 
                         <com.google.android.material.chip.Chip
-                            android:id="@+id/chipMotionFast"
+                            android:id="@+id/chipMotionRife"
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:checked="true"
+                            android:text="RIFE v4 (AI Neural)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipMotionFast"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             android:text="Fast (DIS)" />
 
                         <com.google.android.material.chip.Chip

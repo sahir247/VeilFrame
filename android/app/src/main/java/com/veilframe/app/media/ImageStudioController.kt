@@ -22,8 +22,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 import com.veilframe.app.privacy.PiiDetection
+import com.veilframe.app.privacy.PiiClass
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -92,17 +93,17 @@ class ImageStudioController(
     // Race-condition guard for async image loading
     private val loadToken = AtomicLong(0L)
 
-    // On-device AI PII Detection Engine (YOLOv8 ONNX)
-    private var piiEngine: PiiOnnxEngine? = null
+    // On-device AI PII Detection Engine (UltraFace & YOLOv8 NCNN)
+    private var piiEngine: PiiNcnnEngine? = null
 
-    private fun getOrInitPiiEngine(): PiiOnnxEngine? {
+    private fun getOrInitPiiEngine(): PiiNcnnEngine? {
         return try {
             if (piiEngine == null) {
-                piiEngine = PiiOnnxEngine(activity)
+                piiEngine = PiiNcnnEngine(activity)
             }
             piiEngine
         } catch (e: Exception) {
-            Log.e("VeilFrame.ImageStudio", "Failed to initialize PII ONNX engine: ${e.message}", e)
+            Log.e("VeilFrame.ImageStudio", "Failed to initialize PII NCNN engine: ${e.message}", e)
             null
         }
     }
@@ -791,36 +792,7 @@ class ImageStudioController(
                         return@withContext
                     }
 
-                    // Save detections into editState
-                    editState.piiDetections = detections
-
-                    // Refresh preview pipeline with Layer C Solid Redaction applied
-                    refreshPreview()
-
-                    // QualityGate verification on current live preview
-                    val previewRendered = renderLivePreview(editState)
-                    val isCompliant = if (previewRendered != null) {
-                        val scaledDets = PiiOnnxEngine.scaleDetections(
-                            detections,
-                            item.origWidth,
-                            item.origHeight,
-                            previewRendered.width,
-                            previewRendered.height
-                        )
-                        PiiOnnxEngine.verifyZeroResidualSignals(previewRendered, scaledDets)
-                    } else false
-
-                    val summary = detections.groupBy { it.label }.map { "${it.key}: ${it.value.size}" }.joinToString(", ")
-                    val toastMsg = "Auto-Redacted ${detections.size} PII targets ($summary)\nQualityGate Contract 4: ${if (isCompliant) "PASSED (Zero Leakage)" else "VERIFIED"}"
-                    Toast.makeText(activity, toastMsg, Toast.LENGTH_LONG).show()
-
-                    // Export structured manifest for audit log
-                    val manifestJson = PiiOnnxEngine.exportRedactionManifest(
-                        detections = detections,
-                        imageWidth = item.origWidth,
-                        imageHeight = item.origHeight
-                    )
-                    Log.i("VeilFrame.PiiRedaction", "Privacy Manifest Generated:\n$manifestJson")
+                    showPiiRedactionSelectionDialog(detections, item)
                 }
             } catch (e: Exception) {
                 Log.e("VeilFrame.ImageStudio", "PII detection failed: ${e.message}", e)
@@ -830,6 +802,70 @@ class ImageStudioController(
                 }
             }
         }
+    }
+
+    private fun showPiiRedactionSelectionDialog(
+        detections: List<PiiDetection>,
+        item: StudioImageItem
+    ) {
+        val distinctClasses = detections.map { it.piiClass }.distinct().sortedBy { it.ordinal }
+        val labels = distinctClasses.map { piiClass ->
+            val count = detections.count { it.piiClass == piiClass }
+            "${piiClass.label} ($count detected)"
+        }.toTypedArray()
+
+        // Face, Plate, Card, Barcode default checked. Person (full human body) defaults to UNCHECKED so face is precisely redacted!
+        val checkedStates = BooleanArray(distinctClasses.size) { idx ->
+            distinctClasses[idx] != PiiClass.PERSON
+        }
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+            .setTitle("Detected Sensitive Targets (${detections.size})")
+            .setMultiChoiceItems(labels, checkedStates) { _, which, isChecked ->
+                checkedStates[which] = isChecked
+            }
+            .setPositiveButton("Redact Selected") { _, _ ->
+                val chosenClasses = distinctClasses.filterIndexed { index, _ -> checkedStates[index] }.toSet()
+                val selectedDetections = detections.filter { it.piiClass in chosenClasses }
+
+                if (selectedDetections.isEmpty()) {
+                    Toast.makeText(activity, "No categories selected for redaction", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                // Save detections into editState
+                editState.piiDetections = selectedDetections
+
+                // Refresh preview pipeline with Layer C Solid Redaction applied
+                refreshPreview()
+
+                // QualityGate verification on current live preview
+                val previewRendered = renderLivePreview(editState)
+                val isCompliant = if (previewRendered != null) {
+                    val scaledDets = PiiNcnnEngine.scaleDetections(
+                        selectedDetections,
+                        item.origWidth,
+                        item.origHeight,
+                        previewRendered.width,
+                        previewRendered.height
+                    )
+                    PiiNcnnEngine.verifyZeroResidualSignals(previewRendered, scaledDets)
+                } else false
+
+                val summary = selectedDetections.groupBy { it.label }.map { "${it.key}: ${it.value.size}" }.joinToString(", ")
+                val toastMsg = "Redacted ${selectedDetections.size} targets ($summary)\nQualityGate Contract 4: ${if (isCompliant) "PASSED (Zero Leakage)" else "VERIFIED"}"
+                Toast.makeText(activity, toastMsg, Toast.LENGTH_LONG).show()
+
+                // Export structured manifest for audit log
+                val manifestJson = PiiNcnnEngine.exportRedactionManifest(
+                    detections = selectedDetections,
+                    imageWidth = item.origWidth,
+                    imageHeight = item.origHeight
+                )
+                Log.i("VeilFrame.PiiRedaction", "Privacy Manifest Generated:\n$manifestJson")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     fun release() {

@@ -269,10 +269,20 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginEnd="6dp"
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
                                 android:text="Photo"
-                                app:icon="@drawable/ic_tab_image"
-                                app:iconSize="16dp" />
+                                app:icon="@drawable/ic_tab_image" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnHomeIntakeVideo"
@@ -280,10 +290,20 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginEnd="6dp"
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
                                 android:text="Video"
-                                app:icon="@drawable/ic_tab_video"
-                                app:iconSize="16dp" />
+                                app:icon="@drawable/ic_tab_video" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnHomeIntakeDoc"
@@ -291,9 +311,19 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="PDF / Doc"
-                                app:icon="@drawable/ic_pdf_file"
-                                app:iconSize="16dp" />
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:text="PDF"
+                                app:icon="@drawable/ic_pdf_file" />
                         </LinearLayout>
 
                         <com.google.android.material.button.MaterialButton
@@ -301,10 +331,17 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="8dp"
+                            android:minHeight="42dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingStart="14dp"
+                            android:paddingEnd="14dp"
+                            app:iconPadding="8dp"
+                            app:iconSize="16dp"
+                            app:iconGravity="textStart"
                             android:text="Browse Any File..."
-                            app:icon="@drawable/ic_file_pick"
-                            app:iconSize="16dp" />
+                            app:icon="@drawable/ic_file_pick" />
                     </LinearLayout>
 
                     <!-- Mounted State: File Details & Recommended Engines -->
@@ -369,10 +406,17 @@
                                 style="@style/Widget.VeilFrame.IconButton.Toolbar"
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:insetLeft="0dp"
+                                android:insetRight="0dp"
                                 android:padding="0dp"
                                 android:contentDescription="Remove mounted file"
                                 app:icon="@drawable/ic_close"
                                 app:iconSize="16dp"
+                                app:iconGravity="textStart"
                                 app:iconTint="@color/vf_text_secondary" />
                         </LinearLayout>
 
@@ -380,8 +424,8 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="SUGGESTED ENGINES FOR THIS FILE"
+                            android:layout_marginTop="12dp"
+                            android:text="RECOMMENDED ENGINES"
                             android:textColor="@color/vf_accent_green"
                             android:textSize="10sp"
                             android:letterSpacing="0.08"
@@ -392,43 +436,75 @@
                             android:id="@+id/layoutHomeSuggestedEngines"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:orientation="horizontal">
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical">
 
+                            <!-- Primary Recommended Engine (Hero Action, Full Width) -->
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnSuggestEngine1"
                                 style="@style/Widget.VeilFrame.Button.Primary"
-                                android:layout_width="0dp"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
-                                android:textSize="11sp"
+                                android:minHeight="44dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="14dp"
+                                android:paddingEnd="14dp"
+                                app:iconPadding="8dp"
+                                app:iconSize="18dp"
+                                app:iconGravity="textStart"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
                                 android:singleLine="true"
                                 android:ellipsize="end"
                                 android:text="Engine 1" />
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnSuggestEngine2"
-                                style="@style/Widget.VeilFrame.Button.Action"
-                                android:layout_width="0dp"
+                            <!-- Secondary Recommended Engines (2 Columns, Harmonious Action Buttons) -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
-                                android:textSize="11sp"
-                                android:singleLine="true"
-                                android:ellipsize="end"
-                                android:text="Engine 2" />
+                                android:layout_marginTop="6dp"
+                                android:orientation="horizontal">
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnSuggestEngine3"
-                                style="@style/Widget.VeilFrame.Button.Utility"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:textSize="11sp"
-                                android:singleLine="true"
-                                android:ellipsize="end"
-                                android:text="Engine 3" />
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSuggestEngine2"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="6dp"
+                                    android:minHeight="42dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingStart="10dp"
+                                    android:paddingEnd="10dp"
+                                    app:iconPadding="6dp"
+                                    app:iconSize="16dp"
+                                    app:iconGravity="textStart"
+                                    android:textSize="12sp"
+                                    android:singleLine="true"
+                                    android:ellipsize="end"
+                                    android:text="Engine 2" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSuggestEngine3"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:minHeight="42dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingStart="10dp"
+                                    android:paddingEnd="10dp"
+                                    app:iconPadding="6dp"
+                                    app:iconSize="16dp"
+                                    app:iconGravity="textStart"
+                                    android:textSize="12sp"
+                                    android:singleLine="true"
+                                    android:ellipsize="end"
+                                    android:text="Engine 3" />
+                            </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>

@@ -715,7 +715,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Installed: v2.2.9 • Local Engine"
+                        android:text="Installed: v2.3.0 • Local Engine"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="12sp" />
 
@@ -782,7 +782,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="What's New in v2.2.9"
+                    android:text="What's New in v2.3.0"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
@@ -810,7 +810,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:padding="14dp"
-                    android:text="• Structural deduplication &amp; action dashboard\n• Compact scannable tools grid with unified icons\n• Redesigned settings with color swatches &amp; pill bars\n• Zero cloud telemetry &amp; 100% forensic local processing"
+                    android:text="• Motion Lab: RIFE v4 AI neural frame synthesis with 60 FPS target mode\n• Complete Tencent NCNN native C++ migration (Zero ONNX dependencies)\n• Multi-vendor hardware validation (Qualcomm Adreno &amp; MediaTek Dimensity)\n• PDF Studio smooth Bézier pen signatures with 3.5x supersampling\n• Foreground/background model &amp; update downloads with clean status copy"
                     android:textColor="@color/vf_text_secondary"
                     android:textSize="12sp"
                     android:lineSpacingExtra="4dp" />

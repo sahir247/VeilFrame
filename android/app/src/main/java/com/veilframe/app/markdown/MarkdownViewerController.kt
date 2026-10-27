@@ -851,7 +851,25 @@ class MarkdownViewerController(
             .show()
     }
 
-    private fun showPdfThemeDialog() {
+    fun exportToPdfWithTheme(targetTheme: MarkdownTheme) {
+        val previousTheme = state.theme
+
+        // Temporarily switch theme for PDF print
+        setTheme(targetTheme)
+
+        // Allow brief delay for WebView styles to reflow before printing
+        mainHandler.postDelayed({
+            exportRenderedToPdf()
+            // Restore original viewing theme if it differed
+            if (previousTheme != targetTheme) {
+                mainHandler.postDelayed({
+                    setTheme(previousTheme)
+                }, 1200L)
+            }
+        }, 350L)
+    }
+
+    fun showPdfThemeDialog() {
         val themeOptions = arrayOf(
             "Dark Theme PDF",
             "Light Theme (White Background) PDF"
@@ -862,21 +880,7 @@ class MarkdownViewerController(
             .setSingleChoiceItems(themeOptions, defaultChoice) { dialog, which ->
                 dialog.dismiss()
                 val targetTheme = if (which == 0) MarkdownTheme.DARK else MarkdownTheme.LIGHT
-                val previousTheme = state.theme
-
-                // Temporarily switch theme for PDF print
-                setTheme(targetTheme)
-
-                // Allow brief delay for WebView styles to reflow before printing
-                mainHandler.postDelayed({
-                    exportRenderedToPdf()
-                    // Restore original viewing theme if it differed
-                    if (previousTheme != targetTheme) {
-                        mainHandler.postDelayed({
-                            setTheme(previousTheme)
-                        }, 1200L)
-                    }
-                }, 350L)
+                exportToPdfWithTheme(targetTheme)
             }
             .setNegativeButton("Cancel", null)
             .show()

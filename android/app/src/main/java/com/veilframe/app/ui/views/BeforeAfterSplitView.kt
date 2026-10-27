@@ -141,6 +141,7 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
             if (!isDraggingDivider) {
+                parent?.requestDisallowInterceptTouchEvent(true)
                 translationX -= distanceX
                 translationY -= distanceY
                 clampTranslations()

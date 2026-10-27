@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.motion.VideoReframeEngine
-import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiNcnnEngine
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -94,14 +94,14 @@ class VideoStudioController(
     private lateinit var floatingDockController: FloatingDockStateController
 
     private val TAG = "VeilFrame.VideoStudio"
-    private var piiEngine: PiiOnnxEngine? = null
+    private var piiEngine: PiiNcnnEngine? = null
 
-    private fun getOrInitPiiEngine(): PiiOnnxEngine? {
+    private fun getOrInitPiiEngine(): PiiNcnnEngine? {
         if (piiEngine == null) {
             try {
-                piiEngine = PiiOnnxEngine(activity)
+                piiEngine = PiiNcnnEngine(activity)
             } catch (t: Throwable) {
-                Log.w(TAG, "PiiOnnxEngine initialization failed: ${t.message}")
+                Log.w(TAG, "PiiNcnnEngine initialization failed: ${t.message}")
             }
         }
         return piiEngine

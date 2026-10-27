@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.9-blue.svg" alt="Version 2.2.9" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.3.0-blue.svg" alt="Version 2.3.0" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20Linux%20%7C%20macOS-blue.svg" alt="Platform Support" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-green.svg" alt="Python 3.10+" /></a>
   <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/kotlin-Android%20SDK%2035-purple.svg" alt="Kotlin Android SDK 35" /></a>
@@ -47,8 +47,8 @@ VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sover
 | **1. AI Image Upscaler** | Creative / AI | NCNN C++, Vulkan, RealSR | Native Real-ESRGAN & RealSR NCNN super-resolution (2×, 3×, 4×), Vulkan GPU compute, streaming disk sinks, dynamic memory governor, zero ONNX. |
 | **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, EFQRCode 7.0.3 parity, Vector & Animated SVG export, live camera scanning, clean Scanability validation. |
 | **3. Document Scanner** | Vision / Docs | QuadStabilizer, OpenCV 4.14 | Real-time EMA corner stabilization, per-page exposure/contrast/saturation Adjust dialog, perspective correction, progressive PDF export. |
-| **4. Motion Lab** | Video / Vision | DIS & Farnebäck Optical Flow | Pairwise dense optical flow frame synthesis, 2× and 4× FPS interpolation, flat pairwise Mat management, direct MediaStore gallery output. |
-| **5. Background Remover** | Vision / Utility | ONNX Runtime, BiRefNet, MediaStore | Neural foreground extraction (IsNet / BiRefNet), transparent PNG export directly to device gallery (`Pictures/VeilFrame`), persistent Library mirror. |
+| **4. Motion Lab** | Video / Vision | RIFE v4 AI, DIS & Farnebäck | Pairwise neural frame synthesis (RIFE v4) with dedicated 60 FPS target mode, optical flow fallback (DIS/Farnebäck), flat pairwise Mat management, MediaStore gallery output. |
+| **5. Background Remover** | Vision / Utility | NCNN C++, U^2-Net-P, Guided Alpha | Native NCNN matting (U^2-Net-P), hybrid trimap refinement with guided alpha filter, interactive touch refine brush/eraser, direct gallery export (`Pictures/VeilFrame`). |
 | **6. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Sub-100ms instant preview via direct URI, universal YUV420p output encoding, timeline range trimming, target size ceilings, rotation, crop. |
 | **7. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing, passport 600×600 preset. |
 | **8. Video Privacy Sanitizer** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate audit. |
@@ -304,7 +304,7 @@ veilframe-gui
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) |
 | **Android (APK)** | `app-debug.apk` / `VeilFrame-android-arm64.apk` | ARM64 / Universal (API 26+) |
-| **Python Package** | `veilframe-2.2.9-py3-none-any.whl` | Universal (`pip install`) |
+| **Python Package** | `veilframe-2.3.0-py3-none-any.whl` | Universal (`pip install`) |
 
 ---
 

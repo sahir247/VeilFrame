@@ -46,14 +46,14 @@ class ArchitectureModularizationTest {
     }
 
     @Test
-    fun `rembg onnx session manager is deduplicated from upscale onnx session manager`() {
-        // RembgOnnxSessionManager class must exist in segmentation.rembg
+    fun `neural pipelines use NCNN and do not retain legacy OnnxSessionManager`() {
+        // RembgSessionManager class must exist in segmentation.rembg
         val rembgClass = try {
-            Class.forName("com.veilframe.app.cv.segmentation.rembg.RembgOnnxSessionManager")
+            Class.forName("com.veilframe.app.cv.segmentation.rembg.RembgSessionManager")
         } catch (_: ClassNotFoundException) {
             null
         }
-        assertNotNull("RembgOnnxSessionManager class must exist in com.veilframe.app.cv.segmentation.rembg", rembgClass)
+        assertNotNull("RembgSessionManager class must exist in com.veilframe.app.cv.segmentation.rembg", rembgClass)
 
         // Upscale does not use ONNX at all (strictly native NCNN / RealSR)
         val upscaleClass = try {
@@ -63,15 +63,11 @@ class ArchitectureModularizationTest {
         }
         assertNull("Upscale must not have OnnxSessionManager (strictly native NCNN/RealSR)", upscaleClass)
 
-        // Check OnnxSessionManager.kt in rembg is marked as deprecated typealias
+        // Verify OnnxSessionManager.kt has been purged from source
         val rembgFile = File("src/main/java/com/veilframe/app/cv/segmentation/rembg/OnnxSessionManager.kt")
         val altRembgFile = File("android/app/src/main/java/com/veilframe/app/cv/segmentation/rembg/OnnxSessionManager.kt")
         val targetFile = if (rembgFile.exists()) rembgFile else altRembgFile
-        assertTrue("rembg/OnnxSessionManager.kt must exist", targetFile.exists())
-
-        val content = targetFile.readText()
-        assertTrue("rembg/OnnxSessionManager must be deprecated", content.contains("@Deprecated"))
-        assertTrue("rembg/OnnxSessionManager must typealias to RembgOnnxSessionManager", content.contains("typealias OnnxSessionManager = RembgOnnxSessionManager"))
+        assertFalse("rembg/OnnxSessionManager.kt must be purged", targetFile.exists())
     }
 
     @Test
