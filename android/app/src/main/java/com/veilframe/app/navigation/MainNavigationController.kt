@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.MainActivity
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.*
 import com.veilframe.app.workspace.SecondaryWorkspace
 import com.veilframe.app.workspace.WorkspaceHost
 
@@ -211,29 +212,6 @@ class MainNavigationController(
                     .show()
                 return
             }
-        } else if (!isRootScreen && mainAct?.hasActiveProcessing() == true) {
-            // General active service fallback
-            isHandlingWorkStatePrompt = true
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                .setTitle("Active Task Running")
-                .setMessage("A background task is currently running. How would you like to proceed?")
-                .setPositiveButton("Run in Background") { _, _ ->
-                    isHandlingWorkStatePrompt = false
-                    onProceed()
-                }
-                .setNeutralButton("Cancel & Leave") { _, _ ->
-                    isHandlingWorkStatePrompt = false
-                    mainAct.cancelAllActiveProcessing()
-                    onProceed()
-                }
-                .setNegativeButton("Stay") { _, _ ->
-                    isHandlingWorkStatePrompt = false
-                }
-                .setOnCancelListener {
-                    isHandlingWorkStatePrompt = false
-                }
-                .show()
-            return
         }
 
         onProceed()
@@ -251,6 +229,11 @@ class MainNavigationController(
     }
 
     private fun popWorkspaceAndNavigate() {
+        val closingScreen = currentScreen
+        val closingContract = (activity as? MainActivity)?.getActiveToolWorkContract(closingScreen)
+        if (closingContract?.isProcessing != true) {
+            closingContract?.discardAndReleaseAllResources()
+        }
         val destination = if (screenBackStack.isNotEmpty()) {
             screenBackStack.removeLast()
         } else {
@@ -454,6 +437,13 @@ class MainNavigationController(
     }
 
     fun showHomeScreen() {
+        val closingScreen = currentScreen
+        if (!isRootScreen(closingScreen)) {
+            val closingContract = (activity as? MainActivity)?.getActiveToolWorkContract(closingScreen)
+            if (closingContract?.isProcessing != true) {
+                closingContract?.discardAndReleaseAllResources()
+            }
+        }
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
@@ -548,6 +538,13 @@ class MainNavigationController(
     }
 
     fun showToolsScreen() {
+        val closingScreen = currentScreen
+        if (!isRootScreen(closingScreen)) {
+            val closingContract = (activity as? MainActivity)?.getActiveToolWorkContract(closingScreen)
+            if (closingContract?.isProcessing != true) {
+                closingContract?.discardAndReleaseAllResources()
+            }
+        }
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
@@ -575,6 +572,13 @@ class MainNavigationController(
     }
 
     fun showLibraryScreen() {
+        val closingScreen = currentScreen
+        if (!isRootScreen(closingScreen)) {
+            val closingContract = (activity as? MainActivity)?.getActiveToolWorkContract(closingScreen)
+            if (closingContract?.isProcessing != true) {
+                closingContract?.discardAndReleaseAllResources()
+            }
+        }
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()

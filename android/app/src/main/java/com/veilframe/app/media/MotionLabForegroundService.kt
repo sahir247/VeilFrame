@@ -45,7 +45,7 @@ class MotionLabForegroundService : Service() {
 
         fun isVeilFrameServiceRunning(): Boolean {
             val active = com.veilframe.app.VeilFrameProcessingService.activeJob
-            return active != null && active.type == JobType.MOTION_LAB_RIFE && active.state == JobState.RUNNING
+            return active != null && active.state == JobState.RUNNING
         }
 
         fun start(context: Context, label: String) {
@@ -71,8 +71,7 @@ class MotionLabForegroundService : Service() {
 
         fun updateProgress(context: Context, label: String, percent: Int) {
             val active = com.veilframe.app.VeilFrameProcessingService.activeJob
-            if (active != null && active.type == JobType.MOTION_LAB_RIFE &&
-                active.state == JobState.RUNNING) {
+            if (active != null && active.state == JobState.RUNNING) {
                 return
             }
             val now = android.os.SystemClock.elapsedRealtime()
