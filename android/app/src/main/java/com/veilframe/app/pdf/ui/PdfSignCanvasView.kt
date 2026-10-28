@@ -121,10 +121,9 @@ class PdfSignCanvasView @JvmOverloads constructor(
     private var twoFingerCumAngle = 0.0
     private val TWO_FINGER_ROTATE_THRESHOLD_DEG = 3.0
 
-    // Hit-tested action button bounds on screen
-    private val copyButtonRect = RectF()
-    private val saveButtonRect = RectF()
-    private var areActionButtonsVisible = false
+    // Auto-scroll state for drag-to-edge
+    private var autoScrollSpeed = 0f
+    private var isAutoScrolling = false
 
     // Paints
     private val backgroundPaint = Paint().apply {
@@ -418,11 +417,6 @@ class PdfSignCanvasView @JvmOverloads constructor(
         for (box in signatures) {
             drawSignatureBox(canvas, box, isSelected = (box == selectedBox))
         }
-
-        // 3. Draw Position-Aware Floating Boxed Action Buttons for Selected Signature
-        selectedBox?.let { box ->
-            drawFloatingActionButtons(canvas, box)
-        }
     }
 
     private fun drawSignatureBox(canvas: Canvas, box: SignatureBox, isSelected: Boolean) {
@@ -478,74 +472,6 @@ class PdfSignCanvasView @JvmOverloads constructor(
         }
 
         canvas.restore()
-    }
-
-    private fun drawFloatingActionButtons(canvas: Canvas, box: SignatureBox) {
-        val targetPage = pages.getOrNull(box.pageIndex) ?: return
-        val pageLeftDoc = (maxDocWidth - targetPage.width) / 2f
-        val docCenterY = targetPage.topY + box.y + box.height / 2f
-        val docCenterX = pageLeftDoc + box.x + box.width / 2f
-
-        val screenCenterX = docCenterX * scale + panX
-        val screenCenterY = docCenterY * scale + panY
-        val screenH = box.height * scale
-
-        // Position-aware vertical placement:
-        // If signature is in upper half of view -> button appears below signature
-        // If signature is in lower half of view -> button appears above signature
-        val buttonOffset = (screenH / 2f) + dpToPx(30f)
-        val buttonCenterY = if (screenCenterY < height / 2f) {
-            screenCenterY + buttonOffset
-        } else {
-            screenCenterY - buttonOffset
-        }
-
-        val buttonW = dpToPx(42f)
-        val buttonH = dpToPx(34f)
-        val gap = dpToPx(8f)
-
-        // Copy button (left)
-        val copyLeft = screenCenterX - buttonW - gap / 2f
-        val copyTop = buttonCenterY - buttonH / 2f
-        val copyRight = screenCenterX - gap / 2f
-        val copyBottom = buttonCenterY + buttonH / 2f
-        copyButtonRect.set(copyLeft, copyTop, copyRight, copyBottom)
-
-        // Save button (right)
-        val saveLeft = screenCenterX + gap / 2f
-        val saveTop = buttonCenterY - buttonH / 2f
-        val saveRight = screenCenterX + buttonW + gap / 2f
-        val saveBottom = buttonCenterY + buttonH / 2f
-        saveButtonRect.set(saveLeft, saveTop, saveRight, saveBottom)
-        areActionButtonsVisible = true
-
-        // Draw Copy Button
-        canvas.drawRoundRect(copyButtonRect, dpToPx(8f), dpToPx(8f), buttonBgPaint)
-        canvas.drawRoundRect(copyButtonRect, dpToPx(8f), dpToPx(8f), buttonBorderPaint)
-        copyIcon?.let { icon ->
-            val iconSize = dpToPx(18f).toInt()
-            icon.setBounds(
-                (copyButtonRect.centerX() - iconSize / 2f).toInt(),
-                (copyButtonRect.centerY() - iconSize / 2f).toInt(),
-                (copyButtonRect.centerX() + iconSize / 2f).toInt(),
-                (copyButtonRect.centerY() + iconSize / 2f).toInt()
-            )
-            icon.draw(canvas)
-        }
-
-        // Draw Save Button
-        canvas.drawRoundRect(saveButtonRect, dpToPx(8f), dpToPx(8f), buttonBgPaint)
-        canvas.drawRoundRect(saveButtonRect, dpToPx(8f), dpToPx(8f), buttonBorderPaint)
-        saveIcon?.let { icon ->
-            val iconSize = dpToPx(18f).toInt()
-            icon.setBounds(
-                (saveButtonRect.centerX() - iconSize / 2f).toInt(),
-                (saveButtonRect.centerY() - iconSize / 2f).toInt(),
-                (saveButtonRect.centerX() + iconSize / 2f).toInt(),
-                (saveButtonRect.centerY() + iconSize / 2f).toInt()
-            )
-            icon.draw(canvas)
-        }
     }
 
     private fun requestPageRender(pageIndex: Int) {
@@ -624,19 +550,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
                 lastTouchX = event.x
                 lastTouchY = event.y
 
-                // 1. Check if tapped on copy or save buttons
-                if (areActionButtonsVisible) {
-                    if (copyButtonRect.contains(event.x, event.y)) {
-                        duplicateSelectedBox()
-                        return true
-                    }
-                    if (saveButtonRect.contains(event.x, event.y)) {
-                        selectedBox?.let { box -> onSaveSignatureClicked?.invoke(box.bitmap) }
-                        return true
-                    }
-                }
-
-                // 2. Check if tapped on corner rotate handle of selected box
+                // 1. Check if tapped on corner rotate handle of selected box
                 selectedBox?.let { box ->
                     if (isTouchOnCornerRotateHandle(box, event.x, event.y)) {
                         activeMode = TouchMode.ROTATE_CORNER
@@ -653,7 +567,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     }
                 }
 
-                // 3. Check if tapped inside selected box body
+                // 2. Check if tapped inside selected box body
                 selectedBox?.let { box ->
                     if (isTouchInsideBox(box, event.x, event.y)) {
                         activeMode = TouchMode.DRAG_BOX
@@ -663,7 +577,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     }
                 }
 
-                // 4. Check if tapped inside any other box
+                // 3. Check if tapped inside any other box
                 val hitBox = findBoxAt(event.x, event.y)
                 if (hitBox != null) {
                     selectedBox = hitBox
@@ -674,7 +588,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     return true
                 }
 
-                // 5. Otherwise, start canvas pan
+                // 4. Otherwise, start canvas pan
                 activeMode = TouchMode.PAN_CANVAS
                 return true
             }
@@ -701,17 +615,34 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     }
                     TouchMode.DRAG_BOX -> {
                         selectedBox?.let { box ->
+                            if (pages.isEmpty()) return@let
                             val docDx = dx / scale
                             val docDy = dy / scale
-                            box.x += docDx
-                            box.y += docDy
 
-                            val targetPage = pages.getOrNull(box.pageIndex)
-                            if (targetPage != null) {
-                                box.x = box.x.coerceIn(-box.width * 0.5f, targetPage.width - box.width * 0.5f)
-                                box.y = box.y.coerceIn(-box.height * 0.5f, targetPage.height - box.height * 0.5f)
-                            }
+                            val currentTargetPage = pages.getOrNull(box.pageIndex) ?: pages.first()
+                            val currentPageLeftDoc = (maxDocWidth - currentTargetPage.width) / 2f
+
+                            val centerDocX = currentPageLeftDoc + box.x + box.width / 2f + docDx
+                            var centerDocY = currentTargetPage.topY + box.y + box.height / 2f + docDy
+
+                            val firstPage = pages.first()
+                            val lastPage = pages.last()
+                            val minDocY = firstPage.topY
+                            val maxDocY = lastPage.topY + lastPage.height
+                            centerDocY = centerDocY.coerceIn(minDocY, maxDocY)
+
+                            // Resolve which page contains this document Y (smooth cross-page dragging)
+                            val newPageIndex = pages.indexOfLast { it.topY <= centerDocY }.coerceIn(0, pages.size - 1)
+                            val newPage = pages[newPageIndex]
+                            val newPageLeftDoc = (maxDocWidth - newPage.width) / 2f
+
+                            box.pageIndex = newPageIndex
+                            box.x = centerDocX - newPageLeftDoc - box.width / 2f
+                            box.y = centerDocY - newPage.topY - box.height / 2f
+                            box.x = box.x.coerceIn(-box.width * 0.5f, newPage.width - box.width * 0.5f)
+
                             invalidate()
+                            checkAndTriggerAutoScroll(event.y)
                         }
                     }
                     TouchMode.PAN_CANVAS -> {
@@ -732,6 +663,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 activeMode = TouchMode.NONE
+                stopAutoScroll()
                 return true
             }
         }
@@ -740,26 +672,105 @@ class PdfSignCanvasView @JvmOverloads constructor(
     }
 
     private fun handleSingleTap(screenX: Float, screenY: Float) {
-        // Tapping copy button
-        if (areActionButtonsVisible && copyButtonRect.contains(screenX, screenY)) {
-            duplicateSelectedBox()
-            return
+        // Tapping a signature box selects it; tapping outside deselects
+        val hit = findBoxAt(screenX, screenY)
+        selectedBox = hit
+        invalidate()
+    }
+
+    private val autoScrollRunnable = object : Runnable {
+        override fun run() {
+            if (activeMode != TouchMode.DRAG_BOX || autoScrollSpeed == 0f || pages.isEmpty()) {
+                isAutoScrolling = false
+                return
+            }
+
+            val prevPanY = panY
+            panY += autoScrollSpeed
+            clampPan()
+            val actualPanDelta = panY - prevPanY
+
+            if (actualPanDelta != 0f) {
+                selectedBox?.let { box ->
+                    val currentTargetPage = pages.getOrNull(box.pageIndex) ?: return@let
+                    val currentPageLeftDoc = (maxDocWidth - currentTargetPage.width) / 2f
+                    val docDy = -actualPanDelta / scale
+
+                    val centerDocX = currentPageLeftDoc + box.x + box.width / 2f
+                    var centerDocY = currentTargetPage.topY + box.y + box.height / 2f + docDy
+
+                    val minDocY = pages.first().topY
+                    val maxDocY = pages.last().topY + pages.last().height
+                    centerDocY = centerDocY.coerceIn(minDocY, maxDocY)
+
+                    val newPageIndex = pages.indexOfLast { it.topY <= centerDocY }.coerceIn(0, pages.size - 1)
+                    val newPage = pages[newPageIndex]
+                    val newPageLeftDoc = (maxDocWidth - newPage.width) / 2f
+
+                    box.pageIndex = newPageIndex
+                    box.x = (centerDocX - newPageLeftDoc - box.width / 2f).coerceIn(-box.width * 0.5f, newPage.width - box.width * 0.5f)
+                    box.y = centerDocY - newPage.topY - box.height / 2f
+                }
+                invalidate()
+                postOnAnimation(this)
+            } else {
+                isAutoScrolling = false
+            }
         }
-        // Tapping save button
-        if (areActionButtonsVisible && saveButtonRect.contains(screenX, screenY)) {
-            selectedBox?.let { box -> onSaveSignatureClicked?.invoke(box.bitmap) }
-            return
+    }
+
+    private fun checkAndTriggerAutoScroll(touchY: Float) {
+        if (height <= 0) return
+        val edgeMargin = dpToPx(80f)
+        val maxSpeed = dpToPx(16f)
+
+        autoScrollSpeed = when {
+            touchY > height - edgeMargin -> {
+                val factor = ((touchY - (height - edgeMargin)) / edgeMargin).coerceIn(0f, 1f)
+                -maxSpeed * (0.35f + 0.65f * factor)
+            }
+            touchY < edgeMargin -> {
+                val factor = ((edgeMargin - touchY) / edgeMargin).coerceIn(0f, 1f)
+                maxSpeed * (0.35f + 0.65f * factor)
+            }
+            else -> 0f
         }
 
-        // Tapping a signature box selects it
-        val hit = findBoxAt(screenX, screenY)
-        if (hit != null) {
-            selectedBox = hit
+        if (autoScrollSpeed != 0f) {
+            if (!isAutoScrolling) {
+                isAutoScrolling = true
+                postOnAnimation(autoScrollRunnable)
+            }
         } else {
-            // Tapping outside dismisses selection and action buttons
-            selectedBox = null
-            areActionButtonsVisible = false
+            stopAutoScroll()
         }
+    }
+
+    private fun stopAutoScroll() {
+        autoScrollSpeed = 0f
+        isAutoScrolling = false
+        removeCallbacks(autoScrollRunnable)
+    }
+
+    fun copySelectedBox(): Boolean {
+        val current = selectedBox ?: signatures.lastOrNull() ?: return false
+        selectedBox = current
+        duplicateSelectedBox()
+        return true
+    }
+
+    fun reset() {
+        stopAutoScroll()
+        cleanupRenderer()
+        pageBitmapCache.evictAll()
+        pages.clear()
+        signatures.clear()
+        selectedBox = null
+        sourceUri = null
+        panX = 0f
+        panY = 0f
+        scale = 1.0f
+        activeMode = TouchMode.NONE
         invalidate()
     }
 
@@ -854,6 +865,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        stopAutoScroll()
         cleanupRenderer()
         pageBitmapCache.evictAll()
     }

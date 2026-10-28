@@ -68,6 +68,9 @@ class SignaturePadView @JvmOverloads constructor(
     var onSignatureChanged: ((isEmpty: Boolean) -> Unit)? = null
     var onStrokeCompleted: (() -> Unit)? = null
 
+    var isDrawingEnabled: Boolean = true
+    var onDisabledTouchListener: (() -> Unit)? = null
+
     init {
         updateDisplayPenColor()
     }
@@ -156,6 +159,12 @@ class SignaturePadView @JvmOverloads constructor(
      * never intercept signature strokes while dragging.
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (!isDrawingEnabled) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                onDisabledTouchListener?.invoke()
+            }
+            return false
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -168,6 +177,7 @@ class SignaturePadView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!isDrawingEnabled) return false
         val x = event.x
         val y = event.y
         val now = System.currentTimeMillis()

@@ -1043,6 +1043,15 @@
                             android:letterSpacing="0.08" />
 
                         <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSignSaveToLibrary"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Save Signature"
+                            app:icon="@drawable/ic_sd_card"
+                            app:iconTint="?attr/colorPrimary" />
+
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnSignClear"
                             style="@style/Widget.Material3.Button.TextButton"
                             android:layout_width="wrap_content"
@@ -1495,7 +1504,7 @@
                     android:layout_marginBottom="32dp"
                     android:text="Execute Operation"
                     app:cornerRadius="14dp"
-                    app:icon="@drawable/ic_action_save" />
+                    app:icon="@drawable/ic_sd_card" />
 
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
@@ -1532,24 +1541,24 @@
                     android:orientation="horizontal"
                     android:paddingEnd="4dp">
 
-                    <!-- Draw new signature (Pen SVG) -->
+                    <!-- Draw new signature (Plus SVG) -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSignCanvasPen"
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
                         android:contentDescription="Draw New Signature"
-                        app:icon="@drawable/ic_edit"
+                        app:icon="@drawable/ic_add"
                         app:iconTint="?attr/colorOnSurface" />
 
-                    <!-- Add signature box (Plus SVG) -->
+                    <!-- Copy selected signature (Copy SVG) -->
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnSignCanvasPlus"
+                        android:id="@+id/btnSignCanvasCopy"
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:contentDescription="Add Another Signature"
-                        app:icon="@drawable/ic_add"
+                        android:contentDescription="Copy Selected Signature"
+                        app:icon="@drawable/ic_action_copy"
                         app:iconTint="?attr/colorOnSurface" />
 
                     <!-- Reuse Saved Signatures Dropdown -->
@@ -1572,14 +1581,14 @@
                         app:icon="@drawable/ic_settings"
                         app:iconTint="?attr/colorOnSurface" />
 
-                    <!-- Save & Export PDF (Save SVG) -->
+                    <!-- Save & Export PDF (SD Card SVG) -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSignCanvasSave"
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
                         android:contentDescription="Save and Export Signed PDF"
-                        app:icon="@drawable/ic_action_save"
+                        app:icon="@drawable/ic_sd_card"
                         app:iconTint="?attr/colorPrimary" />
 
                     <!-- Exit Canvas (Cross SVG) -->

@@ -143,6 +143,21 @@ class PdfQuickToolController(
         selectedUris.clear()
         isExecuting = false
         thumbnailLoader.clearCache()
+        binding.pdfSignCanvasView.reset()
+        binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+        binding.viewSignaturePad.clear()
+        binding.viewSignaturePad.isDrawingEnabled = false
+        binding.ivSignMiniaturePreview.setImageDrawable(null)
+        binding.ivSignMiniaturePreview.visibility = View.GONE
+        binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
+        binding.ivSignPagePreview.setImageDrawable(null)
+        binding.containerQuickToolDocInfo.visibility = View.GONE
+        binding.containerQuickToolEmptyState.visibility = View.VISIBLE
+        binding.btnPdfQuickToolReset.visibility = View.GONE
+        binding.etCustomMergeOrder.setText("")
+        binding.etCustomPageOrder.setText("")
+        mergeFileListAdapter?.clearAll()
+        mergePageAdapter?.setItems(emptyList())
     }
 
     fun init() {
@@ -254,6 +269,8 @@ class PdfQuickToolController(
             QuickMode.SIGN -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Sign"
                 binding.panelParamSign.visibility = View.VISIBLE
+                binding.viewSignaturePad.isDrawingEnabled = selectedUris.isNotEmpty()
+                binding.btnQuickToolExecute.setIconResource(R.drawable.ic_sd_card)
                 if (selectedUris.isNotEmpty()) {
                     refreshSignPagePreview()
                 }
@@ -760,6 +777,7 @@ class PdfQuickToolController(
                                 splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
                                 rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
                                 if (activeMode == QuickMode.SIGN) {
+                                    binding.viewSignaturePad.isDrawingEnabled = true
                                     refreshSignPagePreview()
                                     updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
                                 }
@@ -807,6 +825,31 @@ class PdfQuickToolController(
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupSignControls() {
+        binding.viewSignaturePad.isDrawingEnabled = selectedUris.isNotEmpty()
+        binding.viewSignaturePad.onDisabledTouchListener = {
+            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnSignSaveToLibrary.setOnClickListener {
+            if (selectedUris.isEmpty()) {
+                Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (binding.viewSignaturePad.isEmpty()) {
+                Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val bmp = binding.viewSignaturePad.getSignatureBitmap(
+                targetColor = selectedSignColor,
+                opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+            )
+            if (bmp != null) {
+                showSaveSignatureNameDialog(bmp)
+            } else {
+                Toast.makeText(activity, "Signature is empty", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         binding.btnSignClear.setOnClickListener {
             binding.viewSignaturePad.clear()
             updateMiniatureSignaturePreview()
@@ -1051,8 +1094,11 @@ class PdfQuickToolController(
             showDrawSignatureDialog()
         }
 
-        binding.btnSignCanvasPlus.setOnClickListener {
-            addNewOrDuplicateSignature()
+        binding.btnSignCanvasCopy.setOnClickListener {
+            val copied = binding.pdfSignCanvasView.copySelectedBox()
+            if (!copied) {
+                Toast.makeText(activity, "Tap a signature to select and copy", Toast.LENGTH_SHORT).show()
+            }
         }
 
         binding.btnSignCanvasSavedDropdown.setOnClickListener {
@@ -1073,6 +1119,10 @@ class PdfQuickToolController(
     }
 
     private fun showDrawSignatureDialog() {
+        if (selectedUris.isEmpty()) {
+            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+            return
+        }
         val padContainer = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 24, 32, 16)
