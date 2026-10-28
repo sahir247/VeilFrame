@@ -107,9 +107,17 @@ class MotionLabController(
         }
         binding.chipMotionRife.setOnClickListener {
             method = MotionMethod.RIFE
+            syncRateChipsForMethod()
         }
-        binding.chipMotionFast.setOnClickListener { method = MotionMethod.DIS }
-        binding.chipMotionQuality.setOnClickListener { method = MotionMethod.FARNEBACK }
+        binding.chipMotionFast.setOnClickListener {
+            method = MotionMethod.DIS
+            syncRateChipsForMethod()
+        }
+        binding.chipMotionQuality.setOnClickListener {
+            method = MotionMethod.FARNEBACK
+            syncRateChipsForMethod()
+        }
+        syncRateChipsForMethod()
         binding.btnMotionLabTrim.setOnClickListener { openTrimDialog() }
         binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
@@ -128,7 +136,7 @@ class MotionLabController(
     override fun moveToBackground() {
         // VeilFrameProcessingService is already running in foreground for activeJobId.
         // Only start MotionLabForegroundService if a local coroutine job is active without VeilFrameProcessingService.
-        if (activeJobId == null && job?.isActive == true) {
+        if (activeJobId == null && job?.isActive == true && !MotionLabForegroundService.isVeilFrameServiceRunning()) {
             val label = if (isTarget60fps) "Motion Lab (60 fps) in background" else "Motion Lab (${multiplier}x) in background"
             MotionLabForegroundService.start(activity, label)
         }
@@ -595,10 +603,38 @@ class MotionLabController(
         method = MotionMethod.RIFE
         binding.chipMotion60fps.isChecked = true
         binding.chipMotionRife.isChecked = true
+        syncRateChipsForMethod()
         binding.containerMotionLabProgress.visibility = View.GONE
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabRun.isEnabled = false
         binding.btnMotionLabTrim.visibility = View.GONE
         binding.tvMotionLabSource.text = "No video selected"
+    }
+
+    private fun syncRateChipsForMethod() {
+        when (method) {
+            MotionMethod.RIFE -> {
+                // RIFE only supports 60 fps
+                binding.chipMotion60fps.isEnabled = true
+                binding.chipMotion60fps.alpha = 1.0f
+                binding.chipMotion60fps.isChecked = true
+                isTarget60fps = true
+                multiplier = 2
+
+                binding.chipMotion2x.isEnabled = false
+                binding.chipMotion2x.alpha = 0.38f
+                binding.chipMotion4x.isEnabled = false
+                binding.chipMotion4x.alpha = 0.38f
+            }
+            MotionMethod.DIS, MotionMethod.FARNEBACK -> {
+                // Fallbacks support 60 fps, 2x, and 4x
+                binding.chipMotion60fps.isEnabled = true
+                binding.chipMotion60fps.alpha = 1.0f
+                binding.chipMotion2x.isEnabled = true
+                binding.chipMotion2x.alpha = 1.0f
+                binding.chipMotion4x.isEnabled = true
+                binding.chipMotion4x.alpha = 1.0f
+            }
+        }
     }
 }
