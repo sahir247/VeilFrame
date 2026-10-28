@@ -1,0 +1,1023 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+        android:id="@+id/scrollTool"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:paddingBottom="160dp"
+        android:clipToPadding="false"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Target Selection Card: ① TARGET (Empty vs Mounted States) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardTargetSelection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Unified Card Header matching Image/Video Studio -->
+                    <LinearLayout
+                        android:id="@+id/cardToolHeader"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:id="@+id/tvToolCardHeaderTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Target Selection"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
+                    </LinearLayout>
+
+                    <!-- State A: Empty State (Shown when no target is selected) -->
+                    <LinearLayout
+                        android:id="@+id/layoutTargetEmpty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center_horizontal"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:visibility="visible">
+
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_folder_pick"
+                            android:contentDescription="Select Target Icon"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="① SELECT TARGET"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="14dp"
+                            android:text="Select a single file or project directory to begin"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="11sp"
+                            android:gravity="center" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnPickFolder"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:text="Select Folder"
+                                android:textColor="@color/vf_primary"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:icon="@drawable/ic_folder_pick"
+                                app:iconSize="16dp"
+                                app:iconPadding="6dp"
+                                app:iconTint="@color/vf_primary" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnPickFile"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:layout_weight="1"
+                                android:layout_marginStart="4dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:text="Select File"
+                                android:textColor="@color/vf_primary"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:icon="@drawable/ic_file_pick"
+                                app:iconSize="16dp"
+                                app:iconPadding="6dp"
+                                app:iconTint="@color/vf_primary" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- State B: Mounted State (Shown when target is mounted) -->
+                    <LinearLayout
+                        android:id="@+id/layoutTargetMounted"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="10dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="① TARGET MOUNTED"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:letterSpacing="0.06" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@color/vf_status_pass_bg"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="READY"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- Target Details Preview Box -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="@color/vf_surface_variant"
+                            android:padding="12dp"
+                            android:layout_marginBottom="12dp">
+
+                            <TextView
+                                android:id="@+id/tvSelectedPath"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="No file or folder selected"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="12sp"
+                                android:fontFamily="monospace"
+                                android:maxLines="2"
+                                android:ellipsize="middle" />
+
+                            <TextView
+                                android:id="@+id/tvTargetDetails"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="Select a target below to begin processing"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <!-- Action Buttons when Mounted: Change or Clear -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnChangeTarget"
+                                style="@style/Widget.VeilFrame.Button.Utility"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:text="Change"
+                                android:textColor="@color/vf_primary"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:strokeColor="@color/vf_primary"
+                                app:strokeWidth="1dp"
+                                app:icon="@drawable/ic_folder_pick"
+                                app:iconSize="14dp"
+                                app:iconTint="@color/vf_primary" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnClearTarget"
+                                style="@style/Widget.VeilFrame.Button.Utility"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:layout_weight="1"
+                                android:layout_marginStart="4dp"
+                                android:text="Clear"
+                                android:textColor="@color/vf_accent_red"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:strokeColor="@color/vf_accent_red"
+                                app:strokeWidth="1dp"
+                                app:icon="@drawable/ic_action_clear"
+                                app:iconSize="14dp"
+                                app:iconTint="@color/vf_accent_red" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Dedicated Configuration Parameters -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardConfiguration"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/tvParamHeader"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:text="Tool configuration"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06" />
+
+                    <!-- Expressive Tool Slider Row (Shown dynamically for Image & Video Cleaner) -->
+                    <LinearLayout
+                        android:id="@+id/layoutToolSlider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="14dp"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="4dp">
+
+                            <TextView
+                                android:id="@+id/tvToolSliderTitle"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Compression Intensity"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvToolSliderValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@color/vf_surface_variant"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="95%"
+                                android:textColor="@color/vf_primary"
+                                android:textSize="11sp"
+                                android:fontFamily="monospace"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/sliderToolIntensity"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0"
+                            android:valueTo="100"
+                            android:value="95"
+                            app:thumbColor="@color/vf_primary" />
+                    </LinearLayout>
+
+                    <!-- Primary Setting Row -->
+                    <TextView
+                        android:id="@+id/tvPrimaryOptionTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Primary Option"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvPrimaryOptionDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="6dp"
+                        android:text="Configure primary parameters for this tool."
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp" />
+
+                    <!-- Wrapping Responsive Chip Group -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupPrimaryOptions"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        app:singleLine="false"
+                        app:singleSelection="true" />
+
+                    <!-- Output Format Row -->
+                    <TextView
+                        android:id="@+id/tvFormatOptionTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Output Format"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvFormatOptionDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="6dp"
+                        android:text="Select the format for the generated artifact."
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp" />
+
+                    <!-- Wrapping Responsive Chip Group -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupFormat"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        app:singleLine="false"
+                        app:singleSelection="true" />
+
+                    <!-- Forensic / Privacy Switches -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <!-- Switch 1 -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvSwitch1Title"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Option 1"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/tvSwitch1Desc"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Description 1"
+                                    android:textColor="@color/vf_text_muted"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchOption1"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:thumbTint="@color/vf_primary"
+                                app:trackTint="@color/vf_surface_variant" />
+                        </LinearLayout>
+
+                        <!-- Switch 2 -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvSwitch2Title"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Option 2"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/tvSwitch2Desc"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Description 2"
+                                    android:textColor="@color/vf_text_muted"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchOption2"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:thumbTint="@color/vf_primary"
+                                app:trackTint="@color/vf_surface_variant" />
+                        </LinearLayout>
+
+                        <!-- Switch 3 -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvSwitch3Title"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Option 3"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/tvSwitch3Desc"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Description 3"
+                                    android:textColor="@color/vf_text_muted"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchOption3"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:thumbTint="@color/vf_primary"
+                                app:trackTint="@color/vf_surface_variant" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- AI Bundle Depth Control -->
+                    <LinearLayout
+                        android:id="@+id/layoutBundleDepthControl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:layout_marginTop="6dp">
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="?attr/colorOutlineVariant"
+                            android:layout_marginBottom="8dp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvBundleDepthTitle"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Full Directory Depth"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/tvBundleDepthDesc"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Traverse all subdirectories recursively"
+                                    android:textColor="@color/vf_text_muted"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchBundleFullDepth"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                app:thumbTint="@color/vf_primary"
+                                app:trackTint="@color/vf_surface_variant" />
+                        </LinearLayout>
+
+                        <!-- Custom Depth Stepper Row -->
+                        <LinearLayout
+                            android:id="@+id/layoutBundleCustomDepthRow"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:alpha="0.5"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="6dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Custom Depth Limit"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnBundleDepthDecrement"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:enabled="false"
+                                android:insetLeft="0dp"
+                                android:insetTop="0dp"
+                                android:insetRight="0dp"
+                                android:insetBottom="0dp"
+                                android:padding="0dp"
+                                android:text="−"
+                                android:textSize="18sp"
+                                app:cornerRadius="8dp" />
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etBundleCustomDepth"
+                                android:layout_width="48dp"
+                                android:layout_height="40dp"
+                                android:gravity="center"
+                                android:enabled="false"
+                                android:inputType="number"
+                                android:text="3"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:background="@android:color/transparent" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnBundleDepthIncrement"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:enabled="false"
+                                android:insetLeft="0dp"
+                                android:insetTop="0dp"
+                                android:insetRight="0dp"
+                                android:insetBottom="0dp"
+                                android:padding="0dp"
+                                android:text="+"
+                                android:textSize="18sp"
+                                app:cornerRadius="8dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Privacy Impact Summary Card (Shows what will happen before execution) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardPrivacySummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="10dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="② PRIVACY IMPACT SUMMARY"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06" />
+
+                        <TextView
+                            android:id="@+id/tvPrivacyProfileBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@color/vf_status_pass_bg"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:text="HIGH PROTECTION"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvPrivacyImpact1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="• Camera EXIF, GPS coordinates &amp; serials stripped"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:id="@+id/tvPrivacyImpact2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="• Bitstream repacked &amp; sensor PRNU noise mitigated"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:id="@+id/tvPrivacyImpact3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="• 100% on-device execution (zero cloud telemetry)"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Step 3: Modern Execution Monitor & Collapsible Technical Console -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardTelemetry"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Execution Monitor Header -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="10dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="③ EXECUTION MONITOR"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06" />
+
+                        <TextView
+                            android:id="@+id/tvPhaseBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@color/vf_surface_variant"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="IDLE"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Linear Progress Bar -->
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Thick"
+                        android:id="@+id/progressIndicator"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:visibility="invisible"
+                        app:trackThickness="8dp"
+                        app:indicatorColor="@color/vf_accent_green" />
+
+                    <!-- Status & Metrics Row (Fixed/stable container so live path updates never jitter layout) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="42dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="10dp">
+
+                        <TextView
+                            android:id="@+id/tvStatusText"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:maxLines="2"
+                            android:ellipsize="middle"
+                            android:text="Ready for execution."
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                        <TextView
+                            android:id="@+id/tvProgressDetails"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text=""
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Collapsible Accordion Header for Technical Logs (Extended gap between monitor and console) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleConsole"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:text="View Technical Logs"
+                        android:textColor="@color/vf_secondary"
+                        app:icon="@drawable/ic_expand_more"
+                        app:iconSize="16dp"
+                        app:iconGravity="textEnd" />
+
+                    <!-- Collapsible Technical Console Body -->
+                    <LinearLayout
+                        android:id="@+id/layoutConsoleBody"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="6dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="RAW CONSOLE TELEMETRY"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="11sp"
+                                android:fontFamily="monospace" />
+
+                            <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
+                                android:id="@+id/btnCopyLogs"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:contentDescription="Copy Logs"
+                                app:icon="@drawable/ic_action_copy" />
+
+                            <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
+                                android:id="@+id/btnClearLogs"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:contentDescription="Clear Logs"
+                                app:icon="@drawable/ic_action_clear" />
+
+                            <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
+                                android:id="@+id/btnExpandLogs"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:contentDescription="Toggle Log Height"
+                                app:icon="@drawable/ic_action_expand" />
+                        </LinearLayout>
+
+                        <!-- Scrollable Monospace Terminal -->
+                        <androidx.core.widget.NestedScrollView
+                            android:id="@+id/scrollConsole"
+                            android:layout_width="match_parent"
+                            android:layout_height="140dp"
+                            android:background="@color/vf_console_bg"
+                            android:padding="8dp">
+
+                            <TextView
+                                android:id="@+id/tvConsoleLog"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:lineSpacingExtra="2dp"
+                                android:text="[SYS] Initializing VeilFrame forensic core...\n[SYS] Ready for execution."
+                                android:textColor="@color/vf_console_text"
+                                android:textSize="11sp" />
+                        </androidx.core.widget.NestedScrollView>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Step 4: Dedicated Task Result Summary Card (Visible on COMPLETE) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardResultSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_accent_green"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <ImageView
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:src="@drawable/ic_check_circle"
+                            app:tint="@color/vf_accent_green"
+                            android:contentDescription="Complete Icon" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="TASK COMPLETE"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvResultTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Artifact Generated"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:fontFamily="monospace"
+                        android:ellipsize="middle"
+                        android:maxLines="1" />
+
+                    <TextView
+                        android:id="@+id/tvResultDetails"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp"
+                        android:text="Output ready in local cache"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnResultPreview"
+                        style="@style/Widget.VeilFrame.Button.Action"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="Preview Markdown"
+                        android:textColor="@color/vf_primary"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_visibility"
+                        app:iconTint="@color/vf_primary"
+                        app:iconSize="16dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
+                            android:id="@+id/btnResultSave"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:text="Save As..."
+                            app:icon="@drawable/ic_action_save"
+                            app:iconTint="@color/vf_primary"
+                            app:iconSize="14dp" />
+
+                        <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
+                            android:id="@+id/btnResultShare"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:text="Share File"
+                            app:icon="@drawable/ic_action_share"
+                            app:iconTint="@color/vf_primary"
+                            app:iconSize="14dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>

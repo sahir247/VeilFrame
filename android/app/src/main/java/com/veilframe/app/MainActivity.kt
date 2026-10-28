@@ -25,6 +25,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.*
 import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
 import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
@@ -1074,6 +1075,9 @@ class MainActivity : AppCompatActivity() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
+        if (::pdfSuiteCoordinator.isInitialized) {
+            pdfSuiteCoordinator.discardInactiveResources()
+        }
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
@@ -1086,6 +1090,9 @@ class MainActivity : AppCompatActivity() {
         if (!canNavigate()) return
         clearBackTimer()
         pauseVideoPlayback()
+        if (::pdfSuiteCoordinator.isInitialized) {
+            pdfSuiteCoordinator.discardInactiveResources()
+        }
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }

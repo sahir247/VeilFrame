@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.*
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.ImageStudioController
 import com.veilframe.app.media.VideoStudioController

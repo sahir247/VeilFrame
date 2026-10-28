@@ -26,8 +26,10 @@ class QuickFileIntakeTest {
 
     @Test
     fun `quick file intake layout defines uniform button heights and zero style mismatch`() {
-        val layoutFile = getFile("src/main/res/layout/activity_main.xml")
-        assertTrue("activity_main.xml must exist", layoutFile.exists())
+        val layoutFile = getFile("src/main/res/layout/layout_home_dashboard.xml").let {
+            if (it.exists()) it else getFile("src/main/res/layout/activity_main.xml")
+        }
+        assertTrue("Home layout XML must exist", layoutFile.exists())
         val xml = layoutFile.readText()
 
         // btnSuggestEngine1 must be Primary filled button with full width

@@ -8,6 +8,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.*
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.ui.motion.ExpressiveMotion
 

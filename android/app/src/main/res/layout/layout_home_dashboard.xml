@@ -1,0 +1,748 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+        android:id="@+id/scrollHome"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:paddingBottom="48dp"
+        android:clipToPadding="false"
+        android:visibility="visible"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- ================================================================= -->
+            <!-- 1. TOP AREA — UNIVERSAL QUICK DROP / FILE INTAKE ZONE             -->
+            <!-- ================================================================= -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardHomeFileIntake"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Header Row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="QUICK FILE INTAKE"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.08"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_badge_pill"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="Auto-Routing"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Select or Drop Any File"
+                        android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Pick a photo, video, or PDF to immediately route to matching privacy &amp; forensics engines."
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <!-- Unmounted State: Intake Selector Buttons -->
+                    <LinearLayout
+                        android:id="@+id/layoutHomeIntakePickers"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:weightSum="3">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnHomeIntakePhoto"
+                                style="@style/Widget.VeilFrame.Button.Utility"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:text="Photo"
+                                app:icon="@drawable/ic_tab_image" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnHomeIntakeVideo"
+                                style="@style/Widget.VeilFrame.Button.Utility"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:text="Video"
+                                app:icon="@drawable/ic_tab_video" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnHomeIntakeDoc"
+                                style="@style/Widget.VeilFrame.Button.Utility"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:minHeight="40dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                app:iconPadding="6dp"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                android:textSize="12sp"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:text="PDF"
+                                app:icon="@drawable/ic_pdf_file" />
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnHomeIntakeBrowse"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:minHeight="42dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingStart="14dp"
+                            android:paddingEnd="14dp"
+                            app:iconPadding="8dp"
+                            app:iconSize="16dp"
+                            app:iconGravity="textStart"
+                            android:text="Browse Any File..."
+                            app:icon="@drawable/ic_file_pick" />
+                    </LinearLayout>
+
+                    <!-- Mounted State: File Details & Recommended Engines -->
+                    <LinearLayout
+                        android:id="@+id/layoutHomeIntakeMounted"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <!-- Mounted File Summary Row -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_badge_pill"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="6dp"
+                            android:paddingVertical="6dp">
+
+                            <ImageView
+                                android:id="@+id/ivHomeIntakeIcon"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:src="@drawable/ic_file_pick"
+                                app:tint="?attr/colorPrimary"
+                                android:importantForAccessibility="no" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:layout_marginEnd="4dp"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:id="@+id/tvHomeIntakeFileName"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="sample_file.jpg"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold"
+                                    android:singleLine="true"
+                                    android:ellipsize="end" />
+
+                                <TextView
+                                    android:id="@+id/tvHomeIntakeMeta"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="2.4 MB • image/jpeg"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="10sp"
+                                    android:singleLine="true" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnHomeIntakeClear"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:insetLeft="0dp"
+                                android:insetRight="0dp"
+                                android:padding="0dp"
+                                android:contentDescription="Remove mounted file"
+                                app:icon="@drawable/ic_close"
+                                app:iconSize="16dp"
+                                app:iconGravity="textStart"
+                                app:iconTint="@color/vf_text_secondary" />
+                        </LinearLayout>
+
+                        <!-- Suggested Engines Header -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="RECOMMENDED ENGINES"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="10sp"
+                            android:letterSpacing="0.08"
+                            android:textStyle="bold" />
+
+                        <!-- Dynamic Action Buttons Flow -->
+                        <LinearLayout
+                            android:id="@+id/layoutHomeSuggestedEngines"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical">
+
+                            <!-- Primary Recommended Engine (Hero Action, Full Width) -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSuggestEngine1"
+                                style="@style/Widget.VeilFrame.Button.Primary"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="44dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingStart="14dp"
+                                android:paddingEnd="14dp"
+                                app:iconPadding="8dp"
+                                app:iconSize="18dp"
+                                app:iconGravity="textStart"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:text="Engine 1" />
+
+                            <!-- Secondary Recommended Engines (2 Columns, Harmonious Action Buttons) -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSuggestEngine2"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginEnd="6dp"
+                                    android:minHeight="42dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingStart="10dp"
+                                    android:paddingEnd="10dp"
+                                    app:iconPadding="6dp"
+                                    app:iconSize="16dp"
+                                    app:iconGravity="textStart"
+                                    android:textSize="12sp"
+                                    android:singleLine="true"
+                                    android:ellipsize="end"
+                                    android:text="Engine 2" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btnSuggestEngine3"
+                                    style="@style/Widget.VeilFrame.Button.Action"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:minHeight="42dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingStart="10dp"
+                                    android:paddingEnd="10dp"
+                                    app:iconPadding="6dp"
+                                    app:iconSize="16dp"
+                                    app:iconGravity="textStart"
+                                    android:textSize="12sp"
+                                    android:singleLine="true"
+                                    android:ellipsize="end"
+                                    android:text="Engine 3" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ================================================================= -->
+            <!-- 2. MIDDLE AREA — PINNED / RECENT ENGINES (4 Cards Max, 2x2 Grid) -->
+            <!-- ================================================================= -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Recent &amp; Pinned Engines"
+                    android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSeeAllTools"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:text="See all 17 tools →"
+                    android:textSize="12sp"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
+
+            <GridLayout
+                android:id="@+id/gridHomeRecent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:columnCount="2"
+                android:rowCount="2">
+
+                <!-- 1. Video Cleaner -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardRecent1"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:src="@drawable/ic_shield_video"
+                                app:tint="?attr/colorPrimary"
+                                android:importantForAccessibility="no" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingHorizontal="6dp"
+                                android:paddingVertical="2dp"
+                                android:text="Offline"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Video Cleaner"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Metadata &amp; GPS wipe"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 2. Image Cleaner -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardRecent2"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:src="@drawable/ic_shield_image"
+                                app:tint="?attr/colorPrimary"
+                                android:importantForAccessibility="no" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingHorizontal="6dp"
+                                android:paddingVertical="2dp"
+                                android:text="Forensic"
+                                android:textColor="@color/vf_accent_green"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Image Cleaner"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="EXIF &amp; sensor wipe"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 3. AI Upscaler -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardRecent3"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:src="@drawable/ic_resize"
+                                app:tint="?attr/colorPrimary"
+                                android:importantForAccessibility="no" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingHorizontal="6dp"
+                                android:paddingVertical="2dp"
+                                android:text="Neural"
+                                android:textColor="@color/vf_accent_amber"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="AI Upscaler"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Super-resolution"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 4. Code Bundler -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardRecent4"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="4dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:src="@drawable/ic_tab_bundle"
+                                app:tint="?attr/colorPrimary"
+                                android:importantForAccessibility="no" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_badge_pill"
+                                android:paddingHorizontal="6dp"
+                                android:paddingVertical="2dp"
+                                android:text="LLM Pack"
+                                android:textColor="?attr/colorTertiary"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Code Bundler"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Context packing"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </GridLayout>
+
+            <!-- ================================================================= -->
+            <!-- 3. BOTTOM AREA — PRIVACY PULSE TRUST BADGE                        -->
+            <!-- ================================================================= -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardPrivacyPulse"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="14dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_check_circle"
+                        app:tint="@color/vf_accent_green"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="12dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="100% Local • Zero Cloud Telemetry"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="1dp"
+                            android:text="Forensic Grade • SHA-256 Integrity • Air-Gapped Safe"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_pill"
+                        android:paddingHorizontal="8dp"
+                        android:paddingVertical="3dp"
+                        android:text="PROTECTED"
+                        android:textColor="@color/vf_accent_green"
+                        android:textSize="9sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
