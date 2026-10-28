@@ -522,9 +522,14 @@ class VeilFrameProcessingService : Service() {
                         jobCallback?.onProgress(jobId, 18, "Downloading RIFE AI model…")
                         val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
                             updateNotificationProgress(msg, (18 + pct * 0.05).toInt())
+                            jobCallback?.onProgress(jobId, (18 + pct * 0.05).toInt(), msg)
                         }
                         if (dlResult.isSuccess) {
                             useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                        } else {
+                            Log.w(TAG, "RIFE model download failed: ${dlResult.exceptionOrNull()?.message}")
+                            jobCallback?.onProgress(jobId, 19, "RIFE download unavailable; using optical flow fallback…")
+                            useRife = false
                         }
                     } else {
                         useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
@@ -545,8 +550,22 @@ class VeilFrameProcessingService : Service() {
             } else null
             val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
 
+            fun loadRifeBitmap(file: File): Bitmap? {
+                val opts = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val raw = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+                return if (raw.config != Bitmap.Config.ARGB_8888) {
+                    val converted = raw.copy(Bitmap.Config.ARGB_8888, false)
+                    raw.recycle()
+                    converted
+                } else {
+                    raw
+                }
+            }
+
             var outIdx = 0
-            var prevBmp: Bitmap? = if (useRife) BitmapFactory.decodeFile(frames[0].absolutePath) else null
+            var prevBmp: Bitmap? = if (useRife) loadRifeBitmap(frames[0]) else null
             var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
 
             if (useRife && prevBmp != null) {
@@ -568,7 +587,7 @@ class VeilFrameProcessingService : Service() {
                     var curMat: org.opencv.core.Mat? = null
 
                     if (useRife) {
-                        curBmp = BitmapFactory.decodeFile(frames[i].absolutePath)
+                        curBmp = loadRifeBitmap(frames[i])
                         if (curBmp == null || prevBmp == null) {
                             curBmp?.recycle()
                             continue
@@ -588,13 +607,24 @@ class VeilFrameProcessingService : Service() {
                             var interpolatedSuccessfully = false
 
                             if (useRife && prevBmp != null && curBmp != null) {
-                                val synthBmp = RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
+                                val synthBmp = try {
+                                    RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
+                                } catch (e: Throwable) {
+                                    Log.w(TAG, "RIFE interpolation failed for frame $i: ${e.message}")
+                                    null
+                                }
                                 if (synthBmp != null) {
                                     val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
                                     outFile.outputStream().use { fos ->
                                         synthBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
                                     }
                                     synthBmp.recycle()
+                                    interpolatedSuccessfully = true
+                                } else {
+                                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                                    outFile.outputStream().use { fos ->
+                                        prevBmp!!.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                                    }
                                     interpolatedSuccessfully = true
                                 }
                             }

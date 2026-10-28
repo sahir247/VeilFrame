@@ -55,7 +55,12 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     fclose(fp);
 
     int gpu_count = (useGpu) ? ncnn::get_gpu_count() : 0;
-    g_rife_gpuid = (useGpu && gpu_count > 0) ? 0 : -1;
+    if (useGpu && gpu_count > 0) {
+        ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device(0);
+        g_rife_gpuid = (vkdev != nullptr) ? 0 : -1;
+    } else {
+        g_rife_gpuid = -1;
+    }
 
     // Detect CPU big cores for maximum throughput
     int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
@@ -123,6 +128,12 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
     AndroidBitmapInfo info0, info1;
     if (AndroidBitmap_getInfo(env, bitmap0, &info0) != ANDROID_BITMAP_RESULT_SUCCESS ||
         AndroidBitmap_getInfo(env, bitmap1, &info1) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        return nullptr;
+    }
+
+    if (info0.format != ANDROID_BITMAP_FORMAT_RGBA_8888 ||
+        info1.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+        LOGE("RIFE requires ARGB_8888 format (got %d, %d)", info0.format, info1.format);
         return nullptr;
     }
 

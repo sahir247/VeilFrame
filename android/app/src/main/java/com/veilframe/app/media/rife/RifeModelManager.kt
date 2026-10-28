@@ -21,20 +21,33 @@ class RifeModelManager(private val context: Context) {
         private const val CONNECT_TIMEOUT_MS = 20_000
         private const val READ_TIMEOUT_MS = 60_000
 
-        const val PARAM_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.param"
-        const val BIN_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.bin"
+        const val PARAM_URL = "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/master/models/rife-v4/flownet.param"
+        const val BIN_URL = "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/master/models/rife-v4/flownet.bin"
+        const val PARAM_FALLBACK_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.param"
+        const val BIN_FALLBACK_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.bin"
 
         private val allowedExactHosts = setOf(
             "github.com",
             "githubusercontent.com",
             "raw.githubusercontent.com",
+            "objects.githubusercontent.com",
             "huggingface.co",
-            "hf.co"
+            "hf.co",
+            "amazonaws.com"
+        )
+
+        private val allowedHostSuffixes = setOf(
+            ".github.com",
+            ".githubusercontent.com",
+            ".huggingface.co",
+            ".hf.co",
+            ".amazonaws.com"
         )
 
         private fun isAllowedHost(host: String): Boolean {
             val normalized = host.trimEnd('.').lowercase(java.util.Locale.ROOT)
             return normalized in allowedExactHosts ||
+                allowedHostSuffixes.any { normalized.endsWith(it) } ||
                 allowedExactHosts.any { normalized.endsWith(".$it") }
         }
 
@@ -73,19 +86,33 @@ class RifeModelManager(private val context: Context) {
 
         try {
             onProgress(5, "Downloading RIFE AI model configuration…")
-            downloadSingle(PARAM_URL, paramFile) { _, _ -> }
+            try {
+                downloadSingle(PARAM_URL, paramFile) { _, _ -> }
+            } catch (e: Exception) {
+                Log.w(TAG, "Primary param download failed, trying fallback: ${e.message}")
+                downloadSingle(PARAM_FALLBACK_URL, paramFile) { _, _ -> }
+            }
 
-            onProgress(15, "Downloading RIFE AI neural weights (~16 MB)…")
-            downloadSingle(BIN_URL, binFile) { downloaded, total ->
-                val pct = if (total > 0) {
-                    15 + ((downloaded * 80) / total).toInt()
-                } else {
-                    50
-                }
-                onProgress(pct, "Downloading RIFE AI weights: ${downloaded / (1024 * 1024)}MB / ${total / (1024 * 1024)}MB…")
+            onProgress(15, "Downloading RIFE AI neural weights (~10 MB)…")
+            val estimatedTotalBytes = 10_340_416L
+            val progressCallback: (Long, Long) -> Unit = { downloaded, total ->
+                val effectiveTotal = if (total > 0) total else estimatedTotalBytes
+                val pct = (15 + ((downloaded * 80) / effectiveTotal).toInt()).coerceIn(15, 95)
+                val dlMb = downloaded / (1024 * 1024)
+                val totalMb = (effectiveTotal / (1024 * 1024)).coerceAtLeast(1)
+                onProgress(pct, "Downloading RIFE AI weights: ${dlMb}MB / ${totalMb}MB…")
+            }
+
+            try {
+                downloadSingle(BIN_URL, binFile, progressCallback)
+            } catch (e: Exception) {
+                Log.w(TAG, "Primary bin download failed, trying fallback: ${e.message}")
+                downloadSingle(BIN_FALLBACK_URL, binFile, progressCallback)
             }
 
             if (!isModelReady()) {
+                paramFile.delete()
+                binFile.delete()
                 throw IllegalStateException("RIFE model files are incomplete after download")
             }
 
