@@ -392,6 +392,7 @@ class PdfSuiteCoordinator(
 
     fun openPdfStudio() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -404,6 +405,7 @@ class PdfSuiteCoordinator(
 
     fun openWatermark() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -416,6 +418,7 @@ class PdfSuiteCoordinator(
 
     fun openExtractText() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -428,6 +431,7 @@ class PdfSuiteCoordinator(
 
     fun openExtractPages() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -440,6 +444,7 @@ class PdfSuiteCoordinator(
 
     fun openFlatten() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -452,6 +457,7 @@ class PdfSuiteCoordinator(
 
     fun openImposition() {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
@@ -464,6 +470,7 @@ class PdfSuiteCoordinator(
 
     fun openQuickTool(mode: PdfQuickToolController.QuickMode) {
         if (!canNavigate()) return
+        discardInactiveResources()
         onClearBackTimer()
         onPauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {

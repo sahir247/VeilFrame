@@ -60,9 +60,15 @@ class PdfImpositionController(
         activeJob?.cancel()
         previewJob?.cancel()
         activePdfUri = null
+        activePdfName = "document.pdf"
         activeSheetLayouts = emptyList()
         currentSheetIndex = 0
         isGenerating = false
+        isSaved = false
+        binding.containerImpositionDocInfo.visibility = View.GONE
+        binding.containerImpositionControls.visibility = View.GONE
+        binding.containerImpositionEmptyState.visibility = View.VISIBLE
+        binding.btnPdfImpositionReset.visibility = View.GONE
         binding.ivImpositionPreview.setImageBitmap(null)
     }
 

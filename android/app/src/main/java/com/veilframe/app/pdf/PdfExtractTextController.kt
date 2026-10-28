@@ -51,8 +51,17 @@ class PdfExtractTextController(
     override fun discardAndReleaseAllResources() {
         extractionJob?.cancel()
         activePdfUri = null
+        activePdfName = "document.pdf"
         extractedTextContent = ""
         isExtracting = false
+        isSaved = false
+        binding.containerExtractTextDocInfo.visibility = View.GONE
+        binding.containerExtractTextLoading.visibility = View.GONE
+        binding.cardOcrPromptBanner.visibility = View.GONE
+        binding.containerExtractTextResults.visibility = View.GONE
+        binding.containerExtractTextEmptyState.visibility = View.VISIBLE
+        binding.btnPdfExtractTextReset.visibility = View.GONE
+        binding.tvExtractedContent.text = ""
     }
 
     fun init() {

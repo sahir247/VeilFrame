@@ -59,8 +59,15 @@ class PdfExtractPagesController(
     override fun discardAndReleaseAllResources() {
         activeJob?.cancel()
         activePdfUri = null
+        activePdfName = "document.pdf"
         isExtracting = false
+        isSaved = false
         thumbnailLoader.clearCache()
+        thumbnailAdapter?.clear()
+        binding.containerExtractPagesDocInfo.visibility = View.GONE
+        binding.containerExtractPagesConfig.visibility = View.GONE
+        binding.containerExtractPagesEmptyState.visibility = View.VISIBLE
+        binding.btnPdfExtractPagesReset.visibility = View.GONE
     }
 
     fun init() {

@@ -9,6 +9,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.MainActivity
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.*
 import com.veilframe.app.databinding.DialogPdfPasswordBinding
 import com.veilframe.app.databinding.DialogPdfQuickToolPickerBinding
 import com.veilframe.app.databinding.ItemPdfQuickToolOptionBinding
@@ -314,6 +315,7 @@ class HomeFileIntakeCoordinator(
                 text = "Verify Signature"
                 setIconResource(R.drawable.ic_signature_valid)
                 setOnClickListener {
+                    clearHomeFileIntake()
                     activity.openPdfSignature()
                     activity.workspaceHost.getOrInflatePdfSignature()
                     if (bytes != null) {
@@ -334,6 +336,7 @@ class HomeFileIntakeCoordinator(
                 text = "Extract Text"
                 setIconResource(R.drawable.ic_tab_bundle)
                 setOnClickListener {
+                    clearHomeFileIntake()
                     activity.pdfSuiteCoordinator.openExtractText()
                     activity.workspaceHost.getOrInflatePdfExtractText()
                     activity.pdfSuiteCoordinator.extractTextController.handlePdfSelected(uri)
@@ -348,6 +351,7 @@ class HomeFileIntakeCoordinator(
                     if (bytes != null) {
                         showPdfPasswordDialog(uri, displayName, sizeStr, bytes)
                     } else {
+                        clearHomeFileIntake()
                         activity.openPdfUnlock()
                         activity.workspaceHost.getOrInflatePdfUnlock()
                         activity.pdfUnlockController.handlePdfSelected(uri)
@@ -365,6 +369,7 @@ class HomeFileIntakeCoordinator(
                 text = "Verify Signature"
                 setIconResource(R.drawable.ic_signature_valid)
                 setOnClickListener {
+                    clearHomeFileIntake()
                     activity.openPdfSignature()
                     activity.workspaceHost.getOrInflatePdfSignature()
                     if (bytes != null) {
@@ -594,6 +599,7 @@ class HomeFileIntakeCoordinator(
             itemBinding.tvToolOptionSubtitle.text = tool.subtitle
             itemBinding.cardToolOption.setOnClickListener {
                 dialog.dismiss()
+                clearHomeFileIntake()
                 tool.onSelect()
             }
             dialogBinding.containerPdfToolsList.addView(itemBinding.root)

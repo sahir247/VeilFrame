@@ -65,6 +65,18 @@ class PdfPageThumbnailAdapter(
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
+    fun clear() {
+        pdfUri = null
+        totalPages = 0
+        pageOrder.clear()
+        selectedPages.clear()
+        deletedPages.clear()
+        pageRotations.clear()
+        notifyDataSetChanged()
+        onPageSelectionChanged(emptySet())
+        onPageOrderChanged?.invoke(emptyList())
+    }
+
     fun moveItem(fromPosition: Int, toPosition: Int) {
         if (fromPosition < 0 || fromPosition >= pageOrder.size || toPosition < 0 || toPosition >= pageOrder.size) return
         val item = pageOrder.removeAt(fromPosition)

@@ -57,7 +57,14 @@ class PdfFlattenController(
         beforeBitmap = null
         afterBitmap = null
         activePdfUri = null
+        activePdfName = "document.pdf"
         isFlattening = false
+        isSaved = false
+        binding.containerFlattenDocInfo.visibility = View.GONE
+        binding.containerFlattenControls.visibility = View.GONE
+        binding.containerFlattenEmptyState.visibility = View.VISIBLE
+        binding.btnPdfFlattenReset.visibility = View.GONE
+        binding.ivFlattenPreview.setImageDrawable(null)
     }
 
     fun init() {

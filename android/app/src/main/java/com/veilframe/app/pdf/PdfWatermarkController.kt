@@ -58,7 +58,14 @@ class PdfWatermarkController(
         basePageBitmap?.recycle()
         basePageBitmap = null
         activePdfUri = null
+        activePdfName = "document.pdf"
         isApplying = false
+        isSaved = false
+        binding.containerWatermarkDocInfo.visibility = View.GONE
+        binding.containerWatermarkControls.visibility = View.GONE
+        binding.containerWatermarkEmptyState.visibility = View.VISIBLE
+        binding.btnPdfWatermarkReset.visibility = View.GONE
+        binding.ivWatermarkPreview.setImageDrawable(null)
     }
 
     fun init() {
