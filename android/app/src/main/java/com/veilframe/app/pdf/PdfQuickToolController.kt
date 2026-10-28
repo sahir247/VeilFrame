@@ -22,6 +22,10 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.xslf.usermodel.XMLSlideShow
+import org.apache.poi.xslf.usermodel.XSLFTextShape
 import com.veilframe.app.pdf.ui.SignaturePadView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
@@ -77,7 +81,7 @@ class PdfQuickToolController(
     private val activity: AppCompatActivity,
     private val binding: LayoutPdfQuickToolBinding,
     private val scope: CoroutineScope,
-    private val onPickFileRequest: (mimeType: String, multiple: Boolean) -> Unit,
+    private val onPickFileRequest: (mimeTypes: Array<String>, multiple: Boolean) -> Unit,
     private val onSaveFileRequest: (ByteArray, String) -> Unit,
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
@@ -154,6 +158,9 @@ class PdfQuickToolController(
         binding.containerQuickToolDocInfo.visibility = View.GONE
         binding.containerQuickToolEmptyState.visibility = View.VISIBLE
         binding.btnPdfQuickToolReset.visibility = View.GONE
+        binding.panelParamDocPreview.visibility = View.GONE
+        binding.tvDocPreviewSummary.text = ""
+        binding.tvDocPreviewContent.text = ""
         binding.etCustomMergeOrder.setText("")
         binding.etCustomPageOrder.setText("")
         mergeFileListAdapter?.clearAll()
@@ -188,6 +195,7 @@ class PdfQuickToolController(
         binding.panelParamSign.visibility = View.GONE
         binding.panelParamMetadata.visibility = View.GONE
         binding.panelParamSourceInput.visibility = View.GONE
+        binding.panelParamDocPreview.visibility = View.GONE
         binding.cardQuickToolPicker.visibility = View.VISIBLE
 
         when (mode) {
@@ -288,7 +296,8 @@ class PdfQuickToolController(
             }
             QuickMode.DOC_TO_PDF -> {
                 binding.tvQuickToolPickPrompt.text = "Select Office Document"
-                binding.tvQuickToolPickSubtitle.text = "DOCX, DOC, or XLSX file"
+                binding.tvQuickToolPickSubtitle.text = "DOCX, XLSX, PPTX, or TXT file"
+                binding.panelParamDocPreview.visibility = if (selectedUris.isNotEmpty()) View.VISIBLE else View.GONE
             }
             else -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF Document"
@@ -739,10 +748,10 @@ class PdfQuickToolController(
 
     private fun requestPickForActiveMode() {
         when (activeMode) {
-            QuickMode.IMAGE_TO_PDF -> onPickFileRequest("image/*", true)
-            QuickMode.DOC_TO_PDF -> onPickFileRequest("*/*", false)
-            QuickMode.MERGE -> onPickFileRequest("application/pdf", true)
-            else -> onPickFileRequest("application/pdf", false)
+            QuickMode.IMAGE_TO_PDF -> onPickFileRequest(arrayOf("image/*"), true)
+            QuickMode.DOC_TO_PDF -> onPickFileRequest(DOC_MIME_TYPES, false)
+            QuickMode.MERGE -> onPickFileRequest(arrayOf("application/pdf"), true)
+            else -> onPickFileRequest(arrayOf("application/pdf"), false)
         }
     }
 
@@ -765,26 +774,35 @@ class PdfQuickToolController(
             binding.containerQuickToolDocInfo.visibility = View.VISIBLE
             binding.btnPdfQuickToolReset.visibility = View.VISIBLE
             binding.tvQuickToolDocName.text = primaryDocName
-            binding.tvQuickToolDocMeta.text = "Reading document..."
 
-            scope.launch(Dispatchers.IO) {
-                try {
-                    activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        PDDocument.load(stream).use { doc ->
-                            primaryDocPages = doc.numberOfPages
-                            withContext(Dispatchers.Main) {
-                                binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
-                                splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
-                                rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
-                                if (activeMode == QuickMode.SIGN) {
-                                    binding.viewSignaturePad.isDrawingEnabled = true
-                                    refreshSignPagePreview()
-                                    updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
+            if (activeMode == QuickMode.DOC_TO_PDF) {
+                binding.tvQuickToolDocMeta.text = "Reading document..."
+                inspectAndPreviewOfficeDoc(uri)
+            } else {
+                binding.tvQuickToolDocMeta.text = "Reading document..."
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc ->
+                                primaryDocPages = doc.numberOfPages
+                                withContext(Dispatchers.Main) {
+                                    binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
+                                    splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
+                                    rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
+                                    if (activeMode == QuickMode.SIGN) {
+                                        binding.viewSignaturePad.isDrawingEnabled = true
+                                        refreshSignPagePreview()
+                                        updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
+                                    }
                                 }
                             }
                         }
+                    } catch (_: Exception) {
+                        withContext(Dispatchers.Main) {
+                            binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                        }
                     }
-                } catch (_: Exception) {}
+                }
             }
 
             // If metadata mode, inspect immediately
@@ -800,6 +818,128 @@ class PdfQuickToolController(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private fun inspectAndPreviewOfficeDoc(uri: Uri) {
+        scope.launch(Dispatchers.IO) {
+            val lower = primaryDocName.lowercase()
+            var summary = "Office Document"
+            var previewText = ""
+            var metaText = "Ready to convert"
+
+            try {
+                when {
+                    lower.endsWith(".docx") || lower.endsWith(".doc") -> {
+                        metaText = "Word Document (${lower.substringAfterLast('.')})"
+                        try {
+                            activity.contentResolver.openInputStream(uri)?.use { stream ->
+                                val doc = XWPFDocument(stream)
+                                val paras = doc.paragraphs.filter { it.text.isNotBlank() }
+                                val tables = doc.tables.size
+                                summary = "Word Document • ${paras.size} paragraphs, $tables tables"
+                                val previewSb = StringBuilder()
+                                for (p in paras.take(15)) {
+                                    previewSb.append(p.text.trim()).append("\n\n")
+                                    if (previewSb.length > 1200) break
+                                }
+                                previewText = previewSb.toString().trim()
+                            }
+                        } catch (_: Exception) {
+                            summary = "Word Document ($primaryDocName)"
+                            previewText = "Binary/Legacy Word document selected.\nConversion engine will translate document structures directly into PDF pages."
+                        }
+                    }
+                    lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
+                        metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
+                        try {
+                            activity.contentResolver.openInputStream(uri)?.use { stream ->
+                                val wb = XSSFWorkbook(stream)
+                                val sheetCount = wb.numberOfSheets
+                                val sheetNames = (0 until sheetCount).map { wb.getSheetName(it) }.joinToString(", ")
+                                summary = "Excel Workbook • $sheetCount sheet(s) ($sheetNames)"
+                                val firstSheet = if (sheetCount > 0) wb.getSheetAt(0) else null
+                                val previewSb = StringBuilder()
+                                if (firstSheet != null) {
+                                    previewSb.append("Sheet: ${firstSheet.sheetName}\n")
+                                    val rowCount = minOf(firstSheet.physicalNumberOfRows, 12)
+                                    for (r in 0 until rowCount) {
+                                        val row = firstSheet.getRow(r) ?: continue
+                                        val cells = (0 until minOf(row.physicalNumberOfCells, 6)).mapNotNull { c ->
+                                            row.getCell(c)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                                        }
+                                        if (cells.isNotEmpty()) {
+                                            previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
+                                        }
+                                    }
+                                }
+                                previewText = previewSb.toString().trim()
+                            }
+                        } catch (_: Exception) {
+                            summary = "Excel Spreadsheet ($primaryDocName)"
+                            previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
+                        }
+                    }
+                    lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
+                        metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
+                        try {
+                            activity.contentResolver.openInputStream(uri)?.use { stream ->
+                                val ppt = XMLSlideShow(stream)
+                                val slideCount = ppt.slides.size
+                                summary = "PowerPoint Presentation • $slideCount slide(s)"
+                                val previewSb = StringBuilder()
+                                for ((idx, slide) in ppt.slides.take(4).withIndex()) {
+                                    previewSb.append("Slide ${idx + 1}:\n")
+                                    for (shape in slide.shapes) {
+                                        if (shape is XSLFTextShape && shape.text.isNotBlank()) {
+                                            previewSb.append("  • ").append(shape.text.trim().replace("\n", " ")).append("\n")
+                                        }
+                                    }
+                                    previewSb.append("\n")
+                                }
+                                previewText = previewSb.toString().trim()
+                            }
+                        } catch (_: Exception) {
+                            summary = "PowerPoint Presentation ($primaryDocName)"
+                            previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
+                        }
+                    }
+                    lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
+                        metaText = "Text Document (${lower.substringAfterLast('.')})"
+                        activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                            val lines = mutableListOf<String>()
+                            var count = 0
+                            reader.forEachLine { line ->
+                                count++
+                                if (lines.size < 20 && line.isNotBlank()) {
+                                    lines.add(line)
+                                }
+                            }
+                            summary = "Text Document • $count lines"
+                            previewText = lines.joinToString("\n")
+                        }
+                    }
+                    else -> {
+                        metaText = "Office Document"
+                        summary = "Document Selected • $primaryDocName"
+                        previewText = "Document loaded and ready for conversion to PDF."
+                    }
+                }
+            } catch (_: Exception) {
+                summary = "Document Selected"
+                previewText = "Ready to convert: $primaryDocName"
+            }
+
+            if (previewText.isBlank()) {
+                previewText = "Preview not available for this document structure. Ready to convert."
+            }
+
+            withContext(Dispatchers.Main) {
+                binding.tvQuickToolDocMeta.text = metaText
+                binding.panelParamDocPreview.visibility = View.VISIBLE
+                binding.tvDocPreviewSummary.text = summary
+                binding.tvDocPreviewContent.text = previewText
             }
         }
     }
@@ -1814,20 +1954,54 @@ class PdfQuickToolController(
                     }
                     QuickMode.DOC_TO_PDF -> {
                         val uri = selectedUris.first()
-                        val tempDocx = File(activity.cacheDir, "temp_${System.currentTimeMillis()}.docx")
-                        activity.contentResolver.openInputStream(uri)?.use { input ->
-                            tempDocx.outputStream().use { output -> input.copyTo(output) }
+                        val lowerName = primaryDocName.lowercase()
+                        val ext = when {
+                            lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") -> ".xlsx"
+                            lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt") -> ".pptx"
+                            lowerName.endsWith(".txt") || lowerName.endsWith(".rtf") || lowerName.endsWith(".log") -> ".txt"
+                            else -> ".docx"
                         }
-                        val tempPdf = File(activity.cacheDir, "temp_${System.currentTimeMillis()}.pdf")
-                        officeConverter.convertDocxToPdf(tempDocx, tempPdf, activity)
+
+                        val tempInput = File(activity.cacheDir, "temp_doc_${System.currentTimeMillis()}$ext")
+                        activity.contentResolver.openInputStream(uri)?.use { input ->
+                            tempInput.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
+
+                        var conversionError: String? = null
+                        try {
+                            when (ext) {
+                                ".xlsx" -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
+                                ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
+                                ".txt" -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                else -> {
+                                    try {
+                                        officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
+                                    } catch (_: Exception) {
+                                        // Fallback to text conversion if binary .doc or corrupted OOXML
+                                        officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                    }
+                                }
+                            }
+                        } catch (t: Throwable) {
+                            conversionError = t.message ?: "Failed to convert document"
+                        }
+
                         val success = tempPdf.exists() && tempPdf.length() > 0
                         if (success) {
                             tempPdf.inputStream().use { it.copyTo(outStream) }
                         }
-                        tempDocx.delete()
+                        tempInput.delete()
                         tempPdf.delete()
                         withContext(Dispatchers.Main) {
-                            finishExecution(success, outStream.toByteArray(), "${base}.pdf", origText)
+                            if (success) {
+                                finishExecution(true, outStream.toByteArray(), "${base}.pdf", origText)
+                            } else {
+                                isExecuting = false
+                                binding.btnQuickToolExecute.isEnabled = true
+                                binding.btnQuickToolExecute.text = origText
+                                Toast.makeText(activity, conversionError ?: "Conversion failed. Please verify document format.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                     QuickMode.PDF_TO_IMAGE -> {
@@ -1920,6 +2094,18 @@ class PdfQuickToolController(
     }
 
     companion object {
+        val DOC_MIME_TYPES = arrayOf(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint",
+            "text/plain",
+            "application/rtf",
+            "text/rtf"
+        )
+
         /**
          * Robust page sequence parser supporting:
          * - Arbitrary delimiters: ',', ';', '>', '->', spaces, '|' (e.g. "3>4>2>1>5", "1, 2, 7, 6, 3, 4, 5, 10, 8, 9")

@@ -185,8 +185,11 @@ class PdfSignCanvasView @JvmOverloads constructor(
     private lateinit var scaleDetector: ScaleGestureDetector
     private lateinit var gestureDetector: GestureDetector
 
+    private val rendererLock = Any()
+
     init {
-        setLayerType(LAYER_TYPE_HARDWARE, null)
+        // LAYER_TYPE_HARDWARE on a large multi-page interactive canvas causes GPU texture limit crashes
+        setLayerType(LAYER_TYPE_NONE, null)
         initDetectors()
     }
 
@@ -234,29 +237,36 @@ class PdfSignCanvasView @JvmOverloads constructor(
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(tempFile).use { output -> input.copyTo(output) }
                 }
-                tempPdfFile = tempFile
-                val filePfd = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
-                pfd = filePfd
-                val renderer = PdfRenderer(filePfd)
-                pdfRenderer = renderer
 
+                val loadedPages = mutableListOf<PageInfo>()
                 var currentY = pageSpacing
                 var maxWidth = 0f
-                val count = renderer.pageCount
-                for (i in 0 until count) {
-                    val page = renderer.openPage(i)
-                    val pw = page.width.toFloat()
-                    val ph = page.height.toFloat()
-                    page.close()
 
-                    pages.add(PageInfo(i, pw, ph, currentY))
-                    currentY += ph + pageSpacing
-                    if (pw > maxWidth) maxWidth = pw
+                synchronized(rendererLock) {
+                    tempPdfFile = tempFile
+                    val filePfd = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    pfd = filePfd
+                    val renderer = PdfRenderer(filePfd)
+                    pdfRenderer = renderer
+
+                    val count = renderer.pageCount
+                    for (i in 0 until count) {
+                        val page = renderer.openPage(i)
+                        val pw = page.width.toFloat()
+                        val ph = page.height.toFloat()
+                        page.close()
+
+                        loadedPages.add(PageInfo(i, pw, ph, currentY))
+                        currentY += ph + pageSpacing
+                        if (pw > maxWidth) maxWidth = pw
+                    }
                 }
-                maxDocWidth = maxWidth
-                totalDocHeight = currentY
 
                 withContext(Dispatchers.Main) {
+                    pages.clear()
+                    pages.addAll(loadedPages)
+                    maxDocWidth = maxWidth
+                    totalDocHeight = currentY
                     resetViewportToFit()
                     invalidate()
                 }
@@ -475,63 +485,70 @@ class PdfSignCanvasView @JvmOverloads constructor(
     }
 
     private fun requestPageRender(pageIndex: Int) {
-        val renderer = pdfRenderer ?: return
+        if (pdfRenderer == null) return
         if (renderJob?.isActive == true) return
 
         renderJob = viewScope.launch(Dispatchers.IO) {
             try {
-                if (pageIndex < 0 || pageIndex >= renderer.pageCount) return@launch
-                val page = synchronized(renderer) { renderer.openPage(pageIndex) }
-                val renderScale = 1.6f
-                val bw = (page.width * renderScale).toInt().coerceAtLeast(1)
-                val bh = (page.height * renderScale).toInt().coerceAtLeast(1)
-                val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-                val c = Canvas(bmp)
-                c.drawColor(Color.WHITE)
-                synchronized(renderer) {
-                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    page.close()
+                var bmp: Bitmap? = null
+                synchronized(rendererLock) {
+                    val r = pdfRenderer ?: return@launch
+                    if (pageIndex < 0 || pageIndex >= r.pageCount) return@launch
+                    val page = r.openPage(pageIndex)
+                    try {
+                        val renderScale = 1.6f
+                        val bw = (page.width * renderScale).toInt().coerceAtLeast(1)
+                        val bh = (page.height * renderScale).toInt().coerceAtLeast(1)
+                        bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                        val c = Canvas(bmp!!)
+                        c.drawColor(Color.WHITE)
+                        page.render(bmp!!, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    } finally {
+                        page.close()
+                    }
                 }
-                pageBitmapCache.put(pageIndex, bmp)
+                bmp?.let { pageBitmapCache.put(pageIndex, it) }
                 withContext(Dispatchers.Main) {
                     invalidate()
                 }
-            } catch (ignored: Exception) {
+            } catch (_: Exception) {
             }
         }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         // Multi-touch 2-finger evaluation
-        if (event.pointerCount >= 2) {
-            val p0x = event.getX(0)
-            val p0y = event.getY(0)
-            val p1x = event.getX(1)
-            val p1y = event.getY(1)
+        if (event.pointerCount >= 2 && event.actionMasked != MotionEvent.ACTION_POINTER_UP) {
+            try {
+                val p0x = event.getX(0)
+                val p0y = event.getY(0)
+                val p1x = event.getX(1)
+                val p1y = event.getY(1)
 
-            val currentAngle = Math.toDegrees(atan2((p1y - p0y).toDouble(), (p1x - p0x).toDouble()))
+                val currentAngle = Math.toDegrees(atan2((p1y - p0y).toDouble(), (p1x - p0x).toDouble()))
 
-            if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
-                twoFingerStartAngle = currentAngle
-                twoFingerCumAngle = 0.0
-            } else if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-                var deltaAngle = currentAngle - twoFingerStartAngle
-                if (deltaAngle > 180) deltaAngle -= 360
-                if (deltaAngle < -180) deltaAngle += 360
+                if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+                    twoFingerStartAngle = currentAngle
+                    twoFingerCumAngle = 0.0
+                } else if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+                    var deltaAngle = currentAngle - twoFingerStartAngle
+                    if (deltaAngle > 180) deltaAngle -= 360
+                    if (deltaAngle < -180) deltaAngle += 360
 
-                twoFingerCumAngle += deltaAngle
-                twoFingerStartAngle = currentAngle
+                    twoFingerCumAngle += deltaAngle
+                    twoFingerStartAngle = currentAngle
 
-                // If rotating past threshold and a box is selected, rotate the box directly
-                if (selectedBox != null && (Math.abs(twoFingerCumAngle) > TWO_FINGER_ROTATE_THRESHOLD_DEG || activeMode == TouchMode.TWO_FINGER_ROTATE)) {
-                    activeMode = TouchMode.TWO_FINGER_ROTATE
-                    selectedBox?.let { box ->
-                        box.rotationDegrees = (box.rotationDegrees + deltaAngle.toFloat()) % 360f
+                    // If rotating past threshold and a box is selected, rotate the box directly
+                    if (selectedBox != null && (Math.abs(twoFingerCumAngle) > TWO_FINGER_ROTATE_THRESHOLD_DEG || activeMode == TouchMode.TWO_FINGER_ROTATE)) {
+                        activeMode = TouchMode.TWO_FINGER_ROTATE
+                        selectedBox?.let { box ->
+                            box.rotationDegrees = (box.rotationDegrees + deltaAngle.toFloat()) % 360f
+                        }
+                        invalidate()
+                        return true
                     }
-                    invalidate()
-                    return true
                 }
-            }
+            } catch (_: Exception) {}
         }
 
         if (activeMode == TouchMode.TWO_FINGER_ROTATE) {
@@ -692,6 +709,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
             if (actualPanDelta != 0f) {
                 selectedBox?.let { box ->
+                    if (pages.isEmpty()) return@let
                     val currentTargetPage = pages.getOrNull(box.pageIndex) ?: return@let
                     val currentPageLeftDoc = (maxDocWidth - currentTargetPage.width) / 2f
                     val docDy = -actualPanDelta / scale
@@ -699,8 +717,9 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     val centerDocX = currentPageLeftDoc + box.x + box.width / 2f
                     var centerDocY = currentTargetPage.topY + box.y + box.height / 2f + docDy
 
-                    val minDocY = pages.first().topY
-                    val maxDocY = pages.last().topY + pages.last().height
+                    val minDocY = pages.firstOrNull()?.topY ?: 0f
+                    val lastP = pages.lastOrNull()
+                    val maxDocY = (lastP?.topY ?: 0f) + (lastP?.height ?: 0f)
                     centerDocY = centerDocY.coerceIn(minDocY, maxDocY)
 
                     val newPageIndex = pages.indexOfLast { it.topY <= centerDocY }.coerceIn(0, pages.size - 1)
@@ -855,12 +874,15 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
     private fun cleanupRenderer() {
         renderJob?.cancel()
-        try { pdfRenderer?.close() } catch (ignored: Throwable) {}
-        try { pfd?.close() } catch (ignored: Throwable) {}
-        try { tempPdfFile?.delete() } catch (ignored: Throwable) {}
-        pdfRenderer = null
-        pfd = null
-        tempPdfFile = null
+        renderJob = null
+        synchronized(rendererLock) {
+            try { pdfRenderer?.close() } catch (_: Throwable) {}
+            try { pfd?.close() } catch (_: Throwable) {}
+            try { tempPdfFile?.delete() } catch (_: Throwable) {}
+            pdfRenderer = null
+            pfd = null
+            tempPdfFile = null
+        }
     }
 
     override fun onDetachedFromWindow() {

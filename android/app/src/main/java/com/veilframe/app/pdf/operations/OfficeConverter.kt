@@ -242,7 +242,7 @@ class OfficeConverter {
                                 }
                                 contentStream?.setFont(line.font, line.fontSize)
                                 contentStream?.newLineAtOffset(cellX + 5f, currentCellY)
-                                contentStream?.showText(sanitizedLine)
+                                safeShowText(contentStream, sanitizedLine, line.font)
                                 contentStream?.endText()
                             }
 
@@ -424,7 +424,7 @@ class OfficeConverter {
                         }
                         contentStream?.setFont(font, size)
                         contentStream?.newLineAtOffset(x, y)
-                        contentStream?.showText(text)
+                        safeShowText(contentStream, text, font)
                         contentStream?.endText()
                     }
 
@@ -674,7 +674,7 @@ class OfficeConverter {
                 contentStream?.beginText()
                 contentStream?.setFont(fontBold, 12f)
                 contentStream?.newLineAtOffset(margin, pageBounds.height - margin + 12f)
-                contentStream?.showText("Spreadsheet Export: ${sheet.sheetName}")
+                safeShowText(contentStream, "Spreadsheet Export: ${sheet.sheetName}", fontBold)
                 contentStream?.endText()
 
                 var yPosition = pageBounds.height - margin - 20f
@@ -735,7 +735,7 @@ class OfficeConverter {
                             contentStream?.beginText()
                             contentStream?.setFont(fontNormal, fontSizeCell)
                             contentStream?.newLineAtOffset(cellX + 4f, yPosition - rowHeight + 6f)
-                            contentStream?.showText(displayValue)
+                            safeShowText(contentStream, displayValue, fontNormal)
                             contentStream?.endText()
                         }
                     }
@@ -1935,5 +1935,131 @@ class OfficeConverter {
             }
         }
         return sb.toString().replace(Regex("\\s+"), " ")
+    }
+
+    private fun safeShowText(
+        stream: PDPageContentStream?,
+        text: String,
+        font: com.tom_roush.pdfbox.pdmodel.font.PDFont
+    ) {
+        if (stream == null || text.isEmpty()) return
+        val sb = StringBuilder()
+        for (char in text) {
+            val encodable = try {
+                font.encode(char.toString())
+                true
+            } catch (_: Exception) {
+                false
+            }
+            if (encodable) {
+                sb.append(char)
+            } else {
+                when (char) {
+                    '‘', '’' -> sb.append('\'')
+                    '“', '”' -> sb.append('"')
+                    '–', '—' -> sb.append('-')
+                    '•' -> sb.append('*')
+                    '…' -> sb.append("...")
+                    '\t', '\n', '\r' -> sb.append(' ')
+                    else -> {
+                        if (char.code in 32..126) sb.append(char) else sb.append(' ')
+                    }
+                }
+            }
+        }
+        val out = sb.toString()
+        try {
+            stream.showText(out)
+        } catch (_: Exception) {
+            val asciiOnly = out.filter { it.code in 32..126 }
+            try {
+                stream.showText(asciiOnly)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Converts a plain text or RTF/markdown file line-by-line to an A4 PDF with automatic word wrap and pagination.
+     */
+    suspend fun convertTextToPdf(textFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
+        PDFBoxResourceLoader.init(context)
+        var pdf: PDDocument? = null
+        var contentStream: PDPageContentStream? = null
+
+        try {
+            pdf = PDDocument()
+            val pageBounds = PDRectangle.A4
+            val margin = 50f
+            val printableWidth = pageBounds.width - (2 * margin)
+
+            val font = PDType1Font.HELVETICA
+            val fontSize = 11f
+            val leading = fontSize * 1.3f
+
+            var currentPage = PDPage(pageBounds)
+            pdf.addPage(currentPage)
+            contentStream = PDPageContentStream(pdf, currentPage)
+
+            var yPosition = pageBounds.height - margin
+
+            textFile.forEachLine(Charsets.UTF_8) { rawLine ->
+                val line = rawLine.replace('\t', ' ')
+                val words = line.split(' ')
+                val currentLine = StringBuilder()
+
+                for (word in words) {
+                    val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
+                    val testW = try {
+                        font.getStringWidth(candidate.filter { it.code in 32..126 }) / 1000f * fontSize
+                    } catch (_: Exception) {
+                        candidate.length * fontSize * 0.5f
+                    }
+
+                    if (testW > printableWidth && currentLine.isNotEmpty()) {
+                        if (yPosition < margin + leading) {
+                            contentStream?.close()
+                            currentPage = PDPage(pageBounds)
+                            pdf.addPage(currentPage)
+                            contentStream = PDPageContentStream(pdf, currentPage)
+                            yPosition = pageBounds.height - margin
+                        }
+
+                        contentStream?.beginText()
+                        contentStream?.setFont(font, fontSize)
+                        contentStream?.newLineAtOffset(margin, yPosition)
+                        safeShowText(contentStream, currentLine.toString(), font)
+                        contentStream?.endText()
+                        yPosition -= leading
+                        currentLine.clear().append(word)
+                    } else {
+                        currentLine.clear().append(candidate)
+                    }
+                }
+
+                if (currentLine.isNotEmpty()) {
+                    if (yPosition < margin + leading) {
+                        contentStream?.close()
+                        currentPage = PDPage(pageBounds)
+                        pdf.addPage(currentPage)
+                        contentStream = PDPageContentStream(pdf, currentPage)
+                        yPosition = pageBounds.height - margin
+                    }
+
+                    contentStream?.beginText()
+                    contentStream?.setFont(font, fontSize)
+                    contentStream?.newLineAtOffset(margin, yPosition)
+                    safeShowText(contentStream, currentLine.toString(), font)
+                    contentStream?.endText()
+                    yPosition -= leading
+                }
+            }
+
+            contentStream?.close()
+            contentStream = null
+            pdf.save(pdfFile)
+        } finally {
+            try { contentStream?.close() } catch (_: Exception) {}
+            try { pdf?.close() } catch (_: Exception) {}
+        }
     }
 }

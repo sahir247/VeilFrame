@@ -368,11 +368,11 @@ class PdfSuiteCoordinator(
             activity = activity,
             binding = binding,
             scope = scope,
-            onPickFileRequest = { mime, multiple ->
+            onPickFileRequest = { mimes, multiple ->
                 if (multiple) {
-                    quickToolMultiplePickerLauncher.launch(arrayOf(mime))
+                    quickToolMultiplePickerLauncher.launch(mimes)
                 } else {
-                    quickToolSinglePickerLauncher.launch(arrayOf(mime))
+                    quickToolSinglePickerLauncher.launch(mimes)
                 }
             },
             onSaveFileRequest = { bytes, fileName ->
