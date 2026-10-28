@@ -768,7 +768,7 @@ class BackgroundRemoverController(
         val isModNetReady = repository.isModelReady(RembgModel.MODNET)
         when (currentMode) {
             RembgMode.HYBRID -> {
-                binding.tvBgCurrentModelName.text = "⚡ Hybrid (Smart Auto)"
+                binding.tvBgCurrentModelName.text = "Hybrid (Smart Auto)"
                 if (isModNetReady) {
                     binding.tvBgModelBadge.text = "Studio Ready"
                     binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))

@@ -61,7 +61,7 @@ class BackgroundRemoverControllerTest {
     @Test
     fun `test initial mode is HYBRID with appropriate badges`() {
         assertEquals(BackgroundRemoverController.RembgMode.HYBRID, controller.currentMode)
-        assertEquals("⚡ Hybrid (Smart Auto)", binding.tvBgCurrentModelName.text.toString())
+        assertEquals("Hybrid (Smart Auto)", binding.tvBgCurrentModelName.text.toString())
         assertTrue(binding.btnModeSelectHybrid.isChecked)
         assertFalse(binding.btnModeSelectU2Net.isChecked)
         assertFalse(binding.btnModeSelectModNet.isChecked)
@@ -93,7 +93,7 @@ class BackgroundRemoverControllerTest {
 
         binding.toggleGroupMattingMode.check(binding.btnModeSelectHybrid.id)
         assertEquals(BackgroundRemoverController.RembgMode.HYBRID, controller.currentMode)
-        assertEquals("⚡ Hybrid (Smart Auto)", binding.tvBgCurrentModelName.text.toString())
+        assertEquals("Hybrid (Smart Auto)", binding.tvBgCurrentModelName.text.toString())
         assertTrue(binding.btnModeSelectHybrid.isChecked)
     }
 
