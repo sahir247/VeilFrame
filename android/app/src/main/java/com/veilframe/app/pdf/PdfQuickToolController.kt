@@ -32,7 +32,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.apache.poi.xwpf.usermodel.XWPFDocument
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import com.veilframe.app.pdf.operations.OpenXmlDocumentParser
 import org.apache.poi.xslf.usermodel.XMLSlideShow
 import org.apache.poi.xslf.usermodel.XSLFTextShape
 import com.veilframe.app.pdf.ui.SignaturePadView
@@ -898,20 +898,24 @@ class PdfQuickToolController(
                         val sheetGrid = mutableListOf<List<String>>()
                         try {
                             activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val wb = XSSFWorkbook(stream)
-                                val sheetCount = wb.numberOfSheets
-                                val sheetNames = (0 until sheetCount).map { wb.getSheetName(it) }.joinToString(", ")
+                                val tempFile = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.xlsx")
+                                val wb = try {
+                                    tempFile.outputStream().use { output -> stream.copyTo(output) }
+                                    OpenXmlDocumentParser.parseXlsx(tempFile)
+                                } finally {
+                                    tempFile.delete()
+                                }
+                                val sheetCount = wb.sheets.size
+                                val sheetNames = wb.sheets.joinToString(", ") { it.name }
                                 summary = "Excel Workbook • $sheetCount sheet(s) ($sheetNames)"
-                                val firstSheet = if (sheetCount > 0) wb.getSheetAt(0) else null
+                                val firstSheet = wb.sheets.firstOrNull()
                                 val previewSb = StringBuilder()
                                 if (firstSheet != null) {
-                                    previewSb.append("Sheet: ${firstSheet.sheetName}\n")
-                                    val rowCount = minOf(firstSheet.physicalNumberOfRows, 15)
+                                    previewSb.append("Sheet: ${firstSheet.name}\n")
+                                    val rowCount = minOf(firstSheet.rows.size, 15)
                                     for (r in 0 until rowCount) {
-                                        val row = firstSheet.getRow(r) ?: continue
-                                        val cells = (0 until minOf(row.physicalNumberOfCells, 6)).mapNotNull { c ->
-                                            row.getCell(c)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                                        }
+                                        val row = firstSheet.rows[r]
+                                        val cells = row.take(6).filter { it.isNotBlank() }
                                         if (cells.isNotEmpty()) {
                                             sheetGrid.add(cells)
                                             previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
@@ -921,7 +925,7 @@ class PdfQuickToolController(
                                 previewText = previewSb.toString().trim()
                             }
                         } catch (t: Throwable) {
-                            Log.w(TAG, "POI XLSX preview failed: ${t.message}", t)
+                            Log.w(TAG, "XLSX preview failed: ${t.message}", t)
                             summary = "Excel Spreadsheet ($primaryDocName)"
                             previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
                         }

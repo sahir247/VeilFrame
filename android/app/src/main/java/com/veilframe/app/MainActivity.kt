@@ -794,6 +794,7 @@ class MainActivity : AppCompatActivity() {
 
         // Jump to Tools Catalogue tab
         binding.btnSeeAllTools.setOnClickListener {
+            clearHomeFileIntake()
             binding.bottomNavigation.selectedItemId = R.id.nav_tools
         }
 
@@ -1032,7 +1033,7 @@ class MainActivity : AppCompatActivity() {
             toolSessionManager.saveCurrentToolState()
         }
         navigationController.showBackgroundRemoverScreen()
-        consoleLogController.log("[UI] Opened Background Remover workspace.")
+        consoleLogController.log("[UI] Opened BG Remover workspace.")
     }
 
     fun openMotionLab() {

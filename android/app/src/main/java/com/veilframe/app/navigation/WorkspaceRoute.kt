@@ -74,12 +74,12 @@ enum class WorkspaceRoute(
     ),
     BACKGROUND_REMOVER(
         id = "background_remover",
-        title = "Background Remover",
+        title = "BG Remover",
         description = "Offline subject segmentation, transparent cutout, and interactive compare",
         category = WorkspaceCategory.CREATE_EDIT,
         status = WorkspaceStatus.STABLE,
         aliases = listOf("remove bg", "background", "cutout", "transparent", "segmentation", "matting", "isolate"),
-        iconRes = R.drawable.ic_crop
+        iconRes = R.drawable.ic_eraser
     ),
     IMAGE_UPSCALER(
         id = "image_upscaler",

@@ -179,4 +179,54 @@ class QuickFileIntakeTest {
             itemXml.contains("ivToolOptionIcon")
         )
     }
+
+    @Test
+    fun `doc intake provides Doc to PDF recommendation with QuickTool DOC_TO_PDF`() {
+        val code = getIntakeCode()
+        assertTrue("Must detect office document files",
+            code.contains("val isDoc") &&
+            code.contains(".endsWith(\".docx\")") &&
+            code.contains(".endsWith(\".xlsx\")")
+        )
+
+        assertTrue("Must offer Doc to PDF action for office documents",
+            code.contains("\"Doc to PDF\"") &&
+            code.contains("openQuickTool(com.veilframe.app.pdf.PdfQuickToolController.QuickMode.DOC_TO_PDF)")
+        )
+    }
+
+    @Test
+    fun `navigation to tools releases file from quick intake`() {
+        val navFile = getFile("src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        assertTrue("MainNavigationController must exist", navFile.exists())
+        val navCode = navFile.readText()
+
+        assertTrue("MainNavigationController must call clearHomeFileIntake on nav_tools",
+            navCode.contains("(activity as? MainActivity)?.clearHomeFileIntake()")
+        )
+
+        val mainFile = getFile("src/main/java/com/veilframe/app/MainActivity.kt")
+        val mainCode = mainFile.readText()
+        assertTrue("MainActivity must clear home file intake on btnSeeAllTools",
+            mainCode.replace("\r\n", "\n").contains("binding.btnSeeAllTools.setOnClickListener {\n            clearHomeFileIntake()")
+        )
+    }
+
+    @Test
+    fun `bg remover in tools catalogue uses ic_eraser and concise subtext`() {
+        val catFile = getFile("src/main/res/layout/layout_tools_catalogue.xml")
+        assertTrue("Catalogue layout must exist", catFile.exists())
+        val catXml = catFile.readText()
+
+        assertTrue("cardToolBgRemover must have BG Remover title",
+            catXml.contains("android:id=\"@+id/cardToolBgRemover\"") &&
+            catXml.contains("android:text=\"BG Remover\"")
+        )
+        assertTrue("cardToolBgRemover must use ic_eraser icon",
+            catXml.contains("@drawable/ic_eraser")
+        )
+        assertTrue("QR studio must use concise generator and scanner subtext",
+            catXml.contains("Generator &amp; scanner")
+        )
+    }
 }

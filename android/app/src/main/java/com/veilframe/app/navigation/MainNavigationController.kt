@@ -96,12 +96,14 @@ class MainNavigationController(
                     true
                 }
                 R.id.nav_tools -> {
+                    (activity as? MainActivity)?.clearHomeFileIntake()
                     if (currentScreen != ScreenState.TOOLS) {
                         performBackNavigation { showToolsScreen() }
                     }
                     true
                 }
                 R.id.nav_library -> {
+                    (activity as? MainActivity)?.clearHomeFileIntake()
                     if (currentScreen != ScreenState.LIBRARY) {
                         performBackNavigation { showLibraryScreen() }
                     }
@@ -121,12 +123,14 @@ class MainNavigationController(
                     true
                 }
                 R.id.nav_tools -> {
+                    (activity as? MainActivity)?.clearHomeFileIntake()
                     if (currentScreen != ScreenState.TOOLS) {
                         performBackNavigation { showToolsScreen() }
                     }
                     true
                 }
                 R.id.nav_library -> {
+                    (activity as? MainActivity)?.clearHomeFileIntake()
                     if (currentScreen != ScreenState.LIBRARY) {
                         performBackNavigation { showLibraryScreen() }
                     }
@@ -538,6 +542,7 @@ class MainNavigationController(
     }
 
     fun showToolsScreen() {
+        (activity as? MainActivity)?.clearHomeFileIntake()
         val closingScreen = currentScreen
         if (!isRootScreen(closingScreen)) {
             val closingContract = (activity as? MainActivity)?.getActiveToolWorkContract(closingScreen)

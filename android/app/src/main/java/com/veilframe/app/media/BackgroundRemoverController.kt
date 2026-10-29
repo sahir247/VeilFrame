@@ -66,6 +66,16 @@ class BackgroundRemoverController(
     private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
+    private var rawCutoutBitmap: Bitmap? = null
+
+    private fun releaseCutoutBitmaps() {
+        if (resultBitmap !== rawCutoutBitmap) {
+            resultBitmap?.recycle()
+        }
+        rawCutoutBitmap?.recycle()
+        resultBitmap = null
+        rawCutoutBitmap = null
+    }
     private var sourceFileName: String = "image"
     var currentSourceUri: Uri? = null
 
@@ -160,9 +170,6 @@ class BackgroundRemoverController(
             executeRemoval()
         }
 
-        binding.btnBgResetCompare.setOnClickListener {
-            binding.splitViewBgCompare.resetViewAnimated()
-        }
 
         binding.btnBgSavePng.setOnClickListener {
             exportImage()
@@ -188,10 +195,20 @@ class BackgroundRemoverController(
             binding.splitViewBgCompare.backgroundMode = mode
         }
 
-        // Reset cutout when trim options change so user can re-run with new parameters
-        binding.switchTrimTransparent.setOnCheckedChangeListener { _, _ ->
-            if (sourceBytes != null && resultBitmap != null) {
-                resultBitmap = null
+        // Toggle transparency trimming dynamically without re-running inference or losing edits
+        binding.switchTrimTransparent.setOnCheckedChangeListener { _, isChecked ->
+            val raw = rawCutoutBitmap
+            if (raw != null) {
+                val prev = resultBitmap
+                resultBitmap = if (isChecked) {
+                    com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(raw)
+                } else {
+                    raw
+                }
+                if (prev !== resultBitmap && prev !== raw) {
+                    prev?.recycle()
+                }
+                binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 updateUi()
             }
         }
@@ -262,8 +279,7 @@ class BackgroundRemoverController(
             downloadManager.cancelDownload()
             sourceBitmap?.recycle()
             sourceBitmap = null
-            resultBitmap?.recycle()
-            resultBitmap = null
+            releaseCutoutBitmaps()
             sourceBytes = null
             currentSourceUri = null
         } catch (ignored: Throwable) {}
@@ -298,12 +314,10 @@ class BackgroundRemoverController(
             withContext(Dispatchers.Main) {
                 if (decoded != null) {
                     val oldSrc = sourceBitmap
-                    val oldRes = resultBitmap
                     sourceBytes = bytes
                     sourceBitmap = decoded
-                    resultBitmap = null
+                    releaseCutoutBitmaps()
                     oldSrc?.recycle()
-                    oldRes?.recycle()
                     lastFailure = null
                     val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
                     sourceFileName = rawName.substringBeforeLast('.', rawName)
@@ -515,7 +529,7 @@ class BackgroundRemoverController(
                 remover.removeBackground(
                     imageBytes = bytes,
                     model = effectiveModel,
-                    trim = trim,
+                    trim = false,
                     tightenEdges = tighten,
                     featherEdges = feather,
                     onProgress = { progress ->
@@ -535,10 +549,19 @@ class BackgroundRemoverController(
                 binding.cardBgProcessingOverlay.visibility = View.GONE
                 outcome.fold(
                     onOk = { result ->
-                        val prev = resultBitmap
-                        resultBitmap = result.cutoutBitmap
-                        if (prev !== resultBitmap) {
-                            prev?.recycle()
+                        val prevRaw = rawCutoutBitmap
+                        val prevRes = resultBitmap
+                        rawCutoutBitmap = result.cutoutBitmap
+                        resultBitmap = if (binding.switchTrimTransparent.isChecked) {
+                            com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(result.cutoutBitmap)
+                        } else {
+                            result.cutoutBitmap
+                        }
+                        if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
+                            prevRaw?.recycle()
+                        }
+                        if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
+                            prevRes?.recycle()
                         }
                         lastFailure = null
                         updateUi()
@@ -720,9 +743,7 @@ class BackgroundRemoverController(
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (resultBitmap != null) {
-                resultBitmap = null
-            }
+            releaseCutoutBitmaps()
             updateUi()
         }
 
@@ -754,9 +775,7 @@ class BackgroundRemoverController(
             refreshCards()
             updateActiveModelBadge()
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
-            if (resultBitmap != null) {
-                resultBitmap = null
-            }
+            releaseCutoutBitmaps()
             updateUi()
         }
 
@@ -827,10 +846,19 @@ class BackgroundRemoverController(
         if (applyEdits) {
             val edited = binding.refineBrushCanvas.getRefinedBitmap()
             if (edited != null) {
-                val prev = resultBitmap
-                resultBitmap = edited
-                if (prev !== resultBitmap) {
-                    prev?.recycle()
+                val prevRaw = rawCutoutBitmap
+                val prevRes = resultBitmap
+                rawCutoutBitmap = edited
+                resultBitmap = if (binding.switchTrimTransparent.isChecked) {
+                    com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(edited)
+                } else {
+                    edited
+                }
+                if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
+                    prevRaw?.recycle()
+                }
+                if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
+                    prevRes?.recycle()
                 }
                 binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 Toast.makeText(activity, "Refinement applied successfully", Toast.LENGTH_SHORT).show()
@@ -845,7 +873,7 @@ class BackgroundRemoverController(
         binding.containerBgControls.visibility = View.VISIBLE
         binding.cardBgActionDock.visibility = View.VISIBLE
 
-        binding.toolbarBgRemover.title = "Background Remover"
+        binding.toolbarBgRemover.title = "BG Remover"
         binding.toolbarBgRemover.subtitle = "On-Device Neural Matting"
         updateUi()
     }
@@ -853,7 +881,7 @@ class BackgroundRemoverController(
     private fun updateSaveCutoutButton() {
         if (resultBitmap == null) {
             binding.btnBgExecuteRemoval.text = "Remove Background"
-            binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_crop)
+            binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_eraser)
             binding.btnBgExecuteRemoval.isEnabled = true
             binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
             binding.btnBgSavePng.visibility = View.GONE
@@ -863,7 +891,7 @@ class BackgroundRemoverController(
         }
 
         binding.btnBgExecuteRemoval.text = "Re-process"
-        binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_crop)
+        binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_reset)
         binding.btnBgExecuteRemoval.isEnabled = true
         binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_surface_variant)
 
@@ -1032,7 +1060,6 @@ class BackgroundRemoverController(
             binding.splitViewBgCompare.visibility = View.GONE
             binding.cardBgActionDock.visibility = View.GONE
             binding.containerBgControls.visibility = View.GONE
-            binding.btnBgResetCompare.visibility = View.GONE
             binding.btnBgToolbarExport.visibility = View.GONE
             binding.btnBgSavePng.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
@@ -1042,7 +1069,6 @@ class BackgroundRemoverController(
             binding.splitViewBgCompare.visibility = View.VISIBLE
             binding.cardBgActionDock.visibility = View.VISIBLE
             binding.containerBgControls.visibility = View.VISIBLE
-            binding.btnBgResetCompare.visibility = if (resultBitmap != null) View.VISIBLE else View.GONE
             binding.btnBgToolbarExport.visibility = View.GONE
             binding.btnBgToolbarExport.isEnabled = false
 

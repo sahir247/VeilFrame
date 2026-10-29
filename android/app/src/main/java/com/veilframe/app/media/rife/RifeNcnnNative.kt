@@ -26,4 +26,26 @@ object RifeNcnnNative {
 
     @JvmStatic
     external fun nativeRelease()
+
+    /**
+     * Detects if running on Android Studio Emulator / QEMU / Virtual device.
+     * Used to safely route RIFE to CPU OpenMP on emulators where host GPU Vulkan is unstable.
+     */
+    fun isEmulator(): Boolean {
+        val fingerprint = android.os.Build.FINGERPRINT.lowercase()
+        val model = android.os.Build.MODEL.lowercase()
+        val hardware = android.os.Build.HARDWARE.lowercase()
+        val product = android.os.Build.PRODUCT.lowercase()
+        val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+        return fingerprint.startsWith("generic") ||
+            fingerprint.startsWith("unknown") ||
+            model.contains("google_sdk") ||
+            model.contains("emulator") ||
+            model.contains("android sdk built for") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            product.contains("sdk_gphone") ||
+            product.contains("google_sdk") ||
+            manufacturer.contains("genymotion")
+    }
 }

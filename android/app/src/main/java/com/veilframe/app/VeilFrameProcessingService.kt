@@ -517,10 +517,18 @@ class VeilFrameProcessingService : Service() {
             if (methodStr.equals("RIFE", ignoreCase = true)) {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
                 if (rifeManager.isModelReady()) {
-                    useRife = try {
-                        RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
-                    } catch (t: Throwable) {
-                        Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
+                    val attemptGpu = !RifeNcnnNative.isEmulator()
+                    useRife = if (attemptGpu) {
+                        try {
+                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
+                            try {
+                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                            } catch (_: Throwable) { false }
+                        }
+                    } else {
+                        Log.i(TAG, "Android Emulator detected: defaulting RIFE to CPU OpenMP mode for stability")
                         try {
                             RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
                         } catch (_: Throwable) { false }

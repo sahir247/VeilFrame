@@ -21,7 +21,7 @@
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationIconTint="?attr/colorOnSurface"
-            app:title="Background Remover"
+            app:title="BG Remover"
             app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="On-Device Neural Matting"
             app:subtitleTextColor="?attr/colorOnSurfaceVariant">
@@ -36,19 +36,6 @@
                 android:layout_marginEnd="4dp"
                 android:contentDescription="AI Model Manager"
                 app:icon="@drawable/ic_system_update"
-                app:iconTint="?attr/colorOnSurface" />
-
-            <!-- Reset Comparison Zoom/Pan -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnBgResetCompare"
-                style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginEnd="4dp"
-                android:visibility="gone"
-                android:contentDescription="Reset comparison"
-                app:icon="@drawable/ic_reset"
                 app:iconTint="?attr/colorOnSurface" />
 
             <!-- Quick Save / Export Action in Toolbar -->
@@ -565,40 +552,57 @@
                     app:iconSize="20dp"
                     app:iconTint="?attr/colorOnSurfaceVariant" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBgExecuteRemoval"
-                    style="@style/Widget.VeilFrame.Button.Primary"
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="0dp"
-                    android:text="Remove Background"
-                    app:icon="@drawable/ic_crop"
-                    app:iconSize="18dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="4dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBgRefineBrush"
-                    style="@style/Widget.VeilFrame.Button.Action"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:layout_marginEnd="6dp"
-                    android:visibility="gone"
-                    android:text="Refine Brush"
-                    app:icon="@drawable/ic_brush"
-                    app:iconSize="16dp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBgExecuteRemoval"
+                        style="@style/Widget.VeilFrame.Button.Primary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="Remove Background"
+                        app:icon="@drawable/ic_eraser"
+                        app:iconSize="18dp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBgSavePng"
-                    style="@style/Widget.VeilFrame.Button.Primary"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:visibility="gone"
-                    android:text="Save Cutout"
-                    app:icon="@drawable/ic_action_save"
-                    app:iconSize="18dp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBgRefineBrush"
+                        style="@style/Widget.VeilFrame.Button.Action"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp"
+                        android:visibility="gone"
+                        android:text="Refine Brush"
+                        app:icon="@drawable/ic_brush"
+                        app:iconSize="16dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBgSavePng"
+                        style="@style/Widget.VeilFrame.Button.Primary"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp"
+                        android:visibility="gone"
+                        android:text="Save Cutout"
+                        app:icon="@drawable/ic_action_save"
+                        app:iconSize="18dp" />
+                </LinearLayout>
+
+                <Space
+                    android:id="@+id/spaceBgActionDockBalance"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

@@ -16,6 +16,7 @@
 static std::mutex g_rife_mutex;
 static RIFE* g_rife = nullptr;
 static int g_rife_gpuid = -1;
+static std::string g_rife_model_dir;
 
 // Cached global references for zero reflection overhead per frame
 static jclass g_bitmapClass = nullptr;
@@ -45,6 +46,7 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     const char* dir_c = env->GetStringUTFChars(modelDir, nullptr);
     std::string dir_str(dir_c);
     env->ReleaseStringUTFChars(modelDir, dir_c);
+    g_rife_model_dir = dir_str;
 
     std::string param_path = dir_str + "/flownet.param";
     FILE* fp = fopen(param_path.c_str(), "rb");
@@ -196,6 +198,17 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
 
     ncnn::Mat outimage(w, h, g_rgb_out.data(), (size_t)3u, 1);
     int ret = g_rife->process(in0, in1, timestep, outimage);
+    if (ret != 0 && g_rife_gpuid >= 0 && !g_rife_model_dir.empty()) {
+        LOGI("RIFE GPU process failed (%d), dynamically recovering via CPU OpenMP", ret);
+        delete g_rife;
+        g_rife_gpuid = -1;
+        int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
+        if (cpu_threads > 4) cpu_threads = 4;
+        g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
+        if (g_rife->load(g_rife_model_dir) == 0) {
+            ret = g_rife->process(in0, in1, timestep, outimage);
+        }
+    }
 
     if (ret != 0) {
         LOGE("RIFE process failed with code %d", ret);

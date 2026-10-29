@@ -1244,9 +1244,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
         }
     }
 
-    vkdev->reclaim_blob_allocator(blob_vkallocator);
-    vkdev->reclaim_staging_allocator(staging_vkallocator);
-
+    // Allocators safely reclaimed by VkAllocatorScope RAII guard
     return 0;
 }
 
@@ -3238,9 +3236,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
         }
     }
 
-    vkdev->reclaim_blob_allocator(blob_vkallocator);
-    vkdev->reclaim_staging_allocator(staging_vkallocator);
-
+    // Allocators safely reclaimed by VkAllocatorScope RAII guard
     return 0;
 }
 

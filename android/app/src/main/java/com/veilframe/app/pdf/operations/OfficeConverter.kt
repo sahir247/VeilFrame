@@ -14,7 +14,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTOnOff
 import org.apache.poi.xslf.usermodel.XMLSlideShow
@@ -82,22 +82,166 @@ class OfficeConverter {
      */
     suspend fun convertDocxToPdf(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         try {
-            convertDocxToPdfInternal(docxFile, pdfFile, context)
+            convertDocxViaOpenXml(docxFile, pdfFile, context)
         } catch (t: Throwable) {
-            android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t.message}), falling back to lightweight XML text extractor", t)
-            val extracted = extractDocxTextViaZip(docxFile)
-            if (extracted.isNotBlank()) {
-                val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
-                try {
-                    tempText.writeText(extracted)
-                    convertTextToPdf(tempText, pdfFile, context)
-                } finally {
-                    tempText.delete()
+            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed (${t.message}), trying POI / fallback", t)
+            try {
+                convertDocxToPdfInternal(docxFile, pdfFile, context)
+            } catch (t2: Throwable) {
+                android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t2.message}), falling back to lightweight XML text extractor", t2)
+                val extracted = extractDocxTextViaZip(docxFile)
+                if (extracted.isNotBlank()) {
+                    val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
+                    try {
+                        tempText.writeText(extracted)
+                        convertTextToPdf(tempText, pdfFile, context)
+                    } finally {
+                        tempText.delete()
+                    }
+                } else {
+                    convertTextToPdf(docxFile, pdfFile, context)
                 }
-            } else {
-                convertTextToPdf(docxFile, pdfFile, context)
             }
         }
+    }
+
+    /**
+     * Converts a DOCX file with rich formatting (headings, paragraph spacing, bullets, alignment, tables)
+     * using the pure-Kotlin OpenXML parser, guaranteeing zero POI/AWT crashes on Android.
+     */
+    suspend fun convertDocxViaOpenXml(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
+        PDFBoxResourceLoader.init(context)
+        val doc = OpenXmlDocumentParser.parseDocx(docxFile)
+        if (doc.nodes.isEmpty()) {
+            throw IllegalStateException("Empty or unreadable DOCX document")
+        }
+
+        val pdf = PDDocument()
+        var contentStream: PDPageContentStream? = null
+
+        val pageBounds = PDRectangle.A4
+        val margin = 50f
+        val printableWidth = pageBounds.width - (2 * margin)
+
+        val fontNormal = PDType1Font.HELVETICA
+        val fontBold = PDType1Font.HELVETICA_BOLD
+
+        var currentPage = PDPage(pageBounds)
+        pdf.addPage(currentPage)
+        contentStream = PDPageContentStream(pdf, currentPage)
+
+        var yPosition = pageBounds.height - margin
+
+        try {
+            for (node in doc.nodes) {
+                when (node) {
+                    is OpenXmlDocumentParser.DocxNode.ParagraphNode -> {
+                        val p = node.paragraph
+                        val isHeading = p.isHeading
+                        val fontSize = when (p.headingLevel) {
+                            1 -> 18f
+                            2 -> 15f
+                            3 -> 13f
+                            else -> 10.5f
+                        }
+                        val leading = fontSize * 1.35f
+                        val font = if (isHeading) fontBold else fontNormal
+
+                        // Paragraph spacing before
+                        yPosition -= p.spaceBeforePt
+
+                        val prefix = if (p.isBullet) "•  " else ""
+                        val textToRender = prefix + p.fullText
+
+                        if (textToRender.isNotBlank()) {
+                            val lines = wrapText(textToRender, font, fontSize, printableWidth)
+                            for (line in lines) {
+                                if (yPosition - leading < margin) {
+                                    contentStream?.close()
+                                    currentPage = PDPage(pageBounds)
+                                    pdf.addPage(currentPage)
+                                    contentStream = PDPageContentStream(pdf, currentPage)
+                                    yPosition = pageBounds.height - margin
+                                }
+
+                                val cleanLine = sanitizeText(line)
+                                val lineWidth = (font.getStringWidth(cleanLine) / 1000f * fontSize)
+                                val xOffset = when (p.alignment) {
+                                    "center" -> margin + ((printableWidth - lineWidth) / 2f).coerceAtLeast(0f)
+                                    "right" -> margin + (printableWidth - lineWidth).coerceAtLeast(0f)
+                                    else -> margin
+                                }
+
+                                contentStream?.beginText()
+                                contentStream?.setFont(font, fontSize)
+                                contentStream?.newLineAtOffset(xOffset, yPosition)
+                                safeShowText(contentStream, cleanLine, font)
+                                contentStream?.endText()
+
+                                yPosition -= leading
+                            }
+                        }
+
+                        // Paragraph spacing after
+                        yPosition -= p.spaceAfterPt
+                    }
+                    is OpenXmlDocumentParser.DocxNode.TableNode -> {
+                        val table = node.table
+                        val rows = table.rows
+                        if (rows.isEmpty()) continue
+
+                        val numCols = rows.maxOfOrNull { it.size } ?: 1
+                        val colWidth = printableWidth / numCols
+                        val rowHeight = 22f
+
+                        yPosition -= 8f
+
+                        for (row in rows) {
+                            if (yPosition - rowHeight < margin) {
+                                contentStream?.close()
+                                currentPage = PDPage(pageBounds)
+                                pdf.addPage(currentPage)
+                                contentStream = PDPageContentStream(pdf, currentPage)
+                                yPosition = pageBounds.height - margin
+                            }
+
+                            for (c in 0 until numCols) {
+                                val cellText = row.getOrNull(c) ?: ""
+                                val cellX = margin + (c * colWidth)
+
+                                // Cell grid border
+                                contentStream?.setStrokingColor(200, 200, 200)
+                                contentStream?.setLineWidth(0.5f)
+                                contentStream?.moveTo(cellX, yPosition)
+                                contentStream?.lineTo(cellX + colWidth, yPosition)
+                                contentStream?.lineTo(cellX + colWidth, yPosition - rowHeight)
+                                contentStream?.lineTo(cellX, yPosition - rowHeight)
+                                contentStream?.lineTo(cellX, yPosition)
+                                contentStream?.stroke()
+
+                                if (cellText.isNotBlank()) {
+                                    val disp = truncateToWidth(sanitizeText(cellText), fontNormal, 9f, colWidth - 8f)
+                                    contentStream?.beginText()
+                                    contentStream?.setFont(fontNormal, 9f)
+                                    contentStream?.newLineAtOffset(cellX + 4f, yPosition - rowHeight + 6f)
+                                    safeShowText(contentStream, disp, fontNormal)
+                                    contentStream?.endText()
+                                }
+                            }
+                            yPosition -= rowHeight
+                        }
+                        yPosition -= 8f
+                    }
+                }
+            }
+        } finally {
+            try { contentStream?.close() } catch (_: Exception) {}
+        }
+
+        FileOutputStream(pdfFile).use { out ->
+            pdf.save(out)
+        }
+        try { pdf.close() } catch (_: Exception) {}
     }
 
     private suspend fun convertDocxToPdfInternal(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
@@ -684,18 +828,20 @@ class OfficeConverter {
 
     /**
      * Converts a XLSX spreadsheet sheet-by-sheet to landscape A4 PDFs drawing clean cell gridlines.
+     * Uses OpenXmlDocumentParser to execute offline on Android ART with zero Apache POI crashes.
      */
     suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         PDFBoxResourceLoader.init(context)
 
-        var xlsxStream: FileInputStream? = null
-        var workbook: XSSFWorkbook? = null
+        val workbookData = OpenXmlDocumentParser.parseXlsx(xlsxFile)
+        if (workbookData.sheets.isEmpty()) {
+            throw IllegalStateException("Spreadsheet contains no readable sheets or is corrupted")
+        }
+
         var pdf: PDDocument? = null
         var contentStream: PDPageContentStream? = null
 
         try {
-            xlsxStream = FileInputStream(xlsxFile)
-            workbook = XSSFWorkbook(xlsxStream)
             pdf = PDDocument()
 
             // Landscape A4 bounds: width 842f, height 595f
@@ -708,18 +854,9 @@ class OfficeConverter {
             val fontSizeCell = 9f
             val rowHeight = 22f
 
-            for (sheetIndex in 0 until workbook.numberOfSheets) {
-                val sheet = workbook.getSheetAt(sheetIndex)
-                
-                // Identify active column bounds
-                var maxCol = 0
-                for (rowIndex in 0..sheet.lastRowNum) {
-                    val row = sheet.getRow(rowIndex) ?: continue
-                    if (row.lastCellNum > maxCol) {
-                        maxCol = row.lastCellNum.toInt()
-                    }
-                }
-
+            for (sheet in workbookData.sheets) {
+                val rows = sheet.rows
+                val maxCol = rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0) continue // Empty sheet
 
                 // Dynamically fit columns in printable width
@@ -733,14 +870,12 @@ class OfficeConverter {
                 contentStream?.beginText()
                 contentStream?.setFont(fontBold, 12f)
                 contentStream?.newLineAtOffset(margin, pageBounds.height - margin + 12f)
-                safeShowText(contentStream, "Spreadsheet Export: ${sheet.sheetName}", fontBold)
+                safeShowText(contentStream, "Spreadsheet: ${sheet.name}", fontBold)
                 contentStream?.endText()
 
                 var yPosition = pageBounds.height - margin - 20f
 
-                for (rowIndex in 0..sheet.lastRowNum) {
-                    val row = sheet.getRow(rowIndex) ?: continue
-
+                for (row in rows) {
                     // Check bounds for page breaks
                     if (yPosition - rowHeight < margin) {
                         contentStream?.close()
@@ -752,28 +887,7 @@ class OfficeConverter {
 
                     // Draw cell grid lines and values
                     for (colIndex in 0 until maxCol) {
-                        val cell = row.getCell(colIndex)
-                        val cellValue = when {
-                            cell == null -> ""
-                            cell.cellType == CellType.NUMERIC -> {
-                                val num = cell.numericCellValue
-                                if (num == num.toLong().toDouble()) num.toLong().toString() else num.toString()
-                            }
-                            cell.cellType == CellType.BOOLEAN -> cell.booleanCellValue.toString()
-                            cell.cellType == CellType.FORMULA -> {
-                                try {
-                                    cell.stringCellValue
-                                } catch (e: Exception) {
-                                    try {
-                                        cell.numericCellValue.toString()
-                                    } catch (ex: Exception) {
-                                        ""
-                                    }
-                                }
-                            }
-                            else -> cell.stringCellValue ?: ""
-                        }
-
+                        val cellValue = row.getOrNull(colIndex) ?: ""
                         val cellX = margin + (colIndex * colWidth)
 
                         // 1. Draw Cell border lines
@@ -809,28 +923,9 @@ class OfficeConverter {
             FileOutputStream(pdfFile).use { out ->
                 pdf.save(out)
             }
-
         } finally {
-            try {
-                contentStream?.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            try {
-                pdf?.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            try {
-                workbook?.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            try {
-                xlsxStream?.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            try { contentStream?.close() } catch (_: Exception) {}
+            try { pdf?.close() } catch (_: Exception) {}
         }
     }
 

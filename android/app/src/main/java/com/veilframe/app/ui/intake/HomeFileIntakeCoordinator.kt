@@ -82,6 +82,15 @@ class HomeFileIntakeCoordinator(
         val isMarkdown = mimeType == "text/markdown" || mimeType == "text/x-markdown" ||
                 candidateName.endsWith(".md") || candidateName.endsWith(".markdown") || candidateName.contains(".md ")
         val isPdf = mimeType == "application/pdf" || candidateName.contains(".pdf")
+        val isDoc = mimeType.contains("word") || mimeType.contains("officedocument") ||
+                mimeType.contains("excel") || mimeType.contains("spreadsheet") ||
+                mimeType.contains("powerpoint") || mimeType.contains("presentation") ||
+                mimeType.contains("opendocument") || mimeType == "text/plain" ||
+                candidateName.endsWith(".docx") || candidateName.endsWith(".doc") ||
+                candidateName.endsWith(".xlsx") || candidateName.endsWith(".xls") ||
+                candidateName.endsWith(".pptx") || candidateName.endsWith(".ppt") ||
+                candidateName.endsWith(".odt") || candidateName.endsWith(".rtf") ||
+                candidateName.endsWith(".txt")
 
         if (isImage) {
             binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_tab_image)
@@ -103,8 +112,8 @@ class HomeFileIntakeCoordinator(
                 }
             }
             binding.btnSuggestEngine3.apply {
-                text = "Remove BG"
-                setIconResource(R.drawable.ic_crop)
+                text = "BG Remover"
+                setIconResource(R.drawable.ic_eraser)
                 setOnClickListener {
                     activity.openBackgroundRemover()
                     activity.workspaceHost.getOrInflateBackgroundRemover()
@@ -205,6 +214,35 @@ class HomeFileIntakeCoordinator(
                     withContext(Dispatchers.Main) {
                         applyPdfRecommendations(uri, displayName, sizeStr, hasSignatures = hasSignatures, isEncrypted = false, password = null, bytes = bytes)
                     }
+                }
+            }
+        } else if (isDoc) {
+            binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_pdf_file)
+            binding.tvHomeIntakeMeta.text = if (sizeBytes > 0) "$sizeStr • Office Document" else "Office Document"
+            binding.btnSuggestEngine1.apply {
+                text = "Doc to PDF"
+                setIconResource(R.drawable.ic_pdf_file)
+                setOnClickListener {
+                    activity.pdfSuiteCoordinator.openQuickTool(com.veilframe.app.pdf.PdfQuickToolController.QuickMode.DOC_TO_PDF)
+                    activity.workspaceHost.getOrInflatePdfQuickTool()
+                    activity.pdfSuiteCoordinator.quickToolController.handleFilesSelected(listOf(uri))
+                }
+            }
+            binding.btnSuggestEngine2.apply {
+                text = "File Provenance & Verify"
+                setIconResource(R.drawable.ic_certificate)
+                setOnClickListener {
+                    activity.openProvenance()
+                    activity.workspaceHost.getOrInflateProvenance()
+                    activity.provenanceController.handleFileSelected(uri)
+                }
+            }
+            binding.btnSuggestEngine3.apply {
+                text = "Code Bundler"
+                setIconResource(R.drawable.ic_tab_bundle)
+                setOnClickListener {
+                    activity.openTool(ToolMode.AI_BUNDLE)
+                    activity.handleSingleFileSelected(uri)
                 }
             }
         } else {
