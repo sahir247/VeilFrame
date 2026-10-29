@@ -7,6 +7,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -23,6 +24,8 @@ class RifeModelManager(private val context: Context) {
 
         const val PARAM_URL = "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/master/models/rife-v4/flownet.param"
         const val BIN_URL = "https://raw.githubusercontent.com/nihui/rife-ncnn-vulkan/master/models/rife-v4/flownet.bin"
+        const val PARAM_CDN_URL = "https://cdn.jsdelivr.net/gh/nihui/rife-ncnn-vulkan@master/models/rife-v4/flownet.param"
+        const val BIN_CDN_URL = "https://cdn.jsdelivr.net/gh/nihui/rife-ncnn-vulkan@master/models/rife-v4/flownet.bin"
         const val PARAM_FALLBACK_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.param"
         const val BIN_FALLBACK_URL = "https://github.com/nihui/rife-ncnn-vulkan/raw/master/models/rife-v4/flownet.bin"
 
@@ -31,6 +34,8 @@ class RifeModelManager(private val context: Context) {
             "githubusercontent.com",
             "raw.githubusercontent.com",
             "objects.githubusercontent.com",
+            "cdn.jsdelivr.net",
+            "jsdelivr.net",
             "huggingface.co",
             "hf.co",
             "amazonaws.com"
@@ -39,6 +44,7 @@ class RifeModelManager(private val context: Context) {
         private val allowedHostSuffixes = setOf(
             ".github.com",
             ".githubusercontent.com",
+            ".jsdelivr.net",
             ".huggingface.co",
             ".hf.co",
             ".amazonaws.com"
@@ -74,7 +80,7 @@ class RifeModelManager(private val context: Context) {
 
     fun isModelReady(): Boolean {
         return paramFile.exists() && paramFile.length() > 500 &&
-            binFile.exists() && binFile.length() > 5_000_000L
+            binFile.exists() && binFile.length() >= 10_000_000L
     }
 
     suspend fun ensureModelDownloaded(
@@ -86,31 +92,48 @@ class RifeModelManager(private val context: Context) {
 
         try {
             onProgress(5, "Downloading RIFE AI model configuration…")
-            try {
+            val paramSuccess = runCatching {
                 downloadSingle(PARAM_URL, paramFile) { _, _ -> }
-            } catch (e: Exception) {
-                Log.w(TAG, "Primary param download failed, trying fallback: ${e.message}")
+            }.recoverCatching { e ->
+                Log.w(TAG, "Primary param download failed, trying CDN: ${e.message}")
+                downloadSingle(PARAM_CDN_URL, paramFile) { _, _ -> }
+            }.recoverCatching { e ->
+                Log.w(TAG, "CDN param download failed, trying fallback: ${e.message}")
                 downloadSingle(PARAM_FALLBACK_URL, paramFile) { _, _ -> }
+            }.isSuccess
+
+            if (!paramSuccess || !paramFile.exists() || paramFile.length() < 500) {
+                throw IOException("Failed to download RIFE parameter file")
             }
 
             onProgress(15, "Downloading RIFE AI neural weights (~10 MB)…")
             val estimatedTotalBytes = 10_340_416L
+            var lastUpdateMs = 0L
+            var lastReportedPct = -1
             val progressCallback: (Long, Long) -> Unit = { downloaded, total ->
+                val now = System.currentTimeMillis()
                 val effectiveTotal = if (total > 0) total else estimatedTotalBytes
                 val pct = (15 + ((downloaded * 80) / effectiveTotal).toInt()).coerceIn(15, 95)
-                val dlMb = downloaded / (1024 * 1024)
-                val totalMb = (effectiveTotal / (1024 * 1024)).coerceAtLeast(1)
-                onProgress(pct, "Downloading RIFE AI weights: ${dlMb}MB / ${totalMb}MB…")
+                if (now - lastUpdateMs >= 250L || pct - lastReportedPct >= 2 || pct >= 95) {
+                    lastUpdateMs = now
+                    lastReportedPct = pct
+                    val dlMb = downloaded / (1024 * 1024)
+                    val totalMb = (effectiveTotal / (1024 * 1024)).coerceAtLeast(1)
+                    onProgress(pct, "Downloading RIFE AI weights: ${dlMb}MB / ${totalMb}MB…")
+                }
             }
 
-            try {
+            val binSuccess = runCatching {
                 downloadSingle(BIN_URL, binFile, progressCallback)
-            } catch (e: Exception) {
-                Log.w(TAG, "Primary bin download failed, trying fallback: ${e.message}")
+            }.recoverCatching { e ->
+                Log.w(TAG, "Primary bin download failed, trying CDN: ${e.message}")
+                downloadSingle(BIN_CDN_URL, binFile, progressCallback)
+            }.recoverCatching { e ->
+                Log.w(TAG, "CDN bin download failed, trying fallback: ${e.message}")
                 downloadSingle(BIN_FALLBACK_URL, binFile, progressCallback)
-            }
+            }.isSuccess
 
-            if (!isModelReady()) {
+            if (!binSuccess || !isModelReady()) {
                 paramFile.delete()
                 binFile.delete()
                 throw IllegalStateException("RIFE model files are incomplete after download")
@@ -118,9 +141,11 @@ class RifeModelManager(private val context: Context) {
 
             onProgress(100, "RIFE v4 AI model ready!")
             Result.success(modelDir)
-        } catch (e: Exception) {
-            Log.e(TAG, "RIFE model download failed: ${e.message}", e)
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "RIFE model download failed: ${t.message}", t)
+            paramFile.delete()
+            binFile.delete()
+            Result.failure(t)
         }
     }
 

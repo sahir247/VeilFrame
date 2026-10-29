@@ -37,4 +37,44 @@ class DocToPdfScopeAndPreviewTest {
         assertTrue(mode.title.contains("DOC to PDF", ignoreCase = true))
         assertTrue(mode.buttonText.contains("Convert", ignoreCase = true))
     }
+
+    @Test
+    fun testExtractDocxTextViaZip_extractsParagraphsFromOpenXml() {
+        val tempDocx = java.io.File.createTempFile("test_sample", ".docx")
+        try {
+            java.util.zip.ZipOutputStream(java.io.FileOutputStream(tempDocx)).use { zos ->
+                val entry = java.util.zip.ZipEntry("word/document.xml")
+                zos.putNextEntry(entry)
+                val xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                    <w:body>
+                        <w:p><w:r><w:t>VeilFrame Forensic Report</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>Paragraph 2 with details &amp; evidence</w:t></w:r></w:p>
+                    </w:body>
+                </w:document>""".trimIndent()
+                zos.write(xml.toByteArray(Charsets.UTF_8))
+                zos.closeEntry()
+            }
+
+            val converter = com.veilframe.app.pdf.operations.OfficeConverter()
+            val text = converter.extractDocxTextViaZip(tempDocx)
+            assertTrue("Must contain first paragraph", text.contains("VeilFrame Forensic Report"))
+            assertTrue("Must contain unescaped text", text.contains("Paragraph 2 with details & evidence"))
+        } finally {
+            tempDocx.delete()
+        }
+    }
+
+    @Test
+    fun testExtractDocxTextViaZip_corruptFileFailsGracefullyWithoutThrowing() {
+        val tempCorrupt = java.io.File.createTempFile("corrupt_doc", ".docx")
+        try {
+            tempCorrupt.writeBytes(byteArrayOf(0x00, 0x01, 0x02, 0x03, 0x04))
+            val converter = com.veilframe.app.pdf.operations.OfficeConverter()
+            val text = converter.extractDocxTextViaZip(tempCorrupt)
+            assertTrue("Should return empty string for corrupt file", text.isEmpty())
+        } finally {
+            tempCorrupt.delete()
+        }
+    }
 }

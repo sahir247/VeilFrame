@@ -1,6 +1,7 @@
 package com.veilframe.app.pdf
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -846,7 +847,7 @@ class PdfQuickToolController(
                                 }
                                 previewText = previewSb.toString().trim()
                             }
-                        } catch (_: Exception) {
+                        } catch (t: Throwable) {
                             summary = "Word Document ($primaryDocName)"
                             previewText = "Binary/Legacy Word document selected.\nConversion engine will translate document structures directly into PDF pages."
                         }
@@ -1214,12 +1215,15 @@ class PdfQuickToolController(
         }
 
         binding.layoutPdfSignCanvasOverlay.visibility = View.VISIBLE
-        binding.pdfSignCanvasView.setDocument(uri)
 
         val currentSigBmp = binding.viewSignaturePad.getSignatureBitmap(
             targetColor = selectedSignColor,
             opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-        )
+        ) ?: pdfSigner.getSavedSignatures().firstOrNull()?.bitmapPath?.let {
+            android.graphics.BitmapFactory.decodeFile(it)
+        }
+
+        binding.pdfSignCanvasView.setDocument(uri, initialSignature = currentSigBmp)
         if (currentSigBmp != null) {
             binding.pdfSignCanvasView.addSignature(currentSigBmp)
         }
@@ -1977,9 +1981,20 @@ class PdfQuickToolController(
                                 else -> {
                                     try {
                                         officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                                    } catch (_: Exception) {
-                                        // Fallback to text conversion if binary .doc or corrupted OOXML
-                                        officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                    } catch (t: Throwable) {
+                                        Log.w(TAG, "DOCX conversion failed: ${t.message}; using fallback text extractor", t)
+                                        val extracted = officeConverter.extractDocxTextViaZip(tempInput)
+                                        if (extracted.isNotBlank()) {
+                                            val tempText = File(activity.cacheDir, "temp_docx_text_${System.currentTimeMillis()}.txt")
+                                            try {
+                                                tempText.writeText(extracted)
+                                                officeConverter.convertTextToPdf(tempText, tempPdf, activity)
+                                            } finally {
+                                                tempText.delete()
+                                            }
+                                        } else {
+                                            officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                        }
                                     }
                                 }
                             }
@@ -2042,7 +2057,7 @@ class PdfQuickToolController(
                         }
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 withContext(Dispatchers.Main) {
                     isExecuting = false
                     binding.btnQuickToolExecute.isEnabled = true
@@ -2094,6 +2109,8 @@ class PdfQuickToolController(
     }
 
     companion object {
+        private const val TAG = "VeilFrame.PdfQuickTool"
+
         val DOC_MIME_TYPES = arrayOf(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/msword",

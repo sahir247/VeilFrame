@@ -39,9 +39,68 @@ import java.io.FileOutputStream
 class OfficeConverter {
 
     /**
+     * Resilient offline text and structure extractor from .docx (OpenXML ZIP container).
+     * Bypasses POI/AWT dependencies completely, ensuring zero crashes on Android runtime.
+     */
+    fun extractDocxTextViaZip(docxFile: File): String {
+        val sb = StringBuilder()
+        try {
+            java.util.zip.ZipInputStream(FileInputStream(docxFile)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name == "word/document.xml") {
+                        val xmlContent = zis.bufferedReader(Charsets.UTF_8).readText()
+                        val pRegex = Regex("<w:p[ >](.*?)</w:p>")
+                        val tRegex = Regex("<w:t[^>]*>(.*?)</w:t>")
+                        val matches = pRegex.findAll(xmlContent)
+                        for (pMatch in matches) {
+                            val pXml = pMatch.value
+                            val tMatches = tRegex.findAll(pXml)
+                            val pText = tMatches.map { it.groupValues[1] }
+                                .joinToString("")
+                                .replace("&amp;", "&")
+                                .replace("&lt;", "<")
+                                .replace("&gt;", ">")
+                                .replace("&quot;", "\"")
+                                .replace("&apos;", "'")
+                            if (pText.isNotBlank()) {
+                                sb.append(pText).append("\n\n")
+                            }
+                        }
+                        break
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+        } catch (_: Throwable) { }
+        return sb.toString()
+    }
+
+    /**
      * Converts a DOCX Word file paragraph-by-paragraph to an A4 PDF with dynamic line-wrapping and pagination.
      */
     suspend fun convertDocxToPdf(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
+        try {
+            convertDocxToPdfInternal(docxFile, pdfFile, context)
+        } catch (t: Throwable) {
+            android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t.message}), falling back to lightweight XML text extractor", t)
+            val extracted = extractDocxTextViaZip(docxFile)
+            if (extracted.isNotBlank()) {
+                val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
+                try {
+                    tempText.writeText(extracted)
+                    convertTextToPdf(tempText, pdfFile, context)
+                } finally {
+                    tempText.delete()
+                }
+            } else {
+                convertTextToPdf(docxFile, pdfFile, context)
+            }
+        }
+    }
+
+    private suspend fun convertDocxToPdfInternal(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         // Enforce PDFBox resource loading setup
         PDFBoxResourceLoader.init(context)
 

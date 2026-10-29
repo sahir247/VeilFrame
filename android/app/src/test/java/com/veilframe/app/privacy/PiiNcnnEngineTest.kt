@@ -435,6 +435,8 @@ class PiiNcnnEngineTest {
     fun testRifeModelUrlsApproved() {
         assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.PARAM_URL))
         assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.BIN_URL))
+        assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.PARAM_CDN_URL))
+        assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.BIN_CDN_URL))
     }
 
     private fun findModelFile(name: String): File? {

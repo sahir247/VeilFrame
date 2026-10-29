@@ -525,14 +525,28 @@ class VeilFrameProcessingService : Service() {
                             jobCallback?.onProgress(jobId, (18 + pct * 0.05).toInt(), msg)
                         }
                         if (dlResult.isSuccess) {
-                            useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                            useRife = try {
+                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                            } catch (t: Throwable) {
+                                Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
+                                try {
+                                    RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                                } catch (_: Throwable) { false }
+                            }
                         } else {
                             Log.w(TAG, "RIFE model download failed: ${dlResult.exceptionOrNull()?.message}")
                             jobCallback?.onProgress(jobId, 19, "RIFE download unavailable; using optical flow fallback…")
                             useRife = false
                         }
                     } else {
-                        useRife = RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                        useRife = try {
+                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
+                            try {
+                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                            } catch (_: Throwable) { false }
+                        }
                     }
                 } catch (t: Throwable) {
                     Log.w(TAG, "RIFE init failed; falling back to optical flow: ${t.message}")

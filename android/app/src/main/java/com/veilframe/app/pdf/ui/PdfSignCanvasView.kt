@@ -85,6 +85,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
     private val signatures = mutableListOf<SignatureBox>()
     var selectedBox: SignatureBox? = null
         private set
+    private var pendingSignature: Bitmap? = null
 
     // Callbacks
     var onSaveSignatureClicked: ((Bitmap) -> Unit)? = null
@@ -220,15 +221,16 @@ class PdfSignCanvasView @JvmOverloads constructor(
     }
 
     /**
-     * Load PDF document into the canvas.
+     * Load PDF document into the canvas with optional initial signature to place once rendered.
      */
-    fun setDocument(uri: Uri) {
+    fun setDocument(uri: Uri, initialSignature: Bitmap? = null) {
         sourceUri = uri
         cleanupRenderer()
         pageBitmapCache.evictAll()
         pages.clear()
         signatures.clear()
         selectedBox = null
+        pendingSignature = initialSignature
 
         viewScope.launch(Dispatchers.IO) {
             try {
@@ -268,6 +270,12 @@ class PdfSignCanvasView @JvmOverloads constructor(
                     maxDocWidth = maxWidth
                     totalDocHeight = currentY
                     resetViewportToFit()
+                    pendingSignature?.let { bmp ->
+                        if (signatures.isEmpty()) {
+                            addSignature(bmp)
+                        }
+                        pendingSignature = null
+                    }
                     invalidate()
                 }
             } catch (e: Exception) {
@@ -314,7 +322,10 @@ class PdfSignCanvasView @JvmOverloads constructor(
      * Add a signature box onto the canvas.
      */
     fun addSignature(bitmap: Bitmap, pageIndex: Int? = null) {
-        if (pages.isEmpty()) return
+        if (pages.isEmpty()) {
+            pendingSignature = bitmap
+            return
+        }
 
         // Place on requested page or currently most visible page
         val targetPageIndex = pageIndex ?: getCurrentlyVisiblePageIndex()
@@ -785,6 +796,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
         pages.clear()
         signatures.clear()
         selectedBox = null
+        pendingSignature = null
         sourceUri = null
         panX = 0f
         panY = 0f
