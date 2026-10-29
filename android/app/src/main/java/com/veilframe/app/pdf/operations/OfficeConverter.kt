@@ -38,6 +38,51 @@ import java.io.FileOutputStream
  */
 class OfficeConverter {
 
+    private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
+    private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
+
+    private fun wrapStyledDocxRuns(
+        runs: List<OpenXmlDocumentParser.DocxRun>,
+        isHeading: Boolean,
+        fontSize: Float,
+        maxWidth: Float,
+        fontNormal: PDType1Font,
+        fontBold: PDType1Font
+    ): List<DocxStyledLine> {
+        val lines = mutableListOf<DocxStyledLine>()
+        val curSegments = mutableListOf<DocxStyledSegment>()
+        var curLineWidth = 0f
+
+        for (run in runs) {
+            val font = if (run.isBold || isHeading) fontBold else fontNormal
+            val clean = sanitizeText(run.text)
+            if (clean.isEmpty()) continue
+
+            val words = clean.split(Regex("(?<=\\s)|(?=\\s+)"))
+            for (w in words) {
+                if (w.isEmpty()) continue
+                val wordWidth = try { font.getStringWidth(w) / 1000f * fontSize } catch (_: Exception) { w.length * fontSize * 0.5f }
+                if (curLineWidth + wordWidth > maxWidth && curSegments.isNotEmpty() && w.isNotBlank()) {
+                    lines.add(DocxStyledLine(curSegments.toList(), curLineWidth))
+                    curSegments.clear()
+                    curLineWidth = 0f
+                }
+                if (curSegments.isNotEmpty() && curSegments.last().font == font) {
+                    val prev = curSegments.removeAt(curSegments.size - 1)
+                    curSegments.add(DocxStyledSegment(prev.text + w, font, prev.width + wordWidth))
+                } else {
+                    curSegments.add(DocxStyledSegment(w, font, wordWidth))
+                }
+                curLineWidth += wordWidth
+            }
+        }
+        if (curSegments.isNotEmpty()) {
+            lines.add(DocxStyledLine(curSegments.toList(), curLineWidth))
+        }
+        return lines
+    }
+
+
     /**
      * Resilient offline text and structure extractor from .docx (OpenXML ZIP container).
      * Bypasses POI/AWT dependencies completely, ensuring zero crashes on Android runtime.
@@ -145,17 +190,27 @@ class OfficeConverter {
                             else -> 10.5f
                         }
                         val leading = fontSize * 1.35f
-                        val font = if (isHeading) fontBold else fontNormal
 
                         // Paragraph spacing before
                         yPosition -= p.spaceBeforePt
 
-                        val prefix = if (p.isBullet) "•  " else ""
-                        val textToRender = prefix + p.fullText
+                        val effectiveRuns = if (p.isBullet) {
+                            listOf(OpenXmlDocumentParser.DocxRun(text = "•  ", isBold = false)) + p.runs
+                        } else {
+                            p.runs
+                        }
 
-                        if (textToRender.isNotBlank()) {
-                            val lines = wrapText(textToRender, font, fontSize, printableWidth)
-                            for (line in lines) {
+                        if (effectiveRuns.any { it.text.isNotBlank() }) {
+                            val styledLines = wrapStyledDocxRuns(
+                                runs = effectiveRuns,
+                                isHeading = isHeading,
+                                fontSize = fontSize,
+                                maxWidth = printableWidth,
+                                fontNormal = fontNormal,
+                                fontBold = fontBold
+                            )
+
+                            for (line in styledLines) {
                                 if (yPosition - leading < margin) {
                                     contentStream?.close()
                                     currentPage = PDPage(pageBounds)
@@ -164,19 +219,21 @@ class OfficeConverter {
                                     yPosition = pageBounds.height - margin
                                 }
 
-                                val cleanLine = sanitizeText(line)
-                                val lineWidth = (font.getStringWidth(cleanLine) / 1000f * fontSize)
                                 val xOffset = when (p.alignment) {
-                                    "center" -> margin + ((printableWidth - lineWidth) / 2f).coerceAtLeast(0f)
-                                    "right" -> margin + (printableWidth - lineWidth).coerceAtLeast(0f)
+                                    "center" -> margin + ((printableWidth - line.totalWidth) / 2f).coerceAtLeast(0f)
+                                    "right" -> margin + (printableWidth - line.totalWidth).coerceAtLeast(0f)
                                     else -> margin
                                 }
 
-                                contentStream?.beginText()
-                                contentStream?.setFont(font, fontSize)
-                                contentStream?.newLineAtOffset(xOffset, yPosition)
-                                safeShowText(contentStream, cleanLine, font)
-                                contentStream?.endText()
+                                var segX = xOffset
+                                for (seg in line.segments) {
+                                    contentStream?.beginText()
+                                    contentStream?.setFont(seg.font, fontSize)
+                                    contentStream?.newLineAtOffset(segX, yPosition)
+                                    safeShowText(contentStream, seg.text, seg.font)
+                                    contentStream?.endText()
+                                    segX += seg.width
+                                }
 
                                 yPosition -= leading
                             }
@@ -192,12 +249,21 @@ class OfficeConverter {
 
                         val numCols = rows.maxOfOrNull { it.size } ?: 1
                         val colWidth = printableWidth / numCols
-                        val rowHeight = 22f
-
                         yPosition -= 8f
 
                         for (row in rows) {
-                            if (yPosition - rowHeight < margin) {
+                            val rowLines = Array(numCols) { c ->
+                                val cellText = row.getOrNull(c) ?: ""
+                                if (cellText.isNotBlank()) {
+                                    wrapText(sanitizeText(cellText), fontNormal, 9f, colWidth - 8f)
+                                } else {
+                                    emptyList()
+                                }
+                            }
+                            val maxLines = rowLines.maxOfOrNull { it.size } ?: 1
+                            val dynamicRowHeight = Math.max(20f, maxLines * 12f + 8f)
+
+                            if (yPosition - dynamicRowHeight < margin) {
                                 contentStream?.close()
                                 currentPage = PDPage(pageBounds)
                                 pdf.addPage(currentPage)
@@ -206,7 +272,6 @@ class OfficeConverter {
                             }
 
                             for (c in 0 until numCols) {
-                                val cellText = row.getOrNull(c) ?: ""
                                 val cellX = margin + (c * colWidth)
 
                                 // Cell grid border
@@ -214,21 +279,23 @@ class OfficeConverter {
                                 contentStream?.setLineWidth(0.5f)
                                 contentStream?.moveTo(cellX, yPosition)
                                 contentStream?.lineTo(cellX + colWidth, yPosition)
-                                contentStream?.lineTo(cellX + colWidth, yPosition - rowHeight)
-                                contentStream?.lineTo(cellX, yPosition - rowHeight)
+                                contentStream?.lineTo(cellX + colWidth, yPosition - dynamicRowHeight)
+                                contentStream?.lineTo(cellX, yPosition - dynamicRowHeight)
                                 contentStream?.lineTo(cellX, yPosition)
                                 contentStream?.stroke()
 
-                                if (cellText.isNotBlank()) {
-                                    val disp = truncateToWidth(sanitizeText(cellText), fontNormal, 9f, colWidth - 8f)
+                                val lines = rowLines[c]
+                                var textY = yPosition - 4f - 9f
+                                for (lText in lines) {
                                     contentStream?.beginText()
                                     contentStream?.setFont(fontNormal, 9f)
-                                    contentStream?.newLineAtOffset(cellX + 4f, yPosition - rowHeight + 6f)
-                                    safeShowText(contentStream, disp, fontNormal)
+                                    contentStream?.newLineAtOffset(cellX + 4f, textY)
+                                    safeShowText(contentStream, lText, fontNormal)
                                     contentStream?.endText()
+                                    textY -= 12f
                                 }
                             }
-                            yPosition -= rowHeight
+                            yPosition -= dynamicRowHeight
                         }
                         yPosition -= 8f
                     }
@@ -852,15 +919,33 @@ class OfficeConverter {
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
             val fontSizeCell = 9f
-            val rowHeight = 22f
 
             for (sheet in workbookData.sheets) {
                 val rows = sheet.rows
                 val maxCol = rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0) continue // Empty sheet
 
-                // Dynamically fit columns in printable width
-                val colWidth = Math.min(150f, printableWidth / maxCol)
+                // Content-weighted dynamic column widths (Excel style)
+                val rawColWidths = FloatArray(maxCol) { c ->
+                    var maxW = 32f
+                    for (r in rows) {
+                        val cellVal = r.getOrNull(c) ?: ""
+                        if (cellVal.isNotEmpty()) {
+                            val w = try { fontNormal.getStringWidth(sanitizeText(cellVal)) / 1000f * fontSizeCell } catch (_: Exception) { cellVal.length * 5f }
+                            if (w > maxW) maxW = w
+                        }
+                    }
+                    (maxW + 14f).coerceIn(40f, 220f)
+                }
+                val totalRawWidth = rawColWidths.sum()
+                val colScale = if (totalRawWidth > 0f) printableWidth / totalRawWidth else 1f
+                val colWidths = FloatArray(maxCol) { c -> rawColWidths[c] * colScale }
+                val colX = FloatArray(maxCol)
+                var runningX = margin
+                for (c in 0 until maxCol) {
+                    colX[c] = runningX
+                    runningX += colWidths[c]
+                }
 
                 var currentPage = PDPage(pageBounds)
                 pdf.addPage(currentPage)
@@ -876,8 +961,19 @@ class OfficeConverter {
                 var yPosition = pageBounds.height - margin - 20f
 
                 for (row in rows) {
+                    val rowCellLines = Array(maxCol) { c ->
+                        val text = row.getOrNull(c) ?: ""
+                        if (text.isNotBlank()) {
+                            wrapText(sanitizeText(text), fontNormal, fontSizeCell, colWidths[c] - 8f)
+                        } else {
+                            emptyList()
+                        }
+                    }
+                    val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
+                    val dynamicRowHeight = Math.max(20f, maxLinesInRow * (fontSizeCell * 1.3f) + 8f)
+
                     // Check bounds for page breaks
-                    if (yPosition - rowHeight < margin) {
+                    if (yPosition - dynamicRowHeight < margin) {
                         contentStream?.close()
                         currentPage = PDPage(pageBounds)
                         pdf.addPage(currentPage)
@@ -887,33 +983,33 @@ class OfficeConverter {
 
                     // Draw cell grid lines and values
                     for (colIndex in 0 until maxCol) {
-                        val cellValue = row.getOrNull(colIndex) ?: ""
-                        val cellX = margin + (colIndex * colWidth)
+                        val cellLeft = colX[colIndex]
+                        val cellW = colWidths[colIndex]
 
                         // 1. Draw Cell border lines
-                        contentStream?.setStrokingColor(200, 200, 200)
+                        contentStream?.setStrokingColor(210, 215, 220)
                         contentStream?.setLineWidth(0.5f)
-                        contentStream?.moveTo(cellX, yPosition)
-                        contentStream?.lineTo(cellX + colWidth, yPosition)
-                        contentStream?.lineTo(cellX + colWidth, yPosition - rowHeight)
-                        contentStream?.lineTo(cellX, yPosition - rowHeight)
-                        contentStream?.lineTo(cellX, yPosition)
+                        contentStream?.moveTo(cellLeft, yPosition)
+                        contentStream?.lineTo(cellLeft + cellW, yPosition)
+                        contentStream?.lineTo(cellLeft + cellW, yPosition - dynamicRowHeight)
+                        contentStream?.lineTo(cellLeft, yPosition - dynamicRowHeight)
+                        contentStream?.lineTo(cellLeft, yPosition)
                         contentStream?.stroke()
 
-                        // 2. Draw cell string values (with custom truncation if needed)
-                        if (cellValue.isNotBlank()) {
-                            val sanitizedValue = sanitizeText(cellValue)
-                            val displayValue = truncateToWidth(sanitizedValue, fontNormal, fontSizeCell, colWidth - 8f)
-
+                        // 2. Draw cell string values with full multi-line wrapping (Zero clipping)
+                        val lines = rowCellLines[colIndex]
+                        var textY = yPosition - 4f - fontSizeCell
+                        for (lineText in lines) {
                             contentStream?.beginText()
                             contentStream?.setFont(fontNormal, fontSizeCell)
-                            contentStream?.newLineAtOffset(cellX + 4f, yPosition - rowHeight + 6f)
-                            safeShowText(contentStream, displayValue, fontNormal)
+                            contentStream?.newLineAtOffset(cellLeft + 4f, textY)
+                            safeShowText(contentStream, lineText, fontNormal)
                             contentStream?.endText()
+                            textY -= (fontSizeCell * 1.3f)
                         }
                     }
 
-                    yPosition -= rowHeight
+                    yPosition -= dynamicRowHeight
                 }
 
                 contentStream?.close()

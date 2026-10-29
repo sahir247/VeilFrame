@@ -186,7 +186,11 @@ class MotionLabController(
         binding.cardMotionLabResult.visibility = View.GONE
         try {
             val retriever = android.media.MediaMetadataRetriever()
-            retriever.setDataSource(activity, uri)
+            if (uri.scheme == "file" && uri.path != null) {
+                retriever.setDataSource(uri.path)
+            } else {
+                retriever.setDataSource(activity, uri)
+            }
             val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val captureFps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
             runCatching { retriever.release() }
@@ -213,9 +217,13 @@ class MotionLabController(
     }
 
     private fun queryDisplayName(uri: Uri): String? = try {
-        activity.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-    } catch (_: Exception) { null }
+        if (uri.scheme == "file" && uri.path != null) {
+            java.io.File(uri.path!!).name
+        } else {
+            activity.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: uri.lastPathSegment
+        }
+    } catch (_: Exception) { uri.lastPathSegment }
 
     private fun setStatus(text: String) {
         scope.launch(Dispatchers.Main) { binding.tvMotionLabStatus.text = text }

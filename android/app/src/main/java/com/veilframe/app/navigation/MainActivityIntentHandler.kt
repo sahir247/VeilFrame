@@ -19,7 +19,13 @@ object MainActivityIntentHandler {
         if (!dest.isNullOrEmpty()) {
             when (dest) {
                 "IMAGE_UPSCALER" -> activity.navigationController.showImageUpscalerScreen()
-                "MOTION_LAB" -> activity.navigationController.showMotionLabScreen()
+                "MOTION_LAB" -> {
+                    activity.navigationController.showMotionLabScreen()
+                    val motionUri = intent.data ?: intent.getStringExtra("extra_video_uri")?.let { Uri.parse(it) }
+                    if (motionUri != null) {
+                        activity.setMotionLabSource(motionUri)
+                    }
+                }
                 "VIDEO_STUDIO" -> activity.navigationController.showVideoStudioScreen()
             }
             return

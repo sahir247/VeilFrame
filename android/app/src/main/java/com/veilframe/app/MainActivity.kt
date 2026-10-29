@@ -1047,6 +1047,13 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Motion Lab workspace.")
     }
 
+    fun setMotionLabSource(uri: Uri) {
+        workspaceHost.getOrInflateMotionLab()
+        if (::motionLabController.isInitialized) {
+            motionLabController.setSource(uri)
+        }
+    }
+
     fun openImageQuality() {
         if (!canNavigate()) return
         clearBackTimer()

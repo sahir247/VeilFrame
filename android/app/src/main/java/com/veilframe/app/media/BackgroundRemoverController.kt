@@ -127,8 +127,8 @@ class BackgroundRemoverController(
             showModelManagerDialog(binding.btnBgModelManager)
         }
 
-        binding.btnBgChangeModel.setOnClickListener {
-            showModelManagerDialog(binding.btnBgChangeModel)
+        binding.btnBgModelInfo.setOnClickListener {
+            showModelInfoDialog()
         }
 
         binding.toggleGroupMattingMode.check(
@@ -585,6 +585,21 @@ class BackgroundRemoverController(
         }
     }
 
+    private fun showModelInfoDialog() {
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+            .setTitle("AI Matting Engines")
+            .setMessage(
+                "• Hybrid (Smart Auto)\n" +
+                "Intelligently routes humans, animals, and objects for optimal edge preservation. Uses MODNet for portraits when available, and U\u00b2-Net-P for general objects.\n\n" +
+                "• U\u00b2-Net-P (Bundled)\n" +
+                "Ultra-fast, on-device saliency model optimized for products, items, and general subjects with zero downloads needed.\n\n" +
+                "• MODNet (HD Portrait)\n" +
+                "High-resolution neural portrait matting engine specialized in fine human hair strands, transparent textures, and complex outlines."
+            )
+            .setPositiveButton("Got It", null)
+            .show()
+    }
+
     fun showModelManagerDialog(originView: View? = null) {
         val dialogBinding = DialogRembgModelManagerBinding.inflate(LayoutInflater.from(activity))
         val dialog = MaterialAlertDialogBuilder(activity)
@@ -797,14 +812,12 @@ class BackgroundRemoverController(
                     binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_primary))
                     binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 }
-                binding.tvBgModelDescription.text = "Intelligently routes humans, animals & objects for crisp edge preservation. Uses MODNet for portraits when available, U²-Net-P for objects."
             }
             RembgMode.U2NETP -> {
                 binding.tvBgCurrentModelName.text = "U²-Net-P (Bundled)"
                 binding.tvBgModelBadge.text = "Ready (Bundled)"
                 binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
-                binding.tvBgModelDescription.text = "Fast, general-purpose saliency model for objects, animals & scenes. Zero downloads needed."
             }
             RembgMode.MODNET -> {
                 binding.tvBgCurrentModelName.text = "MODNet (HD Portrait)"
@@ -817,7 +830,6 @@ class BackgroundRemoverController(
                     binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
                     binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_warn)
                 }
-                binding.tvBgModelDescription.text = "Sub-pixel portrait matting model. Ideal for fine human hair, fingers and transparent clothing."
             }
         }
     }

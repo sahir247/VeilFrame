@@ -58,7 +58,7 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:padding="16dp">
+            android:padding="2dp">
 
             <!-- Empty State Hero (Scrollable on short displays) -->
             <androidx.core.widget.NestedScrollView
@@ -280,22 +280,23 @@
                                 android:letterSpacing="0.06" />
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnBgChangeModel"
-                                style="@style/Widget.VeilFrame.Button.Action"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Storage"
-                                app:icon="@drawable/ic_system_update"
-                                app:iconSize="14dp" />
+                                android:id="@+id/btnBgModelInfo"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="36dp"
+                                android:layout_height="36dp"
+                                android:contentDescription="Model Information"
+                                app:icon="@drawable/ic_info"
+                                app:iconSize="18dp"
+                                app:iconTint="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
 
                         <!-- Direct User-Facing Segmented Mode Selector -->
                         <com.google.android.material.button.MaterialButtonToggleGroup
                             android:id="@+id/toggleGroupMattingMode"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:layout_marginBottom="8dp"
+                            android:layout_height="36dp"
+                            android:layout_marginTop="6dp"
+                            android:layout_marginBottom="4dp"
                             app:singleSelection="true"
                             app:selectionRequired="true">
 
@@ -303,10 +304,13 @@
                                 android:id="@+id/btnModeSelectHybrid"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
-                                android:layout_height="wrap_content"
+                                android:layout_height="match_parent"
                                 android:layout_weight="1"
                                 android:text="Hybrid"
                                 android:textSize="12sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
                                 android:paddingStart="4dp"
                                 android:paddingEnd="4dp" />
 
@@ -314,10 +318,13 @@
                                 android:id="@+id/btnModeSelectU2Net"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
-                                android:layout_height="wrap_content"
+                                android:layout_height="match_parent"
                                 android:layout_weight="1"
                                 android:text="U²-Net-P"
                                 android:textSize="12sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
                                 android:paddingStart="4dp"
                                 android:paddingEnd="4dp" />
 
@@ -325,10 +332,13 @@
                                 android:id="@+id/btnModeSelectModNet"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
-                                android:layout_height="wrap_content"
+                                android:layout_height="match_parent"
                                 android:layout_weight="1"
                                 android:text="MODNet HD"
                                 android:textSize="12sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
                                 android:paddingStart="4dp"
                                 android:paddingEnd="4dp" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -366,14 +376,7 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
 
-                        <TextView
-                            android:id="@+id/tvBgModelDescription"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Intelligently routes humans, animals &amp; objects for crisp edge preservation."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -527,6 +530,8 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="16dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             app:cardCornerRadius="24dp"
             app:cardElevation="6dp"
             app:strokeWidth="1dp"
@@ -537,6 +542,8 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:paddingTop="6dp"
@@ -558,6 +565,8 @@
                     android:layout_weight="1"
                     android:orientation="horizontal"
                     android:gravity="center"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     android:layout_marginStart="4dp"
                     android:layout_marginEnd="4dp">
 
@@ -565,10 +574,13 @@
                         android:id="@+id/btnBgExecuteRemoval"
                         style="@style/Widget.VeilFrame.Button.Primary"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:includeFontPadding="false"
                         android:text="Remove Background"
                         app:icon="@drawable/ic_eraser"
                         app:iconSize="18dp" />
@@ -577,9 +589,12 @@
                         android:id="@+id/btnBgRefineBrush"
                         style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:includeFontPadding="false"
                         android:visibility="gone"
                         android:text="Refine Brush"
                         app:icon="@drawable/ic_brush"
@@ -589,10 +604,13 @@
                         android:id="@+id/btnBgSavePng"
                         style="@style/Widget.VeilFrame.Button.Primary"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:includeFontPadding="false"
                         android:visibility="gone"
                         android:text="Save Cutout"
                         app:icon="@drawable/ic_action_save"

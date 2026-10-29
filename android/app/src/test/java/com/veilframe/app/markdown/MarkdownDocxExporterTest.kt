@@ -20,12 +20,12 @@ class MarkdownDocxExporterTest {
         val markdown = """
             # Project Overview
             VeilFrame is a privacy-first video cleaner.
-            
+
             ## Features
             - Document scanner with 100% original quality
             - QR code generator with animated GIF support
             - Markdown viewer with badge rendering
-            
+
             ```kotlin
             fun cleanVideo() {
                 println("cleaned")
@@ -176,6 +176,56 @@ class MarkdownDocxExporterTest {
             assertTrue("Must contain Step Two with", documentXml.contains("Step Two with"))
             assertTrue("Must contain bold emphasis", documentXml.contains("emphasis"))
             assertFalse("Must not contain raw **emphasis**", documentXml.contains("**emphasis**"))
+        }
+    }
+    @Test
+    fun `exports latex math mermaid diagrams and github callouts to docx`() {
+        val markdown = """
+            # Scientific Research Document
+
+            The energy-mass equivalence is given by ${'$'}E=mc^2${'$'} in special relativity.
+
+            $$
+            \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+            $$
+
+            ```mermaid
+            graph TD
+                A[Input Video] --> B[RIFE Frame Synthesizer]
+                B --> C[60 FPS Interpolation]
+            ```
+
+            > [!NOTE]
+            > This is an important notice regarding offline GPU processing.
+
+            > [!WARNING]
+            > Ensure sufficient battery before initiating 4K neural synthesis.
+        """.trimIndent()
+
+        val outputFile = File(tempFolder.root, "scientific_doc.docx")
+        MarkdownDocxExporter.exportToDocx(markdown, outputFile, "Scientific Research")
+
+        assertTrue("Output file must exist", outputFile.exists())
+        ZipFile(outputFile).use { zip ->
+            val documentEntry = zip.getEntry("word/document.xml")
+            val xml = zip.getInputStream(documentEntry).bufferedReader().readText()
+
+            // Inline Math
+            assertTrue("Must contain inline math text", xml.contains("E=mc^2"))
+            assertTrue("Must contain Cambria Math font", xml.contains("Cambria Math"))
+
+            // Display Math
+            assertTrue("Must contain display math formula", xml.contains("\\int"))
+
+            // Mermaid Diagram
+            assertTrue("Must contain mermaid diagram header", xml.contains("[Mermaid Diagram Architecture]"))
+            assertTrue("Must contain mermaid node", xml.contains("A[Input Video]"))
+            assertTrue("Must contain Consolas font for diagram", xml.contains("w:ascii=\"Consolas\""))
+
+            // Callouts
+            assertTrue("Must contain [NOTE] badge", xml.contains("[NOTE] "))
+            assertTrue("Must contain [WARNING] badge", xml.contains("[WARNING] "))
+            assertTrue("Must contain callout body", xml.contains("This is an important notice regarding offline GPU processing."))
         }
     }
 }

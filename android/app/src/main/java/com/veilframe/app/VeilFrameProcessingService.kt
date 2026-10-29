@@ -460,12 +460,13 @@ class VeilFrameProcessingService : Service() {
             updateNotificationProgress("Preparing video source…", 5)
             jobCallback?.onProgress(jobId, 5, "Preparing source…")
 
-            if (inputUri.scheme == "content") {
+            if (inputUri.scheme == "content" || inputUri.scheme == "file") {
                 contentResolver.openInputStream(inputUri)?.use { input ->
                     inFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IllegalStateException("Cannot open input video URI")
             } else if (inputPath.isNotEmpty()) {
-                File(inputPath).copyTo(inFile, overwrite = true)
+                val resolvedPath = if (inputPath.startsWith("file://")) inputPath.removePrefix("file://") else inputPath
+                File(resolvedPath).copyTo(inFile, overwrite = true)
             } else {
                 throw IllegalStateException("No valid input video specified")
             }

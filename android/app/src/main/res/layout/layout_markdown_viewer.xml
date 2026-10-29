@@ -106,9 +106,11 @@
                 app:iconPadding="6dp"
                 android:text="Preview"
                 android:textSize="12sp"
+                android:textColor="@color/selector_md_toggle_content"
                 app:icon="@drawable/ic_visibility"
                 app:iconSize="14dp"
-                app:iconTint="@color/vf_text_primary" />
+                app:iconTint="@color/selector_md_toggle_content"
+                app:backgroundTint="@color/selector_md_toggle_bg" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarkdownTabWrite"
@@ -125,9 +127,11 @@
                 app:iconPadding="6dp"
                 android:text="Write"
                 android:textSize="12sp"
+                android:textColor="@color/selector_md_toggle_content"
                 app:icon="@drawable/ic_edit"
                 app:iconSize="14dp"
-                app:iconTint="@color/vf_text_primary" />
+                app:iconTint="@color/selector_md_toggle_content"
+                app:backgroundTint="@color/selector_md_toggle_bg" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <View
@@ -138,12 +142,18 @@
         <!-- Single Save As Action (Popping MD, PDF, DOCX) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSaveAs"
-            style="@style/Widget.VeilFrame.Button.Action"
+            style="@style/Widget.VeilFrame.Button.Utility"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="36dp"
             android:layout_marginStart="4dp"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:minHeight="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textSize="12sp"
             android:text="Save As"
             app:icon="@drawable/ic_action_save"
             app:iconSize="14dp"

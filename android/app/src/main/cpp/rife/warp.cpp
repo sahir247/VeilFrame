@@ -36,9 +36,12 @@ int Warp::create_pipeline(const Option& opt)
             }
         }
 
-        pipeline_warp = new Pipeline(vkdev);
-        pipeline_warp->set_optimal_local_size_xyz();
-        pipeline_warp->create(spirv.data(), spirv.size() * 4, specializations);
+        if (!spirv.empty())
+        {
+            pipeline_warp = new Pipeline(vkdev);
+            pipeline_warp->set_optimal_local_size_xyz();
+            pipeline_warp->create(spirv.data(), spirv.size() * 4, specializations);
+        }
     }
 
     // pack4
@@ -53,28 +56,17 @@ int Warp::create_pipeline(const Option& opt)
             }
         }
 
-        pipeline_warp_pack4 = new Pipeline(vkdev);
-        pipeline_warp_pack4->set_optimal_local_size_xyz();
-        pipeline_warp_pack4->create(spirv.data(), spirv.size() * 4, specializations);
-    }
-
-    // pack8
-    if (opt.use_packing_layout)
-    {
-        static std::vector<uint32_t> spirv;
-        static ncnn::Mutex lock;
+        if (!spirv.empty())
         {
-            ncnn::MutexLockGuard guard(lock);
-            if (spirv.empty())
-            {
-                compile_spirv_module(warp_pack8_comp_data, sizeof(warp_pack8_comp_data), opt, spirv);
-            }
+            pipeline_warp_pack4 = new Pipeline(vkdev);
+            pipeline_warp_pack4->set_optimal_local_size_xyz();
+            pipeline_warp_pack4->create(spirv.data(), spirv.size() * 4, specializations);
         }
-
-        pipeline_warp_pack8 = new Pipeline(vkdev);
-        pipeline_warp_pack8->set_optimal_local_size_xyz();
-        pipeline_warp_pack8->create(spirv.data(), spirv.size() * 4, specializations);
     }
+
+    // pack8: RIFE only operates on 3-channel RGB image blobs which never use pack8.
+    // warp_pack8.comp contains invalid afpvec8 which fails mobile GLSL compilation.
+    pipeline_warp_pack8 = 0;
 
     return 0;
 }
@@ -194,17 +186,21 @@ int Warp::forward(const std::vector<VkMat>& bottom_blobs, std::vector<VkMat>& to
     constants[2].i = top_blob.c;
     constants[3].i = top_blob.cstep;
 
-    if (elempack == 8)
+    if (elempack == 8 && pipeline_warp_pack8)
     {
         cmd.record_pipeline(pipeline_warp_pack8, bindings, constants, top_blob);
     }
-    else if (elempack == 4)
+    else if (elempack == 4 && pipeline_warp_pack4)
     {
         cmd.record_pipeline(pipeline_warp_pack4, bindings, constants, top_blob);
     }
-    else // if (elempack == 1)
+    else if (pipeline_warp)
     {
         cmd.record_pipeline(pipeline_warp, bindings, constants, top_blob);
+    }
+    else
+    {
+        return -1;
     }
 
     return 0;

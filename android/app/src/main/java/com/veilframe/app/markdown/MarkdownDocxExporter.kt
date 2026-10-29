@@ -19,11 +19,12 @@ object MarkdownDocxExporter {
         val isStrike: Boolean = false,
         val isCode: Boolean = false,
         val isLink: Boolean = false,
-        val linkUrl: String? = null
+        val linkUrl: String? = null,
+        val isMath: Boolean = false
     )
 
     private enum class TokenType {
-        CODE, IMAGE, LINK, BOLD_ITALIC, BOLD, STRIKE, ITALIC
+        CODE, IMAGE, LINK, MATH, BOLD_ITALIC, BOLD, STRIKE, ITALIC
     }
 
     private data class MatchResultHolder(
@@ -36,6 +37,7 @@ object MarkdownDocxExporter {
     private val codeRegex = Regex("""`([^`\n]+)`""")
     private val imageRegex = Regex("""!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)""")
     private val linkRegex = Regex("""\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)""")
+    private val mathRegex = Regex("""(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)""")
     private val boldItalicRegex = Regex("""(?:\*\*\*|___)(.+?)(?:\*\*\*|___)""")
     private val boldRegex = Regex("""(?:\*\*|__)(.+?)(?:\*\*|__)""")
     private val strikeRegex = Regex("""~~(.+?)~~""")
@@ -114,6 +116,7 @@ $rels
         codeRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.CODE, it.groupValues[1])) }
         imageRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.IMAGE, it.groupValues[1])) }
         linkRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.LINK, it.groupValues[1], it.groupValues[2])) }
+        mathRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.MATH, it.groupValues[1])) }
         boldItalicRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.BOLD_ITALIC, it.groupValues[1])) }
         boldRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.BOLD, it.groupValues[1])) }
         strikeRegex.find(input)?.let { matches.add(MatchResultHolder(it.range, TokenType.STRIKE, it.groupValues[1])) }
@@ -145,6 +148,9 @@ $rels
             TokenType.LINK -> {
                 result.addAll(parseInline(earliest.innerText, isBold, isItalic, isStrike, isCode, isLink = true, linkUrl = earliest.extra))
             }
+            TokenType.MATH -> {
+                result.add(InlineRun(earliest.innerText, isBold = false, isItalic = true, isStrike = false, isCode = false, isLink = false, isMath = true))
+            }
             TokenType.BOLD_ITALIC -> {
                 result.addAll(parseInline(earliest.innerText, isBold = true, isItalic = true, isStrike, isCode, isLink, linkUrl))
             }
@@ -171,6 +177,7 @@ $rels
         val lines = markdown.lines()
         var i = 0
         var inCodeBlock = false
+        var codeBlockLang = ""
         val codeBuffer = mutableListOf<String>()
 
         while (i < lines.size) {
@@ -181,11 +188,17 @@ $rels
             // 1. Fenced Code Block
             if (trimmedLine.startsWith("```")) {
                 if (inCodeBlock) {
-                    bodyContent.append(buildCodeBlockXml(codeBuffer))
+                    if (codeBlockLang == "mermaid") {
+                        bodyContent.append(buildMermaidBlockXml(codeBuffer))
+                    } else {
+                        bodyContent.append(buildCodeBlockXml(codeBuffer))
+                    }
                     codeBuffer.clear()
                     inCodeBlock = false
+                    codeBlockLang = ""
                 } else {
                     inCodeBlock = true
+                    codeBlockLang = trimmedLine.removePrefix("```").trim().lowercase()
                 }
                 i++
                 continue
@@ -197,7 +210,31 @@ $rels
                 continue
             }
 
-            // 2. Blank line
+            // 2. Display LaTeX Math ($$ ... $$)
+            if (trimmedLine.startsWith("$$")) {
+                if (trimmedLine.endsWith("$$") && trimmedLine.length > 2) {
+                    val mathText = trimmedLine.removePrefix("$$").removeSuffix("$$").trim()
+                    bodyContent.append(buildDisplayMathXml(mathText))
+                    i++
+                    continue
+                } else {
+                    val mathLines = mutableListOf<String>()
+                    i++
+                    while (i < lines.size) {
+                        val mLine = lines[i].trim()
+                        if (mLine.startsWith("$$")) {
+                            i++
+                            break
+                        }
+                        mathLines.add(lines[i])
+                        i++
+                    }
+                    bodyContent.append(buildDisplayMathXml(mathLines.joinToString("\n")))
+                    continue
+                }
+            }
+
+            // 3. Blank line
             if (trimmedLine.isBlank()) {
                 i++
                 continue
@@ -276,21 +313,47 @@ $rels
                     i++
                 }
 
-                // 6. Blockquote: >
+                // 6. Blockquote or Callout/Alert: >
                 trimmedLine.startsWith(">") -> {
-                    val quoteText = trimmedLine.removePrefix(">").trim()
-                    val runs = parseInline(quoteText, isItalic = true)
-                    bodyContent.append(buildParagraphXml(
-                        runs = runs,
-                        fontSizeHalfPts = 22,
-                        baseItalic = true,
-                        spaceBefore = 60,
-                        spaceAfter = 80,
-                        colorHex = "57606A",
-                        borderLeftHex = "007ACC",
-                        indentLeftDxa = 360,
-                        getLinkId = getLinkId
-                    ))
+                    val rawQuote = trimmedLine.removePrefix(">").trim()
+                    val alertMatch = Regex("""^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$""", RegexOption.IGNORE_CASE).find(rawQuote)
+                    if (alertMatch != null) {
+                        val alertType = alertMatch.groupValues[1].uppercase()
+                        val alertBody = alertMatch.groupValues[2]
+                        val (borderCol, fillCol, labelCol) = when (alertType) {
+                            "TIP" -> Triple("1A7F37", "F0FDF4", "15803D")
+                            "IMPORTANT" -> Triple("8250DF", "FAF5FF", "7E22CE")
+                            "WARNING" -> Triple("9A6700", "FFFBEB", "B45309")
+                            "CAUTION" -> Triple("CF222E", "FEF2F2", "B91C1C")
+                            else -> Triple("0969DA", "F0F9FF", "0369A1")
+                        }
+                        val runs = listOf(InlineRun("[$alertType] ", isBold = true)) + parseInline(alertBody)
+                        bodyContent.append(buildParagraphXml(
+                            runs = runs,
+                            fontSizeHalfPts = 21,
+                            spaceBefore = 80,
+                            spaceAfter = 80,
+                            colorHex = labelCol,
+                            borderLeftHex = borderCol,
+                            shdFillHex = fillCol,
+                            indentLeftDxa = 360,
+                            getLinkId = getLinkId
+                        ))
+                    } else {
+                        val runs = parseInline(rawQuote, isItalic = true)
+                        bodyContent.append(buildParagraphXml(
+                            runs = runs,
+                            fontSizeHalfPts = 22,
+                            baseItalic = true,
+                            spaceBefore = 60,
+                            spaceAfter = 80,
+                            colorHex = "57606A",
+                            borderLeftHex = "007ACC",
+                            shdFillHex = "F8FAFC",
+                            indentLeftDxa = 360,
+                            getLinkId = getLinkId
+                        ))
+                    }
                     i++
                 }
 
@@ -401,6 +464,7 @@ $rels
         colorHex: String? = null,
         borderBottomHex: String? = null,
         borderLeftHex: String? = null,
+        shdFillHex: String? = null,
         indentLeftDxa: Int = 0,
         hangingDxa: Int = 0,
         align: String = "left",
@@ -422,6 +486,9 @@ $rels
                 pPr.append("<w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"4\" w:color=\"$borderBottomHex\"/>")
             }
             pPr.append("</w:pBdr>")
+        }
+        if (shdFillHex != null) {
+            pPr.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"$shdFillHex\"/>")
         }
 
         if (indentLeftDxa > 0) {
@@ -445,7 +512,13 @@ $rels
             if (isI) runPr.append("<w:i/>")
             if (run.isStrike) runPr.append("<w:strike/>")
 
-            if (run.isCode) {
+            if (run.isMath) {
+                runPr.append("<w:rFonts w:ascii=\"Cambria Math\" w:hAnsi=\"Cambria Math\"/>")
+                runPr.append("<w:i/>")
+                runPr.append("<w:sz w:val=\"21\"/>")
+                runPr.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F1F5F9\"/>")
+                runPr.append("<w:color w:val=\"1E293B\"/>")
+            } else if (run.isCode) {
                 runPr.append("<w:rFonts w:ascii=\"Consolas\" w:hAnsi=\"Consolas\"/>")
                 runPr.append("<w:sz w:val=\"20\"/>")
                 runPr.append("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"EFF1F3\"/>")
@@ -478,6 +551,82 @@ $rels
       $pPr
       $runsXml
     </w:p>"""
+    }
+
+
+    private fun buildDisplayMathXml(mathFormula: String): String {
+        val escaped = escapeXml(mathFormula.trim())
+        return """
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="center"/>
+        <w:spacing w:before="160" w:after="160" w:line="260" w:lineRule="auto"/>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="4" w:space="8" w:color="CBD5E1"/>
+          <w:bottom w:val="single" w:sz="4" w:space="8" w:color="CBD5E1"/>
+        </w:pBdr>
+        <w:shd w:val="clear" w:color="auto" w:fill="F8FAFC"/>
+        <w:ind w:left="400" w:right="400"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/>
+          <w:i/>
+          <w:sz w:val="23"/>
+          <w:color w:val="0F172A"/>
+        </w:rPr>
+        <w:t xml:space="preserve">$escaped</w:t>
+      </w:r>
+    </w:p>"""
+    }
+
+    private fun buildMermaidBlockXml(diagramLines: List<String>): String {
+        val sb = StringBuilder()
+        sb.append("""
+    <w:p>
+      <w:pPr>
+        <w:spacing w:before="140" w:after="40"/>
+        <w:pBdr>
+          <w:left w:val="single" w:sz="24" w:space="12" w:color="7C3AED"/>
+        </w:pBdr>
+        <w:shd w:val="clear" w:color="auto" w:fill="F5F3FF"/>
+        <w:ind w:left="240" w:right="240"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:b/>
+          <w:sz w:val="18"/>
+          <w:color w:val="6D28D9"/>
+        </w:rPr>
+        <w:t xml:space="preserve">[Mermaid Diagram Architecture]</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:spacing w:before="40" w:after="140" w:line="240" w:lineRule="auto"/>
+        <w:pBdr>
+          <w:left w:val="single" w:sz="24" w:space="12" w:color="7C3AED"/>
+        </w:pBdr>
+        <w:shd w:val="clear" w:color="auto" w:fill="F5F3FF"/>
+        <w:ind w:left="240" w:right="240"/>
+      </w:pPr>""")
+        for ((index, codeLine) in diagramLines.withIndex()) {
+            val escaped = escapeXml(codeLine)
+            sb.append("""
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>
+          <w:sz w:val="18"/>
+          <w:color w:val="4C1D95"/>
+        </w:rPr>
+        <w:t xml:space="preserve">$escaped</w:t>
+      </w:r>""")
+            if (index < diagramLines.size - 1) {
+                sb.append("<w:r><w:br/></w:r>")
+            }
+        }
+        sb.append("\n    </w:p>")
+        return sb.toString()
     }
 
     private fun buildCodeBlockXml(codeLines: List<String>): String {

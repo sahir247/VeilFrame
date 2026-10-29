@@ -16,6 +16,7 @@
 static std::mutex g_rife_mutex;
 static RIFE* g_rife = nullptr;
 static int g_rife_gpuid = -1;
+static bool g_rife_gpu_instance_created = false;
 static std::string g_rife_model_dir;
 
 // Cached global references for zero reflection overhead per frame
@@ -56,8 +57,24 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     }
     fclose(fp);
 
-    int gpu_count = (useGpu) ? ncnn::get_gpu_count() : 0;
-    if (useGpu && gpu_count > 0) {
+    bool gpu_requested = useGpu;
+    if (gpu_requested) {
+        try {
+            if (!g_rife_gpu_instance_created) {
+                ncnn::create_gpu_instance();
+                g_rife_gpu_instance_created = true;
+            }
+        } catch (const std::exception& eg) {
+            LOGE("ncnn::create_gpu_instance failed: %s; falling back to CPU", eg.what());
+            gpu_requested = false;
+        } catch (...) {
+            LOGE("ncnn::create_gpu_instance failed with unknown exception; falling back to CPU");
+            gpu_requested = false;
+        }
+    }
+
+    int gpu_count = (gpu_requested && g_rife_gpu_instance_created) ? ncnn::get_gpu_count() : 0;
+    if (gpu_requested && gpu_count > 0) {
         ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device(0);
         g_rife_gpuid = (vkdev != nullptr) ? 0 : -1;
     } else {
@@ -238,7 +255,7 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
-    const unsigned char* rgb_out = g_rgb_out.data();
+    const unsigned char* rgb_out = reinterpret_cast<const unsigned char*>(outimage.data ? outimage.data : g_rgb_out.data());
     unsigned char* p_out = reinterpret_cast<unsigned char*>(out_pixels);
     const int out_stride = static_cast<int>(out_info.stride);
 
@@ -265,6 +282,10 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeRelease(
     if (g_rife) {
         delete g_rife;
         g_rife = nullptr;
+    }
+    if (g_rife_gpu_instance_created) {
+        ncnn::destroy_gpu_instance();
+        g_rife_gpu_instance_created = false;
     }
     if (g_bitmapClass) {
         env->DeleteGlobalRef(g_bitmapClass);
