@@ -37,7 +37,7 @@ To make VeilFrame's extensive toolset easy to navigate, its 14 workspaces are or
 ```
                                   [ VeilFrame Core Engine ]
                                              │
-      ┌──────────────────┬───────────────────┼───────────────────┬───┐
+      ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┬
       ▼                  ▼                   ▼                   ▼                  ▼
 [ AI & Vision ]    [ Media ]           [ Documents ]       [ Privacy ]        [ Dev & Provenance ]
 • AI Upscaler      • Video Studio      • PDF Studio Hub    • Video Sanitizer  • AI Context Bundler
