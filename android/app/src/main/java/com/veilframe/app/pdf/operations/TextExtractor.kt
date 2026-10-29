@@ -48,10 +48,11 @@ class TextExtractor {
         onProgress: (Float) -> Unit = {}
     ): Result<TextExtractionResult> = withContext(Dispatchers.IO) {
         MemoryGuard.checkMemory("extractText")
+        var inputStream: java.io.InputStream? = null
         var document: PDDocument? = null
         try {
             onProgress(0.1f)
-            val inputStream = context.contentResolver.openInputStream(inputUri)
+            inputStream = context.contentResolver.openInputStream(inputUri)
                 ?: return@withContext Result.failure(IllegalStateException("Cannot open input file"))
             
             document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
@@ -91,7 +92,16 @@ class TextExtractor {
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
-            document?.close()
+            try {
+                document?.close()
+            } catch (e: Exception) {
+                // Ignore close errors
+            }
+            try {
+                inputStream?.close()
+            } catch (e: Exception) {
+                // Ignore close errors
+            }
         }
     }
 

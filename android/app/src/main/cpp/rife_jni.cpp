@@ -148,9 +148,15 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
     const size_t needed_bytes = static_cast<size_t>(pixel_count) * 3;
 
     void* pixels0 = nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap0, &pixels0) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("Failed to lock bitmap0 pixels");
+        return nullptr;
+    }
+
     void* pixels1 = nullptr;
-    if (AndroidBitmap_lockPixels(env, bitmap0, &pixels0) != ANDROID_BITMAP_RESULT_SUCCESS ||
-        AndroidBitmap_lockPixels(env, bitmap1, &pixels1) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    if (AndroidBitmap_lockPixels(env, bitmap1, &pixels1) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("Failed to lock bitmap1 pixels");
+        AndroidBitmap_unlockPixels(env, bitmap0);
         return nullptr;
     }
 
@@ -164,15 +170,22 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
     unsigned char* d0 = g_rgb0.data();
     unsigned char* d1 = g_rgb1.data();
 
-    for (int i = 0; i < pixel_count; i++) {
-        const int i4 = i * 4;
-        const int i3 = i * 3;
-        d0[i3 + 0] = p0[i4 + 0];
-        d0[i3 + 1] = p0[i4 + 1];
-        d0[i3 + 2] = p0[i4 + 2];
-        d1[i3 + 0] = p1[i4 + 0];
-        d1[i3 + 1] = p1[i4 + 1];
-        d1[i3 + 2] = p1[i4 + 2];
+    const int stride0 = static_cast<int>(info0.stride);
+    const int stride1 = static_cast<int>(info1.stride);
+
+    for (int y = 0; y < h; y++) {
+        const unsigned char* row0 = p0 + y * stride0;
+        const unsigned char* row1 = p1 + y * stride1;
+        unsigned char* dst0 = d0 + y * w * 3;
+        unsigned char* dst1 = d1 + y * w * 3;
+        for (int x = 0; x < w; x++) {
+            dst0[x * 3 + 0] = row0[x * 4 + 0];
+            dst0[x * 3 + 1] = row0[x * 4 + 1];
+            dst0[x * 3 + 2] = row0[x * 4 + 2];
+            dst1[x * 3 + 0] = row1[x * 4 + 0];
+            dst1[x * 3 + 1] = row1[x * 4 + 1];
+            dst1[x * 3 + 2] = row1[x * 4 + 2];
+        }
     }
 
     AndroidBitmap_unlockPixels(env, bitmap0);
@@ -200,20 +213,31 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
     );
     if (!outBitmap) return nullptr;
 
+    AndroidBitmapInfo out_info;
+    if (AndroidBitmap_getInfo(env, outBitmap, &out_info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("Failed to get outBitmap info");
+        return nullptr;
+    }
+
     void* out_pixels = nullptr;
     if (AndroidBitmap_lockPixels(env, outBitmap, &out_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("Failed to lock outBitmap pixels");
         return nullptr;
     }
 
     const unsigned char* rgb_out = g_rgb_out.data();
     unsigned char* p_out = reinterpret_cast<unsigned char*>(out_pixels);
-    for (int i = 0; i < pixel_count; i++) {
-        const int i4 = i * 4;
-        const int i3 = i * 3;
-        p_out[i4 + 0] = rgb_out[i3 + 0];
-        p_out[i4 + 1] = rgb_out[i3 + 1];
-        p_out[i4 + 2] = rgb_out[i3 + 2];
-        p_out[i4 + 3] = 255;
+    const int out_stride = static_cast<int>(out_info.stride);
+
+    for (int y = 0; y < h; y++) {
+        const unsigned char* src_rgb = rgb_out + y * w * 3;
+        unsigned char* dst_row = p_out + y * out_stride;
+        for (int x = 0; x < w; x++) {
+            dst_row[x * 4 + 0] = src_rgb[x * 3 + 0];
+            dst_row[x * 4 + 1] = src_rgb[x * 3 + 1];
+            dst_row[x * 4 + 2] = src_rgb[x * 3 + 2];
+            dst_row[x * 4 + 3] = 255;
+        }
     }
     AndroidBitmap_unlockPixels(env, outBitmap);
 

@@ -22,6 +22,26 @@
 
 #include "rife_ops.h"
 
+namespace {
+struct VkAllocatorScope {
+    ncnn::VulkanDevice* vkdev;
+    ncnn::VkAllocator*& blob;
+    ncnn::VkAllocator*& staging;
+    VkAllocatorScope(ncnn::VulkanDevice* d, ncnn::VkAllocator*& b, ncnn::VkAllocator*& s)
+        : vkdev(d), blob(b), staging(s) {}
+    ~VkAllocatorScope() {
+        if (vkdev && blob) {
+            vkdev->reclaim_blob_allocator(blob);
+            blob = nullptr;
+        }
+        if (vkdev && staging) {
+            vkdev->reclaim_staging_allocator(staging);
+            staging = nullptr;
+        }
+    }
+};
+}
+
 DEFINE_LAYER_CREATOR(Warp)
 
 RIFE::RIFE(int gpuid, bool _tta_mode, bool _tta_temporal_mode, bool _uhd_mode, int _num_threads, bool _rife_v2, bool _rife_v4)
@@ -429,6 +449,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
     ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
+    VkAllocatorScope _alloc_scope(vkdev, blob_vkallocator, staging_vkallocator);
 
     ncnn::Option opt = flownet.opt;
     opt.blob_vkallocator = blob_vkallocator;
@@ -559,7 +580,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 ex.input("input1", in1_gpu_padded_downscaled);
 
                 ncnn::VkMat flow_downscaled;
-                ex.extract("flow", flow_downscaled, cmd);
+                { int ret_extract = ex.extract("flow", flow_downscaled, cmd); if (ret_extract != 0) return ret_extract; }
 
                 ncnn::VkMat flow_half;
                 rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, cmd, opt);
@@ -570,7 +591,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             {
                 ex.input("input0", in0_gpu_padded[ti]);
                 ex.input("input1", in1_gpu_padded[ti]);
-                ex.extract("flow", flow[ti], cmd);
+                { int ret_extract = ex.extract("flow", flow[ti], cmd); if (ret_extract != 0) return ret_extract; }
             }
         }
 
@@ -596,7 +617,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                     ex.input("input1", in0_gpu_padded_downscaled);
 
                     ncnn::VkMat flow_downscaled;
-                    ex.extract("flow", flow_downscaled, cmd);
+                    { int ret_extract = ex.extract("flow", flow_downscaled, cmd); if (ret_extract != 0) return ret_extract; }
 
                     ncnn::VkMat flow_half;
                     rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, cmd, opt);
@@ -607,7 +628,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 {
                     ex.input("input0", in1_gpu_padded[ti]);
                     ex.input("input1", in0_gpu_padded[ti]);
-                    ex.extract("flow", flow_reversed[ti], cmd);
+                    { int ret_extract = ex.extract("flow", flow_reversed[ti], cmd); if (ret_extract != 0) return ret_extract; }
                 }
             }
         }
@@ -716,10 +737,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 {
                     ex.input("flow.0", flow[ti]);
                 }
-                ex.extract("f1", ctx0[0], cmd);
-                ex.extract("f2", ctx0[1], cmd);
-                ex.extract("f3", ctx0[2], cmd);
-                ex.extract("f4", ctx0[3], cmd);
+                { int ret_extract = ex.extract("f1", ctx0[0], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f2", ctx0[1], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f3", ctx0[2], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f4", ctx0[3], cmd); if (ret_extract != 0) return ret_extract; }
             }
             {
                 ncnn::Extractor ex = contextnet.create_extractor();
@@ -736,10 +757,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 {
                     ex.input("flow.1", flow[ti]);
                 }
-                ex.extract("f1", ctx1[0], cmd);
-                ex.extract("f2", ctx1[1], cmd);
-                ex.extract("f3", ctx1[2], cmd);
-                ex.extract("f4", ctx1[3], cmd);
+                { int ret_extract = ex.extract("f1", ctx1[0], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f2", ctx1[1], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f3", ctx1[2], cmd); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f4", ctx1[3], cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             // fusionnet
@@ -788,7 +809,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                     flow[ti - 1].release();
                 }
 
-                ex.extract("output", out_gpu_padded[ti], cmd);
+                { int ret_extract = ex.extract("output", out_gpu_padded[ti], cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             if (tta_temporal_mode)
@@ -834,7 +855,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                     ctx1[2].release();
                     ctx1[3].release();
 
-                    ex.extract("output", out_gpu_padded_reversed, cmd);
+                    { int ret_extract = ex.extract("output", out_gpu_padded_reversed, cmd); if (ret_extract != 0) return ret_extract; }
                 }
 
                 // merge output
@@ -951,7 +972,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 ex.input("input1", in1_gpu_padded_downscaled);
 
                 ncnn::VkMat flow_downscaled;
-                ex.extract("flow", flow_downscaled, cmd);
+                { int ret_extract = ex.extract("flow", flow_downscaled, cmd); if (ret_extract != 0) return ret_extract; }
 
                 ncnn::VkMat flow_half;
                 rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, cmd, opt);
@@ -962,7 +983,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             {
                 ex.input("input0", in0_gpu_padded);
                 ex.input("input1", in1_gpu_padded);
-                ex.extract("flow", flow, cmd);
+                { int ret_extract = ex.extract("flow", flow, cmd); if (ret_extract != 0) return ret_extract; }
             }
         }
 
@@ -986,7 +1007,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 ex.input("input1", in0_gpu_padded_downscaled);
 
                 ncnn::VkMat flow_downscaled;
-                ex.extract("flow", flow_downscaled, cmd);
+                { int ret_extract = ex.extract("flow", flow_downscaled, cmd); if (ret_extract != 0) return ret_extract; }
 
                 ncnn::VkMat flow_half;
                 rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, cmd, opt);
@@ -997,7 +1018,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             {
                 ex.input("input0", in1_gpu_padded);
                 ex.input("input1", in0_gpu_padded);
-                ex.extract("flow", flow_reversed, cmd);
+                { int ret_extract = ex.extract("flow", flow_reversed, cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             // merge flow and flow_reversed
@@ -1048,10 +1069,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             {
                 ex.input("flow.0", flow);
             }
-            ex.extract("f1", ctx0[0], cmd);
-            ex.extract("f2", ctx0[1], cmd);
-            ex.extract("f3", ctx0[2], cmd);
-            ex.extract("f4", ctx0[3], cmd);
+            { int ret_extract = ex.extract("f1", ctx0[0], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f2", ctx0[1], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f3", ctx0[2], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f4", ctx0[3], cmd); if (ret_extract != 0) return ret_extract; }
         }
         {
             ncnn::Extractor ex = contextnet.create_extractor();
@@ -1068,10 +1089,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             {
                 ex.input("flow.1", flow);
             }
-            ex.extract("f1", ctx1[0], cmd);
-            ex.extract("f2", ctx1[1], cmd);
-            ex.extract("f3", ctx1[2], cmd);
-            ex.extract("f4", ctx1[3], cmd);
+            { int ret_extract = ex.extract("f1", ctx1[0], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f2", ctx1[1], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f3", ctx1[2], cmd); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f4", ctx1[3], cmd); if (ret_extract != 0) return ret_extract; }
         }
 
         // fusionnet
@@ -1110,7 +1131,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
             }
             flow.release();
 
-            ex.extract("output", out_gpu_padded, cmd);
+            { int ret_extract = ex.extract("output", out_gpu_padded, cmd); if (ret_extract != 0) return ret_extract; }
         }
 
         if (tta_temporal_mode)
@@ -1148,7 +1169,7 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
                 ctx1[3].release();
                 flow_reversed.release();
 
-                ex.extract("output", out_gpu_padded_reversed, cmd);
+                { int ret_extract = ex.extract("output", out_gpu_padded_reversed, cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             // merge output
@@ -1208,7 +1229,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
 
         cmd.record_clone(out_gpu, out, opt);
 
-        cmd.submit_and_wait();
+        int ret_cmd = cmd.submit_and_wait();
+
+
+        if (ret_cmd != 0) return ret_cmd;
 
         if (!(opt.use_fp16_storage && opt.use_int8_storage))
         {
@@ -1448,7 +1472,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                     ex.input("input1", in1_padded_downscaled);
 
                     ncnn::Mat flow_downscaled;
-                    ex.extract("flow", flow_downscaled);
+                    { int ret_extract = ex.extract("flow", flow_downscaled); if (ret_extract != 0) return ret_extract; }
 
                     ncnn::Mat flow_half;
                     rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, opt);
@@ -1459,7 +1483,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 {
                     ex.input("input0", in0_padded[ti]);
                     ex.input("input1", in1_padded[ti]);
-                    ex.extract("flow", flow[ti]);
+                    { int ret_extract = ex.extract("flow", flow[ti]); if (ret_extract != 0) return ret_extract; }
                 }
             }
         }
@@ -1484,7 +1508,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                         ex.input("input1", in0_padded_downscaled);
 
                         ncnn::Mat flow_downscaled;
-                        ex.extract("flow", flow_downscaled);
+                        { int ret_extract = ex.extract("flow", flow_downscaled); if (ret_extract != 0) return ret_extract; }
 
                         ncnn::Mat flow_half;
                         rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, opt);
@@ -1495,7 +1519,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                     {
                         ex.input("input0", in1_padded[ti]);
                         ex.input("input1", in0_padded[ti]);
-                        ex.extract("flow", flow_reversed[ti]);
+                        { int ret_extract = ex.extract("flow", flow_reversed[ti]); if (ret_extract != 0) return ret_extract; }
                     }
                 }
 
@@ -1996,10 +2020,10 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 {
                     ex.input("flow.0", flow[ti]);
                 }
-                ex.extract("f1", ctx0[0]);
-                ex.extract("f2", ctx0[1]);
-                ex.extract("f3", ctx0[2]);
-                ex.extract("f4", ctx0[3]);
+                { int ret_extract = ex.extract("f1", ctx0[0]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f2", ctx0[1]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f3", ctx0[2]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f4", ctx0[3]); if (ret_extract != 0) return ret_extract; }
             }
             {
                 ncnn::Extractor ex = contextnet.create_extractor();
@@ -2013,10 +2037,10 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 {
                     ex.input("flow.1", flow[ti]);
                 }
-                ex.extract("f1", ctx1[0]);
-                ex.extract("f2", ctx1[1]);
-                ex.extract("f3", ctx1[2]);
-                ex.extract("f4", ctx1[3]);
+                { int ret_extract = ex.extract("f1", ctx1[0]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f2", ctx1[1]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f3", ctx1[2]); if (ret_extract != 0) return ret_extract; }
+                { int ret_extract = ex.extract("f4", ctx1[3]); if (ret_extract != 0) return ret_extract; }
             }
 
             // fusionnet
@@ -2035,7 +2059,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 ex.input("9", ctx1[2]);
                 ex.input("10", ctx1[3]);
 
-                ex.extract("output", out_padded[ti]);
+                { int ret_extract = ex.extract("output", out_padded[ti]); if (ret_extract != 0) return ret_extract; }
             }
 
             if (tta_temporal_mode)
@@ -2056,7 +2080,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                     ex.input("9", ctx0[2]);
                     ex.input("10", ctx0[3]);
 
-                    ex.extract("output", out_padded_reversed[ti]);
+                    { int ret_extract = ex.extract("output", out_padded_reversed[ti]); if (ret_extract != 0) return ret_extract; }
                 }
             }
         }
@@ -2235,7 +2259,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 ex.input("input1", in1_padded_downscaled);
 
                 ncnn::Mat flow_downscaled;
-                ex.extract("flow", flow_downscaled);
+                { int ret_extract = ex.extract("flow", flow_downscaled); if (ret_extract != 0) return ret_extract; }
 
                 ncnn::Mat flow_half;
                 rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, opt);
@@ -2246,7 +2270,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
             {
                 ex.input("input0", in0_padded);
                 ex.input("input1", in1_padded);
-                ex.extract("flow", flow);
+                { int ret_extract = ex.extract("flow", flow); if (ret_extract != 0) return ret_extract; }
             }
         }
 
@@ -2267,7 +2291,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 ex.input("input1", in0_padded_downscaled);
 
                 ncnn::Mat flow_downscaled;
-                ex.extract("flow", flow_downscaled);
+                { int ret_extract = ex.extract("flow", flow_downscaled); if (ret_extract != 0) return ret_extract; }
 
                 ncnn::Mat flow_half;
                 rife_uhd_upscale_flow->forward(flow_downscaled, flow_half, opt);
@@ -2278,7 +2302,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
             {
                 ex.input("input0", in1_padded);
                 ex.input("input1", in0_padded);
-                ex.extract("flow", flow_reversed);
+                { int ret_extract = ex.extract("flow", flow_reversed); if (ret_extract != 0) return ret_extract; }
             }
 
             // merge flow and flow_reversed
@@ -2359,10 +2383,10 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
             {
                 ex.input("flow.0", flow);
             }
-            ex.extract("f1", ctx0[0]);
-            ex.extract("f2", ctx0[1]);
-            ex.extract("f3", ctx0[2]);
-            ex.extract("f4", ctx0[3]);
+            { int ret_extract = ex.extract("f1", ctx0[0]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f2", ctx0[1]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f3", ctx0[2]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f4", ctx0[3]); if (ret_extract != 0) return ret_extract; }
         }
         {
             ncnn::Extractor ex = contextnet.create_extractor();
@@ -2376,10 +2400,10 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
             {
                 ex.input("flow.1", flow);
             }
-            ex.extract("f1", ctx1[0]);
-            ex.extract("f2", ctx1[1]);
-            ex.extract("f3", ctx1[2]);
-            ex.extract("f4", ctx1[3]);
+            { int ret_extract = ex.extract("f1", ctx1[0]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f2", ctx1[1]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f3", ctx1[2]); if (ret_extract != 0) return ret_extract; }
+            { int ret_extract = ex.extract("f4", ctx1[3]); if (ret_extract != 0) return ret_extract; }
         }
 
         // fusionnet
@@ -2399,7 +2423,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
             ex.input("9", ctx1[2]);
             ex.input("10", ctx1[3]);
 
-            ex.extract("output", out_padded);
+            { int ret_extract = ex.extract("output", out_padded); if (ret_extract != 0) return ret_extract; }
         }
 
         ncnn::Mat out_padded_reversed;
@@ -2421,7 +2445,7 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
                 ex.input("9", ctx0[2]);
                 ex.input("10", ctx0[3]);
 
-                ex.extract("output", out_padded_reversed);
+                { int ret_extract = ex.extract("output", out_padded_reversed); if (ret_extract != 0) return ret_extract; }
             }
         }
 
@@ -2504,6 +2528,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
 
     ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();
     ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();
+    VkAllocatorScope _alloc_scope_v4(vkdev, blob_vkallocator, staging_vkallocator);
 
     ncnn::Option opt = flownet.opt;
     opt.blob_vkallocator = blob_vkallocator;
@@ -2679,7 +2704,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                         {
                             char tmp[16];
                             sprintf(tmp, "flow%d", fi);
-                            ex.extract(tmp, flow[fi][ti], cmd);
+                            { int ret_extract = ex.extract(tmp, flow[fi][ti], cmd); if (ret_extract != 0) return ret_extract; }
                         }
                         }
                     }
@@ -2705,7 +2730,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                         {
                             char tmp[16];
                             sprintf(tmp, "flow%d", fi);
-                            ex.extract(tmp, flow_reversed[fi][ti], cmd);
+                            { int ret_extract = ex.extract(tmp, flow_reversed[fi][ti], cmd); if (ret_extract != 0) return ret_extract; }
                         }
                         }
                     }
@@ -2794,7 +2819,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                     ex.input("flow2", flow[2][ti]);
                     ex.input("flow3", flow[3][ti]);
 
-                    ex.extract("out0", out_gpu_padded[ti], cmd);
+                    { int ret_extract = ex.extract("out0", out_gpu_padded[ti], cmd); if (ret_extract != 0) return ret_extract; }
                 }
 
                 {
@@ -2811,7 +2836,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                     ex.input("flow2", flow_reversed[2][ti]);
                     ex.input("flow3", flow_reversed[3][ti]);
 
-                    ex.extract("out0", out_gpu_padded_reversed[ti], cmd);
+                    { int ret_extract = ex.extract("out0", out_gpu_padded_reversed[ti], cmd); if (ret_extract != 0) return ret_extract; }
                 }
 
                 // merge output
@@ -2860,7 +2885,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow[fi][ti], cmd);
+                        { int ret_extract = ex.extract(tmp, flow[fi][ti], cmd); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -2906,7 +2931,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                 ex.input("flow2", flow[2][ti]);
                 ex.input("flow3", flow[3][ti]);
 
-                ex.extract("out0", out_gpu_padded[ti], cmd);
+                { int ret_extract = ex.extract("out0", out_gpu_padded[ti], cmd); if (ret_extract != 0) return ret_extract; }
             }
         }
 
@@ -3042,7 +3067,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow[fi], cmd);
+                        { int ret_extract = ex.extract(tmp, flow[fi], cmd); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -3068,7 +3093,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow_reversed[fi], cmd);
+                        { int ret_extract = ex.extract(tmp, flow_reversed[fi], cmd); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -3107,7 +3132,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                 ex.input("flow2", flow[2]);
                 ex.input("flow3", flow[3]);
 
-                ex.extract("out0", out_gpu_padded, cmd);
+                { int ret_extract = ex.extract("out0", out_gpu_padded, cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             ncnn::VkMat out_gpu_padded_reversed;
@@ -3125,7 +3150,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
                 ex.input("flow2", flow_reversed[2]);
                 ex.input("flow3", flow_reversed[3]);
 
-                ex.extract("out0", out_gpu_padded_reversed, cmd);
+                { int ret_extract = ex.extract("out0", out_gpu_padded_reversed, cmd); if (ret_extract != 0) return ret_extract; }
             }
 
             // merge output
@@ -3157,7 +3182,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
             ex.input("in0", in0_gpu_padded);
             ex.input("in1", in1_gpu_padded);
             ex.input("in2", timestep_gpu_padded);
-            ex.extract("out0", out_gpu_padded, cmd);
+            { int ret_extract = ex.extract("out0", out_gpu_padded, cmd); if (ret_extract != 0) return ret_extract; }
         }
 
         if (opt.use_fp16_storage && opt.use_int8_storage)
@@ -3198,7 +3223,10 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
 
         cmd.record_clone(out_gpu, out, opt);
 
-        cmd.submit_and_wait();
+        int ret_cmd = cmd.submit_and_wait();
+
+
+        if (ret_cmd != 0) return ret_cmd;
 
         if (!(opt.use_fp16_storage && opt.use_int8_storage))
         {
@@ -3461,7 +3489,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                         {
                             char tmp[16];
                             sprintf(tmp, "flow%d", fi);
-                            ex.extract(tmp, flow[fi][ti]);
+                            { int ret_extract = ex.extract(tmp, flow[fi][ti]); if (ret_extract != 0) return ret_extract; }
                         }
                         }
                     }
@@ -3484,7 +3512,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                         {
                             char tmp[16];
                             sprintf(tmp, "flow%d", fi);
-                            ex.extract(tmp, flow_reversed[fi][ti]);
+                            { int ret_extract = ex.extract(tmp, flow_reversed[fi][ti]); if (ret_extract != 0) return ret_extract; }
                         }
                         }
                     }
@@ -3849,7 +3877,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     ex.input("flow1", flow[1][ti]);
                     ex.input("flow2", flow[2][ti]);
                     ex.input("flow3", flow[3][ti]);
-                    ex.extract("out0", out_padded[ti]);
+                    { int ret_extract = ex.extract("out0", out_padded[ti]); if (ret_extract != 0) return ret_extract; }
                 }
                 {
                     ncnn::Extractor ex = flownet.create_extractor();
@@ -3861,7 +3889,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     ex.input("flow1", flow_reversed[1][ti]);
                     ex.input("flow2", flow_reversed[2][ti]);
                     ex.input("flow3", flow_reversed[3][ti]);
-                    ex.extract("out0", out_padded_reversed[ti]);
+                    { int ret_extract = ex.extract("out0", out_padded_reversed[ti]); if (ret_extract != 0) return ret_extract; }
                 }
             }
         }
@@ -3889,7 +3917,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow[fi][ti]);
+                        { int ret_extract = ex.extract(tmp, flow[fi][ti]); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -4063,7 +4091,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     ex.input("flow1", flow[1][ti]);
                     ex.input("flow2", flow[2][ti]);
                     ex.input("flow3", flow[3][ti]);
-                    ex.extract("out0", out_padded[ti]);
+                    { int ret_extract = ex.extract("out0", out_padded[ti]); if (ret_extract != 0) return ret_extract; }
                 }
             }
         }
@@ -4261,7 +4289,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow[fi]);
+                        { int ret_extract = ex.extract(tmp, flow[fi]); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -4284,7 +4312,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                     {
                         char tmp[16];
                         sprintf(tmp, "flow%d", fi);
-                        ex.extract(tmp, flow_reversed[fi]);
+                        { int ret_extract = ex.extract(tmp, flow_reversed[fi]); if (ret_extract != 0) return ret_extract; }
                     }
                     }
                 }
@@ -4339,7 +4367,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                 ex.input("flow2", flow[2]);
                 ex.input("flow3", flow[3]);
 
-                ex.extract("out0", out_padded);
+                { int ret_extract = ex.extract("out0", out_padded); if (ret_extract != 0) return ret_extract; }
             }
             {
                 ncnn::Extractor ex = flownet.create_extractor();
@@ -4352,7 +4380,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
                 ex.input("flow2", flow_reversed[2]);
                 ex.input("flow3", flow_reversed[3]);
 
-                ex.extract("out0", out_padded_reversed);
+                { int ret_extract = ex.extract("out0", out_padded_reversed); if (ret_extract != 0) return ret_extract; }
             }
         }
         else
@@ -4363,7 +4391,7 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
             ex.input("in0", in0_padded);
             ex.input("in1", in1_padded);
             ex.input("in2", timestep_padded);
-            ex.extract("out0", out_padded);
+            { int ret_extract = ex.extract("out0", out_padded); if (ret_extract != 0) return ret_extract; }
         }
 
         // cut padding and postproc

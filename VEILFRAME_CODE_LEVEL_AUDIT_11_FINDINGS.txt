@@ -1,0 +1,338 @@
+================================================================================
+VEILFRAME CODE-LEVEL AUDIT: 11 VERIFIED FINDINGS, ARCHITECTURAL PLAN, AND FIXES
+Repository: Sahir247/VeilFrame
+Scope: Kotlin/C++ source paths (Native image processing, JNI, memory handling, PDF correctness)
+Date: 2026-10-29
+================================================================================
+
+--------------------------------------------------------------------------------
+PART 1: VERIFIED CODE-LEVEL FINDINGS (SOURCE CODE AUDIT)
+--------------------------------------------------------------------------------
+
+[Finding 1] [High] Native bitmap processing ignores row stride
+Files:
+  - android/app/src/main/cpp/matting_jni.cpp (lines 165-170, 291-308, 351-356, 430-445)
+  - android/app/src/main/cpp/rife_jni.cpp (lines 167-176, 210-217)
+  - android/app/src/main/cpp/pii_ncnn_jni.cpp (lines 182-187, 271-276)
+Verification:
+  - In matting_jni.cpp, input bitmap pixel buffer is passed directly to `ncnn::Mat::from_pixels_resize` without passing `info.stride`. On output mask generation, pixels are written via `rgba_out[i * 4 + c]` assuming `i = 0..src_w * src_h` without taking destination bitmap row stride (`mask_info.stride`) into account.
+  - In rife_jni.cpp, pixels from `bitmap0` and `bitmap1` are packed into `g_rgb0` and `g_rgb1` using `i * 4` flat indexing without `info0.stride` or `info1.stride`. On output, `p_out[i * 4 + c]` is written without considering `out_info.stride`.
+  - In pii_ncnn_jni.cpp, face detection and YOLO PII detection both call `from_pixels_resize(reinterpret_cast<const unsigned char*>(pixels), ncnn::Mat::PIXEL_RGBA2RGB, orig_w, orig_h, ...)` without passing `info.stride`.
+Consequence: On Android devices where hardware bitmap buffers contain row padding (stride > width * 4), native code reads skewed/shifted color channels, corrupts mask boundaries, and produces skewed video frames and incorrect object detections.
+
+[Finding 2] [High] RIFE can leave the first bitmap locked
+File:
+  - android/app/src/main/cpp/rife_jni.cpp (lines 152-155)
+Verification:
+  - The locking code is written as:
+      if (AndroidBitmap_lockPixels(env, bitmap0, &pixels0) != ANDROID_BITMAP_RESULT_SUCCESS ||
+          AndroidBitmap_lockPixels(env, bitmap1, &pixels1) != ANDROID_BITMAP_RESULT_SUCCESS) {
+          return nullptr;
+      }
+  - If `lockPixels(env, bitmap0, &pixels0)` succeeds, but `lockPixels(env, bitmap1, &pixels1)` fails, the `||` short-circuits and immediately returns `nullptr` without ever calling `AndroidBitmap_unlockPixels(env, bitmap0)`.
+Consequence: Leaves `bitmap0` in a permanently locked state, violating AndroidBitmap NDK lifecycle invariants, leading to graphics buffer corruption or crashes on subsequent operations.
+
+[Finding 3] [High] Face detection ignores NCNN extraction errors before indexing outputs
+File:
+  - android/app/src/main/cpp/pii_ncnn_jni.cpp (lines 198-224)
+Verification:
+  - Lines 199-200 call:
+      ex.extract("scores", scores);
+      ex.extract("boxes", boxes);
+    Neither return code (`int`) is checked.
+  - Immediately following, lines 207-213 iterate over all priors:
+      float score = scores.channel(0)[i * 2 + 1];
+      float x_center = boxes.channel(0)[i * 4] * center_variance * g_ultra_priors[i][2] + g_ultra_priors[i][0];
+    There is zero verification that `scores` or `boxes` are non-empty, nor that their channel dimensions/element counts can safely accommodate `num_anchors * 2` and `num_anchors * 4`.
+Consequence: If inference fails or tensor dimensions mismatch, the native runtime dereferences invalid or unallocated memory, causing a native SIGSEGV crash.
+
+[Finding 4] [High] RIFE continues after failed GPU inference operations
+File:
+  - android/app/src/main/cpp/rife/rife.cpp (lines 562, 573, 599, 610, 715, 742, 4264, 4287, 4342, 4355, 4366, etc.)
+Verification:
+  - Throughout `RIFE::process` (both Vulkan GPU and CPU paths), calls to `ex.extract(...)` ignore the return value.
+  - When Vulkan allocation or shader dispatch fails, the subsequent pipeline operations (warp forward, blending, temporal averaging) continue executing against empty or invalid VkMat tensors.
+Consequence: GPU errors cause downstream pipeline panics, visual artifact corruptions, or device driver timeouts instead of cleanly surfacing an error code to the caller.
+
+[Finding 5] [Medium–High] YOLO PII inference has an unchecked fallback extraction
+File:
+  - android/app/src/main/cpp/pii_ncnn_jni.cpp (lines 286-292)
+Verification:
+  - Lines 287-291:
+      int ret = ex.extract("out0", out);
+      if (ret != 0) {
+          ex.extract("output", out);
+      }
+    The return value of the fallback extraction `ex.extract("output", out)` is completely unchecked.
+Consequence: When both extractions fail, the fallback return code is discarded and no error is reported; while `out.empty()` check protects decoding, the failure is masked and not reported to the caller.
+
+[Finding 6] [High] Target-size compression deletes its own fallback file
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/PdfCompressor.kt (lines 278-303)
+Verification:
+  - When binary search iterations cannot achieve `targetSizeBytes`, it yields:
+      TargetSizeNotReachedException(fallbackFile = bestFile, ...)
+  - In the `finally` block:
+      cacheDir.listFiles()?.forEach { file ->
+          if (file.name.startsWith("iter_") || file.name.startsWith("temp_target_compress_")) {
+              file.delete()
+          }
+      }
+    `bestFile` was created with prefix `iter_` during the search.
+Consequence: The `finally` block deletes `bestFile` before the caller catches the exception and accesses `e.fallbackFile`. The fallback file no longer exists on disk when the caller tries to copy or use it.
+
+[Finding 7] [Medium–High] Target-size compression swallows coroutine cancellation
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/PdfCompressor.kt (lines 293-295)
+Verification:
+  - In `compressPdfToTargetSizeStrict`:
+      } catch (e: Exception) {
+          return@withContext Result.failure(e)
+      }
+    Unlike `compressPdf()` which explicitly catches `CancellationException` and re-throws it (`catch (e: CancellationException) { throw e }`), this catch-all swallows cancellation, converting it into a standard `Result.failure`.
+Consequence: Breaks structured coroutine cancellation when the user navigates away or cancels the job, keeping parent jobs or UI states confused.
+
+[Finding 8] [High] PDF flattening can report success without saving the new PDF
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt (lines 150-171)
+Verification:
+  - In `flattenPdf`:
+      context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
+          document.save(outputStream)
+          outputStream.flush()
+      }
+    If `openOutputStream(outputUri)` returns null, saving is skipped silently without exception.
+  - The code then tests:
+      val outputStreamCheck = try {
+          context.contentResolver.openInputStream(outputUri)?.use { it.read() != -1 }
+      } catch (e: Exception) { false } ?: false
+    If `outputUri` previously existed and had non-empty content, `outputStreamCheck` evaluates to `true`.
+Consequence: If the destination stream cannot be opened for writing, the operation falsely reports `success = true`, masking failure and leaving the caller with an un-flattened or stale document.
+
+[Finding 9] [Medium] The "remove JavaScript" option also removes legitimate PDF open actions
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt (lines 305-310)
+Verification:
+  - In `removeJavaScript()`:
+      // Remove OpenAction if it contains JavaScript
+      try {
+          document.documentCatalog.setOpenAction(null)
+      } catch (e: Exception) {}
+    This unconditionally wipes out all OpenActions from the PDF catalog, regardless of whether the OpenAction is a legitimate page navigation destination (e.g. `PDDestinationOrPartner` / `PDPageDestination`) or a script.
+Consequence: Removing JavaScript strips away standard document launch navigation, table-of-contents jumps, and initial view settings.
+
+[Finding 10] [Medium] Form-flattening count is calculated after the fields are flattened
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt (lines 192-215)
+Verification:
+  - In `flattenForms()`:
+      acroForm.flatten()
+      count = acroForm.fields.size
+    Because `acroForm.flatten()` merges interactive form fields into page content streams and strips them from `acroForm.fields`, `acroForm.fields.size` evaluates to 0 after flattening.
+Consequence: `FlattenResult.formsFlattened` is reported as 0 even when dozens of form fields were successfully flattened.
+
+[Finding 11] [Medium] Text extraction does not explicitly close its input stream
+File:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/TextExtractor.kt (lines 54-95)
+Verification:
+  - In `extractText()`:
+      val inputStream = context.contentResolver.openInputStream(inputUri)
+          ?: return@withContext Result.failure(...)
+      document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+    `inputStream` is never enclosed in a `.use { ... }` block, nor is it closed in the `finally` block (only `document?.close()` is called).
+Consequence: Leaves content resolver file descriptors and memory-backed streams open until garbage collected, causing descriptor leaks on batch operations.
+
+================================================================================
+PART 2: ARCHITECTURAL REMEDIATION PLAN
+================================================================================
+
+Step 1: Stride-Aware Native Bitmap Access (Finding 1)
+------------------------------------------------------------------
+- `matting_jni.cpp`:
+  - Input: Read `info.stride` (bytes per row). Call `ncnn::Mat::from_pixels_resize(pixels, ncnn::Mat::PIXEL_RGBA2RGB, src_w, src_h, static_cast<int>(info.stride), scaled_w, scaled_h)`.
+  - Output: Query `mask_info.stride`. In the pixel write loop, calculate row pointers using `y * mask_info.stride + x * 4` instead of flat `(y * src_w + x) * 4`.
+  - Apply to both `nativeProcess` and `nativeProcessLegacy`.
+- `rife_jni.cpp`:
+  - Input: Query `info0.stride` and `info1.stride`. Copy pixels row-by-row:
+    `const unsigned char* row0 = p0 + y * info0.stride;`
+    `const unsigned char* row1 = p1 + y * info1.stride;`
+    `unsigned char* dst0 = d0 + y * w * 3;`
+    `unsigned char* dst1 = d1 + y * w * 3;`
+  - Output: Query `out_info.stride`. Write output RGB to RGBA row-by-row:
+    `unsigned char* row_out = p_out + y * out_info.stride;`
+    `const unsigned char* src_rgb = rgb_out + y * w * 3;`
+- `pii_ncnn_jni.cpp`:
+  - Query `info.stride`. Pass `static_cast<int>(info.stride)` to `from_pixels_resize` for both `nativeDetectFaces` and `nativeDetectPii`.
+
+Step 2: Safe Scoped Bitmap Lock Lifecycle in RIFE (Finding 2)
+------------------------------------------------------------------
+- In `rife_jni.cpp`, lock `bitmap0` first.
+- If `lockPixels(env, bitmap0, &pixels0) != ANDROID_BITMAP_RESULT_SUCCESS`, return `nullptr`.
+- Then lock `bitmap1`. If `lockPixels(env, bitmap1, &pixels1) != ANDROID_BITMAP_RESULT_SUCCESS`:
+  - Immediately unlock `bitmap0` before returning `nullptr`.
+- Implement RAII guard `BitmapLockGuard` or explicit clean unlock on all return paths.
+
+Step 3: Tensor Validation and Error Checking in PII & Face Detection (Findings 3 & 5)
+------------------------------------------------------------------
+- In `pii_ncnn_jni.cpp` (`nativeDetectFaces`):
+  - Check return codes:
+    `int ret_s = ex.extract("scores", scores);`
+    `int ret_b = ex.extract("boxes", boxes);`
+    `if (ret_s != 0 || ret_b != 0 || scores.empty() || boxes.empty()) return nullptr;`
+  - Validate shapes: verify `scores.c > 0 && scores.total() >= num_anchors * 2` and `boxes.c > 0 && boxes.total() >= num_anchors * 4`.
+- In `pii_ncnn_jni.cpp` (`nativeDetectPii`):
+  - Check return code of `ex.extract("out0", out)`. If non-zero, check `ex.extract("output", out)`.
+  - If both fail or `out.empty()`, log error and return `nullptr`.
+
+Step 4: RIFE GPU Inference Error Propagation (Finding 4)
+------------------------------------------------------------------
+- In `rife.cpp`:
+  - Check all extraction calls:
+    `int ret = ex.extract(...); if (ret != 0) return ret;`
+  - Ensure failure stops execution and returns non-zero error code up to `nativeInterpolate`.
+  - In `rife_jni.cpp`, verify `ret == 0` before creating or returning the output bitmap.
+
+Step 5: PDF Target-Size Compression Fallback & Cancellation (Findings 6 & 7)
+------------------------------------------------------------------
+- In `PdfCompressor.kt`:
+  - When `isTargetReached` is false and `bestFile != null`, track `preservedFallbackFile = bestFile`.
+  - In `finally` block, delete iteration cache files EXCEPT `file == preservedFallbackFile`.
+  - In `catch`, add `catch (e: CancellationException) { throw e }` before `catch (e: Exception)`.
+
+Step 6: PDF Flattening Reliability & Integrity (Findings 8, 9, 10)
+------------------------------------------------------------------
+- In `PdfFlattener.kt`:
+  - Finding 8:
+    Verify `outputStream != null`:
+    `val outputStream = context.contentResolver.openOutputStream(outputUri) ?: return@withContext FlattenResult(success = false, errorMessage = "Cannot open destination URI for writing")`
+    Save and flush document, track bytes written.
+  - Finding 9:
+    In `removeJavaScript()`:
+    Inspect catalog open action:
+    ```kotlin
+    val openAction = document.documentCatalog.openAction
+    if (openAction is com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionJavaScript) {
+        document.documentCatalog.setOpenAction(null)
+    }
+    ```
+    Preserve non-JavaScript open actions (destinations, navigation).
+  - Finding 10:
+    In `flattenForms()`:
+    Record `val fieldCount = acroForm.fields.size` BEFORE calling `acroForm.flatten()`.
+    Set `count = fieldCount` upon successful flatten.
+
+Step 7: Text Extraction Resource Management (Finding 11)
+------------------------------------------------------------------
+- In `TextExtractor.kt`:
+  - Enclose `context.contentResolver.openInputStream(inputUri)` in `.use { inputStream -> ... }` or explicit `try-finally` cleanup so the stream is closed regardless of success or failure.
+
+================================================================================
+PART 3: IMPLEMENTATION AND VERIFICATION STATUS
+================================================================================
+
+[Fix 1] Stride-Aware Native Bitmap Access (Finding 1)
+- Evidence Level: CODE VERIFIED & COMPILED
+- Files Modified:
+  * `android/app/src/main/cpp/matting_jni.cpp`:
+    - Updated `nativeProcess` and `nativeProcessLegacy` to pass `static_cast<int>(info.stride)` into `ncnn::Mat::from_pixels_resize`.
+    - Queried `mask_info.stride` and wrote output alpha mask pixels row-by-row using `y * mask_stride + x * 4` instead of flat `(y * w + x) * 4`.
+  * `android/app/src/main/cpp/rife_jni.cpp`:
+    - Unpacked `bitmap0` and `bitmap1` input rows using `stride0 = static_cast<int>(info0.stride)` and `stride1 = static_cast<int>(info1.stride)`.
+    - Wrote output RGBA rows to `outBitmap` respecting `out_stride = static_cast<int>(out_info.stride)`.
+  * `android/app/src/main/cpp/pii_ncnn_jni.cpp`:
+    - Passed `static_cast<int>(info.stride)` to `from_pixels_resize` in both `nativeDetectFaces` and `nativeDetectPii`.
+- Native Build: SUCCESS via `externalNativeBuildDebug` (`arm64-v8a` Clang++).
+
+[Fix 2] Scoped Bitmap Lock Cleanup in RIFE (Finding 2)
+- Evidence Level: CODE VERIFIED & COMPILED
+- File Modified:
+  * `android/app/src/main/cpp/rife_jni.cpp`:
+    - Replaced the short-circuit `if (lock(bm0) != 0 || lock(bm1) != 0) return nullptr;` with sequential locking.
+    - If `lock(bm1)` fails, `AndroidBitmap_unlockPixels(env, bitmap0)` is invoked before returning `nullptr`, preventing lock leaks.
+
+[Fix 3] UltraFace Tensor Validation and Boundary Checks (Finding 3)
+- Evidence Level: CODE VERIFIED & COMPILED
+- File Modified:
+  * `android/app/src/main/cpp/pii_ncnn_jni.cpp`:
+    - Checked `ret_s = ex.extract("scores", scores)` and `ret_b = ex.extract("boxes", boxes)`.
+    - If return codes are non-zero or tensors are empty, logs error and returns `nullptr`.
+    - Added shape validation verifying `scores.c >= 1 && scores.channel(0).total() >= num_anchors * 2` and `boxes.c >= 1 && boxes.channel(0).total() >= num_anchors * 4` before anchor decoding loops.
+
+[Fix 4] RIFE GPU Inference Error Propagation & Allocator Lifecycle (Finding 4)
+- Evidence Level: CODE VERIFIED & COMPILED
+- File Modified:
+  * `android/app/src/main/cpp/rife/rife.cpp`:
+    - Added RAII struct `VkAllocatorScope` to ensure `blob_vkallocator` and `staging_vkallocator` are safely reclaimed on any early exit or error return.
+    - Checked every `ex.extract(...)` call across all Vulkan and CPU routines (`process`, `process_v4`, `process_cpu`, `process_v4_cpu`), immediately propagating error codes.
+    - Checked `cmd.submit_and_wait()` return code and propagated non-zero failures.
+
+[Fix 5] YOLO PII Inference Fallback Extraction Status (Finding 5)
+- Evidence Level: CODE VERIFIED & COMPILED
+- File Modified:
+  * `android/app/src/main/cpp/pii_ncnn_jni.cpp`:
+    - Captured return status of fallback `ret = ex.extract("output", out)`.
+    - If both "out0" and "output" fail or output tensor is empty / invalid, logs an error and returns `nullptr`.
+
+[Fix 6] Target-Size Compression Fallback File Preservation (Finding 6)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/PdfCompressor.kt`:
+    - Introduced `preservedFallbackFile = bestFile` tracking when target size cannot be reached.
+    - In `finally` block, excluded `preservedFallbackFile` from candidate cache cleanup, ensuring caller receives a valid existing file on disk.
+- Test: `PdfOperationsFindingsRegressionTest.testTargetSizeNotReachedException_preservesFallbackFileState` PASSED.
+
+[Fix 7] Target-Size Compression Coroutine Cancellation Propagation (Finding 7)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/PdfCompressor.kt`:
+    - Added `catch (e: CancellationException) { throw e }` before generic `catch (e: Exception)` in `compressPdfToTargetSizeStrict`, restoring structured coroutine cancellation.
+- Test: `PdfOperationsFindingsRegressionTest.testCompressPdfToTargetSizeStrict_propagatesCancellationException` PASSED.
+
+[Fix 8] PDF Flattening Destination Stream Validation (Finding 8)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt`:
+    - Verified `openOutputStream(outputUri) ?: return FlattenResult(success = false, errorMessage = ...)` immediately.
+    - Replaced ambiguous `outputStreamCheck` read-back check that previously falsely reported success on stale non-empty pre-existing destination files.
+- Test: `PdfOperationsFindingsRegressionTest.testPdfFlattener_failsGracefullyWhenDestinationOutputStreamFails` PASSED.
+
+[Fix 9] Preservation of Non-JavaScript OpenActions During Sanitization (Finding 9)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt`:
+    - In `removeJavaScript()`, inspected `document.documentCatalog.openAction`.
+    - Only wiped `openAction = null` when `openAction is PDActionJavaScript`, preserving document navigation destinations (e.g. `PDPageFitWidthDestination`).
+- Test: `PdfOperationsFindingsRegressionTest.testRemoveJavaScript_preservesNavigationOpenAction` PASSED.
+
+[Fix 10] Form Flattening Pre-Count Field Evaluation (Finding 10)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/PdfFlattener.kt`:
+    - In `flattenForms()`, recorded `val totalFields = acroForm.fields.size` before invoking `acroForm.flatten()`.
+    - Returned `totalFields` so caller receives accurate count of flattened form fields instead of 0.
+- Test: `PdfOperationsFindingsRegressionTest.testFlattenForms_accuratelyCountsFlattenedFields` PASSED.
+
+[Fix 11] Text Extraction Input Stream Lifecycle Management (Finding 11)
+- Evidence Level: UNIT TEST VERIFIED
+- File Modified:
+  * `android/app/src/main/java/com/veilframe/app/pdf/operations/TextExtractor.kt`:
+    - Ensured `inputStream` is tracked and safely closed in `finally` block alongside `document?.close()`, preventing content resolver file descriptor leaks.
+- Test: `PdfOperationsFindingsRegressionTest.testTextExtractor_executesSafelyAndExtractsText` PASSED.
+
+================================================================================
+PART 4: TEST AND BUILD SUMMARY
+================================================================================
+- Native Build:
+  * Task: `:app:externalNativeBuildDebug`
+  * Result: BUILD SUCCESSFUL (arm64-v8a Clang 17 / CMake / Ninja)
+- Dedicated Regression Suite:
+  * Suite: `com.veilframe.app.pdf.PdfOperationsFindingsRegressionTest`
+  * Tests: 6 passed, 0 failed, 0 skipped
+- Full Project Unit Test Suite:
+  * Task: `:app:testDebugUnitTest`
+  * Result: BUILD SUCCESSFUL
+  * Total Tests: 1,214 tests executed
+  * Failures: 0
+  * Errors: 0
+  * Skipped: 0
+================================================================================

@@ -148,26 +148,25 @@ class PdfFlattener {
             progressCallback(90)
             
             // Save the flattened document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-                document.save(outputStream)
-                outputStream.flush()
+            val outputStream = context.contentResolver.openOutputStream(outputUri)
+                ?: return@withContext FlattenResult(
+                    success = false,
+                    errorMessage = "Cannot open destination URI for writing: $outputUri"
+                )
+
+            outputStream.use { stream ->
+                document.save(stream)
+                stream.flush()
             }
-            
+
             document.close()
             progressCallback(100)
-            
-            // Verify output file exists
-            val outputStreamCheck = try {
-                context.contentResolver.openInputStream(outputUri)?.use { it.read() != -1 }
-            } catch (e: Exception) {
-                false
-            } ?: false
 
             FlattenResult(
-                success = outputStreamCheck,
+                success = true,
                 annotationsFlattened = annotationsCount,
                 formsFlattened = formsCount,
-                errorMessage = if (outputStreamCheck) null else "Failed to create output file"
+                errorMessage = null
             )
             
         } catch (e: IOException) {
@@ -199,12 +198,13 @@ class PdfFlattener {
         var count = 0
         
         try {
+            val totalFields = acroForm.fields.size
             // Set NeedAppearances to false to ensure appearances are generated
             acroForm.setNeedAppearances(false)
             
-            // Flatten the form
+            // Flatten the form (which strips fields from acroForm.fields)
             acroForm.flatten()
-            count = acroForm.fields.size
+            count = totalFields
             
         } catch (e: Exception) {
             // Form flattening may fail for some complex forms
@@ -302,9 +302,12 @@ class PdfFlattener {
                 }
             }
             
-            // Remove OpenAction if it contains JavaScript
+            // Remove OpenAction only if it contains JavaScript, preserving navigation/destinations
             try {
-                document.documentCatalog.setOpenAction(null)
+                val openAction = document.documentCatalog.openAction
+                if (openAction is com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionJavaScript) {
+                    document.documentCatalog.setOpenAction(null)
+                }
             } catch (e: Exception) {
                 // Ignore if cannot remove
             }

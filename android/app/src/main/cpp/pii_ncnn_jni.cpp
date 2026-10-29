@@ -183,6 +183,7 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectFaces(
         reinterpret_cast<const unsigned char*>(pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         orig_w, orig_h,
+        static_cast<int>(info.stride),
         ULTRA_IN_W, ULTRA_IN_H
     );
     AndroidBitmap_unlockPixels(env, srcBitmap);
@@ -196,12 +197,25 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectFaces(
     ex.input("input", in);
 
     ncnn::Mat scores, boxes;
-    ex.extract("scores", scores);
-    ex.extract("boxes", boxes);
+    int ret_s = ex.extract("scores", scores);
+    int ret_b = ex.extract("boxes", boxes);
+    if (ret_s != 0 || ret_b != 0 || scores.empty() || boxes.empty()) {
+        LOGE("UltraFace extraction failed (ret_s=%d, ret_b=%d, scores_empty=%d, boxes_empty=%d)",
+             ret_s, ret_b, scores.empty(), boxes.empty());
+        return nullptr;
+    }
 
     const float center_variance = 0.1f;
     const float size_variance = 0.2f;
     const int num_anchors = static_cast<int>(g_ultra_priors.size());
+
+    if (scores.c < 1 || boxes.c < 1 ||
+        scores.channel(0).total() < static_cast<size_t>(num_anchors * 2) ||
+        boxes.channel(0).total() < static_cast<size_t>(num_anchors * 4)) {
+        LOGE("UltraFace tensor shape invalid: scores_c=%d, boxes_c=%d, num_anchors=%d",
+             scores.c, boxes.c, num_anchors);
+        return nullptr;
+    }
 
     std::vector<BBox> raw_boxes;
     for (int i = 0; i < num_anchors; i++) {
@@ -272,6 +286,7 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
         reinterpret_cast<const unsigned char*>(pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         orig_w, orig_h,
+        static_cast<int>(info.stride),
         target_size, target_size
     );
     AndroidBitmap_unlockPixels(env, srcBitmap);
@@ -287,7 +302,12 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
     int ret = ex.extract("out0", out);
     if (ret != 0) {
         // Fallback blob names for alternate pnnx exports
-        ex.extract("output", out);
+        ret = ex.extract("output", out);
+    }
+    if (ret != 0 || out.empty() || out.dims < 2) {
+        LOGE("YOLOv8 extraction failed or output tensor invalid (ret=%d, empty=%d, dims=%d)",
+             ret, out.empty(), out.dims);
+        return nullptr;
     }
 
     std::vector<BBox> candidates;

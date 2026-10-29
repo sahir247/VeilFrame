@@ -151,6 +151,7 @@ class PdfCompressor {
     ): Result<CompressionResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         var tempFile: File? = null
+        var preservedFallbackFile: File? = null
         val cacheDir = File(context.cacheDir, "compress_cache")
         if (!cacheDir.exists()) cacheDir.mkdirs()
 
@@ -275,6 +276,7 @@ class PdfCompressor {
                     )
                 } else {
                     // Let the caller handle the failure or fallback
+                    preservedFallbackFile = bestFile
                     Result.failure(
                         TargetSizeNotReachedException(
                             message = "Could not reach target size. Smallest possible size is ${bestSize} bytes.",
@@ -290,13 +292,16 @@ class PdfCompressor {
                 return@withContext Result.failure(IllegalStateException("Compression failed at all levels."))
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         } finally {
             tempFile?.delete()
-            // Clean up any remaining iteration files in cacheDir that start with temp_target_compress or iter_
+            // Clean up any remaining iteration files in cacheDir that start with temp_target_compress or iter_,
+            // but preserve fallbackFile if returned in TargetSizeNotReachedException.
             cacheDir.listFiles()?.forEach { file ->
-                if (file.name.startsWith("iter_") || file.name.startsWith("temp_target_compress_")) {
+                if (file != preservedFallbackFile && (file.name.startsWith("iter_") || file.name.startsWith("temp_target_compress_"))) {
                     file.delete()
                 }
             }

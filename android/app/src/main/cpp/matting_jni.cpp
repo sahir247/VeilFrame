@@ -166,6 +166,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         reinterpret_cast<const unsigned char*>(src_pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         src_w, src_h,
+        static_cast<int>(info.stride),
         scaled_w, scaled_h
     );
 
@@ -282,6 +283,12 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         return nullptr;
     }
 
+    AndroidBitmapInfo mask_info;
+    if (AndroidBitmap_getInfo(env, maskBitmap, &mask_info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("Failed to get mask bitmap info");
+        return nullptr;
+    }
+
     void* mask_pixels = nullptr;
     if (AndroidBitmap_lockPixels(env, maskBitmap, &mask_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
         LOGE("Failed to lock mask bitmap pixels");
@@ -290,19 +297,23 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
 
     const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
     unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
-    const int total_pixels = src_w * src_h;
+    const int mask_stride = static_cast<int>(mask_info.stride);
 
     #pragma omp parallel for
-    for (int i = 0; i < total_pixels; i++) {
-        float val = alpha_data[i];
-        if (val < 0.0f) val = 0.0f;
-        if (val > 1.0f) val = 1.0f;
-        const unsigned char a = static_cast<unsigned char>(val * 255.0f);
+    for (int y = 0; y < src_h; y++) {
+        const float* alpha_row = alpha_data + y * src_w;
+        unsigned char* out_row = rgba_out + y * mask_stride;
+        for (int x = 0; x < src_w; x++) {
+            float val = alpha_row[x];
+            if (val < 0.0f) val = 0.0f;
+            if (val > 1.0f) val = 1.0f;
+            const unsigned char a = static_cast<unsigned char>(val * 255.0f);
 
-        rgba_out[i * 4 + 0] = 255; // R
-        rgba_out[i * 4 + 1] = 255; // G
-        rgba_out[i * 4 + 2] = 255; // B
-        rgba_out[i * 4 + 3] = a;   // Alpha
+            out_row[x * 4 + 0] = 255; // R
+            out_row[x * 4 + 1] = 255; // G
+            out_row[x * 4 + 2] = 255; // B
+            out_row[x * 4 + 3] = a;   // Alpha
+        }
     }
 
     AndroidBitmap_unlockPixels(env, maskBitmap);
@@ -352,6 +363,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
         reinterpret_cast<const unsigned char*>(src_pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         src_w, src_h,
+        static_cast<int>(info.stride),
         target_w, target_h
     );
 
@@ -421,6 +433,12 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
         return nullptr;
     }
 
+    AndroidBitmapInfo mask_info;
+    if (AndroidBitmap_getInfo(env, maskBitmap, &mask_info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("AndroidBitmap_getInfo failed on legacy maskBitmap");
+        return nullptr;
+    }
+
     void* mask_pixels = nullptr;
     if (AndroidBitmap_lockPixels(env, maskBitmap, &mask_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
         LOGE("AndroidBitmap_lockPixels failed on legacy maskBitmap");
@@ -429,18 +447,22 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
 
     const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
     unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
-    const int total_pixels = src_w * src_h;
+    const int mask_stride = static_cast<int>(mask_info.stride);
 
     #pragma omp parallel for
-    for (int i = 0; i < total_pixels; i++) {
-        float val = alpha_data[i];
-        if (val < 0.0f) val = 0.0f;
-        if (val > 1.0f) val = 1.0f;
-        const unsigned char a = static_cast<unsigned char>(val * 255.0f);
-        rgba_out[i * 4 + 0] = 255;
-        rgba_out[i * 4 + 1] = 255;
-        rgba_out[i * 4 + 2] = 255;
-        rgba_out[i * 4 + 3] = a;
+    for (int y = 0; y < src_h; y++) {
+        const float* alpha_row = alpha_data + y * src_w;
+        unsigned char* out_row = rgba_out + y * mask_stride;
+        for (int x = 0; x < src_w; x++) {
+            float val = alpha_row[x];
+            if (val < 0.0f) val = 0.0f;
+            if (val > 1.0f) val = 1.0f;
+            const unsigned char a = static_cast<unsigned char>(val * 255.0f);
+            out_row[x * 4 + 0] = 255;
+            out_row[x * 4 + 1] = 255;
+            out_row[x * 4 + 2] = 255;
+            out_row[x * 4 + 3] = a;
+        }
     }
 
     AndroidBitmap_unlockPixels(env, maskBitmap);
