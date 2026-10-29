@@ -198,6 +198,17 @@ class UpscaleModelRepository(private val context: Context) {
     /**
      * Imports an NCNN model from a .zip archive containing .param and .bin files.
      */
+    companion object {
+        const val MAX_NCNN_ZIP_ENTRIES = 25
+        const val MAX_NCNN_ZIP_ENTRY_BYTES = 250 * 1024 * 1024L // 250 MB
+        const val MAX_NCNN_ZIP_TOTAL_BYTES = 400 * 1024 * 1024L // 400 MB
+    }
+
+    /**
+     * Imports an NCNN model from a .zip archive containing .param and .bin files.
+     * Enforces entry count, single-file size, and total expansion bounds to protect
+     * against zip bombs, disk exhaustion, and path traversal vulnerabilities.
+     */
     fun importCustomNcnnFromZip(
         uri: android.net.Uri,
         fileName: String,
@@ -205,14 +216,46 @@ class UpscaleModelRepository(private val context: Context) {
     ): UpscaleModel {
         val tempExtractDir = File(context.cacheDir, "ncnn_extract_${System.currentTimeMillis()}").apply { mkdirs() }
         try {
+            var entryCount = 0
+            var totalExtractedBytes = 0L
+
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 java.util.zip.ZipInputStream(inputStream).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
+                        entryCount++
+                        if (entryCount > MAX_NCNN_ZIP_ENTRIES) {
+                            throw SecurityException("ZIP archive exceeds maximum entry limit ($MAX_NCNN_ZIP_ENTRIES entries)")
+                        }
+
                         if (!entry.isDirectory) {
-                            val entryFile = File(tempExtractDir, entry.name.substringAfterLast('/'))
+                            val rawName = entry.name
+                            if (rawName.contains("..") || rawName.startsWith("/") || rawName.startsWith("\\")) {
+                                throw SecurityException("Zip path traversal attempt detected: ")
+                            }
+                            val cleanName = File(rawName).name
+                            if (cleanName.isBlank() || cleanName.contains("..") || cleanName.contains("/") || cleanName.contains("\\")) {
+                                throw SecurityException("Malformed entry path in ZIP archive: $rawName")
+                            }
+
+                            val entryFile = File(tempExtractDir, cleanName)
+                            var entryBytes = 0L
+
                             entryFile.outputStream().use { fos ->
-                                zis.copyTo(fos)
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (zis.read(buffer).also { len = it } != -1) {
+                                    entryBytes += len
+                                    totalExtractedBytes += len
+                                    if (entryBytes > MAX_NCNN_ZIP_ENTRY_BYTES) {
+                                        throw SecurityException("ZIP entry '$cleanName' exceeds single file limit of $MAX_NCNN_ZIP_ENTRY_BYTES bytes")
+                                    }
+                                    if (totalExtractedBytes > MAX_NCNN_ZIP_TOTAL_BYTES) {
+                                        throw SecurityException("ZIP archive exceeds total decompressed limit of $MAX_NCNN_ZIP_TOTAL_BYTES bytes")
+                                    }
+                                    fos.write(buffer, 0, len)
+                                }
+                                fos.flush()
                             }
                         }
                         zis.closeEntry()

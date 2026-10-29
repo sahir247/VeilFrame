@@ -25,6 +25,7 @@ enum class RembgModel(
     val mean: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f),
     val std: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f),
     val sha256: String = "",
+    val paramSha256: String = "",
 ) {
     U2NETP(
         id = "u2netp",
@@ -52,6 +53,8 @@ enum class RembgModel(
         inputHeight = 512,
         isBundled = false,
         isRecommended = false,
+        sha256 = "519656a49f07f535fb3132d95cd80d5651a19821c70c07db7b7364805e6a762b",
+        paramSha256 = "6748834c44f53dce16a19f19bfcb55c21c823a49d0640e0ce0db5acf041c98d0",
     );
 
     val sizeMbFormatted: String

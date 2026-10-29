@@ -223,13 +223,21 @@ object ImageMetadataSanitizer {
             outputFile.parentFile?.mkdirs()
             val bmp = BitmapFactory.decodeFile(inputFile.absolutePath) ?: return false
             val resolvedFormat = resolveCompressFormat(format ?: inputFile.extension)
-            FileOutputStream(outputFile).use { fos ->
-                bmp.compress(resolvedFormat, quality.coerceIn(10, 100), fos)
+            val compressSuccess = FileOutputStream(outputFile).use { fos ->
+                val ok = bmp.compress(resolvedFormat, quality.coerceIn(10, 100), fos)
+                fos.flush()
+                ok
             }
             bmp.recycle()
+            if (!compressSuccess) {
+                Log.e(TAG, "Bitmap.compress returned false during reencodePixels; deleting partial output")
+                if (outputFile.exists()) outputFile.delete()
+                return false
+            }
             outputFile.exists() && outputFile.length() > 0L
         } catch (e: Exception) {
             Log.e(TAG, "Pixel re-encode failed: ${e.message}", e)
+            if (outputFile.exists()) outputFile.delete()
             false
         }
     }
@@ -254,30 +262,69 @@ object ImageMetadataSanitizer {
             val ext = targetFormat ?: "jpg"
             val compressFormat = resolveCompressFormat(ext)
 
-            FileOutputStream(outputFile).use { fos ->
-                bmp.compress(compressFormat, quality.coerceIn(10, 100), fos)
+            val compressSuccess = FileOutputStream(outputFile).use { fos ->
+                val ok = bmp.compress(compressFormat, quality.coerceIn(10, 100), fos)
+                fos.flush()
+                ok
             }
             bmp.recycle()
+            if (!compressSuccess) {
+                Log.e(TAG, "Bitmap.compress returned false during sanitizeFromUri; deleting partial output")
+                if (outputFile.exists()) outputFile.delete()
+                return false
+            }
             outputFile.exists() && outputFile.length() > 0L
         } catch (e: Exception) {
             Log.e(TAG, "Failed sanitizing image from URI: ${e.message}", e)
+            if (outputFile.exists()) outputFile.delete()
             false
+        }
+    }
+
+    sealed class MetadataInspection {
+        object Clean : MetadataInspection()
+        data class Dirty(val foundAttributes: List<String>) : MetadataInspection()
+        data class Uninspectable(val cause: Throwable) : MetadataInspection()
+    }
+
+    /**
+     * Exhaustively inspects a file to determine if any identifiable metadata or GPS tags remain.
+     * Returns an explicit [MetadataInspection.Uninspectable] on parsing errors.
+     */
+    fun inspectIdentifiableMetadata(file: File): MetadataInspection {
+        if (!file.exists() || file.length() == 0L) {
+            return MetadataInspection.Uninspectable(IllegalArgumentException("File does not exist or is empty: ${file.absolutePath}"))
+        }
+        return try {
+            val exif = ExifInterface(file.absolutePath)
+            val found = mutableListOf<String>()
+            if (exif.latLong != null || exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE) != null) {
+                found.add("GPS")
+            }
+            if (!exif.getAttribute(ExifInterface.TAG_MAKE).isNullOrBlank()) found.add(ExifInterface.TAG_MAKE)
+            if (!exif.getAttribute(ExifInterface.TAG_MODEL).isNullOrBlank()) found.add(ExifInterface.TAG_MODEL)
+            if (!exif.getAttribute(ExifInterface.TAG_BODY_SERIAL_NUMBER).isNullOrBlank()) found.add(ExifInterface.TAG_BODY_SERIAL_NUMBER)
+
+            if (found.isNotEmpty()) {
+                MetadataInspection.Dirty(found)
+            } else {
+                MetadataInspection.Clean
+            }
+        } catch (e: Exception) {
+            MetadataInspection.Uninspectable(e)
         }
     }
 
     /**
      * Inspects a file to determine if any identifiable metadata or GPS tags remain.
+     * Hardened to FAIL CLOSED: Returns true if metadata is detected OR if inspection fails.
+     * Only returns false when confirmed completely clean.
      */
     fun hasIdentifiableMetadata(file: File): Boolean {
-        return try {
-            val exif = ExifInterface(file.absolutePath)
-            val hasGps = exif.latLong != null || exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE) != null
-            val hasMake = !exif.getAttribute(ExifInterface.TAG_MAKE).isNullOrBlank()
-            val hasModel = !exif.getAttribute(ExifInterface.TAG_MODEL).isNullOrBlank()
-            val hasSerial = !exif.getAttribute(ExifInterface.TAG_BODY_SERIAL_NUMBER).isNullOrBlank()
-            hasGps || hasMake || hasModel || hasSerial
-        } catch (_: Exception) {
-            false
+        return when (inspectIdentifiableMetadata(file)) {
+            is MetadataInspection.Clean -> false
+            is MetadataInspection.Dirty -> true
+            is MetadataInspection.Uninspectable -> true
         }
     }
 

@@ -27,8 +27,17 @@ class RembgModelTest {
                 assertTrue(model.downloadUrl.startsWith("https://"))
                 assertTrue(model.paramDownloadUrl.startsWith("https://"))
                 assertTrue(model.minBytes > 1_000_000L)
+                assertTrue("Non-bundled model ${model.id} must define SHA-256 for bin", model.sha256.isNotEmpty())
+                assertTrue("Non-bundled model ${model.id} must define SHA-256 for param", model.paramSha256.isNotEmpty())
             }
         }
+    }
+
+    @Test
+    fun testModnetPinnedChecksums() {
+        val modnet = RembgModel.MODNET
+        assertEquals("519656a49f07f535fb3132d95cd80d5651a19821c70c07db7b7364805e6a762b", modnet.sha256)
+        assertEquals("6748834c44f53dce16a19f19bfcb55c21c823a49d0640e0ce0db5acf041c98d0", modnet.paramSha256)
     }
 
     @Test
