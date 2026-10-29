@@ -4,6 +4,14 @@ import android.annotation.SuppressLint
 import android.util.Log
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.os.Build
+import java.io.FileInputStream
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -160,6 +168,9 @@ class PdfQuickToolController(
         binding.containerQuickToolEmptyState.visibility = View.VISIBLE
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.panelParamDocPreview.visibility = View.GONE
+        binding.cardDocVisualPreview.visibility = View.GONE
+        binding.ivDocVisualPreview.setImageDrawable(null)
+        binding.pbDocVisualLoading.visibility = View.GONE
         binding.tvDocPreviewSummary.text = ""
         binding.tvDocPreviewContent.text = ""
         binding.etCustomMergeOrder.setText("")
@@ -778,6 +789,10 @@ class PdfQuickToolController(
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
+                binding.panelParamDocPreview.visibility = View.VISIBLE
+                binding.cardDocVisualPreview.visibility = View.VISIBLE
+                binding.pbDocVisualLoading.visibility = View.VISIBLE
+                binding.ivDocVisualPreview.setImageDrawable(null)
                 inspectAndPreviewOfficeDoc(uri)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
@@ -829,31 +844,58 @@ class PdfQuickToolController(
             var summary = "Office Document"
             var previewText = ""
             var metaText = "Ready to convert"
+            var previewBitmap: Bitmap? = null
 
             try {
                 when {
                     lower.endsWith(".docx") || lower.endsWith(".doc") -> {
                         metaText = "Word Document (${lower.substringAfterLast('.')})"
+                        val paragraphs = mutableListOf<String>()
+                        var tablesCount = 0
+
+                        val tempDoc = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.docx")
                         try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val doc = XWPFDocument(stream)
-                                val paras = doc.paragraphs.filter { it.text.isNotBlank() }
-                                val tables = doc.tables.size
-                                summary = "Word Document • ${paras.size} paragraphs, $tables tables"
-                                val previewSb = StringBuilder()
-                                for (p in paras.take(15)) {
-                                    previewSb.append(p.text.trim()).append("\n\n")
-                                    if (previewSb.length > 1200) break
+                            activity.contentResolver.openInputStream(uri)?.use { input ->
+                                tempDoc.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            if (tempDoc.exists() && tempDoc.length() > 0) {
+                                try {
+                                    FileInputStream(tempDoc).use { stream ->
+                                        val doc = XWPFDocument(stream)
+                                        for (p in doc.paragraphs) {
+                                            val t = p.text?.trim()
+                                            if (!t.isNullOrBlank()) {
+                                                paragraphs.add(t)
+                                            }
+                                        }
+                                        tablesCount = doc.tables.size
+                                    }
+                                } catch (t: Throwable) {
+                                    Log.w(TAG, "POI DOCX preview extraction failed: ${t.message}; using zip extractor", t)
+                                    val text = officeConverter.extractDocxTextViaZip(tempDoc)
+                                    if (text.isNotBlank()) {
+                                        paragraphs.addAll(text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() })
+                                    }
                                 }
-                                previewText = previewSb.toString().trim()
                             }
                         } catch (t: Throwable) {
-                            summary = "Word Document ($primaryDocName)"
-                            previewText = "Binary/Legacy Word document selected.\nConversion engine will translate document structures directly into PDF pages."
+                            Log.w(TAG, "Failed to copy DOCX for preview: ${t.message}", t)
+                        } finally {
+                            tempDoc.delete()
                         }
+
+                        if (paragraphs.isNotEmpty()) {
+                            summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
+                            previewText = paragraphs.take(15).joinToString("\n\n")
+                        } else {
+                            summary = "Word Document ($primaryDocName)"
+                            previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
+                        }
+                        previewBitmap = renderOfficePreviewBitmap("DOCX", primaryDocName, paragraphs, tablesCount, null, null)
                     }
                     lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
                         metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
+                        val sheetGrid = mutableListOf<List<String>>()
                         try {
                             activity.contentResolver.openInputStream(uri)?.use { stream ->
                                 val wb = XSSFWorkbook(stream)
@@ -864,26 +906,30 @@ class PdfQuickToolController(
                                 val previewSb = StringBuilder()
                                 if (firstSheet != null) {
                                     previewSb.append("Sheet: ${firstSheet.sheetName}\n")
-                                    val rowCount = minOf(firstSheet.physicalNumberOfRows, 12)
+                                    val rowCount = minOf(firstSheet.physicalNumberOfRows, 15)
                                     for (r in 0 until rowCount) {
                                         val row = firstSheet.getRow(r) ?: continue
                                         val cells = (0 until minOf(row.physicalNumberOfCells, 6)).mapNotNull { c ->
                                             row.getCell(c)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                                         }
                                         if (cells.isNotEmpty()) {
+                                            sheetGrid.add(cells)
                                             previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
                                         }
                                     }
                                 }
                                 previewText = previewSb.toString().trim()
                             }
-                        } catch (_: Exception) {
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "POI XLSX preview failed: ${t.message}", t)
                             summary = "Excel Spreadsheet ($primaryDocName)"
                             previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
                         }
+                        previewBitmap = renderOfficePreviewBitmap("XLSX", primaryDocName, emptyList(), 1, sheetGrid, null)
                     }
                     lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
                         metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
+                        val slideTexts = mutableListOf<String>()
                         try {
                             activity.contentResolver.openInputStream(uri)?.use { stream ->
                                 val ppt = XMLSlideShow(stream)
@@ -894,40 +940,47 @@ class PdfQuickToolController(
                                     previewSb.append("Slide ${idx + 1}:\n")
                                     for (shape in slide.shapes) {
                                         if (shape is XSLFTextShape && shape.text.isNotBlank()) {
-                                            previewSb.append("  • ").append(shape.text.trim().replace("\n", " ")).append("\n")
+                                            val t = shape.text.trim().replace("\n", " ")
+                                            slideTexts.add(t)
+                                            previewSb.append("  • ").append(t).append("\n")
                                         }
                                     }
                                     previewSb.append("\n")
                                 }
                                 previewText = previewSb.toString().trim()
                             }
-                        } catch (_: Exception) {
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
                             summary = "PowerPoint Presentation ($primaryDocName)"
                             previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
                         }
+                        previewBitmap = renderOfficePreviewBitmap("PPTX", primaryDocName, emptyList(), 0, null, slideTexts)
                     }
                     lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
                         metaText = "Text Document (${lower.substringAfterLast('.')})"
+                        val lines = mutableListOf<String>()
                         activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                            val lines = mutableListOf<String>()
                             var count = 0
                             reader.forEachLine { line ->
                                 count++
-                                if (lines.size < 20 && line.isNotBlank()) {
+                                if (lines.size < 40 && line.isNotBlank()) {
                                     lines.add(line)
                                 }
                             }
                             summary = "Text Document • $count lines"
-                            previewText = lines.joinToString("\n")
+                            previewText = lines.take(20).joinToString("\n")
                         }
+                        previewBitmap = renderOfficePreviewBitmap("TXT", primaryDocName, lines, 0, null, null)
                     }
                     else -> {
                         metaText = "Office Document"
                         summary = "Document Selected • $primaryDocName"
                         previewText = "Document loaded and ready for conversion to PDF."
+                        previewBitmap = renderOfficePreviewBitmap("DOC", primaryDocName, listOf("Office document loaded", primaryDocName), 0, null, null)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (t: Throwable) {
+                Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
                 summary = "Document Selected"
                 previewText = "Ready to convert: $primaryDocName"
             }
@@ -941,7 +994,241 @@ class PdfQuickToolController(
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.tvDocPreviewSummary.text = summary
                 binding.tvDocPreviewContent.text = previewText
+                if (previewBitmap != null) {
+                    binding.ivDocVisualPreview.setImageBitmap(previewBitmap)
+                    binding.cardDocVisualPreview.visibility = View.VISIBLE
+                } else {
+                    binding.cardDocVisualPreview.visibility = View.GONE
+                }
+                binding.pbDocVisualLoading.visibility = View.GONE
             }
+        }
+    }
+
+    private fun renderOfficePreviewBitmap(
+        docType: String,
+        docTitle: String,
+        paragraphs: List<String>,
+        tablesCount: Int,
+        sheetGrid: List<List<String>>?,
+        slideElements: List<String>?
+    ): Bitmap? {
+        return try {
+            val width = 720
+            val height = if (docType == "PPTX") 480 else 1018
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+
+            // Clean white paper
+            canvas.drawColor(Color.WHITE)
+
+            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#E5E7EB")
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+            }
+            canvas.drawRect(1f, 1f, width - 1f, height - 1f, borderPaint)
+
+            val marginX = 48f
+            val marginY = 48f
+            val printableWidth = (width - marginX * 2).toInt()
+            var currentY = marginY
+
+            // 1. Doc Type Badge (Top Right)
+            val badgeBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = when (docType) {
+                    "DOCX" -> Color.parseColor("#EFF6FF")
+                    "XLSX" -> Color.parseColor("#ECFDF5")
+                    "PPTX" -> Color.parseColor("#FFF7ED")
+                    else -> Color.parseColor("#F3F4F6")
+                }
+                style = Paint.Style.FILL
+            }
+            val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = when (docType) {
+                    "DOCX" -> Color.parseColor("#1D4ED8")
+                    "XLSX" -> Color.parseColor("#047857")
+                    "PPTX" -> Color.parseColor("#C2410C")
+                    else -> Color.parseColor("#4B5563")
+                }
+                textSize = 22f
+                isFakeBoldText = true
+            }
+
+            val badgeRect = RectF(width - marginX - 90f, marginY - 10f, width - marginX, marginY + 26f)
+            canvas.drawRoundRect(badgeRect, 8f, 8f, badgeBgPaint)
+            val badgeTextWidth = badgeTextPaint.measureText(docType)
+            canvas.drawText(docType, badgeRect.centerX() - badgeTextWidth / 2f, badgeRect.centerY() + 8f, badgeTextPaint)
+
+            // 2. Document Title
+            val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#111827")
+                textSize = 28f
+                isFakeBoldText = true
+            }
+            val cleanTitle = if (docTitle.length > 34) docTitle.take(32) + "…" else docTitle
+            canvas.drawText(cleanTitle, marginX, currentY + 18f, titlePaint)
+            currentY += 44f
+
+            // Divider
+            val dividerPaint = Paint().apply {
+                color = Color.parseColor("#F3F4F6")
+                strokeWidth = 2f
+            }
+            canvas.drawLine(marginX, currentY, width - marginX, currentY, dividerPaint)
+            currentY += 24f
+
+            // 3. Body Content
+            when (docType) {
+                "XLSX" -> {
+                    val grid = sheetGrid ?: emptyList()
+                    val cellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#1F2937")
+                        textSize = 18f
+                    }
+                    val headerCellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#374151")
+                        textSize = 18f
+                        isFakeBoldText = true
+                    }
+                    val colWidth = printableWidth / 4f
+                    val rowHeight = 36f
+
+                    val colHeaders = listOf("A", "B", "C", "D")
+                    for (c in 0 until 4) {
+                        val x = marginX + c * colWidth
+                        val headerRect = RectF(x, currentY, x + colWidth, currentY + rowHeight)
+                        canvas.drawRect(headerRect, Paint().apply { color = Color.parseColor("#F9FAFB") })
+                        canvas.drawRect(headerRect, borderPaint)
+                        canvas.drawText(colHeaders[c], x + colWidth / 2f - 6f, currentY + 24f, headerCellPaint)
+                    }
+                    currentY += rowHeight
+
+                    for (r in 0 until minOf(grid.size, 18)) {
+                        val row = grid[r]
+                        for (c in 0 until 4) {
+                            val x = marginX + c * colWidth
+                            val cellRect = RectF(x, currentY, x + colWidth, currentY + rowHeight)
+                            canvas.drawRect(cellRect, borderPaint)
+                            val text = if (c < row.size) row[c] else ""
+                            val truncatedText = if (text.length > 12) text.take(11) + "…" else text
+                            if (truncatedText.isNotEmpty()) {
+                                canvas.drawText(truncatedText, x + 8f, currentY + 24f, cellPaint)
+                            }
+                        }
+                        currentY += rowHeight
+                        if (currentY > height - marginY - 40f) break
+                    }
+                }
+                "PPTX" -> {
+                    val slideTexts = slideElements ?: emptyList()
+                    val slideTitle = slideTexts.firstOrNull() ?: "Presentation Slide"
+                    val slideTitlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#0F172A")
+                        textSize = 32f
+                        isFakeBoldText = true
+                    }
+                    canvas.drawText(slideTitle.take(30), marginX + 16f, currentY + 36f, slideTitlePaint)
+                    currentY += 60f
+
+                    val bulletPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#2563EB")
+                        style = Paint.Style.FILL
+                    }
+                    val bulletTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#334155")
+                        textSize = 20f
+                    }
+
+                    for (bullet in slideTexts.drop(1).take(5)) {
+                        canvas.drawCircle(marginX + 20f, currentY + 12f, 4f, bulletPaint)
+                        val text = if (bullet.length > 55) bullet.take(53) + "…" else bullet
+                        canvas.drawText(text, marginX + 36f, currentY + 18f, bulletTextPaint)
+                        currentY += 36f
+                    }
+                }
+                else -> {
+                    val bodyTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#374151")
+                        textSize = 20f
+                        letterSpacing = 0.01f
+                    }
+                    val headingTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.parseColor("#111827")
+                        textSize = 24f
+                        isFakeBoldText = true
+                    }
+
+                    val maxBodyY = height - marginY - 50f
+                    for ((idx, para) in paragraphs.withIndex()) {
+                        if (currentY >= maxBodyY) break
+                        val isHeading = idx == 0 || (para.length in 4..45 && !para.endsWith(".") && !para.endsWith(","))
+                        val paint = if (isHeading) headingTextPaint else bodyTextPaint
+
+                        val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            StaticLayout.Builder.obtain(para, 0, para.length, paint, printableWidth)
+                                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                                .setLineSpacing(4f, 1.15f)
+                                .setIncludePad(false)
+                                .build()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            StaticLayout(para, paint, printableWidth, Layout.Alignment.ALIGN_NORMAL, 1.15f, 4f, false)
+                        }
+
+                        if (currentY + layout.height > maxBodyY) {
+                            canvas.save()
+                            canvas.clipRect(marginX, currentY, marginX + printableWidth, maxBodyY)
+                            canvas.translate(marginX, currentY)
+                            layout.draw(canvas)
+                            canvas.restore()
+                            currentY = maxBodyY + 10f
+                            break
+                        } else {
+                            canvas.save()
+                            canvas.translate(marginX, currentY)
+                            layout.draw(canvas)
+                            canvas.restore()
+                            currentY += layout.height + if (isHeading) 16f else 12f
+                        }
+                    }
+
+                    if (tablesCount > 0 && currentY < maxBodyY - 60f) {
+                        val tableY = currentY + 8f
+                        val tableW = printableWidth.toFloat()
+                        val tableH = minOf(90f, maxBodyY - tableY)
+                        val tableRect = RectF(marginX, tableY, marginX + tableW, tableY + tableH)
+
+                        val tableFill = Paint().apply { color = Color.parseColor("#F9FAFB") }
+                        canvas.drawRect(tableRect, tableFill)
+                        canvas.drawRect(tableRect, borderPaint)
+
+                        canvas.drawLine(marginX, tableY + 30f, marginX + tableW, tableY + 30f, borderPaint)
+                        canvas.drawLine(marginX + tableW / 2f, tableY, marginX + tableW / 2f, tableY + tableH, borderPaint)
+
+                        val tableLabelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = Color.parseColor("#6B7280")
+                            textSize = 16f
+                            isFakeBoldText = true
+                        }
+                        canvas.drawText("Table 1: Data Grid", marginX + 12f, tableY + 20f, tableLabelPaint)
+                    }
+                }
+            }
+
+            // 4. Subtle Page 1 Footer
+            val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#9CA3AF")
+                textSize = 16f
+            }
+            val footerText = "— Page 1 —"
+            val footerWidth = footerPaint.measureText(footerText)
+            canvas.drawText(footerText, (width - footerWidth) / 2f, height - marginY / 2f, footerPaint)
+
+            bitmap
+        } catch (t: Throwable) {
+            Log.e(TAG, "renderOfficePreviewBitmap failed: ${t.message}", t)
+            null
         }
     }
 

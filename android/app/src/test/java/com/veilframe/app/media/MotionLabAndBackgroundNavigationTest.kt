@@ -91,4 +91,13 @@ class MotionLabAndBackgroundNavigationTest {
             popMethod != null
         )
     }
+
+    @Test
+    fun `verify RifeModelManager isModelReady returns false when model files are missing`() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val manager = com.veilframe.app.media.rife.RifeModelManager(context)
+        manager.paramFile.delete()
+        manager.binFile.delete()
+        assertFalse("isModelReady must be false when model files are missing", manager.isModelReady())
+    }
 }

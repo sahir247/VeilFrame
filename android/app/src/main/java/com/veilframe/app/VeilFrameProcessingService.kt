@@ -516,40 +516,18 @@ class VeilFrameProcessingService : Service() {
             var useRife = false
             if (methodStr.equals("RIFE", ignoreCase = true)) {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
-                try {
-                    if (!rifeManager.isModelReady()) {
-                        updateNotificationProgress("Downloading RIFE AI model…", 18)
-                        jobCallback?.onProgress(jobId, 18, "Downloading RIFE AI model…")
-                        val dlResult = rifeManager.ensureModelDownloaded { pct, msg ->
-                            updateNotificationProgress(msg, (18 + pct * 0.05).toInt())
-                            jobCallback?.onProgress(jobId, (18 + pct * 0.05).toInt(), msg)
-                        }
-                        if (dlResult.isSuccess) {
-                            useRife = try {
-                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
-                            } catch (t: Throwable) {
-                                Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
-                                try {
-                                    RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
-                                } catch (_: Throwable) { false }
-                            }
-                        } else {
-                            Log.w(TAG, "RIFE model download failed: ${dlResult.exceptionOrNull()?.message}")
-                            jobCallback?.onProgress(jobId, 19, "RIFE download unavailable; using optical flow fallback…")
-                            useRife = false
-                        }
-                    } else {
-                        useRife = try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
-                            try {
-                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
-                            } catch (_: Throwable) { false }
-                        }
+                if (rifeManager.isModelReady()) {
+                    useRife = try {
+                        RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
+                        try {
+                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                        } catch (_: Throwable) { false }
                     }
-                } catch (t: Throwable) {
-                    Log.w(TAG, "RIFE init failed; falling back to optical flow: ${t.message}")
+                } else {
+                    Log.w(TAG, "RIFE model not downloaded; falling back to optical flow")
+                    jobCallback?.onProgress(jobId, 18, "RIFE model not downloaded; using optical flow fallback…")
                     useRife = false
                 }
             }

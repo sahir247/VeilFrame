@@ -77,4 +77,36 @@ class DocToPdfScopeAndPreviewTest {
             tempCorrupt.delete()
         }
     }
+
+    @Test
+    fun testDocxPreviewParagraphFormatting_splitsMultipleParagraphsCleanly() {
+        val tempDocx = java.io.File.createTempFile("test_multi_para", ".docx")
+        try {
+            java.util.zip.ZipOutputStream(java.io.FileOutputStream(tempDocx)).use { zos ->
+                val entry = java.util.zip.ZipEntry("word/document.xml")
+                zos.putNextEntry(entry)
+                val xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                    <w:body>
+                        <w:p><w:r><w:t>Header: Monthly Summary</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>First section content with &quot;quoted metrics&quot; &amp; statistics.</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>Second section: conclusion &lt;final&gt;.</w:t></w:r></w:p>
+                    </w:body>
+                </w:document>""".trimIndent()
+                zos.write(xml.toByteArray(Charsets.UTF_8))
+                zos.closeEntry()
+            }
+
+            val converter = com.veilframe.app.pdf.operations.OfficeConverter()
+            val text = converter.extractDocxTextViaZip(tempDocx)
+            val paragraphs = text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
+
+            org.junit.Assert.assertEquals(3, paragraphs.size)
+            assertTrue("First paragraph is header", paragraphs[0].contains("Header: Monthly Summary"))
+            assertTrue("Entities unescaped in paragraph 2", paragraphs[1].contains("\"quoted metrics\" & statistics."))
+            assertTrue("Entities unescaped in paragraph 3", paragraphs[2].contains("<final>"))
+        } finally {
+            tempDocx.delete()
+        }
+    }
 }

@@ -13,6 +13,10 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
+import android.view.LayoutInflater
+import com.veilframe.app.databinding.DialogModelRequiredBinding
+import com.veilframe.app.ui.motion.MorphDialogController
+import com.veilframe.app.media.rife.RifeModelManager
 import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutMotionLabBinding
 import androidx.media3.exoplayer.ExoPlayer
@@ -86,7 +90,18 @@ class MotionLabController(
     private fun wire() {
         binding.btnMotionLabBack.setOnClickListener { onNavigateBack() }
         binding.btnMotionLabPick.setOnClickListener { if (job?.isActive != true) onPickVideoRequest() }
-        binding.btnMotionLabRun.setOnClickListener { runInterpolation() }
+        binding.btnMotionLabRun.setOnClickListener {
+            if (method == MotionMethod.RIFE) {
+                val rifeManager = RifeModelManager(activity)
+                if (!rifeManager.isModelReady()) {
+                    showRifeDownloadDialog {
+                        runInterpolation()
+                    }
+                    return@setOnClickListener
+                }
+            }
+            runInterpolation()
+        }
         binding.btnCancelMotionLab.setOnClickListener {
             cancelRequested = true
             job?.cancel()
@@ -108,6 +123,12 @@ class MotionLabController(
         binding.chipMotionRife.setOnClickListener {
             method = MotionMethod.RIFE
             syncRateChipsForMethod()
+            val rifeManager = RifeModelManager(activity)
+            if (!rifeManager.isModelReady()) {
+                showRifeDownloadDialog {
+                    // Ready for interpolation
+                }
+            }
         }
         binding.chipMotionFast.setOnClickListener {
             method = MotionMethod.DIS
@@ -148,6 +169,7 @@ class MotionLabController(
             VeilFrameProcessingService.cancelProcessing(activity, id)
             activeJobId = null
         }
+        rifeDownloadJob?.cancel()
         job?.cancel()
         FFmpegKit.cancel()
         MotionLabForegroundService.stop(activity)
@@ -469,6 +491,94 @@ class MotionLabController(
         }
     }
 
+    private var rifeDownloadJob: Job? = null
+
+    private fun showRifeDownloadDialog(onModelReady: () -> Unit) {
+        val rifeManager = RifeModelManager(activity)
+        if (rifeManager.isModelReady()) {
+            onModelReady()
+            return
+        }
+
+        val dialogBinding = DialogModelRequiredBinding.inflate(LayoutInflater.from(activity))
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setView(dialogBinding.root)
+            .setCancelable(true)
+            .create()
+
+        dialogBinding.tvModelReqTitle.text = "RIFE v4 AI Model Required"
+        dialogBinding.tvModelReqMessage.text =
+            "RIFE v4 AI Frame Interpolation uses neural weights (~10.3 MB) to synthesize smooth 60 FPS video. Would you like to download it now to proceed?"
+
+        dialogBinding.btnModelReqDownload.text = "Download RIFE v4 (~10 MB)"
+        dialogBinding.btnModelReqUseLanczos.text = "Use Fast Optical Flow (DIS) Instead"
+
+        dialogBinding.btnModelReqClose.setOnClickListener {
+            rifeDownloadJob?.cancel()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+        }
+
+        dialogBinding.btnModelReqCancel.setOnClickListener {
+            rifeDownloadJob?.cancel()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+        }
+
+        dialogBinding.btnModelReqUseLanczos.setOnClickListener {
+            rifeDownloadJob?.cancel()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+            method = MotionMethod.DIS
+            binding.chipMotionFast.isChecked = true
+            syncRateChipsForMethod()
+            onModelReady()
+        }
+
+        dialogBinding.btnModelReqDownload.setOnClickListener {
+            dialogBinding.progressModelReq.visibility = View.VISIBLE
+            dialogBinding.progressModelReq.isIndeterminate = true
+            dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
+            dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_blue))
+            dialogBinding.tvModelReqProgressStatus.text = "Connecting to download server…"
+            dialogBinding.btnModelReqDownload.isEnabled = false
+            dialogBinding.btnModelReqUseLanczos.isEnabled = false
+
+            rifeDownloadJob = scope.launch(Dispatchers.IO) {
+                val result = rifeManager.ensureModelDownloaded { pct, msg ->
+                    scope.launch(Dispatchers.Main) {
+                        if (dialog.isShowing) {
+                            dialogBinding.progressModelReq.isIndeterminate = false
+                            dialogBinding.progressModelReq.progress = pct
+                            dialogBinding.tvModelReqProgressStatus.text = msg
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (!dialog.isShowing) return@withContext
+                    if (result.isSuccess) {
+                        Toast.makeText(activity, "RIFE v4 model ready!", Toast.LENGTH_SHORT).show()
+                        MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+                        onModelReady()
+                    } else {
+                        val err = result.exceptionOrNull()?.message ?: "Download failed"
+                        dialogBinding.progressModelReq.visibility = View.GONE
+                        dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
+                        dialogBinding.tvModelReqProgressStatus.text = "Download failed: $err"
+                        dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
+                        dialogBinding.btnModelReqDownload.isEnabled = true
+                        dialogBinding.btnModelReqDownload.text = "Retry Download"
+                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
+                    }
+                }
+            }
+        }
+
+        dialog.setOnDismissListener {
+            rifeDownloadJob?.cancel()
+        }
+
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+    }
+
     private fun runInterpolation() {
         val uri = sourceUri ?: return
         if (isProcessing) return
@@ -595,6 +705,7 @@ class MotionLabController(
             VeilFrameProcessingService.cancelProcessing(activity, id)
             activeJobId = null
         }
+        rifeDownloadJob?.cancel()
         job?.cancel()
         sourceUri = null
         outputFile = null

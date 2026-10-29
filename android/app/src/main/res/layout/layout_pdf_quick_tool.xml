@@ -1514,6 +1514,75 @@
                         android:letterSpacing="0.08"
                         android:layout_marginBottom="8dp" />
 
+                    <!-- Visual Page Sheet Preview Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardDocVisualPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeColor="@color/vf_surface_variant"
+                        app:strokeWidth="1dp"
+                        app:cardBackgroundColor="@color/vf_surface">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginBottom="8dp">
+
+                                <TextView
+                                    android:id="@+id/tvDocVisualBadge"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="PAGE 1 VISUAL PREVIEW"
+                                    android:textColor="@color/vf_secondary"
+                                    android:textSize="10sp"
+                                    android:textStyle="bold"
+                                    android:letterSpacing="0.08" />
+
+                                <TextView
+                                    android:id="@+id/tvDocVisualPageSize"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="A4 Document"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <FrameLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="320dp"
+                                android:background="@color/vf_container_low"
+                                android:clipChildren="true"
+                                android:padding="10dp">
+
+                                <ImageView
+                                    android:id="@+id/ivDocVisualPreview"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:scaleType="fitCenter"
+                                    android:background="#FFFFFF"
+                                    android:contentDescription="Document visual page preview" />
+
+                                <ProgressBar
+                                    android:id="@+id/pbDocVisualLoading"
+                                    android:layout_width="32dp"
+                                    android:layout_height="32dp"
+                                    android:layout_gravity="center"
+                                    android:visibility="gone" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
