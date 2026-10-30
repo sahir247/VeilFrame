@@ -150,4 +150,61 @@ class OfficeConverterFidelityTest {
             assertTrue("Page should be landscape", page.mediaBox.width > page.mediaBox.height)
         }
     }
+
+    @Test
+    fun testXlsxSparseColumnsAndMultiLineWrappingPreservesLayout() = runBlocking {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+                <si><t>Header A</t></si>
+                <si><t>Header C</t></si>
+                <si><t>Multi-Line Item:&#10;Line Two&#10;Line Three</t></si>
+                <si><t>VERY_LONG_UNBROKEN_TOKEN_HASH_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_SECURE_TOKEN</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="Fidelity" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1">
+                        <c r="A1" t="s"><v>0</v></c>
+                        <c r="C1" t="s"><v>1</v></c>
+                    </row>
+                    <row r="2">
+                        <c r="B2" t="s"><v>2</v></c>
+                        <c r="D2" t="s"><v>3</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_fidelity_xlsx.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue("Converted XLSX PDF must exist", pdfFile.exists())
+        assertTrue("Converted XLSX PDF must have non-zero size", pdfFile.length() > 0)
+
+        PDDocument.load(pdfFile).use { doc ->
+            assertEquals("Should have 1 page", 1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            assertTrue("Page should be landscape", page.mediaBox.width > page.mediaBox.height)
+        }
+    }
 }

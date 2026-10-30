@@ -3,6 +3,7 @@
 #include <android/bitmap.h>
 #include <android/asset_manager_jni.h>
 #include "net.h"
+#include "bitmap_scope.h"
 #include <cmath>
 #include <vector>
 #include <algorithm>
@@ -170,23 +171,37 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectFaces(
         LOGE("UltraFace net not loaded");
         return nullptr;
     }
+    if (!srcBitmap) return nullptr;
 
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+        LOGE("UltraFace requires RGBA_8888 format (got %d)", info.format);
+        return nullptr;
+    }
+
     const int orig_w = info.width;
     const int orig_h = info.height;
+    if (orig_w <= 0 || orig_h <= 0 ||
+        static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
+        LOGE("UltraFace rejected invalid dimensions %dx%d", orig_w, orig_h);
+        return nullptr;
+    }
 
-    void* pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, srcBitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
+    if (!pixel_scope.locked || !pixel_scope.pixels) {
+        LOGE("UltraFace failed to lock bitmap pixels");
+        return nullptr;
+    }
 
     ncnn::Mat in = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(pixels),
+        reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         orig_w, orig_h,
         static_cast<int>(info.stride),
         ULTRA_IN_W, ULTRA_IN_H
     );
-    AndroidBitmap_unlockPixels(env, srcBitmap);
+    pixel_scope.unlock();
 
     const float mean_vals[3] = {127.0f, 127.0f, 127.0f};
     const float norm_vals[3] = {1.0f / 128.0f, 1.0f / 128.0f, 1.0f / 128.0f};
@@ -272,24 +287,38 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
         LOGE("YOLOv8 net not loaded");
         return nullptr;
     }
+    if (!srcBitmap) return nullptr;
 
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+        LOGE("YOLOv8 requires RGBA_8888 format (got %d)", info.format);
+        return nullptr;
+    }
+
     const int orig_w = info.width;
     const int orig_h = info.height;
+    if (orig_w <= 0 || orig_h <= 0 ||
+        static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
+        LOGE("YOLOv8 rejected invalid dimensions %dx%d", orig_w, orig_h);
+        return nullptr;
+    }
 
-    void* pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, srcBitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+    veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
+    if (!pixel_scope.locked || !pixel_scope.pixels) {
+        LOGE("YOLOv8 failed to lock bitmap pixels");
+        return nullptr;
+    }
 
     const int target_size = 640;
     ncnn::Mat in = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(pixels),
+        reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         orig_w, orig_h,
         static_cast<int>(info.stride),
         target_size, target_size
     );
-    AndroidBitmap_unlockPixels(env, srcBitmap);
+    pixel_scope.unlock();
 
     const float norm_vals[3] = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
     in.substract_mean_normalize(0, norm_vals);

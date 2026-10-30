@@ -931,8 +931,11 @@ class OfficeConverter {
                     for (r in rows) {
                         val cellVal = r.getOrNull(c) ?: ""
                         if (cellVal.isNotEmpty()) {
-                            val w = try { fontNormal.getStringWidth(sanitizeText(cellVal)) / 1000f * fontSizeCell } catch (_: Exception) { cellVal.length * 5f }
-                            if (w > maxW) maxW = w
+                            val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
+                                val cleanLine = sanitizeText(line)
+                                try { fontNormal.getStringWidth(cleanLine) / 1000f * fontSizeCell } catch (_: Exception) { cleanLine.length * 5f }
+                            } ?: 0f
+                            if (maxLineW > maxW) maxW = maxLineW
                         }
                     }
                     (maxW + 14f).coerceIn(40f, 220f)
@@ -970,7 +973,8 @@ class OfficeConverter {
                         }
                     }
                     val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-                    val dynamicRowHeight = Math.max(20f, maxLinesInRow * (fontSizeCell * 1.3f) + 8f)
+                    val maxPrintableHeight = (pageBounds.height - (2 * margin) - 30f).coerceAtLeast(30f)
+                    val dynamicRowHeight = Math.max(20f, maxLinesInRow * (fontSizeCell * 1.3f) + 8f).coerceAtMost(maxPrintableHeight)
 
                     // Check bounds for page breaks
                     if (yPosition - dynamicRowHeight < margin) {
@@ -996,16 +1000,28 @@ class OfficeConverter {
                         contentStream?.lineTo(cellLeft, yPosition)
                         contentStream?.stroke()
 
-                        // 2. Draw cell string values with full multi-line wrapping (Zero clipping)
+                        // 2. Draw cell string values safely clipped within cell boundaries
                         val lines = rowCellLines[colIndex]
-                        var textY = yPosition - 4f - fontSizeCell
-                        for (lineText in lines) {
-                            contentStream?.beginText()
-                            contentStream?.setFont(fontNormal, fontSizeCell)
-                            contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                            safeShowText(contentStream, lineText, fontNormal)
-                            contentStream?.endText()
-                            textY -= (fontSizeCell * 1.3f)
+                        if (lines.isNotEmpty()) {
+                            contentStream?.saveGraphicsState()
+                            contentStream?.addRect(
+                                cellLeft + 1f,
+                                yPosition - dynamicRowHeight + 1f,
+                                (cellW - 2f).coerceAtLeast(1f),
+                                (dynamicRowHeight - 2f).coerceAtLeast(1f)
+                            )
+                            contentStream?.clip()
+
+                            var textY = yPosition - 4f - fontSizeCell
+                            for (lineText in lines) {
+                                contentStream?.beginText()
+                                contentStream?.setFont(fontNormal, fontSizeCell)
+                                contentStream?.newLineAtOffset(cellLeft + 4f, textY)
+                                safeShowText(contentStream, lineText, fontNormal)
+                                contentStream?.endText()
+                                textY -= (fontSizeCell * 1.3f)
+                            }
+                            contentStream?.restoreGraphicsState()
                         }
                     }
 
@@ -2053,34 +2069,60 @@ class OfficeConverter {
 
     /**
      * Greedy word wrapping routine checking exact horizontal width budget constraint.
+     * Preserves explicit newlines and breaks long unbroken tokens to prevent horizontal cell overflow.
      */
     private fun wrapText(text: String, font: PDType1Font, fontSize: Float, maxWidth: Float): List<String> {
-        val words = text.split(Regex("\\s+"))
+        if (maxWidth <= 0f) return listOf(text)
+        val rawParagraphs = text.split(Regex("\r\n|\r|\n"))
         val lines = mutableListOf<String>()
-        var currentLine = StringBuilder()
 
-        for (word in words) {
-            if (word.isEmpty()) continue
-            val testLine = if (currentLine.isEmpty()) word else "${currentLine} $word"
-            val cleanTestLine = sanitizeText(testLine)
-            try {
-                val width = (font.getStringWidth(cleanTestLine) / 1000f * fontSize)
+        for (paragraph in rawParagraphs) {
+            val words = paragraph.split(Regex("[ \t]+"))
+            var currentLine = StringBuilder()
+
+            for (word in words) {
+                if (word.isEmpty()) continue
+                // If a single word exceeds maxWidth, break it into chunks so it doesn't overflow
+                val cleanWord = sanitizeText(word)
+                val wordWidth = try { font.getStringWidth(cleanWord) / 1000f * fontSize } catch (_: Exception) { cleanWord.length * 5f }
+                if (wordWidth > maxWidth && maxWidth > 10f) {
+                    if (currentLine.isNotEmpty()) {
+                        lines.add(currentLine.toString())
+                        currentLine = StringBuilder()
+                    }
+                    var remaining = word
+                    while (remaining.isNotEmpty()) {
+                        var chunkLen = remaining.length
+                        while (chunkLen > 1) {
+                            val candidate = sanitizeText(remaining.substring(0, chunkLen))
+                            val w = try { font.getStringWidth(candidate) / 1000f * fontSize } catch (_: Exception) { candidate.length * 5f }
+                            if (w <= maxWidth) break
+                            chunkLen--
+                        }
+                        lines.add(remaining.substring(0, chunkLen))
+                        remaining = remaining.substring(chunkLen)
+                    }
+                    continue
+                }
+
+                val testLine = if (currentLine.isEmpty()) word else "${currentLine} $word"
+                val cleanTestLine = sanitizeText(testLine)
+                val width = try { font.getStringWidth(cleanTestLine) / 1000f * fontSize } catch (_: Exception) { cleanTestLine.length * 5f }
                 if (width <= maxWidth) {
-                    currentLine.append(if (currentLine.isEmpty()) word else " $word")
+                    if (currentLine.isNotEmpty()) currentLine.append(" ")
+                    currentLine.append(word)
                 } else {
                     if (currentLine.isNotEmpty()) {
                         lines.add(currentLine.toString())
                     }
                     currentLine = StringBuilder(word)
                 }
-            } catch (e: Exception) {
-                currentLine.append(if (currentLine.isEmpty()) word else " $word")
+            }
+            if (currentLine.isNotEmpty()) {
+                lines.add(currentLine.toString())
             }
         }
-        if (currentLine.isNotEmpty()) {
-            lines.add(currentLine.toString())
-        }
-        return lines
+        return if (lines.isEmpty()) listOf("") else lines
     }
 
     /**

@@ -3,6 +3,7 @@
 #include <android/bitmap.h>
 #include <android/asset_manager_jni.h>
 #include "net.h"
+#include "bitmap_scope.h"
 #include <algorithm>
 #include <mutex>
 
@@ -36,6 +37,29 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
 ) {
     std::lock_guard<std::mutex> lock(g_matting_mutex);
 
+    if (modelType != MODEL_U2NETP && modelType != MODEL_MODNET) {
+        LOGE("Invalid matting model type: %d", modelType);
+        return JNI_FALSE;
+    }
+
+    if (!paramPath || !binPath) {
+        LOGE("Matting paramPath or binPath is null");
+        return JNI_FALSE;
+    }
+
+    const char* param_c = env->GetStringUTFChars(paramPath, nullptr);
+    if (!param_c) {
+        LOGE("Failed to get paramPath UTF chars");
+        return JNI_FALSE;
+    }
+
+    const char* bin_c = env->GetStringUTFChars(binPath, nullptr);
+    if (!bin_c) {
+        LOGE("Failed to get binPath UTF chars");
+        env->ReleaseStringUTFChars(paramPath, param_c);
+        return JNI_FALSE;
+    }
+
     ncnn::Net** targetNet = (modelType == MODEL_U2NETP) ? &g_u2netp_net : &g_modnet_net;
     if (*targetNet != nullptr) {
         delete *targetNet;
@@ -54,8 +78,6 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
         net->opt.use_vulkan_compute = false;
     }
 
-    const char* param_c = env->GetStringUTFChars(paramPath, nullptr);
-    const char* bin_c = env->GetStringUTFChars(binPath, nullptr);
     int ret_param = -1;
     int ret_bin = -1;
 
@@ -95,6 +117,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_isModelLoaded(
     JNIEnv* env, jclass clazz,
     jint modelType
 ) {
+    if (modelType != MODEL_U2NETP && modelType != MODEL_MODNET) return JNI_FALSE;
     std::lock_guard<std::mutex> lock(g_matting_mutex);
     ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
     return (net != nullptr) ? JNI_TRUE : JNI_FALSE;
@@ -112,11 +135,17 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
 ) {
     std::lock_guard<std::mutex> lock(g_matting_mutex);
 
+    if (modelType != MODEL_U2NETP && modelType != MODEL_MODNET) {
+        LOGE("Invalid matting model type: %d", modelType);
+        return nullptr;
+    }
+
     ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
     if (net == nullptr) {
         LOGE("Model %d is not initialized", modelType);
         return nullptr;
     }
+    if (!srcBitmap) return nullptr;
 
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
@@ -131,9 +160,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
 
     const int src_w = info.width;
     const int src_h = info.height;
+    if (src_w <= 0 || src_h <= 0 ||
+        static_cast<uint64_t>(src_w) * src_h > veilframe::MAX_BITMAP_PIXELS) {
+        LOGE("Rejected invalid matting dimensions: %dx%d", src_w, src_h);
+        return nullptr;
+    }
 
-    void* src_pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, srcBitmap, &src_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    veilframe::BitmapPixelScope src_scope(env, srcBitmap);
+    if (!src_scope.locked || !src_scope.pixels) {
         LOGE("AndroidBitmap_lockPixels failed");
         return nullptr;
     }
@@ -163,14 +197,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
     }
 
     ncnn::Mat in_scaled = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(src_pixels),
+        reinterpret_cast<const unsigned char*>(src_scope.pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         src_w, src_h,
         static_cast<int>(info.stride),
         scaled_w, scaled_h
     );
 
-    AndroidBitmap_unlockPixels(env, srcBitmap);
+    src_scope.unlock();
 
     if (modelType == MODEL_U2NETP) {
         // ImageNet mean/std
@@ -205,8 +239,9 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
     ex.input(in_blob, in);
     ncnn::Mat out;
     int ret_extract = ex.extract(out_blob, out);
-    if (ret_extract != 0) {
-        LOGE("NCNN extract failed with code %d", ret_extract);
+    if (ret_extract != 0 || out.empty() || out.dims < 2 || out.c < 1 || out.w <= 0 || out.h <= 0) {
+        LOGE("NCNN extract failed (code %d, empty=%d, dims=%d, c=%d, w=%d, h=%d)",
+             ret_extract, out.empty(), out.dims, out.c, out.w, out.h);
         return nullptr;
     }
 
@@ -221,12 +256,23 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         out_unpadded = out;
     }
 
+    if (out_unpadded.empty() || out_unpadded.dims < 2 || out_unpadded.c < 1 ||
+        out_unpadded.w <= 0 || out_unpadded.h <= 0) {
+        LOGE("Unpadded matting tensor is invalid (empty=%d, dims=%d, c=%d, w=%d, h=%d)",
+             out_unpadded.empty(), out_unpadded.dims, out_unpadded.c, out_unpadded.w, out_unpadded.h);
+        return nullptr;
+    }
+
     // Activation & Normalization handling:
     if (modelType == MODEL_U2NETP) {
         // For U2-Net-P: Saliency networks output uncalibrated relative energy scores.
         // We apply sigmoid and official U2-Net dynamic range normalization (normPRED from Qin et al. 2020)
         // so that secondary subjects and thin extremities (legs, limbs) are scaled into visible alpha.
         float* ptr = out_unpadded.channel(0);
+        if (!ptr) {
+            LOGE("Failed to get channel 0 pointer for U2NETP");
+            return nullptr;
+        }
         float min_val = 1e9f;
         float max_val = -1e9f;
         const int size = out_unpadded.w * out_unpadded.h;
@@ -245,6 +291,10 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
     } else {
         // MODNet already outputs continuous alpha matte in [0.0, 1.0]
         float* ptr = out_unpadded.channel(0);
+        if (!ptr) {
+            LOGE("Failed to get channel 0 pointer for MODNet");
+            return nullptr;
+        }
         const int size = out_unpadded.w * out_unpadded.h;
         #pragma omp parallel for
         for (int i = 0; i < size; i++) {
@@ -256,6 +306,10 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
     // Upscale output alpha matte directly to source dimensions
     ncnn::Mat alpha_full;
     ncnn::resize_bilinear(out_unpadded, alpha_full, src_w, src_h);
+    if (alpha_full.empty() || alpha_full.data == nullptr || alpha_full.w != src_w || alpha_full.h != src_h) {
+        LOGE("Matting resize_bilinear output is invalid");
+        return nullptr;
+    }
 
     // Create Java Bitmap for the mask (ARGB_8888)
     jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
@@ -289,14 +343,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         return nullptr;
     }
 
-    void* mask_pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, maskBitmap, &mask_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    veilframe::BitmapPixelScope mask_scope(env, maskBitmap);
+    if (!mask_scope.locked || !mask_scope.pixels) {
         LOGE("Failed to lock mask bitmap pixels");
         return nullptr;
     }
 
     const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
-    unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
+    unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_scope.pixels);
     const int mask_stride = static_cast<int>(mask_info.stride);
 
     #pragma omp parallel for
@@ -316,7 +370,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         }
     }
 
-    AndroidBitmap_unlockPixels(env, maskBitmap);
+    mask_scope.unlock();
     return maskBitmap;
 }
 
@@ -329,11 +383,17 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
 ) {
     std::lock_guard<std::mutex> lock(g_matting_mutex);
 
+    if (modelType != MODEL_U2NETP && modelType != MODEL_MODNET) {
+        LOGE("Invalid matting model type: %d", modelType);
+        return nullptr;
+    }
+
     ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
     if (!net) {
         LOGE("Model %d not initialized in nativeProcessLegacy", modelType);
         return nullptr;
     }
+    if (!srcBitmap) return nullptr;
 
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
@@ -348,9 +408,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
 
     const int src_w = info.width;
     const int src_h = info.height;
+    if (src_w <= 0 || src_h <= 0 ||
+        static_cast<uint64_t>(src_w) * src_h > veilframe::MAX_BITMAP_PIXELS) {
+        LOGE("Rejected invalid legacy matting dimensions: %dx%d", src_w, src_h);
+        return nullptr;
+    }
 
-    void* src_pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, srcBitmap, &src_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    veilframe::BitmapPixelScope src_scope(env, srcBitmap);
+    if (!src_scope.locked || !src_scope.pixels) {
         LOGE("AndroidBitmap_lockPixels failed");
         return nullptr;
     }
@@ -360,14 +425,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
 
     // UNPATCHED / LEGACY: Anamorphic direct stretch to square without preserving aspect ratio
     ncnn::Mat in = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(src_pixels),
+        reinterpret_cast<const unsigned char*>(src_scope.pixels),
         ncnn::Mat::PIXEL_RGBA2RGB,
         src_w, src_h,
         static_cast<int>(info.stride),
         target_w, target_h
     );
 
-    AndroidBitmap_unlockPixels(env, srcBitmap);
+    src_scope.unlock();
 
     if (modelType == MODEL_U2NETP) {
         const float mean_vals[3] = {0.485f * 255.f, 0.456f * 255.f, 0.406f * 255.f};
@@ -388,14 +453,18 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
     ex.input(in_blob, in);
     ncnn::Mat out;
     int ret_extract = ex.extract(out_blob, out);
-    if (ret_extract != 0) {
-        LOGE("NCNN extract failed with code %d", ret_extract);
+    if (ret_extract != 0 || out.empty() || out.dims < 2 || out.c < 1 || out.w <= 0 || out.h <= 0) {
+        LOGE("NCNN extract failed with code %d (empty=%d)", ret_extract, out.empty());
         return nullptr;
     }
 
     // UNPATCHED / LEGACY: Double-sigmoid + min-max stretch on U2NETP
     if (modelType == MODEL_U2NETP) {
         float* ptr = out.channel(0);
+        if (!ptr) {
+            LOGE("Failed to get channel 0 pointer for legacy U2NETP");
+            return nullptr;
+        }
         float min_val = 1e9f;
         float max_val = -1e9f;
         const int out_size = out.w * out.h;
@@ -415,6 +484,10 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
     // Direct bilinear stretch back to src_w x src_h (anamorphic)
     ncnn::Mat alpha_full;
     ncnn::resize_bilinear(out, alpha_full, src_w, src_h);
+    if (alpha_full.empty() || alpha_full.data == nullptr || alpha_full.w != src_w || alpha_full.h != src_h) {
+        LOGE("Matting resize_bilinear output is invalid in legacy");
+        return nullptr;
+    }
 
     jclass bitmapClass = env->FindClass("android/graphics/Bitmap");
     jmethodID createBitmap = env->GetStaticMethodID(
@@ -439,14 +512,14 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
         return nullptr;
     }
 
-    void* mask_pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, maskBitmap, &mask_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+    veilframe::BitmapPixelScope mask_scope(env, maskBitmap);
+    if (!mask_scope.locked || !mask_scope.pixels) {
         LOGE("AndroidBitmap_lockPixels failed on legacy maskBitmap");
         return nullptr;
     }
 
     const float* alpha_data = reinterpret_cast<const float*>(alpha_full.data);
-    unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_pixels);
+    unsigned char* rgba_out = reinterpret_cast<unsigned char*>(mask_scope.pixels);
     const int mask_stride = static_cast<int>(mask_info.stride);
 
     #pragma omp parallel for
@@ -465,7 +538,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcessLegac
         }
     }
 
-    AndroidBitmap_unlockPixels(env, maskBitmap);
+    mask_scope.unlock();
     return maskBitmap;
 }
 

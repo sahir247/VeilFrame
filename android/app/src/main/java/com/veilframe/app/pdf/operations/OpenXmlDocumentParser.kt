@@ -371,6 +371,23 @@ object OpenXmlDocumentParser {
         }
     }
 
+    fun colRefToIndex(ref: String): Int {
+        var col = 0
+        var hasLetters = false
+        for (ch in ref) {
+            if (ch in 'A'..'Z') {
+                col = col * 26 + (ch - 'A' + 1)
+                hasLetters = true
+            } else if (ch in 'a'..'z') {
+                col = col * 26 + (ch - 'a' + 1)
+                hasLetters = true
+            } else {
+                break
+            }
+        }
+        return if (hasLetters) (col - 1).coerceAtLeast(0) else -1
+    }
+
     private fun parseWorksheet(
         stream: InputStream,
         sharedStrings: List<String>,
@@ -386,6 +403,7 @@ object OpenXmlDocumentParser {
                 if (child.nodeType == Node.ELEMENT_NODE && child.localName() == "c") {
                     val cElem = child as Element
                     val cellType = cElem.getAttribute("t")
+                    val cellRef = cElem.getAttribute("r")
                     var cellVal = ""
                     val vList = cElem.getElementsByTagName("v")
                     if (vList.length > 0) {
@@ -403,7 +421,20 @@ object OpenXmlDocumentParser {
                             cellVal = sharedStrings[idx]
                         }
                     }
-                    rowCells.add(cellVal)
+
+                    val targetCol = if (cellRef.isNotEmpty()) colRefToIndex(cellRef) else rowCells.size
+                    if (targetCol >= 0) {
+                        while (rowCells.size < targetCol) {
+                            rowCells.add("")
+                        }
+                        if (rowCells.size == targetCol) {
+                            rowCells.add(cellVal)
+                        } else {
+                            rowCells[targetCol] = cellVal
+                        }
+                    } else {
+                        rowCells.add(cellVal)
+                    }
                 }
                 child = child.nextSibling
             }

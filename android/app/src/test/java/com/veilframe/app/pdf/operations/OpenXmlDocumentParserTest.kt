@@ -88,6 +88,81 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun testColRefToIndexAndSparseColumns() {
+        assertEquals(0, OpenXmlDocumentParser.colRefToIndex("A1"))
+        assertEquals(1, OpenXmlDocumentParser.colRefToIndex("B2"))
+        assertEquals(2, OpenXmlDocumentParser.colRefToIndex("C10"))
+        assertEquals(25, OpenXmlDocumentParser.colRefToIndex("Z99"))
+        assertEquals(26, OpenXmlDocumentParser.colRefToIndex("AA1"))
+        assertEquals(27, OpenXmlDocumentParser.colRefToIndex("AB5"))
+        assertEquals(51, OpenXmlDocumentParser.colRefToIndex("AZ12"))
+        assertEquals(52, OpenXmlDocumentParser.colRefToIndex("BA1"))
+
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+                <si><t>HeaderA</t></si>
+                <si><t>HeaderC</t></si>
+                <si><t>DataB</t></si>
+                <si><t>DataD</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="SparseSheet" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        // Row 1 has A1 and C1 (B1 omitted)
+        // Row 2 has B2 and D2 (A2 and C2 omitted)
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1">
+                        <c r="A1" t="s"><v>0</v></c>
+                        <c r="C1" t="s"><v>1</v></c>
+                    </row>
+                    <row r="2">
+                        <c r="B2" t="s"><v>2</v></c>
+                        <c r="D2" t="s"><v>3</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val tempFile = createZipFile(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+
+        try {
+            val workbook = OpenXmlDocumentParser.parseXlsx(tempFile)
+            assertNotNull(workbook)
+            val sheet = workbook.sheets[0]
+            assertEquals(2, sheet.rows.size)
+
+            // Row 1: Col A is "HeaderA", Col B is "", Col C is "HeaderC"
+            assertEquals("HeaderA", sheet.rows[0][0])
+            assertEquals("", sheet.rows[0][1])
+            assertEquals("HeaderC", sheet.rows[0][2])
+
+            // Row 2: Col A is "", Col B is "DataB", Col C is "", Col D is "DataD"
+            assertEquals("", sheet.rows[1][0])
+            assertEquals("DataB", sheet.rows[1][1])
+            assertEquals("", sheet.rows[1][2])
+            assertEquals("DataD", sheet.rows[1][3])
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    @Test
     fun testParseDocxHeadingsAndParagraphs() {
         val documentXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

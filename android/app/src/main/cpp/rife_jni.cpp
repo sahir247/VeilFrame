@@ -4,6 +4,9 @@
 #include "rife/rife.h"
 #include "gpu.h"
 #include "cpu.h"
+#include "vulkan_gpu_lifecycle.h"
+#include "bitmap_scope.h"
+#include <cmath>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -43,8 +46,20 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
         delete g_rife;
         g_rife = nullptr;
     }
+    if (g_rife_gpu_instance_created) {
+        veilframe::release_gpu_instance();
+        g_rife_gpu_instance_created = false;
+    }
 
+    if (!modelDir) {
+        LOGE("RIFE modelDir is null");
+        return JNI_FALSE;
+    }
     const char* dir_c = env->GetStringUTFChars(modelDir, nullptr);
+    if (!dir_c) {
+        LOGE("Failed to get modelDir UTF chars");
+        return JNI_FALSE;
+    }
     std::string dir_str(dir_c);
     env->ReleaseStringUTFChars(modelDir, dir_c);
     g_rife_model_dir = dir_str;
@@ -59,17 +74,12 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
 
     bool gpu_requested = useGpu;
     if (gpu_requested) {
-        try {
-            if (!g_rife_gpu_instance_created) {
-                ncnn::create_gpu_instance();
+        if (!g_rife_gpu_instance_created) {
+            if (veilframe::acquire_gpu_instance()) {
                 g_rife_gpu_instance_created = true;
+            } else {
+                gpu_requested = false;
             }
-        } catch (const std::exception& eg) {
-            LOGE("ncnn::create_gpu_instance failed: %s; falling back to CPU", eg.what());
-            gpu_requested = false;
-        } catch (...) {
-            LOGE("ncnn::create_gpu_instance failed with unknown exception; falling back to CPU");
-            gpu_requested = false;
         }
     }
 
@@ -144,6 +154,16 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         return nullptr;
     }
 
+    if (!bitmap0 || !bitmap1) {
+        LOGE("RIFE input bitmaps cannot be null");
+        return nullptr;
+    }
+
+    if (!std::isfinite(timestep) || timestep < 0.0f || timestep > 1.0f) {
+        LOGE("RIFE invalid interpolation timestep: %f", timestep);
+        return nullptr;
+    }
+
     AndroidBitmapInfo info0, info1;
     if (AndroidBitmap_getInfo(env, bitmap0, &info0) != ANDROID_BITMAP_RESULT_SUCCESS ||
         AndroidBitmap_getInfo(env, bitmap1, &info1) != ANDROID_BITMAP_RESULT_SUCCESS) {
@@ -163,115 +183,131 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
 
     const int w = info0.width;
     const int h = info0.height;
-    const int pixel_count = w * h;
+    if (w <= 0 || h <= 0 ||
+        static_cast<uint64_t>(w) * h > veilframe::MAX_BITMAP_PIXELS) {
+        LOGE("RIFE rejected invalid frame dimensions: %dx%d", w, h);
+        return nullptr;
+    }
+
+    const uint64_t pixel_count = static_cast<uint64_t>(w) * h;
     const size_t needed_bytes = static_cast<size_t>(pixel_count) * 3;
 
-    void* pixels0 = nullptr;
-    if (AndroidBitmap_lockPixels(env, bitmap0, &pixels0) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to lock bitmap0 pixels");
-        return nullptr;
-    }
-
-    void* pixels1 = nullptr;
-    if (AndroidBitmap_lockPixels(env, bitmap1, &pixels1) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to lock bitmap1 pixels");
-        AndroidBitmap_unlockPixels(env, bitmap0);
-        return nullptr;
-    }
-
-    // Reuse persistent preallocated buffers
-    if (g_rgb0.size() < needed_bytes) g_rgb0.resize(needed_bytes);
-    if (g_rgb1.size() < needed_bytes) g_rgb1.resize(needed_bytes);
-    if (g_rgb_out.size() < needed_bytes) g_rgb_out.resize(needed_bytes);
-
-    const unsigned char* p0 = reinterpret_cast<const unsigned char*>(pixels0);
-    const unsigned char* p1 = reinterpret_cast<const unsigned char*>(pixels1);
-    unsigned char* d0 = g_rgb0.data();
-    unsigned char* d1 = g_rgb1.data();
-
-    const int stride0 = static_cast<int>(info0.stride);
-    const int stride1 = static_cast<int>(info1.stride);
-
-    for (int y = 0; y < h; y++) {
-        const unsigned char* row0 = p0 + y * stride0;
-        const unsigned char* row1 = p1 + y * stride1;
-        unsigned char* dst0 = d0 + y * w * 3;
-        unsigned char* dst1 = d1 + y * w * 3;
-        for (int x = 0; x < w; x++) {
-            dst0[x * 3 + 0] = row0[x * 4 + 0];
-            dst0[x * 3 + 1] = row0[x * 4 + 1];
-            dst0[x * 3 + 2] = row0[x * 4 + 2];
-            dst1[x * 3 + 0] = row1[x * 4 + 0];
-            dst1[x * 3 + 1] = row1[x * 4 + 1];
-            dst1[x * 3 + 2] = row1[x * 4 + 2];
+    try {
+        veilframe::BitmapPixelScope scope0(env, bitmap0);
+        if (!scope0.locked || !scope0.pixels) {
+            LOGE("Failed to lock bitmap0 pixels");
+            return nullptr;
         }
-    }
 
-    AndroidBitmap_unlockPixels(env, bitmap0);
-    AndroidBitmap_unlockPixels(env, bitmap1);
-
-    ncnn::Mat in0(w, h, reinterpret_cast<void*>(g_rgb0.data()), (size_t)3u, 1);
-    ncnn::Mat in1(w, h, reinterpret_cast<void*>(g_rgb1.data()), (size_t)3u, 1);
-
-    ncnn::Mat outimage(w, h, g_rgb_out.data(), (size_t)3u, 1);
-    int ret = g_rife->process(in0, in1, timestep, outimage);
-    if (ret != 0 && g_rife_gpuid >= 0 && !g_rife_model_dir.empty()) {
-        LOGI("RIFE GPU process failed (%d), dynamically recovering via CPU OpenMP", ret);
-        delete g_rife;
-        g_rife_gpuid = -1;
-        int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
-        if (cpu_threads > 4) cpu_threads = 4;
-        g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
-        if (g_rife->load(g_rife_model_dir) == 0) {
-            ret = g_rife->process(in0, in1, timestep, outimage);
+        veilframe::BitmapPixelScope scope1(env, bitmap1);
+        if (!scope1.locked || !scope1.pixels) {
+            LOGE("Failed to lock bitmap1 pixels");
+            return nullptr;
         }
-    }
 
-    if (ret != 0) {
-        LOGE("RIFE process failed with code %d", ret);
-        return nullptr;
-    }
+        // Reuse persistent preallocated buffers
+        if (g_rgb0.size() < needed_bytes) g_rgb0.resize(needed_bytes);
+        if (g_rgb1.size() < needed_bytes) g_rgb1.resize(needed_bytes);
+        if (g_rgb_out.size() < needed_bytes) g_rgb_out.resize(needed_bytes);
 
-    if (!g_bitmapClass || !g_createBitmapMethod || !g_argbConfig) {
-        LOGE("Bitmap creation JNI references not initialized");
-        return nullptr;
-    }
+        const unsigned char* p0 = reinterpret_cast<const unsigned char*>(scope0.pixels);
+        const unsigned char* p1 = reinterpret_cast<const unsigned char*>(scope1.pixels);
+        unsigned char* d0 = g_rgb0.data();
+        unsigned char* d1 = g_rgb1.data();
 
-    jobject outBitmap = env->CallStaticObjectMethod(
-        g_bitmapClass, g_createBitmapMethod,
-        w, h, g_argbConfig
-    );
-    if (!outBitmap) return nullptr;
+        const int stride0 = static_cast<int>(info0.stride);
+        const int stride1 = static_cast<int>(info1.stride);
 
-    AndroidBitmapInfo out_info;
-    if (AndroidBitmap_getInfo(env, outBitmap, &out_info) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to get outBitmap info");
-        return nullptr;
-    }
-
-    void* out_pixels = nullptr;
-    if (AndroidBitmap_lockPixels(env, outBitmap, &out_pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to lock outBitmap pixels");
-        return nullptr;
-    }
-
-    const unsigned char* rgb_out = reinterpret_cast<const unsigned char*>(outimage.data ? outimage.data : g_rgb_out.data());
-    unsigned char* p_out = reinterpret_cast<unsigned char*>(out_pixels);
-    const int out_stride = static_cast<int>(out_info.stride);
-
-    for (int y = 0; y < h; y++) {
-        const unsigned char* src_rgb = rgb_out + y * w * 3;
-        unsigned char* dst_row = p_out + y * out_stride;
-        for (int x = 0; x < w; x++) {
-            dst_row[x * 4 + 0] = src_rgb[x * 3 + 0];
-            dst_row[x * 4 + 1] = src_rgb[x * 3 + 1];
-            dst_row[x * 4 + 2] = src_rgb[x * 3 + 2];
-            dst_row[x * 4 + 3] = 255;
+        for (int y = 0; y < h; y++) {
+            const unsigned char* row0 = p0 + y * stride0;
+            const unsigned char* row1 = p1 + y * stride1;
+            unsigned char* dst0 = d0 + y * w * 3;
+            unsigned char* dst1 = d1 + y * w * 3;
+            for (int x = 0; x < w; x++) {
+                dst0[x * 3 + 0] = row0[x * 4 + 0];
+                dst0[x * 3 + 1] = row0[x * 4 + 1];
+                dst0[x * 3 + 2] = row0[x * 4 + 2];
+                dst1[x * 3 + 0] = row1[x * 4 + 0];
+                dst1[x * 3 + 1] = row1[x * 4 + 1];
+                dst1[x * 3 + 2] = row1[x * 4 + 2];
+            }
         }
-    }
-    AndroidBitmap_unlockPixels(env, outBitmap);
 
-    return outBitmap;
+        scope0.unlock();
+        scope1.unlock();
+
+        ncnn::Mat in0(w, h, reinterpret_cast<void*>(g_rgb0.data()), (size_t)3u, 1);
+        ncnn::Mat in1(w, h, reinterpret_cast<void*>(g_rgb1.data()), (size_t)3u, 1);
+
+        ncnn::Mat outimage(w, h, g_rgb_out.data(), (size_t)3u, 1);
+        int ret = g_rife->process(in0, in1, timestep, outimage);
+        if (ret != 0 && g_rife_gpuid >= 0 && !g_rife_model_dir.empty()) {
+            LOGI("RIFE GPU process failed (%d), dynamically recovering via CPU OpenMP", ret);
+            delete g_rife;
+            g_rife_gpuid = -1;
+            int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
+            if (cpu_threads > 4) cpu_threads = 4;
+            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
+            if (g_rife->load(g_rife_model_dir) == 0) {
+                ret = g_rife->process(in0, in1, timestep, outimage);
+            }
+        }
+
+        if (ret != 0) {
+            LOGE("RIFE process failed with code %d", ret);
+            return nullptr;
+        }
+
+        if (!g_bitmapClass || !g_createBitmapMethod || !g_argbConfig) {
+            LOGE("Bitmap creation JNI references not initialized");
+            return nullptr;
+        }
+
+        jobject outBitmap = env->CallStaticObjectMethod(
+            g_bitmapClass, g_createBitmapMethod,
+            w, h, g_argbConfig
+        );
+        if (!outBitmap) return nullptr;
+
+        AndroidBitmapInfo out_info;
+        if (AndroidBitmap_getInfo(env, outBitmap, &out_info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+            LOGE("Failed to get outBitmap info");
+            return nullptr;
+        }
+
+        veilframe::BitmapPixelScope out_scope(env, outBitmap);
+        if (!out_scope.locked || !out_scope.pixels) {
+            LOGE("Failed to lock outBitmap pixels");
+            return nullptr;
+        }
+
+        const unsigned char* rgb_out = reinterpret_cast<const unsigned char*>(outimage.data ? outimage.data : g_rgb_out.data());
+        unsigned char* p_out = reinterpret_cast<unsigned char*>(out_scope.pixels);
+        const int out_stride = static_cast<int>(out_info.stride);
+
+        for (int y = 0; y < h; y++) {
+            const unsigned char* src_rgb = rgb_out + y * w * 3;
+            unsigned char* dst_row = p_out + y * out_stride;
+            for (int x = 0; x < w; x++) {
+                dst_row[x * 4 + 0] = src_rgb[x * 3 + 0];
+                dst_row[x * 4 + 1] = src_rgb[x * 3 + 1];
+                dst_row[x * 4 + 2] = src_rgb[x * 3 + 2];
+                dst_row[x * 4 + 3] = 255;
+            }
+        }
+        out_scope.unlock();
+
+        return outBitmap;
+    } catch (const std::bad_alloc&) {
+        LOGE("RIFE nativeInterpolate out of memory");
+        return nullptr;
+    } catch (const std::exception& e) {
+        LOGE("RIFE nativeInterpolate exception: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("RIFE nativeInterpolate unknown exception");
+        return nullptr;
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -283,8 +319,11 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeRelease(
         delete g_rife;
         g_rife = nullptr;
     }
+    g_rife_gpuid = -1;
+    g_rife_model_dir.clear();
+
     if (g_rife_gpu_instance_created) {
-        ncnn::destroy_gpu_instance();
+        veilframe::release_gpu_instance();
         g_rife_gpu_instance_created = false;
     }
     if (g_bitmapClass) {
