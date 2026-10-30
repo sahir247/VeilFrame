@@ -21,8 +21,10 @@ object MainActivityIntentHandler {
                 "IMAGE_UPSCALER" -> activity.navigationController.showImageUpscalerScreen()
                 "MOTION_LAB" -> {
                     activity.navigationController.showMotionLabScreen()
+                    activity.workspaceHost.getOrInflateMotionLab()
+                    activity.syncMotionLabIfActive()
                     val motionUri = intent.data ?: intent.getStringExtra("extra_video_uri")?.let { Uri.parse(it) }
-                    if (motionUri != null) {
+                    if (motionUri != null && !activity.isMotionLabProcessing) {
                         activity.setMotionLabSource(motionUri)
                     }
                 }

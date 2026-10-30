@@ -167,6 +167,17 @@ class MotionLabForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("extra_navigate_destination", "MOTION_LAB")
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            this,
+            2,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val contentText = if (percent in 0..100) {
             "$label ($percent%) — safe to switch apps"
         } else {
@@ -183,6 +194,7 @@ class MotionLabForegroundService : Service() {
             .setProgress(100, percent.coerceIn(0, 100), percent < 0)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
             .build()
     }

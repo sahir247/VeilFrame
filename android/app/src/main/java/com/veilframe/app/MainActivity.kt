@@ -116,6 +116,13 @@ class MainActivity : AppCompatActivity() {
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
     val isPdfSignatureControllerInitialized: Boolean get() = ::pdfSignatureController.isInitialized
+    val isMotionLabControllerInitialized: Boolean get() = ::motionLabController.isInitialized
+    val isMotionLabProcessing: Boolean get() = ::motionLabController.isInitialized && motionLabController.isProcessing
+    fun syncMotionLabIfActive() {
+        if (::motionLabController.isInitialized) {
+            motionLabController.syncWithActiveService()
+        }
+    }
 
     // Dedicated PDF Suite Coordinator
     internal lateinit var pdfSuiteCoordinator: PdfSuiteCoordinator
@@ -281,6 +288,22 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         appUpdateManager.onResume()
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
+            val v = currentFocus
+            if (v is android.widget.EditText) {
+                val outRect = android.graphics.Rect()
+                v.getGlobalVisibleRect(outRect)
+                if (!outRect.contains(ev.rawX.toInt(), ev.rawY.toInt())) {
+                    v.clearFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.hideSoftInputFromWindow(v.windowToken, 0)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onPause() {
@@ -1044,6 +1067,8 @@ class MainActivity : AppCompatActivity() {
             toolSessionManager.saveCurrentToolState()
         }
         navigationController.showMotionLabScreen()
+        workspaceHost.getOrInflateMotionLab()
+        syncMotionLabIfActive()
         consoleLogController.log("[UI] Opened Motion Lab workspace.")
     }
 

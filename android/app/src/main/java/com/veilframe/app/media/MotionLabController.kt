@@ -85,6 +85,7 @@ class MotionLabController(
 
     init {
         wire()
+        syncWithActiveService()
     }
 
     private fun wire() {
@@ -614,47 +615,7 @@ class MotionLabController(
         val resultFile = File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
         outputFile = null
 
-        MotionLabForegroundService.cancelHook = { cancel() }
-
-        VeilFrameProcessingService.jobCallback = object : VeilFrameProcessingService.Companion.JobCallback {
-            override fun onProgress(id: UUID, percent: Int, status: String) {
-                if (id == jobId) {
-                    scope.launch(Dispatchers.Main) {
-                        binding.tvMotionLabStatus.text = status
-                        binding.progressMotionLab.isIndeterminate = false
-                        binding.progressMotionLab.setProgressCompat(percent, true)
-                    }
-                }
-            }
-
-            override fun onCompleted(id: UUID, outputPath: String) {
-                if (id == jobId) {
-                    activeJobId = null
-                    val out = File(outputPath)
-                    outputFile = out
-                    scope.launch(Dispatchers.Main) {
-                        binding.containerMotionLabProgress.visibility = View.GONE
-                        binding.cardMotionLabResult.visibility = View.VISIBLE
-                        val mb = out.length() / (1024.0 * 1024.0)
-                        val targetFpsStr = if (isTarget60fps) "60 fps" else "${multiplier}x fps"
-                        binding.tvMotionLabResultInfo.text =
-                            "Interpolation complete · $targetFpsStr · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
-                        binding.btnMotionLabRun.isEnabled = true
-                    }
-                }
-            }
-
-            override fun onFailed(id: UUID, error: String) {
-                if (id == jobId) {
-                    activeJobId = null
-                    scope.launch(Dispatchers.Main) {
-                        binding.tvMotionLabStatus.text = "Failed: $error"
-                        binding.btnMotionLabRun.isEnabled = sourceUri != null
-                        Toast.makeText(activity, "Motion Lab: $error", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }
+        attachJobCallback(jobId)
 
         VeilFrameProcessingService.startMotionLab(
             context = activity,
@@ -702,6 +663,102 @@ class MotionLabController(
                 Log.e(TAG, "Gallery save failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun syncWithActiveService() {
+        val currentJob = VeilFrameProcessingService.activeJob
+        if (currentJob != null && currentJob.type == com.veilframe.app.media.JobType.MOTION_LAB_RIFE) {
+            when (currentJob.state) {
+                com.veilframe.app.media.JobState.RUNNING -> {
+                    activeJobId = currentJob.id
+                    if (sourceUri == null) {
+                        setSource(currentJob.inputUri)
+                    }
+                    binding.containerMotionLabProgress.visibility = View.VISIBLE
+                    binding.cardMotionLabResult.visibility = View.GONE
+                    binding.btnMotionLabRun.isEnabled = false
+                    val pct = currentJob.progressPercent
+                    if (pct > 0) {
+                        binding.progressMotionLab.isIndeterminate = false
+                        binding.progressMotionLab.setProgressCompat(pct, true)
+                        binding.tvMotionLabStatus.text = "Synthesising frames ($pct%)…"
+                    } else {
+                        binding.progressMotionLab.isIndeterminate = true
+                        binding.tvMotionLabStatus.text = "Processing in background…"
+                    }
+                    attachJobCallback(currentJob.id)
+                }
+                com.veilframe.app.media.JobState.COMPLETED -> {
+                    val outUri = currentJob.outputUri
+                    val outFile = outUri?.path?.let { File(it) }
+                    if (outFile != null && outFile.exists() && outFile.length() > 0L) {
+                        outputFile = outFile
+                        if (sourceUri == null) {
+                            setSource(currentJob.inputUri)
+                        }
+                        binding.containerMotionLabProgress.visibility = View.GONE
+                        binding.cardMotionLabResult.visibility = View.VISIBLE
+                        val mb = outFile.length() / (1024.0 * 1024.0)
+                        binding.tvMotionLabResultInfo.text =
+                            "Interpolation complete · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
+                        binding.btnMotionLabRun.isEnabled = true
+                    }
+                }
+                com.veilframe.app.media.JobState.FAILED -> {
+                    if (activeJobId == currentJob.id) {
+                        activeJobId = null
+                        binding.containerMotionLabProgress.visibility = View.GONE
+                        binding.tvMotionLabStatus.text = "Failed: ${currentJob.errorMessage ?: "Processing failed"}"
+                        binding.btnMotionLabRun.isEnabled = sourceUri != null
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    private fun attachJobCallback(jobId: UUID) {
+        MotionLabForegroundService.cancelHook = { cancel() }
+        VeilFrameProcessingService.jobCallback = object : VeilFrameProcessingService.Companion.JobCallback {
+            override fun onProgress(id: UUID, percent: Int, status: String) {
+                if (id == jobId) {
+                    scope.launch(Dispatchers.Main) {
+                        binding.tvMotionLabStatus.text = status
+                        binding.progressMotionLab.isIndeterminate = false
+                        binding.progressMotionLab.setProgressCompat(percent, true)
+                    }
+                }
+            }
+
+            override fun onCompleted(id: UUID, outputPath: String) {
+                if (id == jobId) {
+                    activeJobId = null
+                    val out = File(outputPath)
+                    outputFile = out
+                    scope.launch(Dispatchers.Main) {
+                        binding.containerMotionLabProgress.visibility = View.GONE
+                        binding.cardMotionLabResult.visibility = View.VISIBLE
+                        val mb = out.length() / (1024.0 * 1024.0)
+                        val targetFpsStr = if (isTarget60fps) "60 fps" else "${multiplier}x fps"
+                        binding.tvMotionLabResultInfo.text =
+                            "Interpolation complete · $targetFpsStr · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
+                        binding.btnMotionLabRun.isEnabled = true
+                    }
+                }
+            }
+
+            override fun onFailed(id: UUID, error: String) {
+                if (id == jobId) {
+                    activeJobId = null
+                    scope.launch(Dispatchers.Main) {
+                        binding.containerMotionLabProgress.visibility = View.GONE
+                        binding.tvMotionLabStatus.text = "Failed: $error"
+                        binding.btnMotionLabRun.isEnabled = sourceUri != null
+                        Toast.makeText(activity, "Motion Lab: $error", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }

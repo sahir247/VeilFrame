@@ -85,6 +85,12 @@ class WorkspaceRouteTest {
 
         val emptyResults = WorkspaceRoute.search("")
         assertEquals("Empty query must return all 17 workspaces", 17, emptyResults.size)
+
+        val reResults = WorkspaceRoute.search("re")
+        assertTrue("Searching 're' must find BG Remover", reResults.contains(WorkspaceRoute.BACKGROUND_REMOVER))
+
+        val bgRemResults = WorkspaceRoute.search("bg rem")
+        assertTrue("Searching 'bg rem' must find BG Remover", bgRemResults.contains(WorkspaceRoute.BACKGROUND_REMOVER))
     }
 
     @Test

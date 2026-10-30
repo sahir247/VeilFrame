@@ -229,7 +229,7 @@ class HomeFileIntakeCoordinator(
                 }
             }
             binding.btnSuggestEngine2.apply {
-                text = "File Provenance & Verify"
+                text = "Provenance"
                 setIconResource(R.drawable.ic_certificate)
                 setOnClickListener {
                     activity.openProvenance()
@@ -248,7 +248,7 @@ class HomeFileIntakeCoordinator(
         } else {
             binding.ivHomeIntakeIcon.setImageResource(R.drawable.ic_certificate)
             binding.btnSuggestEngine1.apply {
-                text = "File Provenance & Verify"
+                text = "Provenance"
                 setIconResource(R.drawable.ic_certificate)
                 setOnClickListener {
                     activity.openProvenance()

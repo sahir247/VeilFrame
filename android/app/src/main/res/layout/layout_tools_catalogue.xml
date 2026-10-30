@@ -34,7 +34,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="17 offline engines for privacy, media, documents, and forensics"
+            android:text="Offline privacy, media, and document utilities"
             android:textColor="@color/vf_text_secondary"
             android:textSize="12sp" />
 
@@ -45,7 +45,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:hint="Search tools (e.g. pdf, crop, upscaler, qr, metadata)..."
+            android:hint="Search tools (e.g. pdf, crop, qr, metadata)"
             app:boxCornerRadiusBottomEnd="16dp"
             app:boxCornerRadiusBottomStart="16dp"
             app:boxCornerRadiusTopEnd="16dp"

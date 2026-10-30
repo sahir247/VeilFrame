@@ -113,6 +113,22 @@ class MainNavigationController(
             }
         }
 
+        binding.bottomNavigation.setOnItemReselectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> binding.scrollHome.smoothScrollTo(0, 0)
+                R.id.nav_tools -> binding.layoutToolsCatalogue.scrollToolsCatalogue.smoothScrollTo(0, 0)
+                R.id.nav_library -> binding.layoutLibrary.scrollLibrary.smoothScrollTo(0, 0)
+            }
+        }
+
+        binding.navigationRail.setOnItemReselectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> binding.scrollHome.smoothScrollTo(0, 0)
+                R.id.nav_tools -> binding.layoutToolsCatalogue.scrollToolsCatalogue.smoothScrollTo(0, 0)
+                R.id.nav_library -> binding.layoutLibrary.scrollLibrary.smoothScrollTo(0, 0)
+            }
+        }
+
         binding.navigationRail.setOnItemSelectedListener { item ->
             if (isSyncingBottomNav) return@setOnItemSelectedListener true
             when (item.itemId) {
@@ -295,7 +311,7 @@ class MainNavigationController(
     }
 
     private fun setAdaptiveNavigationVisibility(visible: Boolean) {
-        val isExpanded = activity.resources.configuration.screenWidthDp >= 600
+        val isExpanded = activity.resources.configuration.smallestScreenWidthDp >= 600
         if (!visible) {
             binding.bottomNavigation.visibility = View.GONE
             binding.navigationRail.visibility = View.GONE
@@ -499,7 +515,7 @@ class MainNavigationController(
             outgoingToolView != binding.layoutLibrary.scrollLibrary &&
             !isRestoringState
         ) {
-            val navView = if (activity.resources.configuration.screenWidthDp >= 600) {
+            val navView = if (activity.resources.configuration.smallestScreenWidthDp >= 600) {
                 binding.navigationRail
             } else {
                 binding.bottomNavigation
@@ -571,6 +587,7 @@ class MainNavigationController(
 
         hideAllToolViewsExcept(binding.layoutToolsCatalogue.scrollToolsCatalogue)
         binding.scrollHome.visibility = View.GONE
+        binding.layoutToolsCatalogue.scrollToolsCatalogue.scrollTo(0, 0)
         binding.layoutToolsCatalogue.scrollToolsCatalogue.visibility = View.VISIBLE
         binding.layoutToolsCatalogue.scrollToolsCatalogue.alpha = 1.0f
         binding.layoutToolsCatalogue.scrollToolsCatalogue.translationX = 0f
@@ -794,6 +811,7 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
 
         val motionRoot = workspaceHost.activate(SecondaryWorkspace.MOTION_LAB)
+        (activity as? MainActivity)?.syncMotionLabIfActive()
         transitionToTool(motionRoot, wasHome)
     }
 

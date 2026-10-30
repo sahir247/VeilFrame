@@ -41,8 +41,7 @@ class ToolsCatalogueCoordinator(
     }
 
     fun init() {
-        binding.tvToolsSubtitle.text =
-            "${WorkspaceRoute.values().size} offline engines for privacy, media, documents, and forensics"
+        binding.tvToolsSubtitle.text = "Offline privacy, media, and document utilities"
 
         // Ensure accessibility: assign authoritative TalkBack label to each card from WorkspaceRoute
         cards.forEach { (route, card) ->
@@ -101,7 +100,7 @@ class ToolsCatalogueCoordinator(
         var visibleCount = 0
         cards.forEach { (route, card) ->
             val matchesQuery = route in matchingRoutes
-            val matchesCat = (selectedCategory == null || route.category == selectedCategory)
+            val matchesCat = (query.isNotEmpty() || selectedCategory == null || route.category == selectedCategory)
             val visible = matchesQuery && matchesCat
             card.visibility = if (visible) View.VISIBLE else View.GONE
             if (visible) visibleCount++

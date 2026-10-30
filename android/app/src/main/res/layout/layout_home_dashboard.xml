@@ -174,7 +174,7 @@
                             app:iconPadding="8dp"
                             app:iconSize="16dp"
                             app:iconGravity="textStart"
-                            android:text="Browse Any File..."
+                            android:text="Browse Any File"
                             app:icon="@drawable/ic_file_pick" />
                     </LinearLayout>
 

@@ -195,12 +195,19 @@ enum class WorkspaceRoute(
          * Search workspaces by title, description, or keyword synonyms.
          */
         fun search(query: String): List<WorkspaceRoute> {
-            val q = query.trim().lowercase()
-            if (q.isEmpty()) return values().toList()
+            val trimmed = query.trim().lowercase()
+            if (trimmed.isEmpty()) return values().toList()
+            val tokens = trimmed.split("\\s+".toRegex()).filter { it.isNotEmpty() }
             return values().filter { route ->
-                route.title.lowercase().contains(q) ||
-                route.description.lowercase().contains(q) ||
-                route.aliases.any { it.contains(q) }
+                val titleWords = route.title.lowercase().split("\\s+".toRegex())
+                val descLower = route.description.lowercase()
+                val aliasesLower = route.aliases.map { it.lowercase() }
+
+                tokens.all { token ->
+                    titleWords.any { it.startsWith(token) || it.contains(token) } ||
+                    aliasesLower.any { it.startsWith(token) || it.contains(token) } ||
+                    descLower.contains(token)
+                }
             }
         }
 

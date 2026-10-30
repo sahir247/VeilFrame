@@ -183,7 +183,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `layout_tools_catalogue declares 17 offline engines in subtitle`() {
+    fun `layout_tools_catalogue declares clean subtitle without number flexing`() {
         val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
         val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
         val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
@@ -191,12 +191,12 @@ class WorkspaceCatalogueContractTest {
 
         val xmlContent = targetFile.readText()
         assertTrue(
-            "Catalogue subtitle must declare 16 offline engines (was stale 14)",
-            xmlContent.contains("17 offline engines for privacy, media, documents, and forensics")
+            "Catalogue subtitle must declare clean offline utilities subtext",
+            xmlContent.contains("Offline privacy, media, and document utilities")
         )
         assertFalse(
-            "Catalogue subtitle must not declare 14 engines",
-            xmlContent.contains("14 offline engines")
+            "Catalogue subtitle must not flex engine numbers",
+            xmlContent.contains("offline engines")
         )
     }
 

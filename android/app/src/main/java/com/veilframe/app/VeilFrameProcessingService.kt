@@ -837,6 +837,9 @@ class VeilFrameProcessingService : Service() {
     }
 
     private fun updateNotificationProgress(contentText: String, percent: Int) {
+        synchronized(this) {
+            activeJob = activeJob?.copy(progressPercent = percent)
+        }
         val notification = buildForegroundNotification(contentText, percent)
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         manager?.notify(NOTIFICATION_ID, notification)
@@ -850,12 +853,33 @@ class VeilFrameProcessingService : Service() {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
+        val dest = when (activeJob?.type) {
+            JobType.MOTION_LAB_RIFE -> "MOTION_LAB"
+            JobType.UPSCALE -> "IMAGE_UPSCALER"
+            JobType.VIDEO_COMPRESSION, JobType.WHATSAPP_STATUS, JobType.METADATA_STRIP, JobType.VIDEO_STABILIZATION -> "VIDEO_STUDIO"
+            else -> null
+        }
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (dest != null) {
+                putExtra("extra_navigate_destination", dest)
+                activeJob?.inputUri?.let { putExtra("extra_video_uri", it.toString()) }
+            }
+        }
+        val openPendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            1,
+            openIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("VeilFrame Processing Engine")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
 
         if (progressPercent in 0..100) {
@@ -867,8 +891,18 @@ class VeilFrameProcessingService : Service() {
     }
 
     private fun showCompletionNotification(title: String, message: String) {
+        val dest = when (activeJob?.type) {
+            JobType.MOTION_LAB_RIFE -> "MOTION_LAB"
+            JobType.UPSCALE -> "IMAGE_UPSCALER"
+            JobType.VIDEO_COMPRESSION, JobType.WHATSAPP_STATUS, JobType.METADATA_STRIP, JobType.VIDEO_STABILIZATION -> "VIDEO_STUDIO"
+            else -> null
+        }
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (dest != null) {
+                putExtra("extra_navigate_destination", dest)
+                activeJob?.inputUri?.let { putExtra("extra_video_uri", it.toString()) }
+            }
         }
         val openPendingIntent = android.app.PendingIntent.getActivity(
             this,
