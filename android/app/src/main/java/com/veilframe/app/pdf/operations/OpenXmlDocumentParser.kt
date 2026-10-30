@@ -397,6 +397,19 @@ object OpenXmlDocumentParser {
         val rowList = doc.getElementsByTagName("row")
         for (i in 0 until rowList.length) {
             val rowElem = rowList.item(i) as Element
+            val explicitRowAttr = rowElem.getAttribute("r")
+            val explicitRowNumber = explicitRowAttr.toIntOrNull()
+
+            // If an explicit row number is provided, pad missing skipped spacer rows
+            if (explicitRowNumber != null && explicitRowNumber > 0) {
+                val gap = (explicitRowNumber - 1) - outRows.size
+                if (gap in 1..10000) {
+                    for (g in 0 until gap) {
+                        outRows.add(emptyList())
+                    }
+                }
+            }
+
             val rowCells = mutableListOf<String>()
             var child = rowElem.firstChild
             while (child != null) {
@@ -438,9 +451,16 @@ object OpenXmlDocumentParser {
                 }
                 child = child.nextSibling
             }
-            if (rowCells.any { it.isNotBlank() }) {
+            if (explicitRowNumber != null && explicitRowNumber > 0) {
+                outRows.add(rowCells)
+            } else if (rowCells.any { it.isNotBlank() }) {
                 outRows.add(rowCells)
             }
+        }
+
+        // Trim trailing completely empty rows from the end of the worksheet
+        while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() }) {
+            outRows.removeAt(outRows.size - 1)
         }
     }
 }

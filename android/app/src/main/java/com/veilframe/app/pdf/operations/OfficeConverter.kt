@@ -967,65 +967,102 @@ class OfficeConverter {
                     val rowCellLines = Array(maxCol) { c ->
                         val text = row.getOrNull(c) ?: ""
                         if (text.isNotBlank()) {
-                            wrapText(sanitizeText(text), fontNormal, fontSizeCell, colWidths[c] - 8f)
+                            wrapText(text, fontNormal, fontSizeCell, colWidths[c] - 8f)
                         } else {
                             emptyList()
                         }
                     }
                     val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-                    val maxPrintableHeight = (pageBounds.height - (2 * margin) - 30f).coerceAtLeast(30f)
-                    val dynamicRowHeight = Math.max(20f, maxLinesInRow * (fontSizeCell * 1.3f) + 8f).coerceAtMost(maxPrintableHeight)
+                    val lineHeight = fontSizeCell * 1.3f
+                    val paddingVertical = 8f
+                    val pageUsableHeight = (pageBounds.height - (2 * margin) - 20f).coerceAtLeast(30f)
+                    val totalRowHeight = maxOf(20f, maxLinesInRow * lineHeight + paddingVertical)
 
-                    // Check bounds for page breaks
-                    if (yPosition - dynamicRowHeight < margin) {
-                        contentStream?.close()
-                        currentPage = PDPage(pageBounds)
-                        pdf.addPage(currentPage)
-                        contentStream = PDPageContentStream(pdf, currentPage)
-                        yPosition = pageBounds.height - margin - 20f
-                    }
-
-                    // Draw cell grid lines and values
-                    for (colIndex in 0 until maxCol) {
-                        val cellLeft = colX[colIndex]
-                        val cellW = colWidths[colIndex]
-
-                        // 1. Draw Cell border lines
-                        contentStream?.setStrokingColor(210, 215, 220)
-                        contentStream?.setLineWidth(0.5f)
-                        contentStream?.moveTo(cellLeft, yPosition)
-                        contentStream?.lineTo(cellLeft + cellW, yPosition)
-                        contentStream?.lineTo(cellLeft + cellW, yPosition - dynamicRowHeight)
-                        contentStream?.lineTo(cellLeft, yPosition - dynamicRowHeight)
-                        contentStream?.lineTo(cellLeft, yPosition)
-                        contentStream?.stroke()
-
-                        // 2. Draw cell string values safely clipped within cell boundaries
-                        val lines = rowCellLines[colIndex]
-                        if (lines.isNotEmpty()) {
-                            contentStream?.saveGraphicsState()
-                            contentStream?.addRect(
-                                cellLeft + 1f,
-                                yPosition - dynamicRowHeight + 1f,
-                                (cellW - 2f).coerceAtLeast(1f),
-                                (dynamicRowHeight - 2f).coerceAtLeast(1f)
-                            )
-                            contentStream?.clip()
-
-                            var textY = yPosition - 4f - fontSizeCell
-                            for (lineText in lines) {
-                                contentStream?.beginText()
-                                contentStream?.setFont(fontNormal, fontSizeCell)
-                                contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                                safeShowText(contentStream, lineText, fontNormal)
-                                contentStream?.endText()
-                                textY -= (fontSizeCell * 1.3f)
-                            }
-                            contentStream?.restoreGraphicsState()
+                    if (totalRowHeight <= pageUsableHeight) {
+                        if (yPosition - totalRowHeight < margin) {
+                            contentStream?.close()
+                            currentPage = PDPage(pageBounds)
+                            pdf.addPage(currentPage)
+                            contentStream = PDPageContentStream(pdf, currentPage)
+                            yPosition = pageBounds.height - margin - 20f
+                        }
+                    } else {
+                        // Oversized row: if less than two lines would fit on current page, start on clean page
+                        if (yPosition - (lineHeight * 2 + paddingVertical) < margin) {
+                            contentStream?.close()
+                            currentPage = PDPage(pageBounds)
+                            pdf.addPage(currentPage)
+                            contentStream = PDPageContentStream(pdf, currentPage)
+                            yPosition = pageBounds.height - margin - 20f
                         }
                     }
 
-                    yPosition -= dynamicRowHeight
+                    val totalLines = maxOf(1, maxLinesInRow)
+                    var startLine = 0
+                    while (startLine < totalLines) {
+                        val availableHeight = (yPosition - margin).coerceAtLeast(lineHeight + paddingVertical)
+                        val remainingLines = totalLines - startLine
+                        val maxFittingLines = ((availableHeight - paddingVertical) / lineHeight).toInt().coerceAtLeast(1)
+                        val linesInChunk = minOf(remainingLines, maxFittingLines)
+                        val chunkHeight = maxOf(20f, linesInChunk * lineHeight + paddingVertical)
+
+                        // Draw cell grid lines and values for this chunk
+                        for (colIndex in 0 until maxCol) {
+                            val cellLeft = colX[colIndex]
+                            val cellW = colWidths[colIndex]
+
+                            // 1. Draw Cell border lines
+                            contentStream?.setStrokingColor(210, 215, 220)
+                            contentStream?.setLineWidth(0.5f)
+                            contentStream?.moveTo(cellLeft, yPosition)
+                            contentStream?.lineTo(cellLeft + cellW, yPosition)
+                            contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
+                            contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
+                            contentStream?.lineTo(cellLeft, yPosition)
+                            contentStream?.stroke()
+
+                            // 2. Draw cell string values safely clipped within cell boundaries
+                            val lines = rowCellLines[colIndex]
+                            val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
+                                lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
+                            } else {
+                                emptyList()
+                            }
+
+                            if (chunkLines.isNotEmpty()) {
+                                contentStream?.saveGraphicsState()
+                                contentStream?.addRect(
+                                    cellLeft + 1f,
+                                    yPosition - chunkHeight + 1f,
+                                    (cellW - 2f).coerceAtLeast(1f),
+                                    (chunkHeight - 2f).coerceAtLeast(1f)
+                                )
+                                contentStream?.clip()
+
+                                var textY = yPosition - 4f - fontSizeCell
+                                for (lineText in chunkLines) {
+                                    contentStream?.beginText()
+                                    contentStream?.setFont(fontNormal, fontSizeCell)
+                                    contentStream?.newLineAtOffset(cellLeft + 4f, textY)
+                                    safeShowText(contentStream, lineText, fontNormal)
+                                    contentStream?.endText()
+                                    textY -= lineHeight
+                                }
+                                contentStream?.restoreGraphicsState()
+                            }
+                        }
+
+                        yPosition -= chunkHeight
+                        startLine += linesInChunk
+
+                        if (startLine < totalLines) {
+                            contentStream?.close()
+                            currentPage = PDPage(pageBounds)
+                            pdf.addPage(currentPage)
+                            contentStream = PDPageContentStream(pdf, currentPage)
+                            yPosition = pageBounds.height - margin - 20f
+                        }
+                    }
                 }
 
                 contentStream?.close()

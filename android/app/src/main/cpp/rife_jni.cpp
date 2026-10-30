@@ -19,7 +19,7 @@
 static std::mutex g_rife_mutex;
 static RIFE* g_rife = nullptr;
 static int g_rife_gpuid = -1;
-static bool g_rife_gpu_instance_created = false;
+static veilframe::GpuInstanceLease g_rife_gpu_lease;
 static std::string g_rife_model_dir;
 
 // Cached global references for zero reflection overhead per frame
@@ -40,105 +40,123 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
     jstring modelDir,
     jboolean useGpu
 ) {
-    std::lock_guard<std::mutex> lock(g_rife_mutex);
+    try {
+        std::lock_guard<std::mutex> lock(g_rife_mutex);
 
-    if (g_rife != nullptr) {
-        delete g_rife;
-        g_rife = nullptr;
-    }
-    if (g_rife_gpu_instance_created) {
-        veilframe::release_gpu_instance();
-        g_rife_gpu_instance_created = false;
-    }
+        if (g_rife != nullptr) {
+            delete g_rife;
+            g_rife = nullptr;
+        }
+        g_rife_gpu_lease.reset();
 
-    if (!modelDir) {
-        LOGE("RIFE modelDir is null");
-        return JNI_FALSE;
-    }
-    const char* dir_c = env->GetStringUTFChars(modelDir, nullptr);
-    if (!dir_c) {
-        LOGE("Failed to get modelDir UTF chars");
-        return JNI_FALSE;
-    }
-    std::string dir_str(dir_c);
-    env->ReleaseStringUTFChars(modelDir, dir_c);
-    g_rife_model_dir = dir_str;
+        if (!modelDir) {
+            LOGE("RIFE modelDir is null");
+            return JNI_FALSE;
+        }
+        const char* dir_c = env->GetStringUTFChars(modelDir, nullptr);
+        if (!dir_c) {
+            LOGE("Failed to get modelDir UTF chars");
+            return JNI_FALSE;
+        }
+        std::string dir_str(dir_c);
+        env->ReleaseStringUTFChars(modelDir, dir_c);
+        g_rife_model_dir = dir_str;
 
-    std::string param_path = dir_str + "/flownet.param";
-    FILE* fp = fopen(param_path.c_str(), "rb");
-    if (!fp) {
-        LOGE("RIFE model files not found in %s", dir_str.c_str());
-        return JNI_FALSE;
-    }
-    fclose(fp);
+        std::string param_path = dir_str + "/flownet.param";
+        FILE* fp = fopen(param_path.c_str(), "rb");
+        if (!fp) {
+            LOGE("RIFE model files not found in %s", dir_str.c_str());
+            return JNI_FALSE;
+        }
+        fclose(fp);
 
-    bool gpu_requested = useGpu;
-    if (gpu_requested) {
-        if (!g_rife_gpu_instance_created) {
-            if (veilframe::acquire_gpu_instance()) {
-                g_rife_gpu_instance_created = true;
+        veilframe::GpuInstanceLease local_gpu_lease;
+        bool gpu_requested = useGpu;
+        if (gpu_requested) {
+            if (local_gpu_lease.acquire()) {
+                gpu_requested = true;
             } else {
                 gpu_requested = false;
             }
         }
-    }
 
-    int gpu_count = (gpu_requested && g_rife_gpu_instance_created) ? ncnn::get_gpu_count() : 0;
-    if (gpu_requested && gpu_count > 0) {
-        ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device(0);
-        g_rife_gpuid = (vkdev != nullptr) ? 0 : -1;
-    } else {
-        g_rife_gpuid = -1;
-    }
-
-    // Detect CPU big cores for maximum throughput
-    int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
-    if (cpu_threads > 4) cpu_threads = 4; // Balance thermal headroom on mobile
-
-    // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4
-    g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true);
-
-    int ret = g_rife->load(dir_str);
-    if (ret != 0 && g_rife_gpuid >= 0) {
-        LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
-        delete g_rife;
-        g_rife_gpuid = -1;
-        g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
-        ret = g_rife->load(dir_str);
-    }
-    if (ret != 0) {
-        LOGE("Failed to load RIFE v4 model from %s (ret=%d)", dir_str.c_str(), ret);
-        delete g_rife;
-        g_rife = nullptr;
-        return JNI_FALSE;
-    }
-
-    // Cache JNI reflection targets globally
-    if (!g_bitmapClass) {
-        jclass bCls = env->FindClass("android/graphics/Bitmap");
-        if (bCls) {
-            g_bitmapClass = (jclass)env->NewGlobalRef(bCls);
-            g_createBitmapMethod = env->GetStaticMethodID(
-                g_bitmapClass, "createBitmap",
-                "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
-            );
+        int gpu_count = (gpu_requested && local_gpu_lease.is_acquired()) ? ncnn::get_gpu_count() : 0;
+        if (gpu_requested && gpu_count > 0) {
+            ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device(0);
+            g_rife_gpuid = (vkdev != nullptr) ? 0 : -1;
+        } else {
+            g_rife_gpuid = -1;
         }
-    }
-    if (!g_argbConfig) {
-        jclass cCls = env->FindClass("android/graphics/Bitmap$Config");
-        if (cCls) {
-            jfieldID argbField = env->GetStaticFieldID(cCls, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
-            if (argbField) {
-                jobject cfg = env->GetStaticObjectField(cCls, argbField);
-                if (cfg) {
-                    g_argbConfig = env->NewGlobalRef(cfg);
+
+        // Release local GPU lease if GPU device could not be acquired or opened
+        if (g_rife_gpuid < 0) {
+            local_gpu_lease.reset();
+        }
+
+        // Detect CPU big cores for maximum throughput
+        int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
+        if (cpu_threads > 4) cpu_threads = 4; // Balance thermal headroom on mobile
+
+        // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4
+        g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true);
+
+        int ret = g_rife->load(dir_str);
+        if (ret != 0 && g_rife_gpuid >= 0) {
+            LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
+            delete g_rife;
+            g_rife_gpuid = -1;
+            local_gpu_lease.reset();
+            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
+            ret = g_rife->load(dir_str);
+        }
+        if (ret != 0) {
+            LOGE("Failed to load RIFE v4 model from %s (ret=%d)", dir_str.c_str(), ret);
+            delete g_rife;
+            g_rife = nullptr;
+            local_gpu_lease.reset();
+            return JNI_FALSE;
+        }
+
+        if (g_rife_gpuid >= 0) {
+            g_rife_gpu_lease = std::move(local_gpu_lease);
+        }
+
+        // Cache JNI reflection targets globally
+        if (!g_bitmapClass) {
+            jclass bCls = env->FindClass("android/graphics/Bitmap");
+            if (bCls) {
+                g_bitmapClass = (jclass)env->NewGlobalRef(bCls);
+                g_createBitmapMethod = env->GetStaticMethodID(
+                    g_bitmapClass, "createBitmap",
+                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+                );
+            }
+        }
+        if (!g_argbConfig) {
+            jclass cCls = env->FindClass("android/graphics/Bitmap$Config");
+            if (cCls) {
+                jfieldID argbField = env->GetStaticFieldID(cCls, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
+                if (argbField) {
+                    jobject cfg = env->GetStaticObjectField(cCls, argbField);
+                    if (cfg) {
+                        g_argbConfig = env->NewGlobalRef(cfg);
+                    }
                 }
             }
         }
-    }
 
-    LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d)", g_rife_gpuid, cpu_threads);
-    return JNI_TRUE;
+        LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d)", g_rife_gpuid, cpu_threads);
+        return JNI_TRUE;
+    } catch (const std::bad_alloc& e) {
+        LOGE("Out of memory in RIFE nativeInit: %s", e.what());
+        return JNI_FALSE;
+    } catch (const std::exception& e) {
+        LOGE("Exception in RIFE nativeInit: %s", e.what());
+        return JNI_FALSE;
+    } catch (...) {
+        LOGE("Unknown exception in RIFE nativeInit");
+        return JNI_FALSE;
+    }
 }
 
 JNIEXPORT jobject JNICALL
@@ -245,6 +263,7 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
             LOGI("RIFE GPU process failed (%d), dynamically recovering via CPU OpenMP", ret);
             delete g_rife;
             g_rife_gpuid = -1;
+            g_rife_gpu_lease.reset();
             int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
             if (cpu_threads > 4) cpu_threads = 4;
             g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
@@ -314,34 +333,35 @@ JNIEXPORT void JNICALL
 Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeRelease(
     JNIEnv* env, jclass clazz
 ) {
-    std::lock_guard<std::mutex> lock(g_rife_mutex);
-    if (g_rife) {
-        delete g_rife;
-        g_rife = nullptr;
-    }
-    g_rife_gpuid = -1;
-    g_rife_model_dir.clear();
+    try {
+        std::lock_guard<std::mutex> lock(g_rife_mutex);
+        if (g_rife) {
+            delete g_rife;
+            g_rife = nullptr;
+        }
+        g_rife_gpuid = -1;
+        g_rife_model_dir.clear();
+        g_rife_gpu_lease.reset();
 
-    if (g_rife_gpu_instance_created) {
-        veilframe::release_gpu_instance();
-        g_rife_gpu_instance_created = false;
+        if (g_bitmapClass) {
+            env->DeleteGlobalRef(g_bitmapClass);
+            g_bitmapClass = nullptr;
+            g_createBitmapMethod = nullptr;
+        }
+        if (g_argbConfig) {
+            env->DeleteGlobalRef(g_argbConfig);
+            g_argbConfig = nullptr;
+        }
+        g_rgb0.clear();
+        g_rgb0.shrink_to_fit();
+        g_rgb1.clear();
+        g_rgb1.shrink_to_fit();
+        g_rgb_out.clear();
+        g_rgb_out.shrink_to_fit();
+        LOGI("RIFE engine released and buffers reclaimed");
+    } catch (...) {
+        LOGE("Exception in RIFE nativeRelease");
     }
-    if (g_bitmapClass) {
-        env->DeleteGlobalRef(g_bitmapClass);
-        g_bitmapClass = nullptr;
-        g_createBitmapMethod = nullptr;
-    }
-    if (g_argbConfig) {
-        env->DeleteGlobalRef(g_argbConfig);
-        g_argbConfig = nullptr;
-    }
-    g_rgb0.clear();
-    g_rgb0.shrink_to_fit();
-    g_rgb1.clear();
-    g_rgb1.shrink_to_fit();
-    g_rgb_out.clear();
-    g_rgb_out.shrink_to_fit();
-    LOGI("RIFE engine released and buffers reclaimed");
 }
 
 } // extern "C"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <limits>
 #include <android/log.h>
 #include "net.h"
 #include "gpu.h"
@@ -25,6 +26,10 @@ inline int& get_gpu_lifecycle_ref_count() {
 inline bool acquire_gpu_instance() {
     std::lock_guard<std::mutex> lock(get_gpu_lifecycle_mutex());
     int& ref_count = get_gpu_lifecycle_ref_count();
+    if (ref_count >= std::numeric_limits<int>::max() - 1) {
+        __android_log_print(ANDROID_LOG_ERROR, "VeilFrameGPU", "Vulkan GPU instance ref count overflow prevented");
+        return false;
+    }
     if (ref_count == 0) {
         try {
             ncnn::create_gpu_instance();
@@ -67,5 +72,64 @@ inline void release_gpu_instance() {
         }
     }
 }
+
+/**
+ * RAII lease token for shared Vulkan GPU instance.
+ * Automatically releases the GPU instance when destructed or reset.
+ * Move-only to ensure single ownership semantics.
+ */
+class GpuInstanceLease {
+public:
+    GpuInstanceLease() : m_acquired(false) {}
+
+    explicit GpuInstanceLease(bool auto_acquire) : m_acquired(false) {
+        if (auto_acquire) {
+            m_acquired = acquire_gpu_instance();
+        }
+    }
+
+    ~GpuInstanceLease() {
+        reset();
+    }
+
+    // Move constructor
+    GpuInstanceLease(GpuInstanceLease&& other) noexcept : m_acquired(other.m_acquired) {
+        other.m_acquired = false;
+    }
+
+    // Move assignment
+    GpuInstanceLease& operator=(GpuInstanceLease&& other) noexcept {
+        if (this != &other) {
+            reset();
+            m_acquired = other.m_acquired;
+            other.m_acquired = false;
+        }
+        return *this;
+    }
+
+    // Non-copyable
+    GpuInstanceLease(const GpuInstanceLease&) = delete;
+    GpuInstanceLease& operator=(const GpuInstanceLease&) = delete;
+
+    bool is_acquired() const { return m_acquired; }
+    explicit operator bool() const { return m_acquired; }
+
+    bool acquire() {
+        if (!m_acquired) {
+            m_acquired = acquire_gpu_instance();
+        }
+        return m_acquired;
+    }
+
+    void reset() {
+        if (m_acquired) {
+            release_gpu_instance();
+            m_acquired = false;
+        }
+    }
+
+private:
+    bool m_acquired;
+};
 
 } // namespace veilframe

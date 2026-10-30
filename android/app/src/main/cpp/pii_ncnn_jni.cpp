@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <mutex>
+#include <limits>
 
 #define TAG "VeilFrame.PiiNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -112,51 +113,62 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeInit(
     JNIEnv* env, jclass clazz,
     jobject assetManager
 ) {
-    std::lock_guard<std::mutex> lock(g_pii_mutex);
+    try {
+        std::lock_guard<std::mutex> lock(g_pii_mutex);
 
-    AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-    if (!mgr) {
-        LOGE("AssetManager is null in PII init");
+        AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
+        if (!mgr) {
+            LOGE("AssetManager is null in PII init");
+            return JNI_FALSE;
+        }
+
+        if (g_ultra_priors.empty()) {
+            generate_ultra_priors();
+        }
+
+        // Load UltraFace RFB-320
+        if (g_ultraface_net == nullptr) {
+            g_ultraface_net = new ncnn::Net();
+            g_ultraface_net->opt.lightmode = true;
+            g_ultraface_net->opt.num_threads = 4;
+            int r0 = g_ultraface_net->load_param(mgr, "models/pii/RFB-320.param");
+            int r1 = g_ultraface_net->load_model(mgr, "models/pii/RFB-320.bin");
+            if (r0 != 0 || r1 != 0) {
+                LOGE("Failed to load UltraFace: %d, %d", r0, r1);
+                delete g_ultraface_net;
+                g_ultraface_net = nullptr;
+            } else {
+                LOGI("UltraFace RFB-320 loaded successfully");
+            }
+        }
+
+        // Load YOLOv8n
+        if (g_yolov8_net == nullptr) {
+            g_yolov8_net = new ncnn::Net();
+            g_yolov8_net->opt.lightmode = true;
+            g_yolov8_net->opt.num_threads = 4;
+            int r0 = g_yolov8_net->load_param(mgr, "models/pii/yolov8n.ncnn.param");
+            int r1 = g_yolov8_net->load_model(mgr, "models/pii/yolov8n.ncnn.bin");
+            if (r0 != 0 || r1 != 0) {
+                LOGE("Failed to load YOLOv8n: %d, %d", r0, r1);
+                delete g_yolov8_net;
+                g_yolov8_net = nullptr;
+            } else {
+                LOGI("YOLOv8n-NCNN loaded successfully");
+            }
+        }
+
+        return (g_ultraface_net != nullptr || g_yolov8_net != nullptr) ? JNI_TRUE : JNI_FALSE;
+    } catch (const std::bad_alloc& e) {
+        LOGE("Out of memory in PII nativeInit: %s", e.what());
+        return JNI_FALSE;
+    } catch (const std::exception& e) {
+        LOGE("Exception in PII nativeInit: %s", e.what());
+        return JNI_FALSE;
+    } catch (...) {
+        LOGE("Unknown exception in PII nativeInit");
         return JNI_FALSE;
     }
-
-    if (g_ultra_priors.empty()) {
-        generate_ultra_priors();
-    }
-
-    // Load UltraFace RFB-320
-    if (g_ultraface_net == nullptr) {
-        g_ultraface_net = new ncnn::Net();
-        g_ultraface_net->opt.lightmode = true;
-        g_ultraface_net->opt.num_threads = 4;
-        int r0 = g_ultraface_net->load_param(mgr, "models/pii/RFB-320.param");
-        int r1 = g_ultraface_net->load_model(mgr, "models/pii/RFB-320.bin");
-        if (r0 != 0 || r1 != 0) {
-            LOGE("Failed to load UltraFace: %d, %d", r0, r1);
-            delete g_ultraface_net;
-            g_ultraface_net = nullptr;
-        } else {
-            LOGI("UltraFace RFB-320 loaded successfully");
-        }
-    }
-
-    // Load YOLOv8n
-    if (g_yolov8_net == nullptr) {
-        g_yolov8_net = new ncnn::Net();
-        g_yolov8_net->opt.lightmode = true;
-        g_yolov8_net->opt.num_threads = 4;
-        int r0 = g_yolov8_net->load_param(mgr, "models/pii/yolov8n.ncnn.param");
-        int r1 = g_yolov8_net->load_model(mgr, "models/pii/yolov8n.ncnn.bin");
-        if (r0 != 0 || r1 != 0) {
-            LOGE("Failed to load YOLOv8n: %d, %d", r0, r1);
-            delete g_yolov8_net;
-            g_yolov8_net = nullptr;
-        } else {
-            LOGI("YOLOv8n-NCNN loaded successfully");
-        }
-    }
-
-    return (g_ultraface_net != nullptr || g_yolov8_net != nullptr) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -166,113 +178,138 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectFaces(
     jfloat scoreThreshold,
     jfloat iouThreshold
 ) {
-    std::lock_guard<std::mutex> lock(g_pii_mutex);
-    if (!g_ultraface_net) {
-        LOGE("UltraFace net not loaded");
-        return nullptr;
-    }
-    if (!srcBitmap) return nullptr;
+    try {
+        std::lock_guard<std::mutex> lock(g_pii_mutex);
+        if (!g_ultraface_net) {
+            LOGE("UltraFace net not loaded");
+            return nullptr;
+        }
+        if (!srcBitmap) return nullptr;
 
-    AndroidBitmapInfo info;
-    if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
-    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
-        LOGE("UltraFace requires RGBA_8888 format (got %d)", info.format);
-        return nullptr;
-    }
+        if (!std::isfinite(scoreThreshold) || scoreThreshold < 0.0f || scoreThreshold > 1.0f) {
+            LOGE("UltraFace invalid scoreThreshold: %f", scoreThreshold);
+            return nullptr;
+        }
+        if (!std::isfinite(iouThreshold) || iouThreshold < 0.0f || iouThreshold > 1.0f) {
+            LOGE("UltraFace invalid iouThreshold: %f", iouThreshold);
+            return nullptr;
+        }
 
-    const int orig_w = info.width;
-    const int orig_h = info.height;
-    if (orig_w <= 0 || orig_h <= 0 ||
-        static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
-        LOGE("UltraFace rejected invalid dimensions %dx%d", orig_w, orig_h);
-        return nullptr;
-    }
+        AndroidBitmapInfo info;
+        if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+        if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+            LOGE("UltraFace requires RGBA_8888 format (got %d)", info.format);
+            return nullptr;
+        }
 
-    veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
-    if (!pixel_scope.locked || !pixel_scope.pixels) {
-        LOGE("UltraFace failed to lock bitmap pixels");
-        return nullptr;
-    }
+        const int orig_w = info.width;
+        const int orig_h = info.height;
+        if (orig_w <= 0 || orig_h <= 0 ||
+            static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
+            LOGE("UltraFace rejected invalid dimensions %dx%d", orig_w, orig_h);
+            return nullptr;
+        }
 
-    ncnn::Mat in = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
-        ncnn::Mat::PIXEL_RGBA2RGB,
-        orig_w, orig_h,
-        static_cast<int>(info.stride),
-        ULTRA_IN_W, ULTRA_IN_H
-    );
-    pixel_scope.unlock();
+        veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
+        if (!pixel_scope.locked || !pixel_scope.pixels) {
+            LOGE("UltraFace failed to lock bitmap pixels");
+            return nullptr;
+        }
 
-    const float mean_vals[3] = {127.0f, 127.0f, 127.0f};
-    const float norm_vals[3] = {1.0f / 128.0f, 1.0f / 128.0f, 1.0f / 128.0f};
-    in.substract_mean_normalize(mean_vals, norm_vals);
+        ncnn::Mat in = ncnn::Mat::from_pixels_resize(
+            reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
+            ncnn::Mat::PIXEL_RGBA2RGB,
+            orig_w, orig_h,
+            static_cast<int>(info.stride),
+            ULTRA_IN_W, ULTRA_IN_H
+        );
+        pixel_scope.unlock();
 
-    ncnn::Extractor ex = g_ultraface_net->create_extractor();
-    ex.set_light_mode(true);
-    ex.input("input", in);
+        const float mean_vals[3] = {127.0f, 127.0f, 127.0f};
+        const float norm_vals[3] = {1.0f / 128.0f, 1.0f / 128.0f, 1.0f / 128.0f};
+        in.substract_mean_normalize(mean_vals, norm_vals);
 
-    ncnn::Mat scores, boxes;
-    int ret_s = ex.extract("scores", scores);
-    int ret_b = ex.extract("boxes", boxes);
-    if (ret_s != 0 || ret_b != 0 || scores.empty() || boxes.empty()) {
-        LOGE("UltraFace extraction failed (ret_s=%d, ret_b=%d, scores_empty=%d, boxes_empty=%d)",
-             ret_s, ret_b, scores.empty(), boxes.empty());
-        return nullptr;
-    }
+        ncnn::Extractor ex = g_ultraface_net->create_extractor();
+        ex.set_light_mode(true);
+        ex.input("input", in);
 
-    const float center_variance = 0.1f;
-    const float size_variance = 0.2f;
-    const int num_anchors = static_cast<int>(g_ultra_priors.size());
+        ncnn::Mat scores, boxes;
+        int ret_s = ex.extract("scores", scores);
+        int ret_b = ex.extract("boxes", boxes);
+        if (ret_s != 0 || ret_b != 0 || scores.empty() || boxes.empty()) {
+            LOGE("UltraFace extraction failed (ret_s=%d, ret_b=%d, scores_empty=%d, boxes_empty=%d)",
+                 ret_s, ret_b, scores.empty(), boxes.empty());
+            return nullptr;
+        }
 
-    if (scores.c < 1 || boxes.c < 1 ||
-        scores.channel(0).total() < static_cast<size_t>(num_anchors * 2) ||
-        boxes.channel(0).total() < static_cast<size_t>(num_anchors * 4)) {
-        LOGE("UltraFace tensor shape invalid: scores_c=%d, boxes_c=%d, num_anchors=%d",
-             scores.c, boxes.c, num_anchors);
-        return nullptr;
-    }
+        const float center_variance = 0.1f;
+        const float size_variance = 0.2f;
+        const int num_anchors = static_cast<int>(g_ultra_priors.size());
 
-    std::vector<BBox> raw_boxes;
-    for (int i = 0; i < num_anchors; i++) {
-        float score = scores.channel(0)[i * 2 + 1];
-        if (score > scoreThreshold) {
-            float x_center = boxes.channel(0)[i * 4] * center_variance * g_ultra_priors[i][2] + g_ultra_priors[i][0];
-            float y_center = boxes.channel(0)[i * 4 + 1] * center_variance * g_ultra_priors[i][3] + g_ultra_priors[i][1];
-            float w = std::exp(boxes.channel(0)[i * 4 + 2] * size_variance) * g_ultra_priors[i][2];
-            float h = std::exp(boxes.channel(0)[i * 4 + 3] * size_variance) * g_ultra_priors[i][3];
+        if (scores.c < 1 || boxes.c < 1 ||
+            scores.channel(0).total() < static_cast<size_t>(num_anchors * 2) ||
+            boxes.channel(0).total() < static_cast<size_t>(num_anchors * 4)) {
+            LOGE("UltraFace tensor shape invalid: scores_c=%d, boxes_c=%d, num_anchors=%d",
+                 scores.c, boxes.c, num_anchors);
+            return nullptr;
+        }
 
-            float x1 = clip(x_center - w / 2.0f, 1.0f) * orig_w;
-            float y1 = clip(y_center - h / 2.0f, 1.0f) * orig_h;
-            float x2 = clip(x_center + w / 2.0f, 1.0f) * orig_w;
-            float y2 = clip(y_center + h / 2.0f, 1.0f) * orig_h;
+        std::vector<BBox> raw_boxes;
+        for (int i = 0; i < num_anchors; i++) {
+            float score = scores.channel(0)[i * 2 + 1];
+            if (score > scoreThreshold) {
+                float x_center = boxes.channel(0)[i * 4] * center_variance * g_ultra_priors[i][2] + g_ultra_priors[i][0];
+                float y_center = boxes.channel(0)[i * 4 + 1] * center_variance * g_ultra_priors[i][3] + g_ultra_priors[i][1];
+                float w = std::exp(boxes.channel(0)[i * 4 + 2] * size_variance) * g_ultra_priors[i][2];
+                float h = std::exp(boxes.channel(0)[i * 4 + 3] * size_variance) * g_ultra_priors[i][3];
 
-            if (x2 > x1 && y2 > y1) {
-                raw_boxes.push_back({x1, y1, x2, y2, score, 0});
+                float x1 = clip(x_center - w / 2.0f, 1.0f) * orig_w;
+                float y1 = clip(y_center - h / 2.0f, 1.0f) * orig_h;
+                float x2 = clip(x_center + w / 2.0f, 1.0f) * orig_w;
+                float y2 = clip(y_center + h / 2.0f, 1.0f) * orig_h;
+
+                if (x2 > x1 && y2 > y1) {
+                    raw_boxes.push_back({x1, y1, x2, y2, score, 0});
+                }
             }
         }
+
+        std::vector<BBox> picked;
+        nms_filter(raw_boxes, iouThreshold, picked);
+
+        // Stride 6: [class_id (0=FACE), score, x1, y1, x2, y2]
+        const int stride = 6;
+        if (picked.size() > static_cast<size_t>(std::numeric_limits<jsize>::max() / stride)) {
+            LOGE("Too many detected face boxes: %zu", picked.size());
+            return nullptr;
+        }
+
+        jfloatArray result = env->NewFloatArray(static_cast<jsize>(picked.size() * stride));
+        if (!result) return nullptr;
+
+        std::vector<float> flat;
+        flat.reserve(picked.size() * stride);
+        for (const auto& b : picked) {
+            flat.push_back(0.0f); // PiiClass.FACE (class 0)
+            flat.push_back(b.score);
+            flat.push_back(b.x1);
+            flat.push_back(b.y1);
+            flat.push_back(b.x2);
+            flat.push_back(b.y2);
+        }
+
+        env->SetFloatArrayRegion(result, 0, flat.size(), flat.data());
+        return result;
+    } catch (const std::bad_alloc& e) {
+        LOGE("Out of memory in UltraFace nativeDetectFaces: %s", e.what());
+        return nullptr;
+    } catch (const std::exception& e) {
+        LOGE("Exception in UltraFace nativeDetectFaces: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("Unknown exception in UltraFace nativeDetectFaces");
+        return nullptr;
     }
-
-    std::vector<BBox> picked;
-    nms_filter(raw_boxes, iouThreshold, picked);
-
-    // Stride 6: [class_id (0=FACE), score, x1, y1, x2, y2]
-    const int stride = 6;
-    jfloatArray result = env->NewFloatArray(static_cast<jsize>(picked.size() * stride));
-    if (!result) return nullptr;
-
-    std::vector<float> flat;
-    flat.reserve(picked.size() * stride);
-    for (const auto& b : picked) {
-        flat.push_back(0.0f); // PiiClass.FACE (class 0)
-        flat.push_back(b.score);
-        flat.push_back(b.x1);
-        flat.push_back(b.y1);
-        flat.push_back(b.x2);
-        flat.push_back(b.y2);
-    }
-
-    env->SetFloatArrayRegion(result, 0, flat.size(), flat.data());
-    return result;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -282,83 +319,92 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
     jfloat scoreThreshold,
     jfloat iouThreshold
 ) {
-    std::lock_guard<std::mutex> lock(g_pii_mutex);
-    if (!g_yolov8_net) {
-        LOGE("YOLOv8 net not loaded");
-        return nullptr;
-    }
-    if (!srcBitmap) return nullptr;
+    try {
+        std::lock_guard<std::mutex> lock(g_pii_mutex);
+        if (!g_yolov8_net) {
+            LOGE("YOLOv8 net not loaded");
+            return nullptr;
+        }
+        if (!srcBitmap) return nullptr;
 
-    AndroidBitmapInfo info;
-    if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
-    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
-        LOGE("YOLOv8 requires RGBA_8888 format (got %d)", info.format);
-        return nullptr;
-    }
+        if (!std::isfinite(scoreThreshold) || scoreThreshold < 0.0f || scoreThreshold > 1.0f) {
+            LOGE("YOLOv8 invalid scoreThreshold: %f", scoreThreshold);
+            return nullptr;
+        }
+        if (!std::isfinite(iouThreshold) || iouThreshold < 0.0f || iouThreshold > 1.0f) {
+            LOGE("YOLOv8 invalid iouThreshold: %f", iouThreshold);
+            return nullptr;
+        }
 
-    const int orig_w = info.width;
-    const int orig_h = info.height;
-    if (orig_w <= 0 || orig_h <= 0 ||
-        static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
-        LOGE("YOLOv8 rejected invalid dimensions %dx%d", orig_w, orig_h);
-        return nullptr;
-    }
+        AndroidBitmapInfo info;
+        if (AndroidBitmap_getInfo(env, srcBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return nullptr;
+        if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+            LOGE("YOLOv8 requires RGBA_8888 format (got %d)", info.format);
+            return nullptr;
+        }
 
-    veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
-    if (!pixel_scope.locked || !pixel_scope.pixels) {
-        LOGE("YOLOv8 failed to lock bitmap pixels");
-        return nullptr;
-    }
+        const int orig_w = info.width;
+        const int orig_h = info.height;
+        if (orig_w <= 0 || orig_h <= 0 ||
+            static_cast<uint64_t>(orig_w) * orig_h > veilframe::MAX_BITMAP_PIXELS) {
+            LOGE("YOLOv8 rejected invalid dimensions %dx%d", orig_w, orig_h);
+            return nullptr;
+        }
 
-    const int target_size = 640;
-    ncnn::Mat in = ncnn::Mat::from_pixels_resize(
-        reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
-        ncnn::Mat::PIXEL_RGBA2RGB,
-        orig_w, orig_h,
-        static_cast<int>(info.stride),
-        target_size, target_size
-    );
-    pixel_scope.unlock();
+        veilframe::BitmapPixelScope pixel_scope(env, srcBitmap);
+        if (!pixel_scope.locked || !pixel_scope.pixels) {
+            LOGE("YOLOv8 failed to lock bitmap pixels");
+            return nullptr;
+        }
 
-    const float norm_vals[3] = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
-    in.substract_mean_normalize(0, norm_vals);
+        const int target_size = 640;
+        ncnn::Mat in = ncnn::Mat::from_pixels_resize(
+            reinterpret_cast<const unsigned char*>(pixel_scope.pixels),
+            ncnn::Mat::PIXEL_RGBA2RGB,
+            orig_w, orig_h,
+            static_cast<int>(info.stride),
+            target_size, target_size
+        );
+        pixel_scope.unlock();
 
-    ncnn::Extractor ex = g_yolov8_net->create_extractor();
-    ex.set_light_mode(true);
-    ex.input("in0", in);
+        const float norm_vals[3] = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
+        in.substract_mean_normalize(0, norm_vals);
 
-    ncnn::Mat out;
-    int ret = ex.extract("out0", out);
-    if (ret != 0) {
-        // Fallback blob names for alternate pnnx exports
-        ret = ex.extract("output", out);
-    }
-    if (ret != 0 || out.empty() || out.dims < 2) {
-        LOGE("YOLOv8 extraction failed or output tensor invalid (ret=%d, empty=%d, dims=%d)",
-             ret, out.empty(), out.dims);
-        return nullptr;
-    }
+        ncnn::Extractor ex = g_yolov8_net->create_extractor();
+        ex.set_light_mode(true);
+        ex.input("in0", in);
 
-    std::vector<BBox> candidates;
-    if (!out.empty() && out.dims >= 2) {
-        int num_anchors = 8400;
-        int total_features = 84;
+        ncnn::Mat out;
+        int ret = ex.extract("out0", out);
+        if (ret != 0) {
+            // Fallback blob names for alternate pnnx exports
+            ret = ex.extract("output", out);
+        }
+        if (ret != 0 || out.empty() || out.dims < 2) {
+            LOGE("YOLOv8 extraction failed or output tensor invalid (ret=%d, empty=%d, dims=%d)",
+                 ret, out.empty(), out.dims);
+            return nullptr;
+        }
+
+        int num_anchors = 0;
+        int total_features = 0;
         bool transposed = false;
 
-        if (out.h == 8400) {
+        if (out.h == 8400 && (out.w == 84 || out.w == 144)) {
             num_anchors = out.h;
             total_features = out.w;
             transposed = false;
-        } else if (out.w == 8400) {
+        } else if (out.w == 8400 && (out.h == 84 || out.h == 144)) {
             num_anchors = out.w;
             total_features = out.h;
             transposed = true;
         } else {
-            num_anchors = out.h;
-            total_features = out.w;
-            transposed = false;
+            LOGE("YOLOv8 unexpected output tensor dimensions: w=%d, h=%d, c=%d, dims=%d",
+                 out.w, out.h, out.c, out.dims);
+            return nullptr;
         }
 
+        std::vector<BBox> candidates;
         const float scale_x = static_cast<float>(orig_w) / target_size;
         const float scale_y = static_cast<float>(orig_h) / target_size;
 
@@ -488,45 +534,63 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeDetectPii(
                 }
             }
         }
+
+        std::vector<BBox> picked;
+        nms_filter(candidates, iouThreshold, picked);
+
+        // Stride 6: [class_id, score, x1, y1, x2, y2]
+        const int stride = 6;
+        if (picked.size() > static_cast<size_t>(std::numeric_limits<jsize>::max() / stride)) {
+            LOGE("Too many detected PII boxes: %zu", picked.size());
+            return nullptr;
+        }
+
+        jfloatArray result = env->NewFloatArray(static_cast<jsize>(picked.size() * stride));
+        if (!result) return nullptr;
+
+        std::vector<float> flat;
+        flat.reserve(picked.size() * stride);
+        for (const auto& b : picked) {
+            flat.push_back(static_cast<float>(b.class_id));
+            flat.push_back(b.score);
+            flat.push_back(b.x1);
+            flat.push_back(b.y1);
+            flat.push_back(b.x2);
+            flat.push_back(b.y2);
+        }
+
+        env->SetFloatArrayRegion(result, 0, flat.size(), flat.data());
+        return result;
+    } catch (const std::bad_alloc& e) {
+        LOGE("Out of memory in YOLOv8 nativeDetectPii: %s", e.what());
+        return nullptr;
+    } catch (const std::exception& e) {
+        LOGE("Exception in YOLOv8 nativeDetectPii: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("Unknown exception in YOLOv8 nativeDetectPii");
+        return nullptr;
     }
-
-    std::vector<BBox> picked;
-    nms_filter(candidates, iouThreshold, picked);
-
-    // Stride 6: [class_id, score, x1, y1, x2, y2]
-    const int stride = 6;
-    jfloatArray result = env->NewFloatArray(static_cast<jsize>(picked.size() * stride));
-    if (!result) return nullptr;
-
-    std::vector<float> flat;
-    flat.reserve(picked.size() * stride);
-    for (const auto& b : picked) {
-        flat.push_back(static_cast<float>(b.class_id));
-        flat.push_back(b.score);
-        flat.push_back(b.x1);
-        flat.push_back(b.y1);
-        flat.push_back(b.x2);
-        flat.push_back(b.y2);
-    }
-
-    env->SetFloatArrayRegion(result, 0, flat.size(), flat.data());
-    return result;
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeRelease(
     JNIEnv* env, jclass clazz
 ) {
-    std::lock_guard<std::mutex> lock(g_pii_mutex);
-    if (g_ultraface_net) {
-        delete g_ultraface_net;
-        g_ultraface_net = nullptr;
+    try {
+        std::lock_guard<std::mutex> lock(g_pii_mutex);
+        if (g_ultraface_net) {
+            delete g_ultraface_net;
+            g_ultraface_net = nullptr;
+        }
+        if (g_yolov8_net) {
+            delete g_yolov8_net;
+            g_yolov8_net = nullptr;
+        }
+        LOGI("PII NCNN nets released");
+    } catch (...) {
+        LOGE("Exception in PII nativeRelease");
     }
-    if (g_yolov8_net) {
-        delete g_yolov8_net;
-        g_yolov8_net = nullptr;
-    }
-    LOGI("PII NCNN nets released");
 }
 
 } // extern "C"

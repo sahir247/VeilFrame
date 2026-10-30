@@ -232,4 +232,79 @@ class OpenXmlDocumentParserTest {
             tempFile.delete()
         }
     }
+
+    @Test
+    fun testParseXlsxExplicitRowNumbersAndSparseRows() {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">
+                <si><t>FirstRow</t></si>
+                <si><t>ThirdRow</t></si>
+                <si><t>FifthRow</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="ExplicitRows" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        // XML only has row 1, 3, 5 (rows 2 and 4 are physically empty/omitted)
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1">
+                        <c r="A1" t="s"><v>0</v></c>
+                    </row>
+                    <row r="3">
+                        <c r="B3" t="s"><v>1</v></c>
+                    </row>
+                    <row r="5">
+                        <c r="C5" t="s"><v>2</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val tempFile = createZipFile(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+
+        try {
+            val workbook = OpenXmlDocumentParser.parseXlsx(tempFile)
+            assertNotNull(workbook)
+            assertEquals(1, workbook.sheets.size)
+            val sheet = workbook.sheets[0]
+            assertEquals("ExplicitRows", sheet.name)
+            // Exactly 5 rows must exist, preserving the 1-based row indexing of rows 1, 3, and 5
+            assertEquals(5, sheet.rows.size)
+
+            // Row 1 (index 0)
+            assertEquals("FirstRow", sheet.rows[0][0])
+
+            // Row 2 (index 1) - padded empty spacer row
+            assertTrue(sheet.rows[1].isEmpty() || sheet.rows[1].all { it.isBlank() })
+
+            // Row 3 (index 2) - sparse col B3 -> index 1
+            assertEquals("", sheet.rows[2][0])
+            assertEquals("ThirdRow", sheet.rows[2][1])
+
+            // Row 4 (index 3) - padded empty spacer row
+            assertTrue(sheet.rows[3].isEmpty() || sheet.rows[3].all { it.isBlank() })
+
+            // Row 5 (index 4) - sparse col C5 -> index 2
+            assertEquals("", sheet.rows[4][0])
+            assertEquals("", sheet.rows[4][1])
+            assertEquals("FifthRow", sheet.rows[4][2])
+        } finally {
+            tempFile.delete()
+        }
+    }
 }
