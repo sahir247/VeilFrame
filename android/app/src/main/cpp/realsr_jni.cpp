@@ -15,6 +15,7 @@
 #include "realsr.h"
 #include "vulkan_gpu_lifecycle.h"
 #include "bitmap_scope.h"
+#include "jni_utf_scope.h"
 
 #define TAG "VeilFrame.NcnnJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -514,146 +515,191 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
-    {
-        std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
-        g_lifecycle_cv.wait(lock, [] {
-            return g_runtime_state != RuntimeState::INITIALIZING;
-        });
-        if (g_runtime_state != RuntimeState::READY) return;
-        if (!g_instance_registry.empty()) {
-            LOGW("Draining %zu orphaned instance handle(s) during NCNN global teardown", g_instance_registry.size());
-            g_instance_registry.clear();
+    try {
+        {
+            std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
+            g_lifecycle_cv.wait(lock, [] {
+                return g_runtime_state != RuntimeState::INITIALIZING;
+            });
+            if (g_runtime_state != RuntimeState::READY) return;
+            if (!g_instance_registry.empty()) {
+                LOGW("Draining %zu orphaned instance handle(s) during NCNN global teardown", g_instance_registry.size());
+                g_instance_registry.clear();
+            }
+
+            // Prevent new operations first, then wait for every operation lease.
+            // This includes calls whose handle was removed by nativeDestroyInstance
+            // but whose shared instance pointer is still being used by inference.
+            g_runtime_state = RuntimeState::STOPPING;
+            g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
         }
 
-        // Prevent new operations first, then wait for every operation lease.
-        // This includes calls whose handle was removed by nativeDestroyInstance
-        // but whose shared instance pointer is still being used by inference.
-        g_runtime_state = RuntimeState::STOPPING;
-        g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
-    }
+        release_cached_global_refs(env);
+        veilframe::release_gpu_instance();
 
-    release_cached_global_refs(env);
-    veilframe::release_gpu_instance();
-
-    {
-        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-        g_runtime_state = RuntimeState::UNINITIALIZED;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            g_runtime_state = RuntimeState::UNINITIALIZED;
+        }
+        g_lifecycle_cv.notify_all();
+        LOGI("NCNN global destroyed");
+    } catch (const std::exception& e) {
+        LOGE("nativeGlobalDestroy exception: %s", e.what());
+    } catch (...) {
+        LOGE("nativeGlobalDestroy unknown exception");
     }
-    g_lifecycle_cv.notify_all();
-    LOGI("NCNN global destroyed");
 }
 
 JNIEXPORT jint JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuCount(JNIEnv* env, jclass clazz) {
-    OperationLease operation;
-    {
-        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-        if (g_runtime_state != RuntimeState::READY) return 0;
-        ++g_active_operations;
-        operation = OperationLease(true);
+    try {
+        OperationLease operation;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            if (g_runtime_state != RuntimeState::READY) return 0;
+            ++g_active_operations;
+            operation = OperationLease(true);
+        }
+        return ncnn::get_gpu_count();
+    } catch (const std::exception& e) {
+        LOGE("nativeGetGpuCount exception: %s", e.what());
+        return 0;
+    } catch (...) {
+        LOGE("nativeGetGpuCount unknown exception");
+        return 0;
     }
-    return ncnn::get_gpu_count();
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuDeviceName(JNIEnv* env, jclass clazz, jint gpuid) {
-    OperationLease operation;
-    {
-        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-        if (g_runtime_state != RuntimeState::READY) return nullptr;
-        ++g_active_operations;
-        operation = OperationLease(true);
-    }
+    try {
+        OperationLease operation;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            if (g_runtime_state != RuntimeState::READY) return nullptr;
+            ++g_active_operations;
+            operation = OperationLease(true);
+        }
 
-    const int count = ncnn::get_gpu_count();
-    if (gpuid < 0 || gpuid >= count) return nullptr;
-    const ncnn::GpuInfo& info = ncnn::get_gpu_info(gpuid);
-    const char* name = info.device_name();
-    return name ? env->NewStringUTF(name) : nullptr;
+        const int count = ncnn::get_gpu_count();
+        if (gpuid < 0 || gpuid >= count) return nullptr;
+        const ncnn::GpuInfo& info = ncnn::get_gpu_info(gpuid);
+        const char* name = info.device_name();
+        return name ? env->NewStringUTF(name) : nullptr;
+    } catch (const std::exception& e) {
+        LOGE("nativeGetGpuDeviceName exception: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("nativeGetGpuDeviceName unknown exception");
+        return nullptr;
+    }
 }
 
 JNIEXPORT jlong JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
     JNIEnv* env, jclass clazz, jint gpuid, jboolean ttaMode, jint numThreads
 ) {
-    OperationLease operation;
-    {
-        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-        if (g_runtime_state != RuntimeState::READY) {
-            LOGE("nativeCreateInstance called while NCNN runtime is not ready");
+    try {
+        OperationLease operation;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            if (g_runtime_state != RuntimeState::READY) {
+                LOGE("nativeCreateInstance called while NCNN runtime is not ready");
+                return 0;
+            }
+            ++g_active_operations;
+            operation = OperationLease(true);
+        }
+
+        std::shared_ptr<NativeInstance> instance;
+        try {
+            // Construction happens under an operation lease but without the global
+            // lifecycle mutex, so teardown can enter STOPPING and wait safely.
+            instance = std::make_shared<NativeInstance>(gpuid, ttaMode == JNI_TRUE, numThreads);
+        } catch (const std::bad_alloc&) {
+            LOGE("nativeCreateInstance: out of memory allocating RealSR");
+            return 0;
+        } catch (const std::exception& e) {
+            LOGE("nativeCreateInstance exception: %s", e.what());
+            return 0;
+        } catch (...) {
+            LOGE("nativeCreateInstance: unknown exception");
             return 0;
         }
-        ++g_active_operations;
-        operation = OperationLease(true);
-    }
 
-    std::shared_ptr<NativeInstance> instance;
-    try {
-        // Construction happens under an operation lease but without the global
-        // lifecycle mutex, so teardown can enter STOPPING and wait safely.
-        instance = std::make_shared<NativeInstance>(gpuid, ttaMode == JNI_TRUE, numThreads);
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) {
+            // A teardown started while the constructor was running. Do not publish
+            // a handle into a runtime that is stopping.
+            return 0;
+        }
+        jlong handle = g_next_handle.fetch_add(1);
+        if (handle <= 0 || handle == std::numeric_limits<jlong>::max()) {
+            LOGE("nativeCreateInstance: handle space exhausted");
+            return 0;
+        }
+        try {
+            g_instance_registry.emplace(handle, std::move(instance));
+        } catch (const std::bad_alloc&) {
+            LOGE("nativeCreateInstance: out of memory registering handle");
+            return 0;
+        }
+        return handle;
     } catch (const std::bad_alloc&) {
-        LOGE("nativeCreateInstance: out of memory allocating RealSR");
+        LOGE("nativeCreateInstance out of memory");
         return 0;
     } catch (const std::exception& e) {
         LOGE("nativeCreateInstance exception: %s", e.what());
         return 0;
     } catch (...) {
-        LOGE("nativeCreateInstance: unknown exception");
+        LOGE("nativeCreateInstance unknown exception");
         return 0;
     }
-
-    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-    if (g_runtime_state != RuntimeState::READY) {
-        // A teardown started while the constructor was running. Do not publish
-        // a handle into a runtime that is stopping.
-        return 0;
-    }
-    jlong handle = g_next_handle.fetch_add(1);
-    if (handle <= 0 || handle == std::numeric_limits<jlong>::max()) {
-        LOGE("nativeCreateInstance: handle space exhausted");
-        return 0;
-    }
-    try {
-        g_instance_registry.emplace(handle, std::move(instance));
-    } catch (const std::bad_alloc&) {
-        LOGE("nativeCreateInstance: out of memory registering handle");
-        return 0;
-    }
-    return handle;
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
     JNIEnv* env, jclass clazz, jlong handle
 ) {
-    OperationLease operation;
-    std::shared_ptr<NativeInstance> instance_to_drop;
-    {
-        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-        if (g_runtime_state != RuntimeState::READY) return;
-        auto it = g_instance_registry.find(handle);
-        if (it == g_instance_registry.end()) return;
-        ++g_active_operations;
-        operation = OperationLease(true);
-        instance_to_drop = std::move(it->second);
-        g_instance_registry.erase(it);
+    try {
+        OperationLease operation;
+        std::shared_ptr<NativeInstance> instance_to_drop;
+        {
+            std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+            if (g_runtime_state != RuntimeState::READY) return;
+            auto it = g_instance_registry.find(handle);
+            if (it == g_instance_registry.end()) return;
+            ++g_active_operations;
+            operation = OperationLease(true);
+            instance_to_drop = std::move(it->second);
+            g_instance_registry.erase(it);
+        }
+        // Drop the registry owner before releasing our lifecycle lease; any
+        // in-flight call has its own lease and keeps the engine alive until done.
+        instance_to_drop.reset();
+    } catch (const std::exception& e) {
+        LOGE("nativeDestroyInstance exception: %s", e.what());
+    } catch (...) {
+        LOGE("nativeDestroyInstance unknown exception");
     }
-    // Drop the registry owner before releasing our lifecycle lease; any
-    // in-flight call has its own lease and keeps the engine alive until done.
-    instance_to_drop.reset();
 }
 
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCancel(
     JNIEnv* env, jclass clazz, jlong handle
 ) {
-    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-    if (g_runtime_state != RuntimeState::READY) return;
-    auto it = g_instance_registry.find(handle);
-    if (it != g_instance_registry.end() && it->second) {
-        it->second->cancelled.store(true);
-        LOGI("nativeCancel: flagged handle %lld for immediate cancellation", (long long)handle);
+    try {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        if (g_runtime_state != RuntimeState::READY) return;
+        auto it = g_instance_registry.find(handle);
+        if (it != g_instance_registry.end() && it->second) {
+            it->second->cancelled.store(true);
+            LOGI("nativeCancel: flagged handle %lld for immediate cancellation", (long long)handle);
+        }
+    } catch (const std::exception& e) {
+        LOGE("nativeCancel exception: %s", e.what());
+    } catch (...) {
+        LOGE("nativeCancel unknown exception");
     }
 }
 
@@ -663,81 +709,87 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
     jstring paramPath, jstring binPath,
     jint scale, jint tilesize, jint prepadding
 ) {
-    InstanceLease lease = acquire_instance(handle);
-    if (!lease) {
-        LOGE("nativeLoadModel: invalid handle or runtime not ready: %lld", (long long)handle);
-        return -1;
-    }
-    std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
-
-    if (!paramPath || !binPath ||
-        (scale != 2 && scale != 3 && scale != 4) ||
-        tilesize < 64 || tilesize > 384 ||
-        prepadding < 0 || prepadding > 256) {
-        return -3;
-    }
-    const char* param_str = env->GetStringUTFChars(paramPath, nullptr);
-    if (!param_str) return -11;
-    const char* bin_str = env->GetStringUTFChars(binPath, nullptr);
-    if (!bin_str) {
-        env->ReleaseStringUTFChars(paramPath, param_str);
-        return -11;
-    }
-
-    int ret = -1;
     try {
-        RealSR& realsr = *lease.instance->engine;
-        realsr.scale = scale;
-        realsr.tilesize = tilesize;
-        realsr.prepadding = prepadding;
-        ret = realsr.load(param_str, bin_str);
-        // Normalize RealSR::load()'s private return values into stable JNI statuses.
-        // -2 (parameter parse) and -4 (graph contract) are deterministic model errors.
-        // -3 combines NCNN weight loading with backend initialization on some paths, so
-        // verify it on CPU once when GPU is active: corrupt weights fail there too.
-        if (ret == -2) {
-            LOGE("nativeLoadModel: NCNN rejected model parameters");
-            ret = -20;
-        } else if (ret == -3) {
-            if (realsr.has_gpu()) {
-                LOGE("nativeLoadModel: ambiguous Vulkan-backed NCNN load failure; allow one clean CPU verification");
-                ret = -2;
-            } else {
-                LOGE("nativeLoadModel: NCNN rejected model weights on CPU");
-                ret = -21;
+        InstanceLease lease = acquire_instance(handle);
+        if (!lease) {
+            LOGE("nativeLoadModel: invalid handle or runtime not ready: %lld", (long long)handle);
+            return -1;
+        }
+        std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
+
+        if (!paramPath || !binPath ||
+            (scale != 2 && scale != 3 && scale != 4) ||
+            tilesize < 64 || tilesize > 384 ||
+            prepadding < 0 || prepadding > 256) {
+            return -3;
+        }
+        veilframe::JniUtfStringScope param_str(env, paramPath);
+        if (!param_str) return -11;
+        veilframe::JniUtfStringScope bin_str(env, binPath);
+        if (!bin_str) return -11;
+
+        int ret = -1;
+        try {
+            RealSR& realsr = *lease.instance->engine;
+            realsr.scale = scale;
+            realsr.tilesize = tilesize;
+            realsr.prepadding = prepadding;
+            ret = realsr.load(param_str.c_str(), bin_str.c_str());
+            // Normalize RealSR::load()'s private return values into stable JNI statuses.
+            // -2 (parameter parse) and -4 (graph contract) are deterministic model errors.
+            // -3 combines NCNN weight loading with backend initialization on some paths, so
+            // verify it on CPU once when GPU is active: corrupt weights fail there too.
+            if (ret == -2) {
+                LOGE("nativeLoadModel: NCNN rejected model parameters");
+                ret = -20;
+            } else if (ret == -3) {
+                if (realsr.has_gpu()) {
+                    LOGE("nativeLoadModel: ambiguous Vulkan-backed NCNN load failure; allow one clean CPU verification");
+                    ret = -2;
+                } else {
+                    LOGE("nativeLoadModel: NCNN rejected model weights on CPU");
+                    ret = -21;
+                }
+            } else if (ret == -4) {
+                LOGE("nativeLoadModel: model input/output graph names are invalid");
+                ret = -22;
+            } else if (ret == -5 || ret == -6 || ret == -8) {
+                // These codes represent ncnn Vulkan/compute pipeline setup failures in
+                // RealSR::load. A new CPU instance can retry without reusing GPU state.
+                ret = realsr.has_gpu() ? -2 : -4;
+            } else if (ret == -7) {
+                // The required NCNN Interp layer is unavailable; retrying cannot repair
+                // a missing registered layer and would just obscure the installation fault.
+                ret = -23;
+            } else if (ret == -9) {
+                // TTA's 8-way streaming transform/merge pipeline is not implemented yet.
+                ret = -24;
+            } else if (ret != 0) {
+                LOGE("nativeLoadModel: unexpected RealSR load status %d", ret);
+                ret = -23;
             }
-        } else if (ret == -4) {
-            LOGE("nativeLoadModel: model input/output graph names are invalid");
-            ret = -22;
-        } else if (ret == -5 || ret == -6 || ret == -8) {
-            // These codes represent ncnn Vulkan/compute pipeline setup failures in
-            // RealSR::load. A new CPU instance can retry without reusing GPU state.
-            ret = realsr.has_gpu() ? -2 : -4;
-        } else if (ret == -7) {
-            // The required NCNN Interp layer is unavailable; retrying cannot repair
-            // a missing registered layer and would just obscure the installation fault.
+        } catch (const std::bad_alloc&) {
+            LOGE("nativeLoadModel: bad_alloc");
+            ret = -11;
+        } catch (const std::exception& e) {
+            LOGE("nativeLoadModel exception: %s", e.what());
             ret = -23;
-        } else if (ret == -9) {
-            // TTA's 8-way streaming transform/merge pipeline is not implemented yet.
-            ret = -24;
-        } else if (ret != 0) {
-            LOGE("nativeLoadModel: unexpected RealSR load status %d", ret);
+        } catch (...) {
+            LOGE("nativeLoadModel: unknown exception");
             ret = -23;
         }
-    } catch (const std::bad_alloc&) {
-        LOGE("nativeLoadModel: bad_alloc");
-        ret = -11;
-    } catch (const std::exception& e) {
-        LOGE("nativeLoadModel exception: %s", e.what());
-        ret = -23;
-    } catch (...) {
-        LOGE("nativeLoadModel: unknown exception");
-        ret = -23;
-    }
 
-    env->ReleaseStringUTFChars(paramPath, param_str);
-    env->ReleaseStringUTFChars(binPath, bin_str);
-    return ret;
+        return ret;
+    } catch (const std::bad_alloc&) {
+        LOGE("nativeLoadModel out of memory");
+        return -11;
+    } catch (const std::exception& e) {
+        LOGE("nativeLoadModel outer exception: %s", e.what());
+        return -23;
+    } catch (...) {
+        LOGE("nativeLoadModel outer unknown exception");
+        return -23;
+    }
 }
 
 JNIEXPORT jint JNICALL

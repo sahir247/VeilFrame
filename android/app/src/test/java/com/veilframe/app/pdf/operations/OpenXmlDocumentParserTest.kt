@@ -303,6 +303,138 @@ class OpenXmlDocumentParserTest {
             assertEquals("", sheet.rows[4][0])
             assertEquals("", sheet.rows[4][1])
             assertEquals("FifthRow", sheet.rows[4][2])
+
+            // Verify sparseRows collection
+            assertEquals(3, sheet.sparseRows.size)
+            assertEquals(1, sheet.sparseRows[0].rowIndex)
+            assertEquals("FirstRow", sheet.sparseRows[0].cells[0])
+            assertEquals(3, sheet.sparseRows[1].rowIndex)
+            assertEquals("ThirdRow", sheet.sparseRows[1].cells[1])
+            assertEquals(5, sheet.sparseRows[2].rowIndex)
+            assertEquals("FifthRow", sheet.sparseRows[2].cells[2])
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun testParseXlsxOutOfOrderAndDuplicateRows() {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+                <si><t>ItemRow5</t></si>
+                <si><t>ItemRow2ColA</t></si>
+                <si><t>ItemRow2ColB</t></si>
+                <si><t>ItemRow1</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="ReorderedSheet" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        // Out-of-order: row 5, then row 2 (part 1), then row 2 (duplicate tag, part 2), then row 1
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="5">
+                        <c r="A5" t="s"><v>0</v></c>
+                    </row>
+                    <row r="2">
+                        <c r="A2" t="s"><v>1</v></c>
+                    </row>
+                    <row r="2">
+                        <c r="B2" t="s"><v>2</v></c>
+                    </row>
+                    <row r="1">
+                        <c r="A1" t="s"><v>3</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val tempFile = createZipFile(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+
+        try {
+            val workbook = OpenXmlDocumentParser.parseXlsx(tempFile)
+            assertNotNull(workbook)
+            val sheet = workbook.sheets[0]
+
+            // Sorted rows: row 1, row 2, row 3 (empty), row 4 (empty), row 5
+            assertEquals(5, sheet.rows.size)
+
+            // Row 1
+            assertEquals("ItemRow1", sheet.rows[0][0])
+
+            // Row 2: merged from the two duplicate <row r="2"> elements
+            assertEquals("ItemRow2ColA", sheet.rows[1][0])
+            assertEquals("ItemRow2ColB", sheet.rows[1][1])
+
+            // Row 3 and 4: padded empty spacer rows
+            assertTrue(sheet.rows[2].isEmpty() || sheet.rows[2].all { it.isBlank() })
+            assertTrue(sheet.rows[3].isEmpty() || sheet.rows[3].all { it.isBlank() })
+
+            // Row 5
+            assertEquals("ItemRow5", sheet.rows[4][0])
+
+            // Sparse rows: exact keys 1, 2, 5
+            assertEquals(3, sheet.sparseRows.size)
+            assertEquals(1, sheet.sparseRows[0].rowIndex)
+            assertEquals(2, sheet.sparseRows[1].rowIndex)
+            assertEquals(5, sheet.sparseRows[2].rowIndex)
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun testParseXlsxOversizedGapRejection() {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">
+                <si><t>RowOne</t></si>
+                <si><t>RowTwentyThousand</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="OversizedGapSheet" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        // Row 1 followed directly by row 20000 (gap = 19,998)
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+                    <row r="20000"><c r="A20000" t="s"><v>1</v></c></row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val tempFile = createZipFile(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+
+        try {
+            OpenXmlDocumentParser.parseXlsx(tempFile)
         } finally {
             tempFile.delete()
         }

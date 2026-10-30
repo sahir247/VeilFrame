@@ -274,12 +274,155 @@ class OfficeConverterFidelityTest {
             assertTrue("Oversized row must paginate across at least 2 pages (got ${doc.numberOfPages})", doc.numberOfPages >= 2)
 
             val stripper = PDFTextStripper()
+            stripper.sortByPosition = true
             val text = stripper.getText(doc)
 
-            // Verify that every single line from 1 to 60 is present in the output PDF — ZERO lines lost!
-            for (i in 1..60) {
-                assertTrue("Line $i must be preserved across multi-page table pagination", text.contains("OversizedTraceLine_$i"))
+            // Extract all lines that match the trace line pattern
+            val extractedLines = text.lines()
+                .map { it.trim() }
+                .filter { it.startsWith("OversizedTraceLine_") }
+
+            assertEquals("All 60 lines must be present", 60, extractedLines.size)
+            assertEquals(
+                "All 60 lines must appear in exact monotonic sequential order from 1 to 60 without duplicates",
+                (1..60).map { "OversizedTraceLine_$it" },
+                extractedLines
+            )
+        }
+    }
+
+    class PositionalTextExtractor : PDFTextStripper() {
+        data class Glyph(
+            val char: String,
+            val pageNo: Int,
+            val x: Float,
+            val y: Float,
+            val width: Float,
+            val height: Float
+        )
+
+        data class TextRun(
+            val text: String,
+            val pageNo: Int,
+            val minX: Float,
+            val maxX: Float,
+            val minY: Float,
+            val maxY: Float
+        )
+
+        val glyphs = mutableListOf<Glyph>()
+
+        init {
+            sortByPosition = true
+        }
+
+        override fun processTextPosition(text: com.tom_roush.pdfbox.text.TextPosition) {
+            glyphs.add(
+                Glyph(
+                    char = text.unicode,
+                    pageNo = currentPageNo,
+                    x = text.xDirAdj,
+                    y = text.yDirAdj,
+                    width = text.widthDirAdj,
+                    height = text.heightDir
+                )
+            )
+            super.processTextPosition(text)
+        }
+
+        fun findText(target: String): List<TextRun> {
+            val results = mutableListOf<TextRun>()
+            if (target.isEmpty() || glyphs.size < target.length) return results
+            val targetLen = target.length
+            for (i in 0..glyphs.size - targetLen) {
+                val candidate = (0 until targetLen).map { glyphs[i + it].char }.joinToString("")
+                if (candidate == target) {
+                    val matchingGlyphs = glyphs.subList(i, i + targetLen)
+                    results.add(
+                        TextRun(
+                            text = target,
+                            pageNo = matchingGlyphs.first().pageNo,
+                            minX = matchingGlyphs.minOf { it.x },
+                            maxX = matchingGlyphs.maxOf { it.x + it.width },
+                            minY = matchingGlyphs.minOf { it.y },
+                            maxY = matchingGlyphs.maxOf { it.y + it.height }
+                        )
+                    )
+                }
             }
+            return results
+        }
+    }
+
+    @Test
+    fun testXlsxMultiColumnGeometryAndNoHorizontalOverlap() = runBlocking {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+                <si><t>ColAlphaHeader</t></si>
+                <si><t>ColBetaHeader</t></si>
+                <si><t>DataAlpha</t></si>
+                <si><t>LineB1&#10;LineB2&#10;LineB3&#10;LineB4&#10;LineB5</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="GeometryTest" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1">
+                        <c r="A1" t="s"><v>0</v></c>
+                        <c r="B1" t="s"><v>1</v></c>
+                    </row>
+                    <row r="2">
+                        <c r="A2" t="s"><v>2</v></c>
+                        <c r="B2" t="s"><v>3</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_geometry_xlsx.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            val extractor = PositionalTextExtractor()
+            extractor.getText(doc)
+
+            // Verify horizontal separation: ColAlpha text must be strictly to the left of ColBeta text
+            val colARuns = extractor.findText("DataAlpha")
+            val colBRuns = extractor.findText("LineB1")
+
+            assertTrue("Column A text DataAlpha must be extracted", colARuns.isNotEmpty())
+            assertTrue("Column B text LineB1 must be extracted", colBRuns.isNotEmpty())
+
+            val colA = colARuns.first()
+            val colB = colBRuns.first()
+
+            assertEquals("Both cells must be on page 1", 1, colA.pageNo)
+            assertEquals("Both cells must be on page 1", 1, colB.pageNo)
+
+            assertTrue(
+                "Column A right edge (${colA.maxX}) must be strictly less than Column B left edge (${colB.minX})",
+                colA.maxX < colB.minX
+            )
         }
     }
 
@@ -329,11 +472,38 @@ class OfficeConverterFidelityTest {
         assertTrue(pdfFile.length() > 0)
 
         PDDocument.load(pdfFile).use { doc ->
-            val stripper = PDFTextStripper()
-            val text = stripper.getText(doc)
+            val extractor = PositionalTextExtractor()
+            val text = extractor.getText(doc)
             assertTrue("Must contain Section_Alpha", text.contains("Section_Alpha"))
             assertTrue("Must contain Section_Beta", text.contains("Section_Beta"))
             assertTrue("Must contain Section_Gamma", text.contains("Section_Gamma"))
+
+            val alphaRuns = extractor.findText("Section_Alpha")
+            val betaRuns = extractor.findText("Section_Beta")
+            val gammaRuns = extractor.findText("Section_Gamma")
+
+            assertTrue("Section_Alpha must be extracted", alphaRuns.isNotEmpty())
+            assertTrue("Section_Beta must be extracted", betaRuns.isNotEmpty())
+            assertTrue("Section_Gamma must be extracted", gammaRuns.isNotEmpty())
+
+            val alpha = alphaRuns.first()
+            val beta = betaRuns.first()
+            val gamma = gammaRuns.first()
+
+            // In PDFBox yDirAdj: 0 is at the top of the page, increasing downwards.
+            // Row 1 is at the top, Row 4 is below Row 1 (with empty Rows 2 and 3 in between),
+            // Row 7 is below Row 4 (with empty Rows 5 and 6 in between).
+            // Each empty row is at least 20pt tall.
+            // Therefore, Row 4's Y position must be at least 30pt greater than Row 1's Y position,
+            // and Row 7's Y position must be at least 30pt greater than Row 4's Y position.
+            assertTrue(
+                "Row 4 y (${beta.minY}) must be lower than Row 1 y (${alpha.minY}) by at least 30pt",
+                beta.minY > alpha.minY + 30f
+            )
+            assertTrue(
+                "Row 7 y (${gamma.minY}) must be lower than Row 4 y (${beta.minY}) by at least 30pt",
+                gamma.minY > beta.minY + 30f
+            )
         }
     }
 }

@@ -6,6 +6,7 @@
 #include "cpu.h"
 #include "vulkan_gpu_lifecycle.h"
 #include "bitmap_scope.h"
+#include "jni_utf_scope.h"
 #include <cmath>
 #include <mutex>
 #include <string>
@@ -53,13 +54,13 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
             LOGE("RIFE modelDir is null");
             return JNI_FALSE;
         }
-        const char* dir_c = env->GetStringUTFChars(modelDir, nullptr);
-        if (!dir_c) {
+        veilframe::JniUtfStringScope dir_scope(env, modelDir);
+        if (!dir_scope) {
             LOGE("Failed to get modelDir UTF chars");
             return JNI_FALSE;
         }
-        std::string dir_str(dir_c);
-        env->ReleaseStringUTFChars(modelDir, dir_c);
+        std::string dir_str(dir_scope.c_str());
+        dir_scope.release();
         g_rife_model_dir = dir_str;
 
         std::string param_path = dir_str + "/flownet.param";

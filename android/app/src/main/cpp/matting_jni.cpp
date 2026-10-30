@@ -5,9 +5,11 @@
 #include "net.h"
 #include "bitmap_scope.h"
 #include "vulkan_gpu_lifecycle.h"
+#include "jni_utf_scope.h"
 #include <algorithm>
 #include <mutex>
 #include <cmath>
+#include <memory>
 
 #define TAG "VeilFrame.MattingNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -52,20 +54,19 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             return JNI_FALSE;
         }
 
-        const char* param_c = env->GetStringUTFChars(paramPath, nullptr);
+        veilframe::JniUtfStringScope param_c(env, paramPath);
         if (!param_c) {
             LOGE("Failed to get paramPath UTF chars");
             return JNI_FALSE;
         }
 
-        const char* bin_c = env->GetStringUTFChars(binPath, nullptr);
+        veilframe::JniUtfStringScope bin_c(env, binPath);
         if (!bin_c) {
             LOGE("Failed to get binPath UTF chars");
-            env->ReleaseStringUTFChars(paramPath, param_c);
             return JNI_FALSE;
         }
 
-        ncnn::Net* net = new ncnn::Net();
+        std::unique_ptr<ncnn::Net> net = std::make_unique<ncnn::Net>();
         net->opt.lightmode = true;
         net->opt.num_threads = 4;
         net->opt.blob_allocator = &g_matting_blob_allocator;
@@ -89,25 +90,18 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
             if (mgr == nullptr) {
                 LOGE("AAssetManager_fromJava returned null");
-                env->ReleaseStringUTFChars(paramPath, param_c);
-                env->ReleaseStringUTFChars(binPath, bin_c);
-                delete net;
                 return JNI_FALSE;
             }
-            ret_param = net->load_param(mgr, param_c);
-            ret_bin = net->load_model(mgr, bin_c);
+            ret_param = net->load_param(mgr, param_c.c_str());
+            ret_bin = net->load_model(mgr, bin_c.c_str());
         } else {
-            ret_param = net->load_param(param_c);
-            ret_bin = net->load_model(bin_c);
+            ret_param = net->load_param(param_c.c_str());
+            ret_bin = net->load_model(bin_c.c_str());
         }
-
-        env->ReleaseStringUTFChars(paramPath, param_c);
-        env->ReleaseStringUTFChars(binPath, bin_c);
 
         if (ret_param != 0 || ret_bin != 0) {
             LOGE("Failed to load matting model: param=%d, bin=%d (type=%d, isAsset=%d)",
                  ret_param, ret_bin, modelType, isAsset ? 1 : 0);
-            delete net;
             return JNI_FALSE;
         }
 
@@ -115,13 +109,13 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             if (g_u2netp_net != nullptr) {
                 delete g_u2netp_net;
             }
-            g_u2netp_net = net;
+            g_u2netp_net = net.release();
             g_u2netp_gpu_lease = std::move(local_lease);
         } else {
             if (g_modnet_net != nullptr) {
                 delete g_modnet_net;
             }
-            g_modnet_net = net;
+            g_modnet_net = net.release();
             g_modnet_gpu_lease = std::move(local_lease);
         }
 

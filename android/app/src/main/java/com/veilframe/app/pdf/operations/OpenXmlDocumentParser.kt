@@ -297,10 +297,18 @@ object OpenXmlDocumentParser {
     // XLSX Models & Parsing
     // -------------------------------------------------------------------------
 
+    data class XlsxRow(
+        val rowIndex: Int,
+        val cells: List<String>
+    )
+
     data class XlsxSheetData(
         val name: String,
-        val rows: List<List<String>>
+        val rows: List<List<String>>,
+        val sparseRows: List<XlsxRow> = rows.mapIndexed { idx, cells -> XlsxRow(idx + 1, cells) }
     )
+
+    const val MAX_SUPPORTED_ROW_GAP = 500
 
     data class XlsxWorkbookData(
         val sheets: List<XlsxSheetData>
@@ -334,14 +342,17 @@ object OpenXmlDocumentParser {
                     val sheetEntry = zip.getEntry("xl/worksheets/sheet$sheetIdx.xml") ?: break
                     val name = if (sheetIdx - 1 < sheetNames.size) sheetNames[sheetIdx - 1] else "Sheet$sheetIdx"
                     val sheetRows = mutableListOf<List<String>>()
+                    val sheetSparseRows = mutableListOf<XlsxRow>()
                     zip.getInputStream(sheetEntry).use { stream ->
-                        parseWorksheet(stream, sharedStrings, sheetRows)
+                        parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows)
                     }
-                    sheets.add(XlsxSheetData(name = name, rows = sheetRows))
+                    sheets.add(XlsxSheetData(name = name, rows = sheetRows, sparseRows = sheetSparseRows))
                     sheetIdx++
                 }
             }
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            if (e is IllegalArgumentException) throw e
+        }
         return XlsxWorkbookData(sheets)
     }
 
@@ -391,26 +402,27 @@ object OpenXmlDocumentParser {
     private fun parseWorksheet(
         stream: InputStream,
         sharedStrings: List<String>,
-        outRows: MutableList<List<String>>
+        outRows: MutableList<List<String>>,
+        outSparseRows: MutableList<XlsxRow>? = null
     ) {
         val doc = newDocBuilder().parse(stream)
         val rowList = doc.getElementsByTagName("row")
+        val rowMap = java.util.TreeMap<Int, MutableList<String>>()
+        var autoRowIndex = 1
+
         for (i in 0 until rowList.length) {
             val rowElem = rowList.item(i) as Element
             val explicitRowAttr = rowElem.getAttribute("r")
             val explicitRowNumber = explicitRowAttr.toIntOrNull()
-
-            // If an explicit row number is provided, pad missing skipped spacer rows
-            if (explicitRowNumber != null && explicitRowNumber > 0) {
-                val gap = (explicitRowNumber - 1) - outRows.size
-                if (gap in 1..10000) {
-                    for (g in 0 until gap) {
-                        outRows.add(emptyList())
-                    }
-                }
+            val targetRow = if (explicitRowNumber != null && explicitRowNumber > 0) {
+                explicitRowNumber
+            } else {
+                autoRowIndex
             }
+            autoRowIndex = maxOf(autoRowIndex, targetRow + 1)
 
-            val rowCells = mutableListOf<String>()
+            val existingCells = rowMap.getOrPut(targetRow) { mutableListOf() }
+
             var child = rowElem.firstChild
             while (child != null) {
                 if (child.nodeType == Node.ELEMENT_NODE && child.localName() == "c") {
@@ -435,27 +447,42 @@ object OpenXmlDocumentParser {
                         }
                     }
 
-                    val targetCol = if (cellRef.isNotEmpty()) colRefToIndex(cellRef) else rowCells.size
+                    val targetCol = if (cellRef.isNotEmpty()) colRefToIndex(cellRef) else existingCells.size
                     if (targetCol >= 0) {
-                        while (rowCells.size < targetCol) {
-                            rowCells.add("")
+                        while (existingCells.size < targetCol) {
+                            existingCells.add("")
                         }
-                        if (rowCells.size == targetCol) {
-                            rowCells.add(cellVal)
+                        if (existingCells.size == targetCol) {
+                            existingCells.add(cellVal)
                         } else {
-                            rowCells[targetCol] = cellVal
+                            existingCells[targetCol] = cellVal
                         }
                     } else {
-                        rowCells.add(cellVal)
+                        existingCells.add(cellVal)
                     }
                 }
                 child = child.nextSibling
             }
-            if (explicitRowNumber != null && explicitRowNumber > 0) {
-                outRows.add(rowCells)
-            } else if (rowCells.any { it.isNotBlank() }) {
-                outRows.add(rowCells)
+        }
+
+        if (rowMap.isEmpty()) return
+
+        var prevRow = 0
+        for ((rowIdx, cells) in rowMap) {
+            val gap = rowIdx - prevRow - 1
+            if (gap > MAX_SUPPORTED_ROW_GAP) {
+                throw IllegalArgumentException(
+                    "Worksheet contains an unsupported row gap of $gap empty rows between row $prevRow and row $rowIdx (max continuous gap: $MAX_SUPPORTED_ROW_GAP). Large sparse spreadsheets cannot be rendered without data misplacement or excessive empty pages."
+                )
             }
+            if (gap in 1..MAX_SUPPORTED_ROW_GAP) {
+                for (g in 0 until gap) {
+                    outRows.add(emptyList())
+                }
+            }
+            outRows.add(cells)
+            outSparseRows?.add(XlsxRow(rowIndex = rowIdx, cells = cells))
+            prevRow = rowIdx
         }
 
         // Trim trailing completely empty rows from the end of the worksheet
