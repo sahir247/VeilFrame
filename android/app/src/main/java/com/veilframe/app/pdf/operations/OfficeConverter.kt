@@ -911,14 +911,12 @@ class OfficeConverter {
         try {
             pdf = PDDocument()
 
-            // Landscape A4 bounds: width 842f, height 595f
-            val pageBounds = PDRectangle(PDRectangle.A4.height, PDRectangle.A4.width)
-            val margin = 40f
-            val printableWidth = pageBounds.width - (2 * margin)
-
+            val margin = 30f
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
             val fontSizeCell = 9f
+            val lineHeight = fontSizeCell * 1.3f
+            val paddingVertical = 8f
 
             for (sheet in workbookData.sheets) {
                 val rows = sheet.rows
@@ -926,7 +924,8 @@ class OfficeConverter {
                 if (maxCol == 0) continue // Empty sheet
 
                 // Content-weighted dynamic column widths (Excel style)
-                val rawColWidths = FloatArray(maxCol) { c ->
+                // Width is determined naturally by content length, without squishing or artificial caps
+                val colWidths = FloatArray(maxCol) { c ->
                     var maxW = 32f
                     for (r in rows) {
                         val cellVal = r.getOrNull(c) ?: ""
@@ -938,17 +937,47 @@ class OfficeConverter {
                             if (maxLineW > maxW) maxW = maxLineW
                         }
                     }
-                    (maxW + 14f).coerceIn(40f, 220f)
+                    (maxW + 16f).coerceAtLeast(45f)
                 }
-                val totalRawWidth = rawColWidths.sum()
-                val colScale = if (totalRawWidth > 0f) printableWidth / totalRawWidth else 1f
-                val colWidths = FloatArray(maxCol) { c -> rawColWidths[c] * colScale }
+
+                // Dynamic page width:
+                // Small sheets default to at least A4 landscape width (842f); wide sheets expand dynamically to fit all columns
+                val totalTableWidth = colWidths.sum()
+                val pageWidth = maxOf(PDRectangle.A4.height, totalTableWidth + (2 * margin))
+
                 val colX = FloatArray(maxCol)
                 var runningX = margin
                 for (c in 0 until maxCol) {
                     colX[c] = runningX
                     runningX += colWidths[c]
                 }
+
+                // Pre-wrap rows and pre-calculate required height
+                val rowWrappedLines = Array(rows.size) { rIdx ->
+                    val row = rows[rIdx]
+                    Array(maxCol) { c ->
+                        val text = row.getOrNull(c) ?: ""
+                        if (text.isNotBlank()) {
+                            wrapText(text, fontNormal, fontSizeCell, colWidths[c] - 8f)
+                        } else {
+                            emptyList()
+                        }
+                    }
+                }
+
+                val rowHeights = FloatArray(rows.size) { rIdx ->
+                    val maxLinesInRow = rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
+                    maxOf(20f, maxLinesInRow * lineHeight + paddingVertical)
+                }
+
+                // Dynamic page height:
+                // Small sheets (e.g. 4-5 rows) default to at least A4 landscape height (595f).
+                // Larger sheets expand dynamically without artificial A4 height limits up to PDF standard 14,400pt
+                val headerHeight = 36f
+                val totalRequiredHeight = headerHeight + rowHeights.sum() + (2 * margin)
+                val maxPdfPageHeight = 14400f // ISO 32000-1 coordinate limit for PDF readers
+                val pageHeight = minOf(maxPdfPageHeight, maxOf(PDRectangle.A4.width, totalRequiredHeight))
+                val pageBounds = PDRectangle(pageWidth, pageHeight)
 
                 var currentPage = PDPage(pageBounds)
                 pdf.addPage(currentPage)
@@ -963,20 +992,11 @@ class OfficeConverter {
 
                 var yPosition = pageBounds.height - margin - 20f
 
-                for (row in rows) {
-                    val rowCellLines = Array(maxCol) { c ->
-                        val text = row.getOrNull(c) ?: ""
-                        if (text.isNotBlank()) {
-                            wrapText(text, fontNormal, fontSizeCell, colWidths[c] - 8f)
-                        } else {
-                            emptyList()
-                        }
-                    }
+                for (rIdx in rows.indices) {
+                    val rowCellLines = rowWrappedLines[rIdx]
                     val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-                    val lineHeight = fontSizeCell * 1.3f
-                    val paddingVertical = 8f
                     val pageUsableHeight = (pageBounds.height - (2 * margin) - 20f).coerceAtLeast(30f)
-                    val totalRowHeight = maxOf(20f, maxLinesInRow * lineHeight + paddingVertical)
+                    val totalRowHeight = rowHeights[rIdx]
 
                     if (totalRowHeight <= pageUsableHeight) {
                         if (yPosition - totalRowHeight < margin) {

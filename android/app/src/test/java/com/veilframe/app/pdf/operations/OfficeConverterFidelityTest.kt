@@ -269,9 +269,11 @@ class OfficeConverterFidelityTest {
         assertTrue("Converted XLSX PDF must have non-zero size", pdfFile.length() > 0)
 
         PDDocument.load(pdfFile).use { doc ->
-            // 60 lines with 9pt font + line height of 11.7pt = ~700pt > A4 landscape height 595pt (usable ~515pt)
-            // It MUST paginate across at least 2 pages
-            assertTrue("Oversized row must paginate across at least 2 pages (got ${doc.numberOfPages})", doc.numberOfPages >= 2)
+            // Unconstrained format conversion: page height dynamically expands beyond A4 landscape height (595pt)
+            // to fit the entire table on 1 continuous page without artificial page cuts
+            assertEquals("Unconstrained spreadsheet conversion must fit content on 1 continuous page", 1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            assertTrue("Page height must dynamically expand beyond standard A4 (595pt) to fit the content (got ${page.mediaBox.height})", page.mediaBox.height > 650f)
 
             val stripper = PDFTextStripper()
             stripper.sortByPosition = true
@@ -288,6 +290,67 @@ class OfficeConverterFidelityTest {
                 (1..60).map { "OversizedTraceLine_$it" },
                 extractedLines
             )
+        }
+    }
+
+    @Test
+    fun testXlsxExtremeColumnsDynamicallyExpandPageWidthWithoutSquishingOrClipping() = runBlocking {
+        // Build 25 distinct columns in row 1
+        val colCount = 25
+        val sharedStringsList = (1..colCount).map { "WideColumnHeaderPayload_$it" }
+        val sharedStringsXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" count=\"$colCount\" uniqueCount=\"$colCount\">\n" +
+            sharedStringsList.joinToString("\n") { "    <si><t>$it</t></si>" } + "\n" +
+            "</sst>"
+
+        val workbookXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheets>\n" +
+            "        <sheet name=\"WideSheet\" sheetId=\"1\" r:id=\"rId1\"/>\n" +
+            "    </sheets>\n" +
+            "</workbook>"
+
+        // Generate cells for columns 1..25 ('A' through 'Y')
+        val cellsXml = (0 until colCount).joinToString("\n") { colIdx ->
+            val colLetter = ('A' + colIdx).toString()
+            "            <c r=\"${colLetter}1\" t=\"s\"><v>$colIdx</v></c>"
+        }
+
+        val sheet1Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheetData>\n" +
+            "        <row r=\"1\">\n" +
+            cellsXml + "\n" +
+            "        </row>\n" +
+            "    </sheetData>\n" +
+            "</worksheet>"
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_wide_xlsx.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        assertTrue(pdfFile.length() > 0)
+
+        PDDocument.load(pdfFile).use { doc ->
+            assertEquals(1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            // 25 columns * ~150pt each = ~3750pt, well beyond A4 landscape width (842pt)
+            assertTrue("Page width must dynamically expand beyond A4 (842pt) to fit wide columns (got ${page.mediaBox.width})", page.mediaBox.width > 2000f)
+
+            val stripper = PDFTextStripper()
+            stripper.sortByPosition = true
+            val text = stripper.getText(doc)
+
+            // Verify first and last columns exist without squishing or clipping
+            assertTrue("Must contain first column", text.contains("WideColumnHeaderPayload_1"))
+            assertTrue("Must contain last column", text.contains("WideColumnHeaderPayload_25"))
         }
     }
 

@@ -325,6 +325,16 @@ Fix 4: Comprehensive RealSR JNI Exception Containment Audit (Finding 4)
 - Clean return codes (e.g. 0 on success, -1 or false on failure) and error logging ensure no native C++ exception ever crosses the JNI boundary to crash the Android ART runtime.
 - Evidence Level: CODE VERIFIED, BUILD VERIFIED.
 
+Fix 5: Unconstrained Dynamic Format Conversion for Spreadsheets (Elimination of A4 Constraints)
+- Refactored `android/app/src/main/java/com/veilframe/app/pdf/operations/OfficeConverter.kt`:
+  - Removed artificial fixed A4 landscape width (842pt) and height (595pt) constraints.
+  - Sized column widths naturally based on cell text content without scaling down or squishing (`colScale` removed).
+  - Dynamically expanded page width (`pageWidth = maxOf(842f, totalTableWidth + 2 * margin)`). A compact sheet defaults to at least 842pt width, while multi-column spreadsheets dynamically expand so every single column is rendered at full readability without clipping or squishing.
+  - Dynamically expanded page height (`pageHeight = minOf(14400f, maxOf(595f, totalRequiredHeight))`). Compact sheets (4-5 rows) default to 595pt height, while longer sheets expand dynamically up to the ISO 32000-1 PDF specification limit (14,400pt) so the entire table renders on a continuous canvas without artificial page cuts.
+  - Retained clean pagination only for massive sheets exceeding 14,400pt.
+- Added regression test `testXlsxExtremeColumnsDynamicallyExpandPageWidthWithoutSquishingOrClipping` in `OfficeConverterFidelityTest.kt`.
+- Evidence Level: CODE VERIFIED, UNIT TEST VERIFIED.
+
 ---
 
 2. TEST SUITE METRICS
@@ -332,15 +342,15 @@ Fix 4: Comprehensive RealSR JNI Exception Containment Audit (Finding 4)
 - Full Clean Unit Test Run:
   Command: .\gradlew.bat clean :app:testDebugUnitTest
   Total Test Suites: 136
-  Total Tests: 1240
+  Total Tests: 1241
   Failures: 0
   Errors: 0
   Skipped: 0
-  Result: 100% PASSED (BUILD SUCCESSFUL in 2m 58s)
+  Result: 100% PASSED (BUILD SUCCESSFUL in 2m 50s)
 
 - Targeted PDF Fidelity Test Run:
   Command: .\gradlew.bat :app:testDebugUnitTest --tests "com.veilframe.app.pdf.operations.*"
-  Total Tests: 12
+  Total Tests: 13
   Failures: 0
   Errors: 0
   Skipped: 0
@@ -349,7 +359,7 @@ Fix 4: Comprehensive RealSR JNI Exception Containment Audit (Finding 4)
 - Native Compilation & APK Assembly:
   Command: .\gradlew.bat :app:assembleDebug
   Target ABI: arm64-v8a (CMake NCNN build)
-  Result: BUILD SUCCESSFUL in 39s
+  Result: BUILD SUCCESSFUL in 38s
 
 - On-Device Verification:
   Device: 3C161H0023500000 (CPH2767IN, Android)
