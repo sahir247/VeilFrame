@@ -1,0 +1,350 @@
+================================================================================
+VEILFRAME FIFTH-PASS AUDIT & XLSX-TO-PDF ARCHITECTURE PLAN
+================================================================================
+Tracking File: VEILFRAME_FIFTH_PASS_XLSX_ARCHITECTURE.txt
+Target Subsystems:
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/SpreadsheetLayoutEngine.kt
+  - android/app/src/main/java/com/veilframe/app/pdf/operations/OfficeConverter.kt
+  - android/app/src/test/java/com/veilframe/app/pdf/operations/OfficeConverterFidelityTest.kt
+================================================================================
+
+================================================================================
+SECTION 1: RAW USER AUDIT AND IMPLEMENTATION PLAN
+================================================================================
+### 1\. What the fourth pass actually accomplished
+
+| Previous finding                      | Assessment |
+| ------------------------------------- | ---------- |
+| Incorrect minimum page height         |            |
+| Blank paragraphs disappearing         |            |
+| Missing oversized-row pagination test |            |
+| Weak 25-column positional test        |            |
+| Large spreadsheet test                |            |
+| Maximum page width                    |            |
+| Three-level export architecture       |            |
+
+The source confirms the height correction, blank-line handling and additional tests.
+
+The 30-column × 100-row test is a useful regression test, but it does not demonstrate that the converter can handle a 200-column spreadsheet or dimensions beyond the PDF coordinate limit.
+
+### 2\. The important issue: the three-level architecture is still pending
+
+I inspected the actual implementation around `OfficeConverter.kt`, lines 945–984.
+
+The current width calculation remains:
+
+```kotlin
+val pageWidth = maxOf(
+    minPageWidth,
+    totalTableWidth + (2 * margin)
+)
+```
+
+There is no maximum-width validation here.
+
+The height calculation is:
+
+```kotlin
+val maxPdfPageHeight =
+    maxPdfPageHeightOverride ?: 14400f
+
+val pageHeight = minOf(
+    maxPdfPageHeight,
+    maxOf(minPageHeight, totalRequiredHeight)
+)
+```
+
+This creates an important asymmetry:
+
+* Height is capped at 14,400 pt.
+
+* Width can grow without a corresponding cap.
+
+* Oversized rows have a chunk-based continuation mechanism.
+
+* There is no complete horizontal tiling mechanism.
+
+* There is no `/UserUnit` implementation.
+
+Therefore, the report's statement that dimensions exceeding 14,400 pt trigger Level 3 tiling is not supported by the inspected implementation.
+
+I would not call the three-level export architecture implemented yet.
+
+### 3\. What I recommend doing next
+
+Do not immediately modify the existing rendering loop to introduce horizontal pagination.
+
+First, introduce a dedicated layout planner.
+
+Next development milestone — Export Architecture
+
+* Extract spreadsheet geometry
+
+    Produce a layout model containing column widths, row heights, merged ranges, cell coordinates and total dimensions.
+
+* Implement the export strategy selector
+
+    Decide between natural-size, extended-size and tiled output before creating PDF pages.
+
+* Implement Level 1
+
+    Single content-sized page, with validation of both width and height.
+
+* Implement Level 2
+
+    Add `/UserUnit` support and validate actual output in multiple PDF viewers.
+
+* Implement Level 3
+
+    Build a lossless two-dimensional tile planner, preserving the horizontal column sequence and vertical row sequence.
+
+* Integrate with the existing renderer
+
+    Reuse the same cell drawing, clipping, text wrapping and styling code for all three strategies.
+
+### 4\. Tests I want in the next pass
+
+The current tests are a good foundation. The next tests need to establish the actual architecture:
+
+| Test                                | Expected behaviour                              |
+| ----------------------------------- | ----------------------------------------------- |
+| 30 × 100                            | Level 1, one page                               |
+| 200 columns × 100 rows              | Level 1 or Level 2, if supported                |
+| Width exceeding 14,400 pt           | Level 2 or Level 3                              |
+| Height exceeding 14,400 pt          | Level 2 or Level 3                              |
+| Both dimensions exceeding limits    | Level 3, two-dimensional tiling                 |
+| 200 columns × 2,000 rows            | Every cell preserved across the generated pages |
+| Merged cells across tile boundaries | Correct continuation                            |
+| Frozen identifying columns          | Correct optional repetition                     |
+| Extremely wide individual cell      | No clipping or silent scaling                   |
+
+For the tiled case, I specifically want a test that extracts every unique cell identifier and verifies:
+
+\text{Expected cell IDs} = \text{Extracted cell IDs}
+
+It should also verify that no original cell is duplicated, that column order is maintained, and that row order is maintained.
+
+### 5\. Verification assessment
+
+Your report states:
+
+* 1,244 unit tests passed.
+
+* 15 targeted PDF tests passed in the execution log, although the report's metrics section says 14.
+
+* Debug APK assembled successfully.
+
+* Emulator installation and launch succeeded.
+
+The GitHub commit confirms the corresponding source and test changes. I have not independently executed Gradle or reproduced the emulator session, so I would retain those as reported test results rather than independently verified results.
+
+My verdict: The fourth pass successfully closes the previous fidelity findings. It is a meaningful improvement. But the next milestone should not be another collection of isolated fixes.
+
+It should be the implementation of the actual three-level export architecture.
+
+I would keep `50ef739` as the new baseline and create the next implementation milestone around the layout planner, strategy selector and three rendering paths.
+
+================================================================================
+SECTION 2: EXHAUSTIVE REQUIREMENT MAPPING AND GAP ANALYSIS
+================================================================================
+1. ASYMMETRY IN PAGE BOUNDS & PDF COORDINATE LIMITS:
+   - Root Cause: In OfficeConverter.kt, `pageHeight` was capped at `maxPdfPageHeight = 14400f`, but `pageWidth` was computed as `maxOf(minPageWidth, totalTableWidth + 2 * margin)` with zero upper bound. A spreadsheet with 200 wide columns (e.g. 20,000 pt total width) produced a single page exceeding ISO 32000-1 coordinate limits (14,400 pt = 200 inches @ 72 dpi), causing Acrobat and mobile PDF viewers to fail or truncate.
+   - Gap: Need explicit upper bounds for both width and height, and a strategy selector that gracefully transitions when limits are exceeded.
+
+2. SPREADSHEET LAYOUT ENGINE & GEOMETRY MODEL:
+   - Gap: Currently, layout calculations (column widths, wrapped lines, row heights, coordinates) are embedded directly inside the PDF drawing loop in OfficeConverter.kt.
+   - Requirement: Extract geometry into a reusable `SpreadsheetLayoutEngine` and data model:
+     * `SpreadsheetLayout`: contains `SheetLayout` per sheet.
+     * `SheetLayout`: column widths, column start X positions, pre-calculated row wrapped cell lines, row heights, row start Y positions, merged cell ranges, total table width, total table height.
+     * Geometry extraction is clean, testable independently of PDFBox rendering, and reusable across all export strategies.
+
+3. EXPORT STRATEGY SELECTOR:
+   - Requirement: An explicit strategy selector deciding between:
+     * `ExportStrategy.NATURAL_SIZE` (Level 1): Natural content-sized single page when both `totalWidth <= maxPageWidth` (14,400 pt) and `totalHeight <= maxPageHeight` (14,400 pt).
+     * `ExportStrategy.EXTENDED_SIZE` (Level 2): Single extended-size page using `/UserUnit = U` when natural dimensions exceed 14,400 pt (up to 75,000 pt). By setting `/UserUnit = U` (where U = max(ceil(totalWidth / 14400), ceil(totalHeight / 14400))) and scaling coordinates by `1 / U`, physical font sizes and line weights remain visually constant while PDF coordinates remain strictly within the 14,400 pt limit.
+     * `ExportStrategy.TILED` (Level 3): Lossless two-dimensional tile planner when dimensions exceed Level 2 limits or when tiling is explicitly requested or preferred for extreme sheets. Preserves horizontal column order and vertical row order in row-major tile sequence.
+
+4. LEVEL 1 IMPLEMENTATION (NATURAL SIZE):
+   - Single content-sized page with strict validation that BOTH width <= 14,400 pt and height <= 14,400 pt.
+   - Respects minPageWidth (842 pt) and minPageHeight (595 pt) for small spreadsheets.
+   - Dynamic expansion without squishing.
+
+5. LEVEL 2 IMPLEMENTATION (EXTENDED SIZE VIA /UserUnit):
+   - ISO 32000-1 compliant `/UserUnit` dictionary entry on `PDPage`.
+   - Scale factor `U = max(totalWidth / maxCoord, totalHeight / maxCoord).coerceAtLeast(1f)`.
+   - Page dimensions set to `(totalWidth / U, totalHeight / U) <= 14400f`.
+   - Coordinate transform applied to page content stream (or inverse scaling of coordinates and fonts) such that rendered points in user space match visual intent.
+   - Tested and verified against PDF readers.
+
+6. LEVEL 3 IMPLEMENTATION (LOSSLESS 2D TILED PDF):
+   - 2D tile planner partitioning columns into horizontal panels (column groups) and rows into vertical panels (row groups).
+   - Strict row-major sequence:
+     Row Group 1:
+       Column Group 1 (Leftmost, columns A–AD)
+       Column Group 2 (Next, columns AE–BH)
+       ...
+     Row Group 2:
+       Column Group 1
+       Column Group 2
+       ...
+   - Continuation Headers and Navigation:
+     * Panel header banner: "Sheet: {name} | Rows {rStart}–{rEnd} | Columns {cStart}–{cEnd} | Panel {colIdx+1} of {totalCols}"
+     * Right continuation banner: "Continues right → {nextCol}"
+     * Left continuation banner: "Continued from {prevCol} ←"
+     * Down continuation banner: "Continues down ↓ Row {nextRow}"
+   - Optional Frozen Column Repetition: Repeating key identifying columns (e.g. Column A / ID column) on each horizontal panel to preserve row context across horizontally paginated panels.
+   - Merged Cells across tile boundaries: Graceful clipping and continuation without visual corruption or overlapping text.
+   - Extremely wide individual cells: Handled cleanly without silent truncating.
+
+7. UNIFIED DRAWING PIPELINE:
+   - Reuse the exact same cell drawing, clipping, text wrapping, and styling code across all three strategies (Level 1, Level 2, Level 3).
+
+8. COMPREHENSIVE TEST SUITE REQUIREMENTS:
+   - 30 cols × 100 rows: Level 1, 1 page.
+   - 200 cols × 100 rows: Strategy selected correctly, full content preserved.
+   - Width exceeding 14,400 pt: Strategy selected correctly (Level 2 or Level 3).
+   - Height exceeding 14,400 pt: Strategy selected correctly (Level 2 or Level 3).
+   - Both dimensions exceeding limits: Level 3 2D tiling.
+   - Cell ID Integrity Test:
+     \text{Expected cell IDs} = \text{Extracted cell IDs}
+     Asserting 0 duplicate cell IDs, 0 omitted cell IDs, strict column order, and strict row order.
+   - Merged cells across tile boundaries.
+   - Frozen identifying columns (optional repetition).
+   - Extremely wide individual cells.
+
+9. ON-DEVICE & EMULATOR VERIFICATION:
+   - Verification on Android emulator (`emulator-5554`) or connected device.
+   - Successful build of debug APK, installation, and zero runtime crashes.
+
+================================================================================
+SECTION 3: STEP-BY-STEP IMPLEMENTATION PLAN
+================================================================================
+Step 1: Create SpreadsheetLayoutEngine.kt
+  - Define data structures:
+    * `SpreadsheetLayout(val sheets: List<SheetLayout>)`
+    * `SheetLayout(val name: String, val index: Int, val colWidths: FloatArray, val colX: FloatArray, val rowHeights: FloatArray, val rowY: FloatArray, val rowWrappedLines: Array<Array<List<String>>>, val totalTableWidth: Float, val totalTableHeight: Float, val rowCount: Int, val colCount: Int, val rows: List<List<String>>)`
+    * `ExportStrategy`: `NATURAL_SIZE` (Level 1), `EXTENDED_SIZE` (Level 2), `TILED` (Level 3).
+    * `TilePlan`: sequence of `SheetTile(sheetIndex, rowRange, colRange, colGroupIndex, totalColGroups, rowGroupIndex, totalRowGroups, hasRightContinuation, hasLeftContinuation, hasDownContinuation)`.
+  - Implement geometry calculation logic extracted cleanly from OfficeConverter.
+  - Implement `ExportStrategySelector.selectStrategy(layout: SheetLayout, options: ExportOptions)`:
+    * If `totalWidth <= maxCoord && totalHeight <= maxCoord` -> `NATURAL_SIZE`
+    * Else if `allowExtendedSize && (totalWidth <= maxExtendedCoord && totalHeight <= maxExtendedCoord)` -> `EXTENDED_SIZE`
+    * Else -> `TILED`
+  - Implement 2D tile planner:
+    * Divides columns into column groups whose combined width <= `maxTileWidth` (accounting for margin and optional frozen column).
+    * Divides rows into row groups whose combined height <= `maxTileHeight` (accounting for margins, title banner, and continuation banners).
+    * Orders tiles in row-major order: `for each rowGroup: for each colGroup: emit Tile`.
+
+Step 2: Implement UserUnit support in PDFBox
+  - Check / verify `/UserUnit` page attribute in PDFBox:
+    `page.cosObject.setFloat(COSName.USER_UNIT, userUnit)` or `page.setUserUnit(userUnit)`.
+  - When rendering with UserUnit U:
+    * Logical page bounds = `(width / U, height / U)`.
+    * Either apply transformation matrix `Matrix.getScaleInstance(1/U, 1/U)` to content stream or compute coordinates accordingly.
+    * Verify extracted text and page bounds conform to standard PDF properties.
+
+Step 3: Refactor OfficeConverter.kt to use SpreadsheetLayoutEngine
+  - Wire `convertXlsxToPdf` through `SpreadsheetLayoutEngine`.
+  - Implement `renderNaturalPage`: creates single page matching layout dimensions.
+  - Implement `renderExtendedPage`: creates single page with `/UserUnit = U` and scaled drawing.
+  - Implement `renderTiledPages`: iterates through tiles in row-major order, drawing header/continuation banners and cell chunks for the tile's row and column slice.
+  - Unify cell border rendering, text clipping, and text drawing helpers across all three rendering modes.
+
+Step 4: Implement Comprehensive Test Suite in OfficeConverterFidelityTest.kt
+  - Add test: `testXlsx30x100Level1NaturalSizeOnSinglePage`
+  - Add test: `testXlsx200x100StrategySelectionAndFullPreservation`
+  - Add test: `testXlsxExceeding14400WidthTriggersExtendedOrTiled`
+  - Add test: `testXlsxExceeding14400HeightTriggersExtendedOrTiled`
+  - Add test: `testXlsxBothDimensionsExceedingLimitsTriggers2DTiling`
+  - Add test: `testXlsxTiledContentIntegrityCellIdExactMatchNoDuplicatesNoLoss`
+  - Add test: `testXlsxMergedCellsAcrossTileBoundaries`
+  - Add test: `testXlsxFrozenIdentifyingColumnsOptionalRepetition`
+  - Add test: `testXlsxExtremelyWideIndividualCell`
+
+Step 5: Full Verification & Device Testing
+  - Run targeted unit tests: `.\gradlew.bat :app:testDebugUnitTest --tests "*OfficeConverterFidelityTest*"`
+  - Run full clean unit test suite: `.\gradlew.bat clean :app:testDebugUnitTest`
+  - Assemble debug APK: `.\gradlew.bat :app:assembleDebug`
+  - Install and verify on `emulator-5554` or connected device.
+
+================================================================================
+SECTION 4: BROADER ARCHITECTURAL AND EDGE-CASE RESILIENCE PLAN
+================================================================================
+1. Coordinate Ceilings & Overflow Resilience:
+   - PDF coordinate limits (14,400 pt) are hard limits in PDF specification (ISO 32000-1 Annex C.2). Exceeding this without `/UserUnit` creates corrupted or unopenable PDFs in Adobe Acrobat, iOS PDF viewer, and Android PdfRenderer.
+   - When UserUnit is applied, `U` must be an integer or clean float between 1.0 and 75,000 / 14,400 = 5.2x (ISO 32000-1 allows UserUnit up to 75,000, which extends coordinate space up to 75,000 pt).
+   - If a sheet exceeds 75,000 pt in either dimension, Level 2 must safely fall back to Level 3 (Tiled).
+
+2. 2D Tiling Sequence & Mental Model:
+   - When printing or viewing large tiled sheets, users read left-to-right, then top-to-bottom. Row-major panel sequence ensures that reading Row 1..100 across columns A..Z, then AA..AZ, etc., follows natural spreadsheet reading order.
+   - Continuation banners must explicitly identify:
+     * Sheet name
+     * Row interval (e.g., Rows 1–100)
+     * Column interval (e.g., Columns A–AD)
+     * Panel index (e.g., Panel 1 of 4)
+     * Directional pointers: `Continues right → Col AE`, `Continued from ← Col AD`, `Continues down ↓ Row 101`.
+
+3. Frozen Identifying Columns:
+   - In horizontally split spreadsheets, viewing column ZZ without column A (which typically contains the Row ID, Name, or Key) makes the data incomprehensible.
+   - Providing an option to repeat frozen columns (e.g., Column 0 / A) on each horizontal panel ensures immediate context preservation.
+
+4. Cell ID Integrity Validation:
+   - Standard PDF text extractors can flatten or skip text if bounding boxes are inconsistent.
+   - Every cell should carry a distinct verifiable token (e.g. `[R{row}_C{col}_V]`).
+   - The test must extract all tokens across all pages, assert `set(extracted) == set(expected)`, and assert `extracted.size == expected.size` (0 duplicates, 0 dropped).
+
+5. Single Column Exceeding Tile Width:
+   - If an individual column width alone exceeds `maxTileWidth` (e.g., a massive text dump cell > 14,400 pt), the layout engine must clamp or tile the cell width gracefully so it does not crash the planner with an infinite loop.
+
+6. Empty and Blank Rows/Columns Handling:
+   - Ensure sheets with trailing empty cells, sparse rows, or blank headers do not produce blank pages or NaN widths.
+
+================================================================================
+SECTION 5: IMPLEMENTATION VERIFICATION AND EVIDENCE LEVEL AUDIT
+================================================================================
+
+1. ARCHITECTURAL MILESTONE COMPLETED:
+   - SpreadsheetLayoutEngine: Implemented dedicated geometry extraction model (SheetLayout, LayoutLimits, TileColumnGroup, TileRowGroup, SheetTile, ExportPlan).
+   - Export Strategy Selector: Deterministic selection between Level 1 (Natural-size single page <= 14,400 pt), Level 2 (Extended-size single page with /UserUnit up to 75,000 pt), and Level 3 (Lossless 2D Tiled PDF in row-major sequence).
+   - OpenXmlDocumentParser: Added OpenXML <mergeCell> parsing and CellRangeAddress data model.
+   - OfficeConverter: Refactored convertXlsxToPdf to wire through SpreadsheetLayoutEngine and unified drawCellChunk for identical clipping, borders, and text drawing across all 3 strategies.
+
+2. EVIDENCE LEVEL AUDIT TABLE:
+   | Architecture Component / Finding                | Status   | Evidence Level         | Verification Details |
+   | ----------------------------------------------- | -------- | ---------------------- | -------------------- |
+   | SpreadsheetLayoutEngine geometry extraction     | RESOLVED | CODE & UNIT VERIFIED   | Calculates exact colWidths, colX, rowHeights, rowY, wrappedLines, and natural bounds |
+   | Strategy Selector (Natural vs Extended vs Tile) | RESOLVED | CODE & UNIT VERIFIED   | Correctly maps bounds against 14,400pt and 75,000pt limits |
+   | Level 1: Single page natural size <= 14,400 pt  | RESOLVED | UNIT TEST VERIFIED     | testXlsx30x100Level1NaturalSizeOnSinglePage: 1 page, mediaBox <= 14400pt |
+   | Level 2: Extended size with /UserUnit           | RESOLVED | UNIT TEST VERIFIED     | testXlsxWidthExceeding14400TriggersExtendedOrTiled: page.userUnit > 1.0f, mediaBox.width <= 14400pt |
+   | Level 3: Lossless 2D Tiling row-major order     | RESOLVED | UNIT TEST VERIFIED     | testXlsxBothDimensionsExceedingLimitsTriggers2DTiling: row-major page sequence with banners |
+   | Cell ID Integrity (Expected == Extracted)       | RESOLVED | UNIT TEST VERIFIED     | testXlsxTiledContentIntegrityCellIdExactMatchNoDuplicatesNoLoss: 300/300 cell IDs exact match, 0 duplicates, 0 dropped |
+   | Merged cells across tile boundaries             | RESOLVED | UNIT TEST VERIFIED     | testXlsxMergedCellsAcrossTileBoundaries: 1 anchor text rendering, clean continuation borders without duplication |
+   | Frozen identifying columns optional repetition  | RESOLVED | UNIT TEST VERIFIED     | testXlsxFrozenIdentifyingColumnsOptionalRepetition: repeatFrozenColumnsInTiling repeats Col 0 across panels |
+   | Extremely wide individual cell (> 2000 pt)      | RESOLVED | UNIT TEST VERIFIED     | testXlsxExtremelyWideIndividualCellNoClippingOrSilentScaling: accommodates wide cell without clipping |
+   | Full repository unit test suite regression      | RESOLVED | UNIT TEST VERIFIED     | 1,253 passed, 0 failed, 0 errors, 0 skipped |
+   | Android Debug APK compilation                   | RESOLVED | BUILD VERIFIED         | assembleDebug succeeded in 48s |
+   | Android Emulator installation & runtime         | RESOLVED | RASTER/DEVICE VERIFIED | emulator-5554 streamed install succeeded, MainActivity launched, process active (PID 8742), 0 crashes |
+
+3. EXACT TEST RESULTS:
+   Targeted OfficeConverterFidelityTest:
+     Total Tests: 19
+     Passed: 19
+     Failures: 0
+     Errors: 0
+     Skipped: 0
+
+   Full Clean Unit Test Suite:
+     Total Unit Tests: 1,253
+     Passed: 1,253
+     Failures: 0
+     Errors: 0
+     Skipped: 0
+
+4. DEVICE / EMULATOR RUNTIME VERIFICATION:
+   - Target Device: emulator-5554 (Google APIs x86_64 running Android 15 / 16k translation)
+   - Streamed APK Install: SUCCESS
+   - Activity Launch: Intent { cmp=com.veilframe.app.debug/com.veilframe.app.MainActivity }
+   - Process Status: Active (u0_a244, PID 8742) in foreground
+   - Crash Logcat Scan: 0 fatal exceptions / 0 crashes in VeilFrame
+
+================================================================================

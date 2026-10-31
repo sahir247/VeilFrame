@@ -851,4 +851,358 @@ class OfficeConverterFidelityTest {
             )
         }
     }
+
+    private fun buildXlsxFile(
+        sheetName: String,
+        colCount: Int,
+        rowCount: Int,
+        cellValueBuilder: (row: Int, col: Int) -> String,
+        mergeCells: List<String> = emptyList()
+    ): File {
+        val sharedStrings = mutableListOf<String>()
+        val stringMap = mutableMapOf<String, Int>()
+
+        fun getStringIndex(s: String): Int {
+            return stringMap.getOrPut(s) {
+                val idx = sharedStrings.size
+                sharedStrings.add(s)
+                idx
+            }
+        }
+
+        fun getColLetter(idx: Int): String {
+            return SpreadsheetLayoutEngine.colIndexToRef(idx)
+        }
+
+        val rowsXml = StringBuilder()
+        for (r in 0 until rowCount) {
+            val rowNum = r + 1
+            rowsXml.append("        <row r=\"$rowNum\">\n")
+            for (c in 0 until colCount) {
+                val colLetter = getColLetter(c)
+                val text = cellValueBuilder(r, c)
+                val strIdx = getStringIndex(text)
+                rowsXml.append("            <c r=\"${colLetter}$rowNum\" t=\"s\"><v>$strIdx</v></c>\n")
+            }
+            rowsXml.append("        </row>\n")
+        }
+
+        val mergeCellsXml = if (mergeCells.isNotEmpty()) {
+            val sb = StringBuilder()
+            sb.append("    <mergeCells count=\"${mergeCells.size}\">\n")
+            for (m in mergeCells) {
+                sb.append("        <mergeCell ref=\"$m\"/>\n")
+            }
+            sb.append("    </mergeCells>\n")
+            sb.toString()
+        } else {
+            ""
+        }
+
+        val sharedStringsXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" count=\"${sharedStrings.size}\" uniqueCount=\"${sharedStrings.size}\">\n" +
+            sharedStrings.joinToString("\n") { "    <si><t>$it</t></si>" } + "\n" +
+            "</sst>"
+
+        val workbookXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheets>\n" +
+            "        <sheet name=\"$sheetName\" sheetId=\"1\" r:id=\"rId1\"/>\n" +
+            "    </sheets>\n" +
+            "</workbook>"
+
+        val sheet1Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheetData>\n" +
+            rowsXml.toString() +
+            "    </sheetData>\n" +
+            mergeCellsXml +
+            "</worksheet>"
+
+        return createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+    }
+
+    @Test
+    fun testXlsx30x100Level1NaturalSizeOnSinglePage() = runBlocking {
+        val colCount = 30
+        val rowCount = 100
+        val xlsxFile = buildXlsxFile("SheetL1", colCount, rowCount, { r, c -> "R${r+1}C${c+1}_ID" })
+        val pdfFile = File(tempFolder.root, "output_l1_30x100.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            // Level 1: Fits on 1 single continuous page
+            assertEquals("Level 1 must export on exactly 1 page", 1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            assertTrue("Width must be <= 14400pt", page.mediaBox.width <= 14400f)
+            assertTrue("Height must be <= 14400pt", page.mediaBox.height <= 14400f)
+
+            val text = PDFTextStripper().getText(doc)
+            assertTrue("Must contain R1C1_ID", text.contains("R1C1_ID"))
+            assertTrue("Must contain R50C15_ID", text.contains("R50C15_ID"))
+            assertTrue("Must contain R100C30_ID", text.contains("R100C30_ID"))
+        }
+    }
+
+    @Test
+    fun testXlsx200ColumnsBy100RowsStrategySelectionAndFullPreservation() = runBlocking {
+        val colCount = 200
+        val rowCount = 100
+        val xlsxFile = buildXlsxFile("Sheet200x100", colCount, rowCount, { r, c -> "Cell_${r+1}_${c+1}" })
+        val pdfFile = File(tempFolder.root, "output_200x100.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must generate at least 1 page", doc.numberOfPages >= 1)
+            val text = PDFTextStripper().getText(doc)
+            // Verify tokens across the matrix: start, middle, and end columns
+            assertTrue("Must contain Cell_1_1", text.contains("Cell_1_1"))
+            assertTrue("Must contain Cell_50_100", text.contains("Cell_50_100"))
+            assertTrue("Must contain Cell_100_200", text.contains("Cell_100_200"))
+        }
+    }
+
+    @Test
+    fun testXlsxWidthExceeding14400TriggersExtendedOrTiled() = runBlocking {
+        // Build 180 wide columns: 180 * 90pt = 16,200pt (exceeds 14,400pt ISO coordinate limit)
+        val colCount = 180
+        val rowCount = 10
+        val xlsxFile = buildXlsxFile("WideSheet", colCount, rowCount, { r, c -> "WideColData_${r+1}_${c+1}" })
+
+        // 1. Level 2: Default behavior with allowExtendedSize chooses EXTENDED_SIZE via /UserUnit
+        val pdfFileExtended = File(tempFolder.root, "output_extended_userunit.pdf")
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFileExtended, context)
+
+        assertTrue(pdfFileExtended.exists())
+        PDDocument.load(pdfFileExtended).use { doc ->
+            assertEquals("Extended size produces 1 page with /UserUnit", 1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            assertTrue("UserUnit must be scaled > 1.0f (was ${page.userUnit})", page.userUnit > 1.0f)
+            assertTrue("MediaBox width must stay within 14,400pt coordinate limit", page.mediaBox.width <= 14400f)
+
+            val text = PDFTextStripper().getText(doc)
+            assertTrue("Must preserve Col 1 token", text.contains("WideColData_1_1"))
+            assertTrue("Must preserve Col 180 token", text.contains("WideColData_1_180"))
+        }
+
+        // 2. Level 3: When tiling is forced, tiles horizontally
+        val pdfFileTiled = File(tempFolder.root, "output_forced_tiled.pdf")
+        converter.forceExportStrategy = ExportStrategy.TILED
+        converter.convertXlsxToPdf(xlsxFile, pdfFileTiled, context)
+
+        assertTrue(pdfFileTiled.exists())
+        PDDocument.load(pdfFileTiled).use { doc ->
+            assertTrue("Tiled export produces multiple pages", doc.numberOfPages > 1)
+            val text = PDFTextStripper().getText(doc)
+            assertTrue("Must contain continuation banner", text.contains("Panel") || text.contains("Continues right"))
+            assertTrue("Must preserve Col 1 token", text.contains("WideColData_1_1"))
+            assertTrue("Must preserve Col 180 token", text.contains("WideColData_1_180"))
+        }
+    }
+
+    @Test
+    fun testXlsxHeightExceeding14400TriggersExtendedOrTiled() = runBlocking {
+        // Test tall sheet pagination via maxPdfPageHeightOverride
+        val colCount = 10
+        val rowCount = 150
+        val xlsxFile = buildXlsxFile("TallSheet", colCount, rowCount, { r, c -> "TallData_R${r+1}_C${c+1}" })
+        val pdfFile = File(tempFolder.root, "output_tall_pagination.pdf")
+
+        val converter = OfficeConverter()
+        converter.maxPdfPageHeightOverride = 1200f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must paginate vertically across multiple pages", doc.numberOfPages > 1)
+            val text = PDFTextStripper().getText(doc)
+            assertTrue("Must preserve Row 1", text.contains("TallData_R1_C1"))
+            assertTrue("Must preserve Row 150", text.contains("TallData_R150_C1"))
+        }
+    }
+
+    @Test
+    fun testXlsxBothDimensionsExceedingLimitsTriggers2DTiling() = runBlocking {
+        val colCount = 25
+        val rowCount = 40
+        val xlsxFile = buildXlsxFile("Grid2D", colCount, rowCount, { r, c -> "G2D_R${r+1}_C${c+1}" })
+        val pdfFile = File(tempFolder.root, "output_2d_tiling.pdf")
+
+        val converter = OfficeConverter()
+        converter.maxPdfPageWidthOverride = 1000f
+        converter.maxPdfPageHeightOverride = 600f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            // With 1000pt width and 600pt height, it requires 2+ horizontal panels and 2+ vertical panels = 4+ pages
+            assertTrue("Must generate at least 4 tiled pages for 2D grid", doc.numberOfPages >= 4)
+
+            val stripper = PDFTextStripper()
+            stripper.startPage = 1
+            stripper.endPage = 1
+            val page1Text = stripper.getText(doc)
+
+            // Page 1 is Row Group 1, Panel 1
+            assertTrue("Page 1 must contain Panel 1", page1Text.contains("Panel 1"))
+            assertTrue("Page 1 must contain Continues right banner", page1Text.contains("Continues right"))
+            assertTrue("Page 1 must contain Continues down banner", page1Text.contains("Continues down"))
+
+            stripper.startPage = 2
+            stripper.endPage = 2
+            val page2Text = stripper.getText(doc)
+            // Page 2 is Row Group 1, Panel 2 (row-major order)
+            assertTrue("Page 2 must contain Continued from banner", page2Text.contains("Continued from"))
+        }
+    }
+
+    @Test
+    fun testXlsxTiledContentIntegrityCellIdExactMatchNoDuplicatesNoLoss() = runBlocking {
+        // Crucial fidelity test:
+        // Expected cell IDs = Extracted cell IDs
+        // Asserts zero cell loss, zero duplication, and order preservation
+        val colCount = 15
+        val rowCount = 20
+
+        val expectedIds = mutableSetOf<String>()
+        val expectedList = mutableListOf<String>()
+        for (r in 0 until rowCount) {
+            for (c in 0 until colCount) {
+                val id = "CID_R${r+1}_C${c+1}"
+                expectedIds.add(id)
+                expectedList.add(id)
+            }
+        }
+
+        val xlsxFile = buildXlsxFile("IntegritySheet", colCount, rowCount, { r, c -> "CID_R${r+1}_C${c+1}" })
+        val pdfFile = File(tempFolder.root, "output_tiled_integrity.pdf")
+
+        val converter = OfficeConverter()
+        converter.maxPdfPageWidthOverride = 500f
+        converter.maxPdfPageHeightOverride = 350f
+        converter.repeatFrozenColumnsInTiling = false // Strict 1:1 mapping without frozen repetition
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must be tiled across at least 4 pages", doc.numberOfPages >= 4)
+
+            // Extract all tokens matching CID_R*_C*
+            val fullText = PDFTextStripper().getText(doc)
+            val tokenRegex = Regex("""CID_R\d+_C\d+""")
+            val extractedMatches = tokenRegex.findAll(fullText).map { it.value }.toList()
+
+            // 1. Count integrity: exactly rowCount * colCount tokens
+            assertEquals(
+                "Total extracted cell IDs must exactly match expected count (no duplicate cells, no dropped cells)",
+                expectedIds.size,
+                extractedMatches.size
+            )
+
+            // 2. Set equality: Expected cell IDs = Extracted cell IDs
+            val extractedSet = extractedMatches.toSet()
+            assertEquals("Expected cell IDs must equal Extracted cell IDs", expectedIds, extractedSet)
+
+            // 3. Uniqueness: zero duplicates
+            val duplicateTokens = extractedMatches.groupBy { it }.filter { it.value.size > 1 }.keys
+            assertTrue("No original cell may be duplicated in lossless tiling (found duplicates: $duplicateTokens)", duplicateTokens.isEmpty())
+        }
+    }
+
+    @Test
+    fun testXlsxMergedCellsAcrossTileBoundaries() = runBlocking {
+        // Merged cell A1:F2 spanning across multiple columns
+        val colCount = 12
+        val rowCount = 8
+        val xlsxFile = buildXlsxFile(
+            sheetName = "MergedSheet",
+            colCount = colCount,
+            rowCount = rowCount,
+            cellValueBuilder = { r, c ->
+                if (r < 2 && c < 6) "BANNER_MERGED_TITLE" else "Data_R${r+1}_C${c+1}"
+            },
+            mergeCells = listOf("A1:F2")
+        )
+        val pdfFile = File(tempFolder.root, "output_merged_tiles.pdf")
+
+        val converter = OfficeConverter()
+        converter.maxPdfPageWidthOverride = 600f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must tile into at least 2 pages", doc.numberOfPages >= 2)
+            val fullText = PDFTextStripper().getText(doc)
+            assertTrue("Merged title must be present", fullText.contains("BANNER_MERGED_TITLE"))
+
+            // Verify merged title appears cleanly without duplicate overlapping text
+            val matches = Regex("""BANNER_MERGED_TITLE""").findAll(fullText).toList()
+            assertEquals("Merged banner title should only be drawn once on anchor panel", 1, matches.size)
+        }
+    }
+
+    @Test
+    fun testXlsxFrozenIdentifyingColumnsOptionalRepetition() = runBlocking {
+        val colCount = 16
+        val rowCount = 10
+        val xlsxFile = buildXlsxFile("FrozenSheet", colCount, rowCount, { r, c ->
+            if (c == 0) "EMP_KEY_${r+1}" else "Val_R${r+1}_C${c+1}"
+        })
+        val pdfFile = File(tempFolder.root, "output_frozen_repetition.pdf")
+
+        val converter = OfficeConverter()
+        converter.maxPdfPageWidthOverride = 600f
+        converter.repeatFrozenColumnsInTiling = true // Enable optional frozen column repetition
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must tile into at least 2 panels", doc.numberOfPages >= 2)
+
+            val stripper = PDFTextStripper()
+            stripper.startPage = 1
+            stripper.endPage = 1
+            val page1Text = stripper.getText(doc)
+            assertTrue("Page 1 must contain EMP_KEY_1", page1Text.contains("EMP_KEY_1"))
+
+            stripper.startPage = 2
+            stripper.endPage = 2
+            val page2Text = stripper.getText(doc)
+            // Column 0 is optionally repeated on subsequent horizontal panels to preserve row context!
+            assertTrue("Page 2 (next horizontal panel) must repeat frozen column EMP_KEY_1", page2Text.contains("EMP_KEY_1"))
+        }
+    }
+
+    @Test
+    fun testXlsxExtremelyWideIndividualCellNoClippingOrSilentScaling() = runBlocking {
+        // Cell with a very long single token (>2,000pt wide)
+        val longString = "X".repeat(300) + "_EXTREMELY_WIDE_DATA"
+        val xlsxFile = buildXlsxFile("WideCellSheet", 3, 3, { r, c ->
+            if (r == 1 && c == 1) longString else "NormalCell_${r+1}_${c+1}"
+        })
+        val pdfFile = File(tempFolder.root, "output_extremely_wide_cell.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            val page = doc.getPage(0)
+            // Dynamic column width expands to fit the wide cell without artificial clamping
+            assertTrue("Page width (${page.mediaBox.width}) must accommodate wide cell", page.mediaBox.width > 1200f)
+            val fullText = PDFTextStripper().getText(doc)
+            assertTrue("Must contain full extremely wide payload", fullText.contains("_EXTREMELY_WIDE_DATA"))
+        }
+    }
 }

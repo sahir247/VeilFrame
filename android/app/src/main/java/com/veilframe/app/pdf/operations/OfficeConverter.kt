@@ -9,7 +9,9 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.font.PDFont
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,6 +41,9 @@ import java.io.FileOutputStream
 class OfficeConverter {
 
     var maxPdfPageHeightOverride: Float? = null
+    var maxPdfPageWidthOverride: Float? = null
+    var forceExportStrategy: ExportStrategy? = null
+    var repeatFrozenColumnsInTiling: Boolean = false
 
     private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
     private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
@@ -896,7 +901,10 @@ class OfficeConverter {
     }
 
     /**
-     * Converts a XLSX spreadsheet sheet-by-sheet to landscape A4 PDFs drawing clean cell gridlines.
+     * Converts a XLSX spreadsheet sheet-by-sheet to PDF using a three-level export architecture:
+     * - Level 1 (Natural-size): Single continuous page when width and height are <= 14,400 pt.
+     * - Level 2 (Extended-size via /UserUnit): Single page with /UserUnit scaling for dimensions > 14,400 pt up to 75,000 pt.
+     * - Level 3 (Lossless 2D Tiling): Row-major two-dimensional panel tiling with continuation banners and optional frozen columns.
      * Uses OpenXmlDocumentParser to execute offline on Android ART with zero Apache POI crashes.
      */
     suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
@@ -908,197 +916,365 @@ class OfficeConverter {
         }
 
         var pdf: PDDocument? = null
-        var contentStream: PDPageContentStream? = null
 
         try {
             pdf = PDDocument()
 
-            val margin = 30f
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
-            val fontSizeCell = 9f
-            val lineHeight = fontSizeCell * 1.3f
-            val paddingVertical = 8f
+            val limits = LayoutLimits(
+                minPageWidth = 842f,
+                minPageHeight = 595f,
+                maxStandardCoord = 14400f,
+                maxExtendedCoord = 75000f,
+                maxTileWidth = 14400f,
+                maxTileHeight = 14400f,
+                maxTileWidthOverride = maxPdfPageWidthOverride,
+                maxTileHeightOverride = maxPdfPageHeightOverride,
+                forceStrategy = forceExportStrategy,
+                repeatFrozenColumnsInTiling = repeatFrozenColumnsInTiling
+            )
 
-            for (sheet in workbookData.sheets) {
-                val rows = sheet.rows
-                val maxCol = rows.maxOfOrNull { it.size } ?: 0
+            for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
+                val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0) continue // Empty sheet
 
-                // Content-weighted dynamic column widths (Excel style)
-                // Width is determined naturally by content length, without squishing or artificial caps
-                val colWidths = FloatArray(maxCol) { c ->
-                    var maxW = 32f
-                    for (r in rows) {
-                        val cellVal = r.getOrNull(c) ?: ""
-                        if (cellVal.isNotEmpty()) {
-                            val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
-                                val cleanLine = sanitizeText(line)
-                                try { fontNormal.getStringWidth(cleanLine) / 1000f * fontSizeCell } catch (_: Exception) { cleanLine.length * 5f }
-                            } ?: 0f
-                            if (maxLineW > maxW) maxW = maxLineW
-                        }
+                val plan = SpreadsheetLayoutEngine.createExportPlan(sheet, sheetIdx, fontNormal, limits)
+
+                when (plan.strategy) {
+                    ExportStrategy.NATURAL_SIZE -> {
+                        renderNaturalOrExtendedSheet(
+                            pdf = pdf,
+                            plan = plan,
+                            fontNormal = fontNormal,
+                            fontBold = fontBold,
+                            limits = limits,
+                            isExtended = false
+                        )
                     }
-                    (maxW + 16f).coerceAtLeast(45f)
-                }
-
-                // Dynamic page width:
-                // Small sheets default to at least A4 landscape width (842f); wide sheets expand dynamically to fit all columns
-                val minPageWidth = 842f // A4 landscape width (297mm)
-                val minPageHeight = 595f // A4 landscape height (210mm)
-                val totalTableWidth = colWidths.sum()
-                val pageWidth = maxOf(minPageWidth, totalTableWidth + (2 * margin))
-
-                val colX = FloatArray(maxCol)
-                var runningX = margin
-                for (c in 0 until maxCol) {
-                    colX[c] = runningX
-                    runningX += colWidths[c]
-                }
-
-                // Pre-wrap rows and pre-calculate required height
-                val rowWrappedLines = Array(rows.size) { rIdx ->
-                    val row = rows[rIdx]
-                    Array(maxCol) { c ->
-                        val text = row.getOrNull(c) ?: ""
-                        if (text.isNotBlank()) {
-                            wrapText(text, fontNormal, fontSizeCell, colWidths[c] - 8f)
-                        } else {
-                            emptyList()
-                        }
+                    ExportStrategy.EXTENDED_SIZE -> {
+                        renderNaturalOrExtendedSheet(
+                            pdf = pdf,
+                            plan = plan,
+                            fontNormal = fontNormal,
+                            fontBold = fontBold,
+                            limits = limits,
+                            isExtended = true
+                        )
+                    }
+                    ExportStrategy.TILED -> {
+                        renderTiledSheet(
+                            pdf = pdf,
+                            plan = plan,
+                            fontNormal = fontNormal,
+                            fontBold = fontBold,
+                            limits = limits
+                        )
                     }
                 }
-
-                val rowHeights = FloatArray(rows.size) { rIdx ->
-                    val maxLinesInRow = rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
-                    maxOf(20f, maxLinesInRow * lineHeight + paddingVertical)
-                }
-
-                // Dynamic page height:
-                // Small sheets (e.g. 4-5 rows) default to at least A4 landscape height (595f).
-                // Larger sheets expand dynamically without artificial A4 height limits up to PDF standard 14,400pt
-                val headerHeight = 36f
-                val totalRequiredHeight = headerHeight + rowHeights.sum() + (2 * margin)
-                val maxPdfPageHeight = maxPdfPageHeightOverride ?: 14400f // ISO 32000-1 coordinate limit for PDF readers
-                val pageHeight = minOf(maxPdfPageHeight, maxOf(minPageHeight, totalRequiredHeight))
-                val pageBounds = PDRectangle(pageWidth, pageHeight)
-
-                var currentPage = PDPage(pageBounds)
-                pdf.addPage(currentPage)
-                contentStream = PDPageContentStream(pdf, currentPage)
-
-                // Page headers and title
-                contentStream?.beginText()
-                contentStream?.setFont(fontBold, 12f)
-                contentStream?.newLineAtOffset(margin, pageBounds.height - margin + 12f)
-                safeShowText(contentStream, "Spreadsheet: ${sheet.name}", fontBold)
-                contentStream?.endText()
-
-                var yPosition = pageBounds.height - margin - 20f
-
-                for (rIdx in rows.indices) {
-                    val rowCellLines = rowWrappedLines[rIdx]
-                    val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-                    val pageUsableHeight = (pageBounds.height - (2 * margin) - 20f).coerceAtLeast(30f)
-                    val totalRowHeight = rowHeights[rIdx]
-
-                    if (totalRowHeight <= pageUsableHeight) {
-                        if (yPosition - totalRowHeight < margin) {
-                            contentStream?.close()
-                            currentPage = PDPage(pageBounds)
-                            pdf.addPage(currentPage)
-                            contentStream = PDPageContentStream(pdf, currentPage)
-                            yPosition = pageBounds.height - margin - 20f
-                        }
-                    } else {
-                        // Oversized row: if less than two lines would fit on current page, start on clean page
-                        if (yPosition - (lineHeight * 2 + paddingVertical) < margin) {
-                            contentStream?.close()
-                            currentPage = PDPage(pageBounds)
-                            pdf.addPage(currentPage)
-                            contentStream = PDPageContentStream(pdf, currentPage)
-                            yPosition = pageBounds.height - margin - 20f
-                        }
-                    }
-
-                    val totalLines = maxOf(1, maxLinesInRow)
-                    var startLine = 0
-                    while (startLine < totalLines) {
-                        val availableHeight = (yPosition - margin).coerceAtLeast(lineHeight + paddingVertical)
-                        val remainingLines = totalLines - startLine
-                        val maxFittingLines = ((availableHeight - paddingVertical) / lineHeight).toInt().coerceAtLeast(1)
-                        val linesInChunk = minOf(remainingLines, maxFittingLines)
-                        val chunkHeight = maxOf(20f, linesInChunk * lineHeight + paddingVertical)
-
-                        // Draw cell grid lines and values for this chunk
-                        for (colIndex in 0 until maxCol) {
-                            val cellLeft = colX[colIndex]
-                            val cellW = colWidths[colIndex]
-
-                            // 1. Draw Cell border lines
-                            contentStream?.setStrokingColor(210, 215, 220)
-                            contentStream?.setLineWidth(0.5f)
-                            contentStream?.moveTo(cellLeft, yPosition)
-                            contentStream?.lineTo(cellLeft + cellW, yPosition)
-                            contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
-                            contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
-                            contentStream?.lineTo(cellLeft, yPosition)
-                            contentStream?.stroke()
-
-                            // 2. Draw cell string values safely clipped within cell boundaries
-                            val lines = rowCellLines[colIndex]
-                            val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
-                                lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
-                            } else {
-                                emptyList()
-                            }
-
-                            if (chunkLines.isNotEmpty()) {
-                                contentStream?.saveGraphicsState()
-                                contentStream?.addRect(
-                                    cellLeft + 1f,
-                                    yPosition - chunkHeight + 1f,
-                                    (cellW - 2f).coerceAtLeast(1f),
-                                    (chunkHeight - 2f).coerceAtLeast(1f)
-                                )
-                                contentStream?.clip()
-
-                                var textY = yPosition - 4f - fontSizeCell
-                                for (lineText in chunkLines) {
-                                    contentStream?.beginText()
-                                    contentStream?.setFont(fontNormal, fontSizeCell)
-                                    contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                                    safeShowText(contentStream, lineText, fontNormal)
-                                    contentStream?.endText()
-                                    textY -= lineHeight
-                                }
-                                contentStream?.restoreGraphicsState()
-                            }
-                        }
-
-                        yPosition -= chunkHeight
-                        startLine += linesInChunk
-
-                        if (startLine < totalLines) {
-                            contentStream?.close()
-                            currentPage = PDPage(pageBounds)
-                            pdf.addPage(currentPage)
-                            contentStream = PDPageContentStream(pdf, currentPage)
-                            yPosition = pageBounds.height - margin - 20f
-                        }
-                    }
-                }
-
-                contentStream?.close()
-                contentStream = null
             }
 
             FileOutputStream(pdfFile).use { out ->
                 pdf.save(out)
             }
         } finally {
-            try { contentStream?.close() } catch (_: Exception) {}
             try { pdf?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun renderNaturalOrExtendedSheet(
+        pdf: PDDocument,
+        plan: ExportPlan,
+        fontNormal: PDType1Font,
+        fontBold: PDType1Font,
+        limits: LayoutLimits,
+        isExtended: Boolean
+    ) {
+        val layout = plan.sheetLayout
+        val pageBounds = PDRectangle(plan.pageWidth, plan.pageHeight)
+        var currentPage = PDPage(pageBounds)
+        if (isExtended && plan.userUnit > 1.0f) {
+            currentPage.setUserUnit(plan.userUnit)
+        }
+        pdf.addPage(currentPage)
+        var contentStream: PDPageContentStream? = PDPageContentStream(pdf, currentPage)
+
+        if (isExtended && plan.userUnit > 1.0f) {
+            contentStream?.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+        }
+
+        val naturalWidth = layout.naturalPageWidth
+        val naturalHeight = layout.naturalPageHeight
+
+        // Page title header in natural coordinates
+        contentStream?.beginText()
+        contentStream?.setFont(fontBold, 12f)
+        contentStream?.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
+        safeShowText(contentStream, "Spreadsheet: ${layout.name}", fontBold)
+        contentStream?.endText()
+
+        var yPosition = naturalHeight - limits.margin - 20f
+
+        for (rIdx in 0 until layout.rowCount) {
+            val rowCellLines = layout.rowWrappedLines[rIdx]
+            val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
+            val pageUsableHeight = (naturalHeight - (2 * limits.margin) - 20f).coerceAtLeast(30f)
+            val totalRowHeight = layout.rowHeights[rIdx]
+
+            if (totalRowHeight <= pageUsableHeight) {
+                if (yPosition - totalRowHeight < limits.margin) {
+                    contentStream?.close()
+                    currentPage = PDPage(pageBounds)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        currentPage.setUserUnit(plan.userUnit)
+                    }
+                    pdf.addPage(currentPage)
+                    contentStream = PDPageContentStream(pdf, currentPage)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                    }
+                    yPosition = naturalHeight - limits.margin - 20f
+                }
+            } else {
+                if (yPosition - (limits.lineHeight * 2 + limits.paddingVertical) < limits.margin) {
+                    contentStream?.close()
+                    currentPage = PDPage(pageBounds)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        currentPage.setUserUnit(plan.userUnit)
+                    }
+                    pdf.addPage(currentPage)
+                    contentStream = PDPageContentStream(pdf, currentPage)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                    }
+                    yPosition = naturalHeight - limits.margin - 20f
+                }
+            }
+
+            val totalLines = maxOf(1, maxLinesInRow)
+            var startLine = 0
+            while (startLine < totalLines) {
+                val availableHeight = (yPosition - limits.margin).coerceAtLeast(limits.lineHeight + limits.paddingVertical)
+                val remainingLines = totalLines - startLine
+                val maxFittingLines = ((availableHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
+                val linesInChunk = minOf(remainingLines, maxFittingLines)
+                val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
+
+                for (colIndex in 0 until layout.colCount) {
+                    val cellLeft = layout.colX[colIndex]
+                    val cellW = layout.colWidths[colIndex]
+                    val lines = rowCellLines[colIndex]
+                    val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
+                        lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
+                    } else {
+                        emptyList()
+                    }
+
+                    // Merged region check
+                    val merged = layout.mergedRegions.firstOrNull { it.contains(rIdx, colIndex) }
+                    val shouldDrawText = if (merged != null) {
+                        rIdx == merged.firstRow && colIndex == merged.firstCol
+                    } else {
+                        true
+                    }
+
+                    drawCellChunk(
+                        contentStream = contentStream,
+                        cellLeft = cellLeft,
+                        cellTop = yPosition,
+                        cellW = cellW,
+                        cellH = chunkHeight,
+                        chunkLines = if (shouldDrawText) chunkLines else emptyList(),
+                        fontNormal = fontNormal,
+                        fontSizeCell = limits.fontSizeCell,
+                        lineHeight = limits.lineHeight
+                    )
+                }
+
+                yPosition -= chunkHeight
+                startLine += linesInChunk
+
+                if (startLine < totalLines) {
+                    contentStream?.close()
+                    currentPage = PDPage(pageBounds)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        currentPage.setUserUnit(plan.userUnit)
+                    }
+                    pdf.addPage(currentPage)
+                    contentStream = PDPageContentStream(pdf, currentPage)
+                    if (isExtended && plan.userUnit > 1.0f) {
+                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                    }
+                    yPosition = naturalHeight - limits.margin - 20f
+                }
+            }
+        }
+
+        contentStream?.close()
+    }
+
+    private fun renderTiledSheet(
+        pdf: PDDocument,
+        plan: ExportPlan,
+        fontNormal: PDType1Font,
+        fontBold: PDType1Font,
+        limits: LayoutLimits
+    ) {
+        val layout = plan.sheetLayout
+        val margin = limits.margin
+
+        for (tile in plan.tiles) {
+            val pageBounds = PDRectangle(tile.tilePageWidth, tile.tilePageHeight)
+            val page = PDPage(pageBounds)
+            pdf.addPage(page)
+            val contentStream = PDPageContentStream(pdf, page)
+
+            val pageW = tile.tilePageWidth
+            val pageH = tile.tilePageHeight
+
+            // 1. Title Banner
+            val startColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol)
+            val endColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol)
+            val startRowDisplay = tile.rowGroup.startRow + 1
+            val endRowDisplay = tile.rowGroup.endRow + 1
+            val panelNum = tile.colGroup.groupIndex + 1
+            val totalPanels = tile.colGroup.totalGroups
+
+            val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
+
+            contentStream.beginText()
+            contentStream.setFont(fontBold, 11f)
+            contentStream.newLineAtOffset(margin, pageH - margin + 10f)
+            safeShowText(contentStream, headerText, fontBold)
+            contentStream.endText()
+
+            // 2. Horizontal Continuation Banners
+            val topOffset = margin + 14f
+            if (tile.colGroup.hasLeftContinuation) {
+                val prevColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol - 1)
+                contentStream.beginText()
+                contentStream.setFont(fontBold, 9f)
+                contentStream.newLineAtOffset(margin, pageH - topOffset)
+                safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                contentStream.endText()
+            }
+            if (tile.colGroup.hasRightContinuation) {
+                val nextColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol + 1)
+                contentStream.beginText()
+                contentStream.setFont(fontBold, 9f)
+                val rightText = "Continues right -> $nextColRef"
+                val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
+                contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
+                safeShowText(contentStream, rightText, fontBold)
+                contentStream.endText()
+            }
+
+            // 3. Down Continuation Banner
+            if (tile.rowGroup.hasDownContinuation) {
+                val nextRowDisplay = tile.rowGroup.endRow + 2
+                contentStream.beginText()
+                contentStream.setFont(fontBold, 9f)
+                contentStream.newLineAtOffset(margin, margin - 14f)
+                safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
+                contentStream.endText()
+            }
+
+            // 4. Calculate Column Positions on this tile
+            val colsToDraw = mutableListOf<Int>()
+            if (tile.colGroup.frozenCols.isNotEmpty()) {
+                colsToDraw.addAll(tile.colGroup.frozenCols)
+            }
+            colsToDraw.addAll(tile.colGroup.activeCols)
+
+            val tileColX = mutableMapOf<Int, Float>()
+            var runningX = margin
+            for (c in colsToDraw) {
+                tileColX[c] = runningX
+                runningX += layout.colWidths[c]
+            }
+
+            // 5. Draw table rows for this tile
+            var yPosition = pageH - margin - 22f
+
+            for (rIdx in tile.rowGroup.startRow..tile.rowGroup.endRow) {
+                val rowHeight = layout.rowHeights[rIdx]
+                val rowLines = layout.rowWrappedLines[rIdx]
+
+                for (colIndex in colsToDraw) {
+                    val cellLeft = tileColX[colIndex] ?: margin
+                    val cellW = layout.colWidths[colIndex]
+                    val lines = rowLines[colIndex]
+
+                    val merged = layout.mergedRegions.firstOrNull { it.contains(rIdx, colIndex) }
+                    val shouldDrawText = if (merged != null) {
+                        rIdx == merged.firstRow && colIndex == merged.firstCol
+                    } else {
+                        true
+                    }
+
+                    drawCellChunk(
+                        contentStream = contentStream,
+                        cellLeft = cellLeft,
+                        cellTop = yPosition,
+                        cellW = cellW,
+                        cellH = rowHeight,
+                        chunkLines = if (shouldDrawText) lines else emptyList(),
+                        fontNormal = fontNormal,
+                        fontSizeCell = limits.fontSizeCell,
+                        lineHeight = limits.lineHeight
+                    )
+                }
+                yPosition -= rowHeight
+            }
+
+            contentStream.close()
+        }
+    }
+
+    private fun drawCellChunk(
+        contentStream: PDPageContentStream?,
+        cellLeft: Float,
+        cellTop: Float,
+        cellW: Float,
+        cellH: Float,
+        chunkLines: List<String>,
+        fontNormal: PDFont,
+        fontSizeCell: Float,
+        lineHeight: Float
+    ) {
+        if (contentStream == null) return
+
+        // 1. Draw Cell border lines
+        contentStream.setStrokingColor(210, 215, 220)
+        contentStream.setLineWidth(0.5f)
+        contentStream.moveTo(cellLeft, cellTop)
+        contentStream.lineTo(cellLeft + cellW, cellTop)
+        contentStream.lineTo(cellLeft + cellW, cellTop - cellH)
+        contentStream.lineTo(cellLeft, cellTop - cellH)
+        contentStream.lineTo(cellLeft, cellTop)
+        contentStream.stroke()
+
+        // 2. Draw cell string values safely clipped within cell boundaries
+        if (chunkLines.isNotEmpty()) {
+            contentStream.saveGraphicsState()
+            contentStream.addRect(
+                cellLeft + 1f,
+                cellTop - cellH + 1f,
+                (cellW - 2f).coerceAtLeast(1f),
+                (cellH - 2f).coerceAtLeast(1f)
+            )
+            contentStream.clip()
+
+            var textY = cellTop - 4f - fontSizeCell
+            for (lineText in chunkLines) {
+                contentStream.beginText()
+                contentStream.setFont(fontNormal, fontSizeCell)
+                contentStream.newLineAtOffset(cellLeft + 4f, textY)
+                safeShowText(contentStream, lineText, fontNormal)
+                contentStream.endText()
+                textY -= lineHeight
+            }
+            contentStream.restoreGraphicsState()
         }
     }
 
@@ -2317,6 +2493,9 @@ class OfficeConverter {
                     '–', '—' -> sb.append('-')
                     '•' -> sb.append('*')
                     '…' -> sb.append("...")
+                    '→' -> sb.append("->")
+                    '←' -> sb.append("<-")
+                    '↓' -> sb.append("v")
                     '\t', '\n', '\r' -> sb.append(' ')
                     else -> {
                         if (char.code in 32..126) sb.append(char) else sb.append(' ')

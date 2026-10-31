@@ -297,6 +297,17 @@ object OpenXmlDocumentParser {
     // XLSX Models & Parsing
     // -------------------------------------------------------------------------
 
+    data class CellRangeAddress(
+        val firstRow: Int,
+        val lastRow: Int,
+        val firstCol: Int,
+        val lastCol: Int
+    ) {
+        fun contains(row: Int, col: Int): Boolean {
+            return row in firstRow..lastRow && col in firstCol..lastCol
+        }
+    }
+
     data class XlsxRow(
         val rowIndex: Int,
         val cells: List<String>
@@ -305,7 +316,8 @@ object OpenXmlDocumentParser {
     data class XlsxSheetData(
         val name: String,
         val rows: List<List<String>>,
-        val sparseRows: List<XlsxRow> = rows.mapIndexed { idx, cells -> XlsxRow(idx + 1, cells) }
+        val sparseRows: List<XlsxRow> = rows.mapIndexed { idx, cells -> XlsxRow(idx + 1, cells) },
+        val mergedRegions: List<CellRangeAddress> = emptyList()
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -343,10 +355,11 @@ object OpenXmlDocumentParser {
                     val name = if (sheetIdx - 1 < sheetNames.size) sheetNames[sheetIdx - 1] else "Sheet$sheetIdx"
                     val sheetRows = mutableListOf<List<String>>()
                     val sheetSparseRows = mutableListOf<XlsxRow>()
+                    val sheetMergedRegions = mutableListOf<CellRangeAddress>()
                     zip.getInputStream(sheetEntry).use { stream ->
-                        parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows)
+                        parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions)
                     }
-                    sheets.add(XlsxSheetData(name = name, rows = sheetRows, sparseRows = sheetSparseRows))
+                    sheets.add(XlsxSheetData(name = name, rows = sheetRows, sparseRows = sheetSparseRows, mergedRegions = sheetMergedRegions))
                     sheetIdx++
                 }
             }
@@ -403,9 +416,39 @@ object OpenXmlDocumentParser {
         stream: InputStream,
         sharedStrings: List<String>,
         outRows: MutableList<List<String>>,
-        outSparseRows: MutableList<XlsxRow>? = null
+        outSparseRows: MutableList<XlsxRow>? = null,
+        outMergedRegions: MutableList<CellRangeAddress>? = null
     ) {
         val doc = newDocBuilder().parse(stream)
+
+        // Parse merged cell ranges if present
+        if (outMergedRegions != null) {
+            val mergeNodes = doc.getElementsByTagName("mergeCell")
+            for (m in 0 until mergeNodes.length) {
+                val mElem = mergeNodes.item(m) as? Element ?: continue
+                val ref = mElem.getAttribute("ref")
+                if (ref.contains(":")) {
+                    val parts = ref.split(":")
+                    val startRef = parts[0].trim()
+                    val endRef = parts[1].trim()
+                    val startCol = colRefToIndex(startRef)
+                    val startRow = (startRef.filter { it.isDigit() }.toIntOrNull() ?: 1) - 1
+                    val endCol = colRefToIndex(endRef)
+                    val endRow = (endRef.filter { it.isDigit() }.toIntOrNull() ?: 1) - 1
+                    if (startCol >= 0 && endCol >= 0 && startRow >= 0 && endRow >= 0) {
+                        outMergedRegions.add(
+                            CellRangeAddress(
+                                firstRow = minOf(startRow, endRow),
+                                lastRow = maxOf(startRow, endRow),
+                                firstCol = minOf(startCol, endCol),
+                                lastCol = maxOf(startCol, endCol)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
         val rowList = doc.getElementsByTagName("row")
         val rowMap = java.util.TreeMap<Int, MutableList<String>>()
         var autoRowIndex = 1
