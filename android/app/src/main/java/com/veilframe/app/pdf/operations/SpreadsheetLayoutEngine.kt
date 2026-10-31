@@ -57,6 +57,18 @@ data class LayoutLimits(
 /**
  * Extracted geometric layout of an individual worksheet.
  */
+data class MergedCellGeometry(
+    val range: OpenXmlDocumentParser.CellRangeAddress,
+    val firstCol: Int,
+    val lastCol: Int,
+    val firstRow: Int,
+    val lastRow: Int,
+    val text: String,
+    val wrappedLines: List<String>,
+    val totalWidth: Float,
+    val totalHeight: Float
+)
+
 data class SheetLayout(
     val name: String,
     val index: Int,
@@ -73,7 +85,8 @@ data class SheetLayout(
     val naturalPageWidth: Float,
     val naturalPageHeight: Float,
     val mergedRegions: List<OpenXmlDocumentParser.CellRangeAddress> = emptyList(),
-    val frozenColumnsCount: Int = 1
+    val mergedGeometries: List<MergedCellGeometry> = emptyList(),
+    val frozenColumnsCount: Int = 0
 )
 
 /**
@@ -100,6 +113,8 @@ data class TileRowGroup(
     val totalGroups: Int,
     val startRow: Int,
     val endRow: Int, // inclusive
+    val startLineOfStartRow: Int = 0,
+    val linesInStartRow: Int = -1,
     val groupTableHeight: Float,
     val tileHeight: Float,
     val hasDownContinuation: Boolean
@@ -163,6 +178,9 @@ object SpreadsheetLayoutEngine {
         val rows = sheet.rows
         val maxCol = rows.maxOfOrNull { it.size } ?: 0
 
+        val effectiveMaxTileW = limits.maxTileWidthOverride ?: limits.maxTileWidth
+        val maxAllowedColWidth = (minOf(effectiveMaxTileW, limits.maxStandardCoord) - (2 * limits.margin)).coerceAtLeast(45f)
+
         val colWidths = FloatArray(maxCol) { c ->
             var maxW = 32f
             for (r in rows) {
@@ -179,8 +197,8 @@ object SpreadsheetLayoutEngine {
                     if (maxLineW > maxW) maxW = maxLineW
                 }
             }
-            // Allow extremely wide individual cells to expand dynamically without artificial truncation
-            (maxW + 16f).coerceAtLeast(45f)
+            // Strict ceiling: individual column width cannot exceed maximum tile table width budget
+            minOf(maxAllowedColWidth, (maxW + 16f).coerceAtLeast(45f))
         }
 
         val colX = FloatArray(maxCol)
@@ -220,6 +238,43 @@ object SpreadsheetLayoutEngine {
         val naturalPageWidth = maxOf(limits.minPageWidth, totalTableWidth + (2 * limits.margin))
         val naturalPageHeight = maxOf(limits.minPageHeight, limits.headerHeight + totalTableHeight + (2 * limits.margin))
 
+        val mergedGeometries = sheet.mergedRegions.mapNotNull { region ->
+            if (maxCol == 0 || rows.isEmpty()) return@mapNotNull null
+            val fCol = region.firstCol.coerceIn(0, maxCol - 1)
+            val lCol = region.lastCol.coerceIn(0, maxCol - 1)
+            val fRow = region.firstRow.coerceIn(0, rows.size - 1)
+            val lRow = region.lastRow.coerceIn(0, rows.size - 1)
+            if (lCol < fCol || lRow < fRow) return@mapNotNull null
+
+            val mWidth = (fCol..lCol).sumOf { colWidths[it].toDouble() }.toFloat()
+            val mHeight = (fRow..lRow).sumOf { rowHeights[it].toDouble() }.toFloat()
+            val mText = rows.getOrNull(fRow)?.getOrNull(fCol) ?: ""
+            val mWrapped = if (mText.isNotBlank()) {
+                wrapCellText(mText, fontNormal, limits.fontSizeCell, (mWidth - 8f).coerceAtLeast(10f))
+            } else {
+                emptyList()
+            }
+            MergedCellGeometry(
+                range = region,
+                firstCol = fCol,
+                lastCol = lCol,
+                firstRow = fRow,
+                lastRow = lRow,
+                text = mText,
+                wrappedLines = mWrapped,
+                totalWidth = mWidth,
+                totalHeight = mHeight
+            )
+        }
+
+        val frozenCols = if (sheet.frozenColumns > 0) {
+            minOf(sheet.frozenColumns, maxCol)
+        } else if (maxCol > 0 && limits.repeatFrozenColumnsInTiling) {
+            1
+        } else {
+            0
+        }
+
         return SheetLayout(
             name = sheet.name,
             index = sheetIndex,
@@ -236,7 +291,8 @@ object SpreadsheetLayoutEngine {
             naturalPageWidth = naturalPageWidth,
             naturalPageHeight = naturalPageHeight,
             mergedRegions = sheet.mergedRegions,
-            frozenColumnsCount = if (maxCol > 0) 1 else 0
+            mergedGeometries = mergedGeometries,
+            frozenColumnsCount = frozenCols
         )
     }
 
@@ -342,7 +398,9 @@ object SpreadsheetLayoutEngine {
         val maxCol = layout.colCount
         if (maxCol == 0) return emptyList()
 
-        val repeatFrozen = limits.repeatFrozenColumnsInTiling &&
+        val effectiveMaxTileW = limits.maxTileWidthOverride ?: limits.maxTileWidth
+
+        val repeatFrozen = (limits.repeatFrozenColumnsInTiling || layout.frozenColumnsCount > 0) &&
             layout.frozenColumnsCount > 0 &&
             maxCol > layout.frozenColumnsCount
 
@@ -381,7 +439,8 @@ object SpreadsheetLayoutEngine {
                 groupWidth
             }
 
-            val tileWidth = maxOf(limits.minPageWidth, groupTotalTableWidth + (2 * limits.margin))
+            val maxAllowedWidth = minOf(effectiveMaxTileW, limits.maxStandardCoord)
+            val tileWidth = minOf(maxAllowedWidth, maxOf(limits.minPageWidth, groupTotalTableWidth + (2 * limits.margin)))
 
             groups.add(
                 TileColumnGroup(
@@ -405,43 +464,96 @@ object SpreadsheetLayoutEngine {
 
     /**
      * Partitions rows into vertical groups that fit on tiles.
+     * Oversized rows exceeding availHeight are automatically chunked into contiguous vertical fragments.
      */
     fun partitionRows(layout: SheetLayout, limits: LayoutLimits, availHeight: Float): List<TileRowGroup> {
         val groups = mutableListOf<TileRowGroup>()
         val rowCount = layout.rowCount
         if (rowCount == 0) return emptyList()
 
-        var rIdx = 0
-        while (rIdx < rowCount) {
-            var groupHeight = 0f
-            val startRow = rIdx
+        val effectiveMaxTileH = limits.maxTileHeightOverride ?: limits.maxTileHeight
+        val maxAllowedHeight = minOf(effectiveMaxTileH, limits.maxStandardCoord)
 
-            while (rIdx < rowCount) {
-                val nextH = layout.rowHeights[rIdx]
-                if (rIdx == startRow || groupHeight + nextH <= availHeight) {
-                    groupHeight += nextH
+        var rIdx = 0
+        var currentChunkStartLine = 0
+
+        while (rIdx < rowCount) {
+            val totalLinesInRow = layout.rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
+            val totalRowH = layout.rowHeights[rIdx]
+
+            if (totalRowH > availHeight) {
+                // Oversized row: split into vertical chunks across panels
+                val maxFittingLines = ((availHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
+                val linesInChunk = minOf(totalLinesInRow - currentChunkStartLine, maxFittingLines)
+                val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
+
+                val tileHeight = minOf(
+                    maxAllowedHeight,
+                    maxOf(
+                        limits.minPageHeight,
+                        limits.headerHeight + chunkHeight + (2 * limits.margin) + (limits.bannerHeight * 2)
+                    )
+                )
+
+                val isLastChunkOfRow = currentChunkStartLine + linesInChunk >= totalLinesInRow
+                val hasDown = !isLastChunkOfRow || (rIdx + 1 < rowCount)
+
+                groups.add(
+                    TileRowGroup(
+                        groupIndex = groups.size,
+                        totalGroups = 0,
+                        startRow = rIdx,
+                        endRow = rIdx,
+                        startLineOfStartRow = currentChunkStartLine,
+                        linesInStartRow = linesInChunk,
+                        groupTableHeight = chunkHeight,
+                        tileHeight = tileHeight,
+                        hasDownContinuation = hasDown
+                    )
+                )
+
+                if (isLastChunkOfRow) {
+                    currentChunkStartLine = 0
                     rIdx++
                 } else {
-                    break
+                    currentChunkStartLine += linesInChunk
                 }
-            }
+            } else {
+                var groupHeight = 0f
+                val startRow = rIdx
 
-            val tileHeight = maxOf(
-                limits.minPageHeight,
-                limits.headerHeight + groupHeight + (2 * limits.margin) + (limits.bannerHeight * 2)
-            )
+                while (rIdx < rowCount) {
+                    val nextH = layout.rowHeights[rIdx]
+                    if (rIdx == startRow || (nextH <= availHeight && groupHeight + nextH <= availHeight)) {
+                        groupHeight += nextH
+                        rIdx++
+                    } else {
+                        break
+                    }
+                }
 
-            groups.add(
-                TileRowGroup(
-                    groupIndex = groups.size,
-                    totalGroups = 0, // Assigned after loop
-                    startRow = startRow,
-                    endRow = rIdx - 1,
-                    groupTableHeight = groupHeight,
-                    tileHeight = tileHeight,
-                    hasDownContinuation = rIdx < rowCount
+                val tileHeight = minOf(
+                    maxAllowedHeight,
+                    maxOf(
+                        limits.minPageHeight,
+                        limits.headerHeight + groupHeight + (2 * limits.margin) + (limits.bannerHeight * 2)
+                    )
                 )
-            )
+
+                groups.add(
+                    TileRowGroup(
+                        groupIndex = groups.size,
+                        totalGroups = 0,
+                        startRow = startRow,
+                        endRow = rIdx - 1,
+                        startLineOfStartRow = 0,
+                        linesInStartRow = -1,
+                        groupTableHeight = groupHeight,
+                        tileHeight = tileHeight,
+                        hasDownContinuation = rIdx < rowCount
+                    )
+                )
+            }
         }
 
         val total = groups.size
@@ -528,19 +640,26 @@ object SpreadsheetLayoutEngine {
                     }
                     var remaining = word
                     while (remaining.isNotEmpty()) {
-                        var chunkLen = remaining.length
-                        while (chunkLen > 1) {
-                            val candidate = sanitizeForFontMetrics(remaining.substring(0, chunkLen))
+                        var low = 1
+                        var high = remaining.length
+                        var bestLen = 1
+                        while (low <= high) {
+                            val mid = (low + high) ushr 1
+                            val candidate = sanitizeForFontMetrics(remaining.substring(0, mid))
                             val w = try {
                                 font.getStringWidth(candidate) / 1000f * fontSize
                             } catch (_: Exception) {
                                 candidate.length * 5f
                             }
-                            if (w <= maxWidth) break
-                            chunkLen--
+                            if (w <= maxWidth) {
+                                bestLen = mid
+                                low = mid + 1
+                            } else {
+                                high = mid - 1
+                            }
                         }
-                        lines.add(remaining.substring(0, chunkLen))
-                        remaining = remaining.substring(chunkLen)
+                        lines.add(remaining.substring(0, bestLen))
+                        remaining = remaining.substring(bestLen)
                     }
                     continue
                 }

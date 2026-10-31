@@ -317,7 +317,9 @@ object OpenXmlDocumentParser {
         val name: String,
         val rows: List<List<String>>,
         val sparseRows: List<XlsxRow> = rows.mapIndexed { idx, cells -> XlsxRow(idx + 1, cells) },
-        val mergedRegions: List<CellRangeAddress> = emptyList()
+        val mergedRegions: List<CellRangeAddress> = emptyList(),
+        val frozenColumns: Int = 0,
+        val frozenRows: Int = 0
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -356,10 +358,19 @@ object OpenXmlDocumentParser {
                     val sheetRows = mutableListOf<List<String>>()
                     val sheetSparseRows = mutableListOf<XlsxRow>()
                     val sheetMergedRegions = mutableListOf<CellRangeAddress>()
-                    zip.getInputStream(sheetEntry).use { stream ->
+                    val (frozenCols, frozenRows) = zip.getInputStream(sheetEntry).use { stream ->
                         parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions)
                     }
-                    sheets.add(XlsxSheetData(name = name, rows = sheetRows, sparseRows = sheetSparseRows, mergedRegions = sheetMergedRegions))
+                    sheets.add(
+                        XlsxSheetData(
+                            name = name,
+                            rows = sheetRows,
+                            sparseRows = sheetSparseRows,
+                            mergedRegions = sheetMergedRegions,
+                            frozenColumns = frozenCols,
+                            frozenRows = frozenRows
+                        )
+                    )
                     sheetIdx++
                 }
             }
@@ -418,8 +429,22 @@ object OpenXmlDocumentParser {
         outRows: MutableList<List<String>>,
         outSparseRows: MutableList<XlsxRow>? = null,
         outMergedRegions: MutableList<CellRangeAddress>? = null
-    ) {
+    ): Pair<Int, Int> {
         val doc = newDocBuilder().parse(stream)
+
+        var frozenCols = 0
+        var frozenRows = 0
+        val paneNodes = doc.getElementsByTagName("pane")
+        for (p in 0 until paneNodes.length) {
+            val pElem = paneNodes.item(p) as? Element ?: continue
+            val state = pElem.getAttribute("state")
+            if (state.isEmpty() || state.equals("frozen", ignoreCase = true) || state.equals("frozenSplit", ignoreCase = true)) {
+                val xSplit = pElem.getAttribute("xSplit").toFloatOrNull()?.toInt() ?: 0
+                val ySplit = pElem.getAttribute("ySplit").toFloatOrNull()?.toInt() ?: 0
+                if (xSplit > 0) frozenCols = maxOf(frozenCols, xSplit)
+                if (ySplit > 0) frozenRows = maxOf(frozenRows, ySplit)
+            }
+        }
 
         // Parse merged cell ranges if present
         if (outMergedRegions != null) {
@@ -508,7 +533,7 @@ object OpenXmlDocumentParser {
             }
         }
 
-        if (rowMap.isEmpty()) return
+        if (rowMap.isEmpty()) return Pair(frozenCols, frozenRows)
 
         var prevRow = 0
         for ((rowIdx, cells) in rowMap) {
@@ -532,5 +557,6 @@ object OpenXmlDocumentParser {
         while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() }) {
             outRows.removeAt(outRows.size - 1)
         }
+        return Pair(frozenCols, frozenRows)
     }
 }

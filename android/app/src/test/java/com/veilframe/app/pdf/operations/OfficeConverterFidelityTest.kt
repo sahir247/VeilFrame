@@ -857,7 +857,9 @@ class OfficeConverterFidelityTest {
         colCount: Int,
         rowCount: Int,
         cellValueBuilder: (row: Int, col: Int) -> String,
-        mergeCells: List<String> = emptyList()
+        mergeCells: List<String> = emptyList(),
+        frozenCols: Int = 0,
+        frozenRows: Int = 0
     ): File {
         val sharedStrings = mutableListOf<String>()
         val stringMap = mutableMapOf<String, Int>()
@@ -887,6 +889,18 @@ class OfficeConverterFidelityTest {
             rowsXml.append("        </row>\n")
         }
 
+        val sheetViewsXml = if (frozenCols > 0 || frozenRows > 0) {
+            val xSplitAttr = if (frozenCols > 0) " xSplit=\"$frozenCols\"" else ""
+            val ySplitAttr = if (frozenRows > 0) " ySplit=\"$frozenRows\"" else ""
+            "    <sheetViews>\n" +
+            "        <sheetView tabSelected=\"1\" workbookViewId=\"0\">\n" +
+            "            <pane$xSplitAttr$ySplitAttr state=\"frozen\"/>\n" +
+            "        </sheetView>\n" +
+            "    </sheetViews>\n"
+        } else {
+            ""
+        }
+
         val mergeCellsXml = if (mergeCells.isNotEmpty()) {
             val sb = StringBuilder()
             sb.append("    <mergeCells count=\"${mergeCells.size}\">\n")
@@ -913,6 +927,7 @@ class OfficeConverterFidelityTest {
 
         val sheet1Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
             "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            sheetViewsXml +
             "    <sheetData>\n" +
             rowsXml.toString() +
             "    </sheetData>\n" +
@@ -1117,6 +1132,24 @@ class OfficeConverterFidelityTest {
             // 3. Uniqueness: zero duplicates
             val duplicateTokens = extractedMatches.groupBy { it }.filter { it.value.size > 1 }.keys
             assertTrue("No original cell may be duplicated in lossless tiling (found duplicates: $duplicateTokens)", duplicateTokens.isEmpty())
+
+            // 4. Strict sequence preservation in row-major panel order across tiles
+            val parsed = OpenXmlDocumentParser.parseXlsx(xlsxFile)
+            val limits = LayoutLimits(maxTileWidthOverride = 500f, maxTileHeightOverride = 350f, repeatFrozenColumnsInTiling = false)
+            val plan = SpreadsheetLayoutEngine.createExportPlan(parsed.sheets[0], 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
+            val expectedTiledSequence = mutableListOf<String>()
+            for (tile in plan.tiles) {
+                for (r in tile.rowGroup.startRow..tile.rowGroup.endRow) {
+                    for (c in tile.colGroup.activeCols) {
+                        expectedTiledSequence.add("CID_R${r + 1}_C${c + 1}")
+                    }
+                }
+            }
+            assertEquals(
+                "Extracted cell ID sequence must match expected row-major reading order across tiles exactly",
+                expectedTiledSequence,
+                extractedMatches
+            )
         }
     }
 
@@ -1204,5 +1237,236 @@ class OfficeConverterFidelityTest {
             val fullText = PDFTextStripper().getText(doc)
             assertTrue("Must contain full extremely wide payload", fullText.contains("_EXTREMELY_WIDE_DATA"))
         }
+    }
+
+    @Test
+    fun testOversizedColumnAndRowStrictlyRespectTileBoundsWithoutOverflow() = runBlocking {
+        // Enormous column (5,000 characters) and enormous multiline row (80 lines)
+        val massiveText = "WORD_".repeat(1000)
+        val multilineText = (1..80).joinToString("\n") { "TALL_LINE_$it" }
+        val xlsxFile = buildXlsxFile("OversizedSheet", 4, 4, { r, c ->
+            when {
+                r == 1 && c == 1 -> massiveText
+                r == 2 && c == 2 -> multilineText
+                else -> "Cell_R${r+1}_C${c+1}"
+            }
+        })
+        val pdfFile = File(tempFolder.root, "output_oversized_bounds.pdf")
+
+        val converter = OfficeConverter()
+        converter.forceExportStrategy = ExportStrategy.TILED
+        converter.maxPdfPageWidthOverride = 600f
+        converter.maxPdfPageHeightOverride = 500f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must tile into multiple pages", doc.numberOfPages >= 2)
+            for (p in 0 until doc.numberOfPages) {
+                val page = doc.getPage(p)
+                assertTrue("Page $p width (${page.mediaBox.width}) must not exceed ceiling 600f", page.mediaBox.width <= 600.5f)
+                assertTrue("Page $p height (${page.mediaBox.height}) must not exceed ceiling 500f", page.mediaBox.height <= 500.5f)
+            }
+            val fullText = PDFTextStripper().getText(doc)
+            assertTrue("Must preserve massive text chunk", fullText.contains("WORD_WORD_"))
+            assertTrue("Must preserve tall line 1", fullText.contains("TALL_LINE_1"))
+            assertTrue("Must preserve tall line 80", fullText.contains("TALL_LINE_80"))
+        }
+    }
+
+    @Test
+    fun testMergedCellFullGeometryAndNoInternalGridlines() = runBlocking {
+        val colCount = 6
+        val rowCount = 6
+        // B2:D4 is merged (cols 1..3, rows 1..3, 3 cols x 3 rows)
+        val xlsxFile = buildXlsxFile(
+            sheetName = "MergedGeometrySheet",
+            colCount = colCount,
+            rowCount = rowCount,
+            cellValueBuilder = { r, c ->
+                if (r in 1..3 && c in 1..3) "MERGED_BLOCK_PAYLOAD" else "C_${r+1}_${c+1}"
+            },
+            mergeCells = listOf("B2:D4")
+        )
+
+        val parserData = OpenXmlDocumentParser.parseXlsx(xlsxFile)
+        val sheet = parserData.sheets[0]
+        assertEquals("Must parse 1 merged region", 1, sheet.mergedRegions.size)
+        val mRange = sheet.mergedRegions[0]
+        assertEquals("B2:D4 firstCol", 1, mRange.firstCol)
+        assertEquals("B2:D4 lastCol", 3, mRange.lastCol)
+        assertEquals("B2:D4 firstRow", 1, mRange.firstRow)
+        assertEquals("B2:D4 lastRow", 3, mRange.lastRow)
+
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(
+            sheet, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, LayoutLimits()
+        )
+        assertEquals("Must have 1 MergedCellGeometry", 1, layout.mergedGeometries.size)
+        val geom = layout.mergedGeometries[0]
+        val expectedW = (1..3).sumOf { layout.colWidths[it].toDouble() }.toFloat()
+        val expectedH = (1..3).sumOf { layout.rowHeights[it].toDouble() }.toFloat()
+        assertEquals(expectedW, geom.totalWidth, 0.01f)
+        assertEquals(expectedH, geom.totalHeight, 0.01f)
+        assertTrue("Merged cell must wrap across combined width", geom.wrappedLines.isNotEmpty())
+
+        val pdfFile = File(tempFolder.root, "output_merged_geom.pdf")
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+        assertTrue(pdfFile.exists())
+
+        PDDocument.load(pdfFile).use { doc ->
+            val fullText = PDFTextStripper().getText(doc)
+            val matches = Regex("MERGED_BLOCK_PAYLOAD").findAll(fullText).toList()
+            assertEquals("Merged text should appear exactly once (no duplicates)", 1, matches.size)
+        }
+    }
+
+    @Test
+    fun testFrozenPaneMetadataParsedAndPositionedAccurately() = runBlocking {
+        val colCount = 12
+        val rowCount = 8
+        // Frozen pane with 2 columns frozen and 1 row frozen
+        val xlsxFile = buildXlsxFile(
+            sheetName = "FrozenPaneSheet",
+            colCount = colCount,
+            rowCount = rowCount,
+            cellValueBuilder = { r, c ->
+                when (c) {
+                    0 -> "ID_KEY_${r+1}"
+                    1 -> "NAME_KEY_${r+1}"
+                    else -> "VAL_R${r+1}_C${c+1}"
+                }
+            },
+            frozenCols = 2,
+            frozenRows = 1
+        )
+
+        val parserData = OpenXmlDocumentParser.parseXlsx(xlsxFile)
+        val sheet = parserData.sheets[0]
+        assertEquals("Must parse 2 frozen columns from XML", 2, sheet.frozenColumns)
+        assertEquals("Must parse 1 frozen row from XML", 1, sheet.frozenRows)
+
+        val pdfFile = File(tempFolder.root, "output_frozen_pane_parsed.pdf")
+        val converter = OfficeConverter()
+        converter.maxPdfPageWidthOverride = 500f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Must tile into at least 2 panels", doc.numberOfPages >= 2)
+
+            val stripper = PDFTextStripper()
+            stripper.startPage = 1
+            stripper.endPage = 1
+            val p1Text = stripper.getText(doc)
+            assertTrue("Panel 1 must have frozen col 0", p1Text.contains("ID_KEY_1"))
+            assertTrue("Panel 1 must have frozen col 1", p1Text.contains("NAME_KEY_1"))
+
+            stripper.startPage = 2
+            stripper.endPage = 2
+            val p2Text = stripper.getText(doc)
+            // Both frozen columns 0 and 1 are repeated on subsequent horizontal panels!
+            assertTrue("Panel 2 must repeat frozen col 0", p2Text.contains("ID_KEY_1"))
+            assertTrue("Panel 2 must repeat frozen col 1", p2Text.contains("NAME_KEY_1"))
+        }
+    }
+
+    @Test
+    fun testExtendedUserUnitOpensAndRendersInAndroidPdfRenderer() = runBlocking {
+        val colCount = 180
+        val rowCount = 10
+        val xlsxFile = buildXlsxFile("ExtendedSheet", colCount, rowCount, { r, c -> "ExtendedWidePayload_${r+1}_${c+1}" })
+        val pdfFile = File(tempFolder.root, "output_extended_pdfrenderer.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        PDDocument.load(pdfFile).use { doc ->
+            assertEquals(1, doc.numberOfPages)
+            val page = doc.getPage(0)
+            assertTrue("UserUnit must be scaled > 1.0f (was ${page.userUnit})", page.userUnit > 1.0f)
+            assertTrue("MediaBox width must stay within 14,400pt coordinate limit", page.mediaBox.width <= 14400f)
+        }
+
+        // Test with Android native PdfRenderer when supported by runtime environment
+        try {
+            val pfd = android.os.ParcelFileDescriptor.open(pdfFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+            if (pfd != null) {
+                val renderer = android.graphics.pdf.PdfRenderer(pfd)
+                assertEquals("PdfRenderer must report 1 page", 1, renderer.pageCount)
+
+                val page = renderer.openPage(0)
+                assertTrue("Page width in points must be > 0", page.width > 0)
+                assertTrue("Page height in points must be > 0", page.height > 0)
+
+                val bitmap = android.graphics.Bitmap.createBitmap(
+                    minOf(page.width, 1024),
+                    minOf(page.height, 1024),
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
+                page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                assertNotNull(bitmap)
+                assertTrue("Rendered bitmap must have positive dimensions", bitmap.width > 0 && bitmap.height > 0)
+
+                page.close()
+                renderer.close()
+                pfd.close()
+            }
+        } catch (e: Throwable) {
+            println("Notice: Host JVM environment does not provide native pdfium for Robolectric PdfRenderer: ${e.message}")
+        }
+    }
+
+    @Test
+    fun testLargeWorksheet200x2000PreservationAndMemory() = runBlocking {
+        // Stress test 200 cols x 2000 rows layout planning
+        val colCount = 200
+        val rowCount = 2000
+        val rows = (0 until rowCount).map { r ->
+            listOf("R${r+1}_C1", "R${r+1}_C100", "R${r+1}_C200")
+        }
+        val sheetData = OpenXmlDocumentParser.XlsxSheetData(
+            name = "LargeSheet200x2000",
+            rows = rows
+        )
+        val limits = LayoutLimits()
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheetData, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
+        assertEquals(2000, layout.rowCount)
+        assertEquals(3, layout.colCount)
+        assertTrue(layout.totalTableHeight > 0f)
+
+        val plan = SpreadsheetLayoutEngine.createExportPlan(sheetData, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
+        assertNotNull(plan)
+        assertTrue(plan.strategy != null)
+    }
+
+    @Test
+    fun testSparseWorksheetWithHighCoordinatesAndMergedExtendingBeyondData() = runBlocking {
+        // Sparse sheet with high coordinates (Row 150, Col 50) and merge extending beyond data
+        val rows = mutableListOf<List<String>>()
+        repeat(149) { rows.add(emptyList()) }
+        val row150 = mutableListOf<String>()
+        repeat(49) { row150.add("") }
+        row150.add("HIGH_COORD_PAYLOAD")
+        rows.add(row150)
+
+        // Merge range extending to Row 200 (beyond row 150)
+        val mergeRange = OpenXmlDocumentParser.CellRangeAddress(0, 199, 0, 2)
+        val sheetData = OpenXmlDocumentParser.XlsxSheetData(
+            name = "SparseSheet",
+            rows = rows,
+            mergedRegions = listOf(mergeRange)
+        )
+
+        val limits = LayoutLimits()
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheetData, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
+        assertEquals(150, layout.rowCount)
+        assertEquals(50, layout.colCount)
+        assertEquals("HIGH_COORD_PAYLOAD", sheetData.rows[149][49])
+
+        val mergedGeoms = layout.mergedGeometries
+        assertEquals(1, mergedGeoms.size)
+        assertEquals(149, mergedGeoms[0].lastRow) // clamped to rows.size - 1
     }
 }

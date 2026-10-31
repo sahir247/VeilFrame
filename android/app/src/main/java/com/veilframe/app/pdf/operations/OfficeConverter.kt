@@ -1061,6 +1061,62 @@ class OfficeConverter {
                 val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
 
                 for (colIndex in 0 until layout.colCount) {
+                    val merged = layout.mergedGeometries.firstOrNull {
+                        it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol
+                    }
+                    if (merged != null) {
+                        // Merged cell: draw once across the full merged column span
+                        if (colIndex == merged.firstCol) {
+                            val cellLeft = layout.colX[merged.firstCol]
+                            val cellW = (merged.firstCol..merged.lastCol).sumOf { layout.colWidths[it].toDouble() }.toFloat()
+                            val isFirstRow = (rIdx == merged.firstRow && startLine == 0)
+                            val isLastRow = (rIdx == merged.lastRow && startLine + linesInChunk >= totalLines)
+
+                            contentStream?.setStrokingColor(210, 215, 220)
+                            contentStream?.setLineWidth(0.5f)
+                            if (isFirstRow) {
+                                contentStream?.moveTo(cellLeft, yPosition)
+                                contentStream?.lineTo(cellLeft + cellW, yPosition)
+                                contentStream?.stroke()
+                            }
+                            if (isLastRow) {
+                                contentStream?.moveTo(cellLeft, yPosition - chunkHeight)
+                                contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
+                                contentStream?.stroke()
+                            }
+                            contentStream?.moveTo(cellLeft, yPosition)
+                            contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
+                            contentStream?.stroke()
+
+                            contentStream?.moveTo(cellLeft + cellW, yPosition)
+                            contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
+                            contentStream?.stroke()
+
+                            if (isFirstRow && merged.wrappedLines.isNotEmpty()) {
+                                contentStream?.saveGraphicsState()
+                                contentStream?.addRect(
+                                    cellLeft + 1f,
+                                    (yPosition - merged.totalHeight + 1f).coerceAtLeast(limits.margin),
+                                    (cellW - 2f).coerceAtLeast(1f),
+                                    (merged.totalHeight - 2f).coerceAtLeast(1f)
+                                )
+                                contentStream?.clip()
+
+                                var textY = yPosition - 4f - limits.fontSizeCell
+                                for (lineText in merged.wrappedLines) {
+                                    contentStream?.beginText()
+                                    contentStream?.setFont(fontNormal, limits.fontSizeCell)
+                                    contentStream?.newLineAtOffset(cellLeft + 4f, textY)
+                                    safeShowText(contentStream, lineText, fontNormal)
+                                    contentStream?.endText()
+                                    textY -= limits.lineHeight
+                                }
+                                contentStream?.restoreGraphicsState()
+                            }
+                        }
+                        continue
+                    }
+
                     val cellLeft = layout.colX[colIndex]
                     val cellW = layout.colWidths[colIndex]
                     val lines = rowCellLines[colIndex]
@@ -1070,21 +1126,13 @@ class OfficeConverter {
                         emptyList()
                     }
 
-                    // Merged region check
-                    val merged = layout.mergedRegions.firstOrNull { it.contains(rIdx, colIndex) }
-                    val shouldDrawText = if (merged != null) {
-                        rIdx == merged.firstRow && colIndex == merged.firstCol
-                    } else {
-                        true
-                    }
-
                     drawCellChunk(
                         contentStream = contentStream,
                         cellLeft = cellLeft,
                         cellTop = yPosition,
                         cellW = cellW,
                         cellH = chunkHeight,
-                        chunkLines = if (shouldDrawText) chunkLines else emptyList(),
+                        chunkLines = chunkLines,
                         fontNormal = fontNormal,
                         fontSizeCell = limits.fontSizeCell,
                         lineHeight = limits.lineHeight
@@ -1193,38 +1241,133 @@ class OfficeConverter {
                 runningX += layout.colWidths[c]
             }
 
-            // 5. Draw table rows for this tile
+            // 5. Calculate row vertical positions on this tile
+            val rowsOnTile = (tile.rowGroup.startRow..tile.rowGroup.endRow).toList()
+            val rowTopMap = mutableMapOf<Int, Float>()
+            val rowBottomMap = mutableMapOf<Int, Float>()
+            val rowHeightMap = mutableMapOf<Int, Float>()
             var yPosition = pageH - margin - 22f
 
-            for (rIdx in tile.rowGroup.startRow..tile.rowGroup.endRow) {
-                val rowHeight = layout.rowHeights[rIdx]
+            for (rIdx in rowsOnTile) {
+                val rowHeight = if (tile.rowGroup.linesInStartRow != -1) {
+                    tile.rowGroup.groupTableHeight
+                } else {
+                    layout.rowHeights[rIdx]
+                }
+                rowTopMap[rIdx] = yPosition
+                rowBottomMap[rIdx] = yPosition - rowHeight
+                rowHeightMap[rIdx] = rowHeight
+                yPosition -= rowHeight
+            }
+
+            // 6. Draw unmerged cells
+            for (rIdx in rowsOnTile) {
+                val cellTop = rowTopMap[rIdx]!!
+                val cellH = rowHeightMap[rIdx]!!
                 val rowLines = layout.rowWrappedLines[rIdx]
 
                 for (colIndex in colsToDraw) {
+                    // Skip cells that belong to any merged region
+                    if (layout.mergedGeometries.any { it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol }) {
+                        continue
+                    }
+
                     val cellLeft = tileColX[colIndex] ?: margin
                     val cellW = layout.colWidths[colIndex]
-                    val lines = rowLines[colIndex]
-
-                    val merged = layout.mergedRegions.firstOrNull { it.contains(rIdx, colIndex) }
-                    val shouldDrawText = if (merged != null) {
-                        rIdx == merged.firstRow && colIndex == merged.firstCol
+                    val fullLines = rowLines[colIndex]
+                    val chunkLines = if (tile.rowGroup.linesInStartRow != -1) {
+                        if (fullLines.isNotEmpty() && tile.rowGroup.startLineOfStartRow < fullLines.size) {
+                            fullLines.subList(
+                                tile.rowGroup.startLineOfStartRow,
+                                minOf(fullLines.size, tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow)
+                            )
+                        } else {
+                            emptyList()
+                        }
                     } else {
-                        true
+                        fullLines
                     }
 
                     drawCellChunk(
                         contentStream = contentStream,
                         cellLeft = cellLeft,
-                        cellTop = yPosition,
+                        cellTop = cellTop,
                         cellW = cellW,
-                        cellH = rowHeight,
-                        chunkLines = if (shouldDrawText) lines else emptyList(),
+                        cellH = cellH,
+                        chunkLines = chunkLines,
                         fontNormal = fontNormal,
                         fontSizeCell = limits.fontSizeCell,
                         lineHeight = limits.lineHeight
                     )
                 }
-                yPosition -= rowHeight
+            }
+
+            // 7. Draw merged cell geometries that intersect this tile
+            for (geom in layout.mergedGeometries) {
+                val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
+                val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
+                if (visCols.isEmpty() || visRows.isEmpty()) continue
+
+                val sliceLeft = tileColX[visCols.first()]!!
+                val sliceRight = tileColX[visCols.last()]!! + layout.colWidths[visCols.last()]
+                val sliceWidth = sliceRight - sliceLeft
+                val sliceTop = rowTopMap[visRows.first()]!!
+                val sliceBottom = rowBottomMap[visRows.last()]!!
+                val sliceHeight = sliceTop - sliceBottom
+
+                val isLeftTrueEdge = (visCols.first() == geom.firstCol)
+                val isRightTrueEdge = (visCols.last() == geom.lastCol)
+                val isTopTrueEdge = (visRows.first() == geom.firstRow && tile.rowGroup.startLineOfStartRow == 0)
+                val isBottomTrueEdge = (visRows.last() == geom.lastRow)
+
+                // Stroke outer perimeter lines only - zero internal gridlines!
+                contentStream.setStrokingColor(210, 215, 220)
+                contentStream.setLineWidth(0.5f)
+
+                if (isTopTrueEdge) {
+                    contentStream.moveTo(sliceLeft, sliceTop)
+                    contentStream.lineTo(sliceRight, sliceTop)
+                    contentStream.stroke()
+                }
+                if (isBottomTrueEdge) {
+                    contentStream.moveTo(sliceLeft, sliceBottom)
+                    contentStream.lineTo(sliceRight, sliceBottom)
+                    contentStream.stroke()
+                }
+                if (isLeftTrueEdge) {
+                    contentStream.moveTo(sliceLeft, sliceTop)
+                    contentStream.lineTo(sliceLeft, sliceBottom)
+                    contentStream.stroke()
+                }
+                if (isRightTrueEdge) {
+                    contentStream.moveTo(sliceRight, sliceTop)
+                    contentStream.lineTo(sliceRight, sliceBottom)
+                    contentStream.stroke()
+                }
+
+                // Text rendering: only on anchor slice to prevent duplicate text across panels
+                val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
+                if (isAnchor && geom.wrappedLines.isNotEmpty()) {
+                    contentStream.saveGraphicsState()
+                    contentStream.addRect(
+                        sliceLeft + 1f,
+                        sliceBottom + 1f,
+                        (sliceWidth - 2f).coerceAtLeast(1f),
+                        (sliceHeight - 2f).coerceAtLeast(1f)
+                    )
+                    contentStream.clip()
+
+                    var textY = sliceTop - 4f - limits.fontSizeCell
+                    for (lineText in geom.wrappedLines) {
+                        contentStream.beginText()
+                        contentStream.setFont(fontNormal, limits.fontSizeCell)
+                        contentStream.newLineAtOffset(sliceLeft + 4f, textY)
+                        safeShowText(contentStream, lineText, fontNormal)
+                        contentStream.endText()
+                        textY -= limits.lineHeight
+                    }
+                    contentStream.restoreGraphicsState()
+                }
             }
 
             contentStream.close()
