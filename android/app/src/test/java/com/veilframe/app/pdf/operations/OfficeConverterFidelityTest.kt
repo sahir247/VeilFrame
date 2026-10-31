@@ -225,7 +225,7 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
-    fun testXlsxOversizedRowPaginatesAcrossPagesWithoutTruncation() = runBlocking {
+    fun testXlsxOversizedRowDynamicHeightFitsOnSinglePage() = runBlocking {
         // Build 60 distinct lines in a single cell that exceeds any single-page printable bounds
         val linesList = (1..60).map { "OversizedTraceLine_$it" }
         val multiLineContent = linesList.joinToString("&#10;")
@@ -260,7 +260,7 @@ class OfficeConverterFidelityTest {
             "xl/workbook.xml" to workbookXml,
             "xl/worksheets/sheet1.xml" to sheet1Xml
         ))
-        val pdfFile = File(tempFolder.root, "output_oversized_xlsx.pdf")
+        val pdfFile = File(tempFolder.root, "output_oversized_singlepage_xlsx.pdf")
 
         val converter = OfficeConverter()
         converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
@@ -288,6 +288,73 @@ class OfficeConverterFidelityTest {
             assertEquals(
                 "All 60 lines must appear in exact monotonic sequential order from 1 to 60 without duplicates",
                 (1..60).map { "OversizedTraceLine_$it" },
+                extractedLines
+            )
+        }
+    }
+
+    @Test
+    fun testXlsxOversizedRowPaginatesAcrossPagesWhenExceedingMaxHeight() = runBlocking {
+        // Build 60 distinct lines in a single cell
+        val linesList = (1..60).map { "OversizedPaginationLine_$it" }
+        val multiLineContent = linesList.joinToString("&#10;")
+
+        val sharedStringsXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" count=\"2\" uniqueCount=\"2\">\n" +
+            "    <si><t>Header Col</t></si>\n" +
+            "    <si><t>$multiLineContent</t></si>\n" +
+            "</sst>"
+
+        val workbookXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheets>\n" +
+            "        <sheet name=\"PaginationSplitTest\" sheetId=\"1\" r:id=\"rId1\"/>\n" +
+            "    </sheets>\n" +
+            "</workbook>"
+
+        val sheet1Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheetData>\n" +
+            "        <row r=\"1\">\n" +
+            "            <c r=\"A1\" t=\"s\"><v>0</v></c>\n" +
+            "        </row>\n" +
+            "        <row r=\"2\">\n" +
+            "            <c r=\"A2\" t=\"s\"><v>1</v></c>\n" +
+            "        </row>\n" +
+            "    </sheetData>\n" +
+            "</worksheet>"
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_oversized_paginated_xlsx.pdf")
+
+        val converter = OfficeConverter()
+        // Override max page height to 400pt so 60 lines (~710pt) are forced to paginate across multiple pages
+        converter.maxPdfPageHeightOverride = 400f
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue("Converted XLSX PDF must exist", pdfFile.exists())
+        assertTrue("Converted XLSX PDF must have non-zero size", pdfFile.length() > 0)
+
+        PDDocument.load(pdfFile).use { doc ->
+            assertTrue("Oversized row must paginate across at least 2 pages (got ${doc.numberOfPages})", doc.numberOfPages >= 2)
+
+            val stripper = PDFTextStripper()
+            stripper.sortByPosition = true
+            val text = stripper.getText(doc)
+
+            // Extract all lines that match the trace line pattern
+            val extractedLines = text.lines()
+                .map { it.trim() }
+                .filter { it.startsWith("OversizedPaginationLine_") }
+
+            assertEquals("All 60 lines must be present across paginated pages", 60, extractedLines.size)
+            assertEquals(
+                "All 60 lines must appear across pages in exact monotonic sequential order from 1 to 60 without duplicates",
+                (1..60).map { "OversizedPaginationLine_$it" },
                 extractedLines
             )
         }
@@ -344,13 +411,228 @@ class OfficeConverterFidelityTest {
             // 25 columns * ~150pt each = ~3750pt, well beyond A4 landscape width (842pt)
             assertTrue("Page width must dynamically expand beyond A4 (842pt) to fit wide columns (got ${page.mediaBox.width})", page.mediaBox.width > 2000f)
 
-            val stripper = PDFTextStripper()
-            stripper.sortByPosition = true
-            val text = stripper.getText(doc)
+            val extractor = PositionalTextExtractor()
+            extractor.getText(doc)
 
-            // Verify first and last columns exist without squishing or clipping
-            assertTrue("Must contain first column", text.contains("WideColumnHeaderPayload_1"))
-            assertTrue("Must contain last column", text.contains("WideColumnHeaderPayload_25"))
+            // Rigorous positional verification across ALL 25 columns:
+            // 1. Every column header is extracted on page 1
+            // 2. Coordinates strictly increase from left to right (col[i].maxX < col[i+1].minX)
+            // 3. Zero horizontal overlap between adjacent columns
+            // 4. Final column is fully contained within page width
+            val colRuns = (1..colCount).map { i ->
+                val target = "WideColumnHeaderPayload_$i"
+                val runs = extractor.findText(target)
+                assertTrue("Header $target must be present", runs.isNotEmpty())
+                val run = runs.first()
+                assertEquals("Header $target must be on page 1", 1, run.pageNo)
+                run
+            }
+
+            for (i in 0 until colCount - 1) {
+                val current = colRuns[i]
+                val next = colRuns[i + 1]
+                assertTrue(
+                    "Column ${i + 1} right edge (${current.maxX}) must be strictly less than Column ${i + 2} left edge (${next.minX})",
+                    current.maxX < next.minX
+                )
+            }
+
+            val lastCol = colRuns.last()
+            assertTrue(
+                "Last column right edge (${lastCol.maxX}) must be within page width (${page.mediaBox.width})",
+                lastCol.maxX <= page.mediaBox.width
+            )
+        }
+    }
+
+    @Test
+    fun testXlsxPreservesBlankLinesInsideCells() = runBlocking {
+        val sharedStringsXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+                <si><t>ParagraphAlpha&#10;&#10;ParagraphBeta&#10;&#10;&#10;ParagraphGamma</t></si>
+            </sst>
+        """.trimIndent()
+
+        val workbookXml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheets>
+                    <sheet name="BlankLinesSheet" sheetId="1" r:id="rId1"/>
+                </sheets>
+            </workbook>
+        """.trimIndent()
+
+        val sheet1Xml = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                <sheetData>
+                    <row r="1">
+                        <c r="A1" t="s"><v>0</v></c>
+                    </row>
+                </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_blank_lines_xlsx.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        assertTrue(pdfFile.length() > 0)
+
+        PDDocument.load(pdfFile).use { doc ->
+            assertEquals(1, doc.numberOfPages)
+            val extractor = PositionalTextExtractor()
+            extractor.getText(doc)
+
+            val p1Runs = extractor.findText("ParagraphAlpha")
+            val p2Runs = extractor.findText("ParagraphBeta")
+            val p3Runs = extractor.findText("ParagraphGamma")
+
+            assertTrue("ParagraphAlpha must be extracted", p1Runs.isNotEmpty())
+            assertTrue("ParagraphBeta must be extracted", p2Runs.isNotEmpty())
+            assertTrue("ParagraphGamma must be extracted", p3Runs.isNotEmpty())
+
+            val p1 = p1Runs.first()
+            val p2 = p2Runs.first()
+            val p3 = p3Runs.first()
+
+            // In PDFBox yDirAdj: increases downwards.
+            // p1 to p2 has 1 blank line in between: distance must be >= 20pt (2 * 11.7 = 23.4pt)
+            // p2 to p3 has 2 blank lines in between: distance must be >= 30pt (3 * 11.7 = 35.1pt)
+            assertTrue("ParagraphBeta Y (${p2.minY}) must be at least 20pt below ParagraphAlpha Y (${p1.minY})", p2.minY > p1.minY + 20f)
+            assertTrue("ParagraphGamma Y (${p3.minY}) must be at least 30pt below ParagraphBeta Y (${p2.minY})", p3.minY > p2.minY + 30f)
+        }
+    }
+
+    @Test
+    fun testBigSpreadsheetWithManyRowsAndColumnsConvertsLosslessly() = runBlocking {
+        // Build a large spreadsheet with 30 columns and 100 rows (3,000 data cells)
+        val colCount = 30
+        val rowCount = 100
+
+        val sharedStrings = mutableListOf<String>()
+        val headerIndices = (1..colCount).map { c ->
+            val idx = sharedStrings.size
+            sharedStrings.add("ColHeader_$c")
+            idx
+        }
+
+        val rowDataIndices = (1..rowCount).map { r ->
+            (1..colCount).map { c ->
+                val idx = sharedStrings.size
+                sharedStrings.add("R${r}C${c}_Payload")
+                idx
+            }
+        }
+
+        val sharedStringsXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" count=\"${sharedStrings.size}\" uniqueCount=\"${sharedStrings.size}\">\n" +
+            sharedStrings.joinToString("\n") { "    <si><t>$it</t></si>" } + "\n" +
+            "</sst>"
+
+        val workbookXml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheets>\n" +
+            "        <sheet name=\"BigDataSheet\" sheetId=\"1\" r:id=\"rId1\"/>\n" +
+            "    </sheets>\n" +
+            "</workbook>"
+
+        fun getColLetter(idx: Int): String {
+            return if (idx < 26) {
+                ('A' + idx).toString()
+            } else {
+                "A" + ('A' + (idx - 26)).toString()
+            }
+        }
+
+        val headerCellsXml = (0 until colCount).joinToString("\n") { c ->
+            val colLetter = getColLetter(c)
+            "            <c r=\"${colLetter}1\" t=\"s\"><v>${headerIndices[c]}</v></c>"
+        }
+
+        val rowsXml = StringBuilder()
+        rowsXml.append("        <row r=\"1\">\n").append(headerCellsXml).append("\n        </row>\n")
+
+        for (r in 1..rowCount) {
+            val rowNum = r + 1
+            rowsXml.append("        <row r=\"$rowNum\">\n")
+            for (c in 0 until colCount) {
+                val colLetter = getColLetter(c)
+                val valIdx = rowDataIndices[r - 1][c]
+                rowsXml.append("            <c r=\"${colLetter}$rowNum\" t=\"s\"><v>$valIdx</v></c>\n")
+            }
+            rowsXml.append("        </row>\n")
+        }
+
+        val sheet1Xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n" +
+            "    <sheetData>\n" +
+            rowsXml.toString() +
+            "    </sheetData>\n" +
+            "</worksheet>"
+
+        val xlsxFile = createZip(mapOf(
+            "xl/sharedStrings.xml" to sharedStringsXml,
+            "xl/workbook.xml" to workbookXml,
+            "xl/worksheets/sheet1.xml" to sheet1Xml
+        ))
+        val pdfFile = File(tempFolder.root, "output_big_spreadsheet.pdf")
+
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(xlsxFile, pdfFile, context)
+
+        assertTrue(pdfFile.exists())
+        assertTrue(pdfFile.length() > 0)
+
+        PDDocument.load(pdfFile).use { doc ->
+            // Unconstrained format conversion: all 100 rows and 30 columns fit cleanly on 1 continuous page
+            assertEquals("Big spreadsheet must fit on 1 continuous page without arbitrary paper cuts", 1, doc.numberOfPages)
+            val page = doc.getPage(0)
+
+            // Dynamic width expands for 30 columns
+            assertTrue("Page width (${page.mediaBox.width}) must dynamically expand beyond 2500pt", page.mediaBox.width > 2500f)
+            // Dynamic height expands for 100 rows (~2000pt)
+            assertTrue("Page height (${page.mediaBox.height}) must dynamically expand beyond 2000pt", page.mediaBox.height > 2000f)
+
+            val extractor = PositionalTextExtractor()
+            extractor.getText(doc)
+
+            // Verify corner and center sample tokens across the 30x100 matrix
+            val h1Runs = extractor.findText("ColHeader_1")
+            val h15Runs = extractor.findText("ColHeader_15")
+            val h30Runs = extractor.findText("ColHeader_30")
+            assertTrue("ColHeader_1 must be present", h1Runs.isNotEmpty())
+            assertTrue("ColHeader_15 must be present", h15Runs.isNotEmpty())
+            assertTrue("ColHeader_30 must be present", h30Runs.isNotEmpty())
+
+            // Verify horizontal monotonic order across columns
+            val h1 = h1Runs.first()
+            val h15 = h15Runs.first()
+            val h30 = h30Runs.first()
+            assertTrue("Col 1 maxX < Col 15 minX", h1.maxX < h15.minX)
+            assertTrue("Col 15 maxX < Col 30 minX", h15.maxX < h30.minX)
+
+            // Verify vertical monotonicity from row 1 to row 50 to row 100
+            val r1c1Runs = extractor.findText("R1C1_Payload")
+            val r50c1Runs = extractor.findText("R50C1_Payload")
+            val r100c1Runs = extractor.findText("R100C1_Payload")
+            assertTrue("R1C1_Payload must be present", r1c1Runs.isNotEmpty())
+            assertTrue("R50C1_Payload must be present", r50c1Runs.isNotEmpty())
+            assertTrue("R100C1_Payload must be present", r100c1Runs.isNotEmpty())
+
+            val r1 = r1c1Runs.first()
+            val r50 = r50c1Runs.first()
+            val r100 = r100c1Runs.first()
+            assertTrue("Row 1 Y < Row 50 Y", r1.minY < r50.minY)
+            assertTrue("Row 50 Y < Row 100 Y", r50.minY < r100.minY)
         }
     }
 

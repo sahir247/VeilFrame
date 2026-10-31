@@ -38,6 +38,8 @@ import java.io.FileOutputStream
  */
 class OfficeConverter {
 
+    var maxPdfPageHeightOverride: Float? = null
+
     private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
     private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
 
@@ -942,8 +944,10 @@ class OfficeConverter {
 
                 // Dynamic page width:
                 // Small sheets default to at least A4 landscape width (842f); wide sheets expand dynamically to fit all columns
+                val minPageWidth = 842f // A4 landscape width (297mm)
+                val minPageHeight = 595f // A4 landscape height (210mm)
                 val totalTableWidth = colWidths.sum()
-                val pageWidth = maxOf(PDRectangle.A4.height, totalTableWidth + (2 * margin))
+                val pageWidth = maxOf(minPageWidth, totalTableWidth + (2 * margin))
 
                 val colX = FloatArray(maxCol)
                 var runningX = margin
@@ -975,8 +979,8 @@ class OfficeConverter {
                 // Larger sheets expand dynamically without artificial A4 height limits up to PDF standard 14,400pt
                 val headerHeight = 36f
                 val totalRequiredHeight = headerHeight + rowHeights.sum() + (2 * margin)
-                val maxPdfPageHeight = 14400f // ISO 32000-1 coordinate limit for PDF readers
-                val pageHeight = minOf(maxPdfPageHeight, maxOf(PDRectangle.A4.width, totalRequiredHeight))
+                val maxPdfPageHeight = maxPdfPageHeightOverride ?: 14400f // ISO 32000-1 coordinate limit for PDF readers
+                val pageHeight = minOf(maxPdfPageHeight, maxOf(minPageHeight, totalRequiredHeight))
                 val pageBounds = PDRectangle(pageWidth, pageHeight)
 
                 var currentPage = PDPage(pageBounds)
@@ -2134,6 +2138,10 @@ class OfficeConverter {
         val lines = mutableListOf<String>()
 
         for (paragraph in rawParagraphs) {
+            if (paragraph.isEmpty()) {
+                lines.add("")
+                continue
+            }
             val words = paragraph.split(Regex("[ \t]+"))
             var currentLine = StringBuilder()
 
