@@ -229,8 +229,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.poi:poi:6.0.0")
+    implementation("org.apache.poi:poi-ooxml:6.0.0")
     implementation("org.apache.commons:commons-compress:1.26.1")
 
     testImplementation("junit:junit:4.13.2")
