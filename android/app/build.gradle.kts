@@ -195,7 +195,7 @@ dependencies {
     // ONNX Runtime Android for AI image super-resolution inference (Plugin EP ABI compatible)
 
     // ZXing — QR code encode & decode (QR Studio: generator + scanner)
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // CameraX — QR Studio scanner (camera preview + image analysis)
     val cameraXVersion = "1.3.2"
