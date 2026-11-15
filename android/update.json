@@ -3,7 +3,7 @@
   "versionName": "2.3.1",
   "tag": "v2.3.1",
   "apk": "VeilFrame-android-arm64.apk",
-  "sha256": "7ec7069943648c9df98dbe9f7767b2c99d7e63037d9c8b7b82840772d15831f6",
+  "sha256": "565e22b8e1d545837738efcb6e73b595baecfc28684effaca6d019caf090b508",
   "mandatory": false,
   "changelog": [
     "VeilNet-Nano: Lightweight on-device neural sensor fingerprint protection with high-fidelity detail preservation",
