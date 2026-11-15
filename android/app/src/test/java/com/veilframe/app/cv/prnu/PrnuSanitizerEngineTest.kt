@@ -31,7 +31,10 @@ class PrnuSanitizerEngineTest {
 
         val highSuppression = PrnuSanitizerEngine.DefenseMode.HIGH_SUPPRESSION
         assertEquals("High Suppression", highSuppression.displayName)
-        assertTrue(highSuppression.description.contains("downsampling"))
+        assertTrue(
+            "High Suppression description must reflect the implemented stochastic geometric remap",
+            highSuppression.description.contains("Stochastic geometric remap")
+        )
 
         val high = PrnuSanitizerEngine.DefenseMode.HIGH_DEFENSE
         assertEquals("High Defense", high.displayName)
