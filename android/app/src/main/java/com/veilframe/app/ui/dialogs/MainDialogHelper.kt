@@ -108,8 +108,8 @@ object MainDialogHelper {
                 • Multi-Format Export: .aibundle, HTML, JSON, Markdown, CSV, and media
                 • In-App Updates: Monotonic versionCode & SHA-256 verification
                 
-                Engine Runtime: Native Kotlin + Media3 + FFmpegKit Full
-                Open Source (Apache 2.0 / MIT)
+                Engine Runtime: Native Kotlin + Media3 + FFmpegKit Full GPL
+                Open Source: GNU General Public License v3.0 (GPL-3.0)
                 """.trimIndent()
             )
             .setPositiveButton("Close", null)

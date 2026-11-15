@@ -14,7 +14,7 @@
   <a href="https://www.vulkan.org/"><img src="https://img.shields.io/badge/compute-Vulkan%20GPU%20Accelerated-red.svg" alt="Vulkan Compute" /></a>
   <a href="https://ed25519.cr.yp.to/"><img src="https://img.shields.io/badge/provenance-Ed25519-purple.svg" alt="Ed25519 Signatures" /></a>
   <a href="https://datatracker.ietf.org/doc/html/rfc8785"><img src="https://img.shields.io/badge/spec-RFC%208785%20JCS-blueviolet.svg" alt="RFC 8785" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License" /></a>
 </p>
 
 ---
@@ -376,5 +376,5 @@ mypy veilframe
 
 ## <img src="docs/images/icons/license.svg" width="22" height="22" alt="" /> License & Security
 
-* **License:** [MIT License](LICENSE).
+* **License:** [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
 * **Security Policy:** See [SECURITY.md](SECURITY.md) for vulnerability disclosure procedures and threat model documentation.
