@@ -164,8 +164,16 @@ object VideoPiiRedactionEngine {
         )
 
         val wasCancelled = isCancelled()
-        val isScanDegraded = failedEnginesAggregate.isNotEmpty() || (failedFrameCount > 0 && sampledCount == 0)
-        val isSamplingCapped = stepMs > 600.0
+        // Any missing frame or detector failure makes the result partial. A partial scan
+        // must never be presented as a clean "no PII" result or clear prior redactions.
+        val isScanDegraded = wasCancelled ||
+                failedFrameCount > 0 ||
+                failedEnginesAggregate.isNotEmpty() ||
+                sampledCount < sampleCount
+        // The 120-frame ceiling expands the interval on longer clips. Report it even if
+        // detections were found; detections do not make unsampled time safe.
+        val isSamplingCapped = sampleCount == MAX_SAMPLE_FRAMES &&
+                spanMs > TARGET_SAMPLE_STEP_MS * (MAX_SAMPLE_FRAMES - 1)
 
         return VideoPiiScanResult(
             regions = trackResult.first,
