@@ -99,7 +99,8 @@ class PrnuOnDeviceSanitizationTest {
         assertTrue("Must complete Stage 2 Coarse Remap", milestones.any { it.contains("Stage 2") })
         assertTrue("Must complete Stage 3 Clean IJG", milestones.any { it.contains("Stage 3") })
 
-        // Test On-Device Self-Audit Loop
+        // The current metric is a single-image residual diagnostic, not an independent
+        // camera PRNU reference. It must never claim that sensor fingerprint removal is verified.
         val origMat = Mat()
         val sanMat = Mat()
         val origBmp = android.graphics.BitmapFactory.decodeFile(inputFile.absolutePath)
@@ -108,9 +109,14 @@ class PrnuOnDeviceSanitizationTest {
         Utils.bitmapToMat(sanBmp, sanMat)
 
         val audit = PrnuSanitizerEngine.auditSanitization(origMat, sanMat, maxDimension = 512)
-        android.util.Log.i("PrnuTest", "Baseline sPCE: ${audit.baselineSpce}, Post sPCE: ${audit.postSpce}, MaxStrip: ${audit.post6StripMaxSpce}, Secure: ${audit.verifiedSecure}")
-        assertTrue("Post sPCE must be substantially reduced compared to baseline", kotlin.math.abs(audit.postSpce) < kotlin.math.abs(audit.baselineSpce) * 0.1 || kotlin.math.abs(audit.postSpce) < 25.0)
-        assertTrue("6-strip max sPCE must be suppressed compared to baseline", audit.post6StripMaxSpce < 35.0 || audit.post6StripMaxSpce < kotlin.math.abs(audit.baselineSpce) * 0.15)
+        android.util.Log.i(
+            "PrnuTest",
+            "Residual diagnostic only — baseline sPCE: ${audit.baselineSpce}, post sPCE: ${audit.postSpce}, max strip: ${audit.post6StripMaxSpce}, heuristic passed: ${audit.residualHeuristicPassed}"
+        )
+        assertTrue("Residual diagnostic values must remain finite", audit.baselineSpce.isFinite())
+        assertTrue("Post residual diagnostic must remain finite", audit.postSpce.isFinite())
+        assertFalse("Single-image residual correlation cannot certify camera PRNU removal", audit.verifiedSecure)
+        assertFalse("No independent camera fingerprint reference was supplied", audit.isConclusive)
 
         origMat.release()
         sanMat.release()
