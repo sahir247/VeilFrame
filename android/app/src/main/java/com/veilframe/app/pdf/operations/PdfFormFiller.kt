@@ -162,7 +162,7 @@ class PdfFormFiller {
                     val formField = convertToFormField(field)
                     fields.add(formField)
 
-                    if (!formField.isReadOnly) {
+                    if (!formField.isReadOnly && formField !is FormField.UnknownField) {
                         fillableCount++
                     }
                 } catch (e: Exception) {
