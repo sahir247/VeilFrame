@@ -38,7 +38,8 @@ class RifeModelManager(private val context: Context) {
             "github.com",
             "raw.githubusercontent.com",
             "objects.githubusercontent.com",
-            "cdn.jsdelivr.net"
+            "cdn.jsdelivr.net",
+            "fastly.jsdelivr.net"
         )
 
         private val verifiedChecksumCache = java.util.concurrent.ConcurrentHashMap<FileValidationKey, Boolean>()
@@ -316,18 +317,12 @@ class RifeModelManager(private val context: Context) {
 
         try {
             onProgress(5, "Downloading ${spec.displayName} configuration…")
-            val primaryParamUrl = spec.paramCdnUrl ?: spec.paramUrl
-            val paramSuccess = runCatching {
-                downloadSingle(primaryParamUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
-            }.recoverCatching { e ->
-                Log.w(TAG, "Primary param download failed, trying raw GitHub: ${e.message}")
-                downloadSingle(spec.paramUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
-            }.recoverCatching { e ->
-                if (spec.paramFallbackUrl != null) {
-                    Log.w(TAG, "Raw param download failed, trying fallback: ${e.message}")
-                    downloadSingle(spec.paramFallbackUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
-                } else throw e
-            }.isSuccess
+            downloadArtifact(
+                urls = listOfNotNull(spec.paramCdnUrl, spec.paramUrl, spec.paramFallbackUrl),
+                destFile = paramF,
+                expectedSha256 = spec.paramSha256,
+                maxBytes = spec.maxParamBytes
+            ) { _, _ -> }.getOrElse { throw IOException("Failed to download ${spec.displayName} parameter file: ${it.message}", it) }
 
             if (!paramSuccess || !paramF.exists() || paramF.length() < 500) {
                 throw IOException("Failed to download ${spec.displayName} parameter file")
@@ -350,18 +345,13 @@ class RifeModelManager(private val context: Context) {
                 }
             }
 
-            val primaryBinUrl = spec.binCdnUrl ?: spec.binUrl
-            val binSuccess = runCatching {
-                downloadSingle(primaryBinUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
-            }.recoverCatching { e ->
-                Log.w(TAG, "Primary bin download failed, trying raw GitHub: ${e.message}")
-                downloadSingle(spec.binUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
-            }.recoverCatching { e ->
-                if (spec.binFallbackUrl != null) {
-                    Log.w(TAG, "Raw bin download failed, trying fallback: ${e.message}")
-                    downloadSingle(spec.binFallbackUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
-                } else throw e
-            }.isSuccess
+            downloadArtifact(
+                urls = listOfNotNull(spec.binCdnUrl, spec.binUrl, spec.binFallbackUrl),
+                destFile = binF,
+                expectedSha256 = spec.binSha256,
+                maxBytes = spec.maxBinBytes,
+                onFileProgress = progressCallback
+            ).getOrElse { throw IOException("Failed to download ${spec.displayName} neural weights: ${it.message}", it) }
 
             if (!binSuccess || !isModelDownloaded(spec)) {
                 paramF.delete()
@@ -376,6 +366,7 @@ class RifeModelManager(private val context: Context) {
             Log.e(TAG, "Download failed for ${spec.displayName}: ${t.message}", t)
             paramF.delete()
             binF.delete()
+            if (t is kotlinx.coroutines.CancellationException) throw t
             Result.failure(t)
         }
     }
@@ -409,6 +400,29 @@ class RifeModelManager(private val context: Context) {
         }
         // Otherwise download the selected model
         return@withContext downloadModel(selected, forceRedownload = true, onProgress = onProgress)
+    }
+
+    private suspend fun downloadArtifact(
+        urls: List<String>,
+        destFile: File,
+        expectedSha256: String,
+        maxBytes: Long,
+        onFileProgress: (Long, Long) -> Unit = { _, _ -> }
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val failures = mutableListOf<String>()
+        for (url in urls.distinct()) {
+            try {
+                downloadSingle(url, destFile, expectedSha256, maxBytes, onFileProgress)
+                return@withContext Result.success(Unit)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                failures += "${runCatching { URL(url).host }.getOrDefault("unknown host")}: ${t.message ?: t.javaClass.simpleName}"
+                destFile.delete()
+                File(destFile.parentFile, "${destFile.name}.tmp").delete()
+                Log.w(TAG, "Model source failed for ${destFile.name}: ${failures.last()}")
+            }
+        }
+        Result.failure(IOException("All configured sources failed: ${failures.joinToString(" | ")}"))
     }
 
     private suspend fun downloadSingle(
