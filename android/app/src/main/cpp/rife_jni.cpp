@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <memory>
 
 #define TAG "VeilFrame.RifeNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -48,6 +49,8 @@ static jboolean do_rife_native_init(
             g_rife = nullptr;
         }
         g_rife_gpu_lease.reset();
+        g_rife_gpuid = -1;
+        g_rife_model_dir.clear();
 
         if (!modelDir) {
             LOGE("RIFE modelDir is null");
@@ -100,28 +103,28 @@ static jboolean do_rife_native_init(
         // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4, padding
         int init_padding = padding > 0 ? padding : 32;
         g_rife_padding = init_padding;
-        g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding);
+        // Keep the candidate private until both model loading and JNI setup succeed.
+        // If any constructor/load/JNI operation throws, unique_ptr releases it and the
+        // globally visible engine remains null rather than partially initialized.
+        std::unique_ptr<RIFE> candidate(
+            new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding)
+        );
 
-        int ret = g_rife->load(dir_str);
+        int ret = candidate->load(dir_str);
         if (ret != 0 && g_rife_gpuid >= 0) {
             LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
-            delete g_rife;
-            g_rife = nullptr;
+            candidate.reset();
             g_rife_gpuid = -1;
             local_gpu_lease.reset();
-            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding);
-            ret = g_rife->load(dir_str);
+            candidate.reset(new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding));
+            ret = candidate->load(dir_str);
         }
         if (ret != 0) {
             LOGE("Failed to load RIFE v4 model from %s (ret=%d)", dir_str.c_str(), ret);
-            delete g_rife;
-            g_rife = nullptr;
+            candidate.reset();
+            g_rife_gpuid = -1;
             local_gpu_lease.reset();
             return JNI_FALSE;
-        }
-
-        if (g_rife_gpuid >= 0) {
-            g_rife_gpu_lease = std::move(local_gpu_lease);
         }
 
         // Cache JNI reflection targets globally
@@ -148,8 +151,32 @@ static jboolean do_rife_native_init(
             }
         }
 
+        if (!g_bitmapClass || !g_createBitmapMethod || !g_argbConfig || env->ExceptionCheck()) {
+            LOGE("Failed to initialize required Bitmap JNI references");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (g_bitmapClass) {
+                env->DeleteGlobalRef(g_bitmapClass);
+                g_bitmapClass = nullptr;
+                g_createBitmapMethod = nullptr;
+            }
+            if (g_argbConfig) {
+                env->DeleteGlobalRef(g_argbConfig);
+                g_argbConfig = nullptr;
+            }
+            candidate.reset();
+            g_rife_gpuid = -1;
+            local_gpu_lease.reset();
+            return JNI_FALSE;
+        }
+
+        const int loadedPadding = candidate->get_padding();
+        g_rife = candidate.release();
+        if (g_rife_gpuid >= 0) {
+            g_rife_gpu_lease = std::move(local_gpu_lease);
+        }
+
         LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d, padding: %d)",
-             g_rife_gpuid, cpu_threads, g_rife->get_padding());
+             g_rife_gpuid, cpu_threads, loadedPadding);
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
         LOGE("Out of memory in RIFE nativeInit: %s", e.what());
