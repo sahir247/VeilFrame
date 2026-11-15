@@ -193,10 +193,12 @@ static jboolean do_rife_native_init(
         }
 
         const int loadedPadding = candidate->get_padding();
-        g_rife = candidate.release();
+        // Transfer the lease while candidate still owns the model. If lease transfer fails,
+        // stack unwinding destroys candidate and the engine is never published globally.
         if (g_rife_gpuid >= 0) {
             g_rife_gpu_lease = std::move(local_gpu_lease);
         }
+        g_rife = candidate.release();
 
         LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d, padding: %d)",
              g_rife_gpuid, cpu_threads, loadedPadding);
