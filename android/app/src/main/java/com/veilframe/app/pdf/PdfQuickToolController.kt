@@ -124,6 +124,7 @@ class PdfQuickToolController(
     private var formAnalysisJob: Job? = null
     private var documentLoadGeneration: Long = 0L
     private var formAnalysis: com.veilframe.app.pdf.operations.FormAnalysisResult? = null
+    private var formEditorDialog: AlertDialog? = null
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -168,6 +169,8 @@ class PdfQuickToolController(
         primaryDocPages = 0
         primaryDocName = "document.pdf"
         formAnalysis = null
+        formEditorDialog?.dismiss()
+        formEditorDialog = null
         isExecuting = false
         isSaved = false
         rotateItemTouchHelper?.attachToRecyclerView(null)
@@ -2165,6 +2168,7 @@ class PdfQuickToolController(
             addView(container)
             isFillViewport = true
         }
+        formEditorDialog?.dismiss()
         val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle("Fill PDF form")
             .setMessage("${analysis.fillableFields} editable of ${analysis.totalFields} detected fields")
@@ -2172,6 +2176,8 @@ class PdfQuickToolController(
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Fill & Export", null)
             .create()
+        formEditorDialog = dialog
+        dialog.setOnDismissListener { if (formEditorDialog === dialog) formEditorDialog = null }
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (valueReaders.isEmpty()) {
@@ -2623,6 +2629,8 @@ class PdfQuickToolController(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 withContext(Dispatchers.Main) {
                     isExecuting = false
