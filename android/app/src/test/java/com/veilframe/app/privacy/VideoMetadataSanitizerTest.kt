@@ -8,6 +8,20 @@ import org.junit.Test
 class VideoMetadataSanitizerTest {
 
     @Test
+    fun `fallback result is successful but explicitly metadata only`() {
+        val result = VideoSanitizationResult(VideoSanitizationStatus.METADATA_ONLY_FALLBACK)
+        assertTrue(result.isSuccess)
+        assertEquals(VideoSanitizationStatus.METADATA_ONLY_FALLBACK, result.status)
+    }
+
+    @Test
+    fun `failed result is not successful`() {
+        val result = VideoSanitizationResult(VideoSanitizationStatus.FAILED, "FFmpeg failed")
+        assertFalse(result.isSuccess)
+        assertEquals("FFmpeg failed", result.errorMessage)
+    }
+
+    @Test
     fun `test buildArguments strips metadata chapters and scrubs audio for mp4`() {
         val input = "/storage/emulated/0/DCIM/Camera/My Video (test's & special).mp4"
         val output = "/storage/emulated/0/Download/clean.mp4"
@@ -71,6 +85,22 @@ class VideoMetadataSanitizerTest {
         assertTrue(fallbackArgs.contains("copy"))
         assertFalse("Fallback should not contain noise filter", fallbackArgs.contains("-vf"))
         assertEquals(output, fallbackArgs.last())
+    }
+
+    @Test
+    fun `low noise preset emits exactly one video codec option for mp4 and webm`() {
+        for (output in listOf("/tmp/out.mp4", "/tmp/out.webm")) {
+            val args = VideoMetadataSanitizer.buildArguments(
+                inputPath = "/tmp/input.mp4",
+                outputPath = output,
+                noiseLevel = "low"
+            )
+            val codecIndex = args.indexOf("-c:v")
+            assertTrue(codecIndex >= 0)
+            assertEquals(if (output.endsWith(".webm")) "libvpx-vp9" else "libx264", args[codecIndex + 1])
+            assertEquals("The codec must appear only as the value of -c:v", 1, args.count { it == "libx264" || it == "libvpx-vp9" })
+            assertEquals(output, args.last())
+        }
     }
 
     @Test

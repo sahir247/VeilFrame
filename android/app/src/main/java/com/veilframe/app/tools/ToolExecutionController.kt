@@ -287,6 +287,7 @@ class ToolExecutionController(
             }
 
             var successCount = 0
+            var metadataOnlyFallbackCount = 0
             candidateFiles.forEachIndexed { idx, inputFile ->
                 val targetExt = when (formatIndex) {
                     1 -> "mp4"
@@ -294,7 +295,11 @@ class ToolExecutionController(
                     3 -> "webm"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
                 }
-                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+                val relativeInput = inputFile.relativeTo(stagingDir)
+                val relativeOutput = File(relativeInput.parent ?: File(""), "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+                val outputFile = File(outputBatchDir, relativeOutput.path).apply {
+                    parentFile?.mkdirs()
+                }
 
                 withContext(Dispatchers.Main) {
                     val percent = ((idx * 100) / candidateFiles.size)
@@ -305,7 +310,7 @@ class ToolExecutionController(
                 }
 
                 val ok = withContext(Dispatchers.IO) {
-                    backend.cleanVideo(
+                    backend.cleanVideoDetailed(
                         inputFile.absolutePath,
                         outputFile.absolutePath,
                         noiseLevel = noiseLevel,
@@ -315,8 +320,14 @@ class ToolExecutionController(
                         reencodeBitstream = reencodeBitstream
                     )
                 }
-                if (ok && outputFile.exists() && outputFile.length() > 0) {
+                if (ok.isSuccess && outputFile.exists() && outputFile.length() > 0) {
                     successCount++
+                    if (ok.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) {
+                        metadataOnlyFallbackCount++
+                    }
+                } else {
+                    // FFmpeg may leave a partial file after both the primary and fallback passes fail.
+                    outputFile.delete()
                 }
             }
 
@@ -332,9 +343,10 @@ class ToolExecutionController(
                 return
             }
 
+            val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
             val finalFile: File
-            if (successCount == 1) {
-                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
+            if (actualOutputs.size == 1) {
+                val singleFile = actualOutputs.first()
                 finalFile = File(activity.cacheDir, singleFile.name)
                 singleFile.copyTo(finalFile, overwrite = true)
                 outputBatchDir.deleteRecursively()
@@ -356,9 +368,9 @@ class ToolExecutionController(
 
                 binding.cardResultSummary.visibility = View.VISIBLE
                 binding.tvResultTitle.text = finalFile.name
-                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos sanitized"
+                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos processed; $metadataOnlyFallbackCount metadata-only fallback(s)"
 
-                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos sanitized successfully.")
+                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos processed; $metadataOnlyFallbackCount used metadata-only fallback (no temporal noise filter).")
                 onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
                 sessionManager.updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
@@ -394,11 +406,11 @@ class ToolExecutionController(
 
             withContext(Dispatchers.Main) {
                 sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
-                onLog("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
+                onLog("[RUN] Applying requested video processing ($noiseLevel) and metadata stripping...")
             }
 
             val processed = withContext(Dispatchers.IO) {
-                backend.cleanVideo(
+                backend.cleanVideoDetailed(
                     tempInput.absolutePath,
                     outputFile.absolutePath,
                     noiseLevel = noiseLevel,
@@ -411,22 +423,22 @@ class ToolExecutionController(
 
             tempInput.delete()
 
-            if (processed && outputFile.exists() && outputFile.length() > 0) {
+            if (processed.isSuccess && outputFile.exists() && outputFile.length() > 0) {
                 state.lastGeneratedFile = outputFile
                 state.progressPercent = 100
                 state.progressDetailsText = "100% complete"
 
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.COMPLETE, "Video ready: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    sessionManager.updateJobState(JobState.COMPLETE, if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "Metadata-only fallback: ${outputFile.name}" else "Video processed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
                     binding.progressIndicator.isIndeterminate = false
                     binding.progressIndicator.progress = 100
                     binding.tvProgressDetails.text = "100% complete"
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+                    binding.tvResultDetails.text = if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata-only fallback; temporal noise filter not applied" else "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Video transcoded; camera PRNU removal not independently verified"
 
-                    onLog("[OK] Video sanitized successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog(if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "[WARN] Metadata-only fallback completed; requested temporal noise filter was not applied." else "[OK] Video transcode completed; camera PRNU removal was not independently verified.")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true

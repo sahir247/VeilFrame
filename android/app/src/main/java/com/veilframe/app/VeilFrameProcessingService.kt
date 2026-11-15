@@ -416,21 +416,37 @@ class VeilFrameProcessingService : Service() {
         }
 
         if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
-            val ok = mediaBackend.cleanVideoCancellable(effectiveInPath, effectiveOutPath)
+            val result = mediaBackend.cleanVideoCancellableDetailed(effectiveInPath, effectiveOutPath)
+            val ok = result.isSuccess
+            val fallbackWarning = if (
+                result.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK
+            ) "Metadata-only fallback completed; requested temporal noise filtering was not applied." else null
             synchronized(this) {
                 if (activeJob?.id == jobId) {
                     activeJob = if (ok) {
-                        activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                        activeJob?.copy(
+                            state = JobState.COMPLETED,
+                            progressPercent = 100,
+                            errorMessage = fallbackWarning
+                        )
                     } else {
-                        activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing failed in native media backend")
+                        activeJob?.copy(
+                            state = JobState.FAILED,
+                            errorMessage = result.errorMessage ?: "Processing failed in native media backend"
+                        )
                     }
                 }
             }
             if (ok) {
+                jobCallback?.onProgress(jobId, 100, fallbackWarning ?: "Complete")
                 jobCallback?.onCompleted(jobId, effectiveOutPath)
-                showCompletionNotification("Privacy Processing Finished", "Cleaned video ready")
+                if (fallbackWarning != null) {
+                    showCompletionNotification("Metadata-only fallback", fallbackWarning)
+                } else {
+                    showCompletionNotification("Video Transcode Finished", "Processed video ready; camera PRNU removal is not independently verified")
+                }
             } else {
-                jobCallback?.onFailed(jobId, "Native media backend cleaning failed")
+                jobCallback?.onFailed(jobId, result.errorMessage ?: "Native media backend cleaning failed")
             }
         } else {
             synchronized(this) {

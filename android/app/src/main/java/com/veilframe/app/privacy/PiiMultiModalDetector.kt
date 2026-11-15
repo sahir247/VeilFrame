@@ -77,12 +77,12 @@ object PiiMultiModalDetector {
 
         // 2. QR Codes & Barcodes (WeChatQRCode + ML Kit BarcodeScanning)
         if (includeBarcodes) {
-            runCatching {
-                candidates += detectBarcodesAndQr(bitmap)
+            val barcodeResult = detectBarcodesAndQr(bitmap)
+            candidates += barcodeResult.detections
+            successfulEngines += barcodeResult.successfulEngines
+            failedEngines.putAll(barcodeResult.failedEngines)
+            if (barcodeResult.successfulEngines.isNotEmpty()) {
                 successfulEngines += "BARCODE_SCANNER"
-            }.onFailure {
-                Log.w(TAG, "Barcode pass failed: ${it.message}")
-                failedEngines["BARCODE_SCANNER"] = it.message ?: "Scanner failure"
             }
         }
 
@@ -129,16 +129,27 @@ object PiiMultiModalDetector {
         ).detections
     }
 
-    private fun detectBarcodesAndQr(bitmap: Bitmap): List<PiiDetection> {
+    private data class BarcodeDetectionResult(
+        val detections: List<PiiDetection>,
+        val successfulEngines: Set<String>,
+        val failedEngines: Map<String, String>
+    )
+
+    private fun detectBarcodesAndQr(bitmap: Bitmap): BarcodeDetectionResult {
         val found = mutableListOf<PiiDetection>()
+        val successful = mutableSetOf<String>()
+        val failed = mutableMapOf<String, String>()
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
 
-        // 2a. WeChatQRCode (OpenCV native)
+        // Run WeChat and ML Kit independently. A successful result from one must not
+        // conceal a failure in the other because that would overstate scan coverage.
         if (CvRuntime.isNativeAvailable) {
-            runCatching {
+            try {
                 val engine = WeChatQrEngine.get()
-                if (engine.isAvailable) {
+                if (!engine.isAvailable) {
+                    failed["BARCODE_WECHAT"] = "WeChat QR engine unavailable"
+                } else {
                     val mat = Mat()
                     try {
                         Utils.bitmapToMat(bitmap, mat)
@@ -159,14 +170,19 @@ object PiiMultiModalDetector {
                                 }
                             }
                         }
+                        successful += "BARCODE_WECHAT"
                     } finally {
                         mat.release()
                     }
                 }
+            } catch (t: Throwable) {
+                Log.w(TAG, "WeChat QR scan failure: ${t.message}")
+                failed["BARCODE_WECHAT"] = t.message ?: "WeChat QR scan failure"
             }
+        } else {
+            failed["BARCODE_WECHAT"] = "OpenCV native runtime unavailable"
         }
 
-        // 2b. ML Kit Barcode Scanning (1D/2D barcodes & QR)
         var scanner: com.google.mlkit.vision.barcode.BarcodeScanner? = null
         try {
             val options = BarcodeScannerOptions.Builder()
@@ -186,16 +202,15 @@ object PiiMultiModalDetector {
                     )
                 }
             }
+            successful += "BARCODE_MLKIT"
         } catch (t: Throwable) {
             Log.w(TAG, "ML Kit barcode scan failure: ${t.message}")
-            if (found.isEmpty()) {
-                throw t
-            }
+            failed["BARCODE_MLKIT"] = t.message ?: "ML Kit barcode scan failure"
         } finally {
             runCatching { scanner?.close() }
         }
 
-        return found
+        return BarcodeDetectionResult(found, successful, failed)
     }
 
     private fun detectSensitiveTextPii(bitmap: Bitmap): List<PiiDetection> {

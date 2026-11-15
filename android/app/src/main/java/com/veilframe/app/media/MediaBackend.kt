@@ -24,6 +24,22 @@ interface IMediaBackend {
         reencodeBitstream: Boolean = false
     ): Boolean
 
+    fun cleanVideoDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        val ok = cleanVideo(inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream)
+        return com.veilframe.app.privacy.VideoSanitizationResult(
+            if (ok) com.veilframe.app.privacy.VideoSanitizationStatus.TRANSCODED
+            else com.veilframe.app.privacy.VideoSanitizationStatus.FAILED
+        )
+    }
+
     fun cleanImage(
         inputPath: String,
         outputPath: String,
@@ -118,6 +134,34 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         )
     }
 
+    override fun cleanVideoDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String,
+        scrubAudio: Boolean,
+        crf: Int?,
+        stripExif: Boolean,
+        reencodeBitstream: Boolean
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        return VideoMetadataSanitizer.cleanVideoDetailed(
+            inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream
+        )
+    }
+
+    suspend fun cleanVideoCancellableDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        return VideoMetadataSanitizer.cleanVideoCancellableDetailed(
+            inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream
+        )
+    }
+
     override fun cleanImage(
         inputPath: String,
         outputPath: String,
@@ -131,17 +175,16 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         val outFile = File(outputPath)
         val inExt = inFile.extension.lowercase(java.util.Locale.US)
         val outExt = (targetExtension ?: outFile.extension).lowercase(java.util.Locale.US)
+        val needsReencode = (inExt != outExt && outExt.isNotEmpty()) || quality < 98 || stripExif
 
-        val needsTranscode = (inExt != outExt && outExt.isNotEmpty()) || quality < 98 || !stripExif
-
-        val success = if (needsTranscode) {
+        // ExifInterface edits EXIF but cannot guarantee removal of every non-EXIF metadata
+        // block (for example IPTC/Photoshop segments). When stripping is requested, rebuild
+        // from decoded pixels instead of copying metadata-bearing container segments.
+        val success = if (needsReencode) {
             ImageMetadataSanitizer.reencodePixels(inFile, outFile, format = outExt, quality = quality)
         } else {
-            ImageMetadataSanitizer.stripExifLossless(inFile, outFile)
-        }
-
-        if (success && stripExif && outFile.exists()) {
-            ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
+            inFile.copyTo(outFile, overwrite = true)
+            true
         }
         return success && outFile.exists() && outFile.length() > 0L
     }
