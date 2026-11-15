@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -331,8 +330,8 @@ class SignaturePadView @JvmOverloads constructor(
 
     /**
      * Renders an ink element with anti-aliasing.
-     * Quadratic Bézier curves are converted to a smooth closed vector ribbon polygon mesh with
-     * normal vectors, eliminating line-cap overlap beads and pixelated staircase artifacts.
+     * Quadratic Bézier curves use native round-cap strokes; segment width follows the
+     * velocity-derived width estimate without constructing a sampled polygon ribbon.
      */
     private fun drawInkElement(
         canvas: Canvas,
