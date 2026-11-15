@@ -162,16 +162,12 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         val inExt = inFile.extension.lowercase(java.util.Locale.US)
         val outExt = (targetExtension ?: outFile.extension).lowercase(java.util.Locale.US)
 
-        // When privacy stripping is requested, always rebuild the image from decoded pixels.
-        // ExifInterface edits EXIF but cannot guarantee removal of every non-EXIF metadata block
-        // (for example IPTC/Photoshop segments). A fresh encode avoids copying those container blocks.
-        val needsTranscode = (inExt != outExt && outExt.isNotEmpty()) || quality < 98 || stripExif || !stripExif
-
-        val success = if (needsTranscode) {
-            ImageMetadataSanitizer.reencodePixels(inFile, outFile, format = outExt, quality = quality)
-        } else {
-            ImageMetadataSanitizer.stripExifLossless(inFile, outFile)
-        }
+        // Always rebuild from decoded pixels. ExifInterface edits EXIF but cannot guarantee
+        // removal of every non-EXIF metadata block (for example IPTC/Photoshop segments).
+        // A fresh encode avoids copying those container blocks into the sanitized output.
+        val success = ImageMetadataSanitizer.reencodePixels(
+            inFile, outFile, format = outExt, quality = quality
+        )
 
         if (success && stripExif && outFile.exists()) {
             ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
