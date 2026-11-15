@@ -161,16 +161,16 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         val outFile = File(outputPath)
         val inExt = inFile.extension.lowercase(java.util.Locale.US)
         val outExt = (targetExtension ?: outFile.extension).lowercase(java.util.Locale.US)
+        val needsReencode = (inExt != outExt && outExt.isNotEmpty()) || quality < 98 || stripExif
 
-        // Always rebuild from decoded pixels. ExifInterface edits EXIF but cannot guarantee
-        // removal of every non-EXIF metadata block (for example IPTC/Photoshop segments).
-        // A fresh encode avoids copying those container blocks into the sanitized output.
-        val success = ImageMetadataSanitizer.reencodePixels(
-            inFile, outFile, format = outExt, quality = quality
-        )
-
-        if (success && stripExif && outFile.exists()) {
-            ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
+        // ExifInterface edits EXIF but cannot guarantee removal of every non-EXIF metadata
+        // block (for example IPTC/Photoshop segments). When stripping is requested, rebuild
+        // from decoded pixels instead of copying metadata-bearing container segments.
+        val success = if (needsReencode) {
+            ImageMetadataSanitizer.reencodePixels(inFile, outFile, format = outExt, quality = quality)
+        } else {
+            inFile.copyTo(outFile, overwrite = true)
+            true
         }
         return success && outFile.exists() && outFile.length() > 0L
     }
