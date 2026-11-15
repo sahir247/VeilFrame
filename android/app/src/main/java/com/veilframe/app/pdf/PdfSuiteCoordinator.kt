@@ -507,13 +507,15 @@ class PdfSuiteCoordinator(
     }
 
     fun discardInactiveResources() {
-        if (::studioController.isInitialized && !studioController.isProcessing) studioController.discardAndReleaseAllResources()
-        if (::watermarkController.isInitialized && !watermarkController.isProcessing) watermarkController.discardAndReleaseAllResources()
-        if (::extractTextController.isInitialized && !extractTextController.isProcessing) extractTextController.discardAndReleaseAllResources()
-        if (::extractPagesController.isInitialized && !extractPagesController.isProcessing) extractPagesController.discardAndReleaseAllResources()
-        if (::flattenController.isInitialized && !flattenController.isProcessing) flattenController.discardAndReleaseAllResources()
-        if (::impositionController.isInitialized && !impositionController.isProcessing) impositionController.discardAndReleaseAllResources()
-        if (::quickToolController.isInitialized && !quickToolController.isProcessing) quickToolController.discardAndReleaseAllResources()
+        // PDF workspaces do not support background execution. Switching to another PDF
+        // tool must cancel in-flight work and release the previous document immediately.
+        if (::studioController.isInitialized) studioController.discardAndReleaseAllResources()
+        if (::watermarkController.isInitialized) watermarkController.discardAndReleaseAllResources()
+        if (::extractTextController.isInitialized) extractTextController.discardAndReleaseAllResources()
+        if (::extractPagesController.isInitialized) extractPagesController.discardAndReleaseAllResources()
+        if (::flattenController.isInitialized) flattenController.discardAndReleaseAllResources()
+        if (::impositionController.isInitialized) impositionController.discardAndReleaseAllResources()
+        if (::quickToolController.isInitialized) quickToolController.discardAndReleaseAllResources()
     }
 
     fun discardAllResources() {
