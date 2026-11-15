@@ -296,8 +296,13 @@ class ToolExecutionController(
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
                 }
                 val relativeInput = inputFile.relativeTo(stagingDir)
-                val relativeOutput = File(relativeInput.parent ?: File(""), "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
-                val outputFile = File(outputBatchDir, relativeOutput.path).apply {
+                val relativeParent = relativeInput.parent
+                val relativeOutputPath = if (relativeParent.isNullOrBlank()) {
+                    "${inputFile.nameWithoutExtension}_sanitized.$targetExt"
+                } else {
+                    "$relativeParent/${inputFile.nameWithoutExtension}_sanitized.$targetExt"
+                }
+                val outputFile = File(outputBatchDir, relativeOutputPath).apply {
                     parentFile?.mkdirs()
                 }
 
