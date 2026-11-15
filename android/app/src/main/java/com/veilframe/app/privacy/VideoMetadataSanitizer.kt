@@ -258,7 +258,19 @@ object VideoMetadataSanitizer {
         crf: Int? = null,
         stripExif: Boolean = true,
         reencodeBitstream: Boolean = false
-    ): Boolean = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+    ): Boolean = cleanVideoCancellableDetailed(
+        inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream
+    ).isSuccess
+
+    suspend fun cleanVideoCancellableDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
+    ): VideoSanitizationResult = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
         try {
             val primaryArgs = buildArguments(
                 inputPath = inputPath,
@@ -271,24 +283,22 @@ object VideoMetadataSanitizer {
                 enableAsymmetricScale = reencodeBitstream
             )
             Log.d(TAG, "Executing video sanitization async with arguments: $primaryArgs")
-
             val session = FFmpegKit.executeWithArgumentsAsync(primaryArgs.toTypedArray()) { completedSession ->
                 if (cont.isActive) {
-                    val returnCode = completedSession.returnCode
-                    val success = ReturnCode.isSuccess(returnCode)
-                    if (success) {
-                        Log.i(TAG, "Video cleaned successfully with FFmpegKit: $outputPath")
-                        cont.resumeWith(Result.success(true))
+                    if (ReturnCode.isSuccess(completedSession.returnCode)) {
+                        cont.resumeWith(Result.success(VideoSanitizationResult(VideoSanitizationStatus.TRANSCODED)))
                     } else {
-                        Log.w(TAG, "Primary transcode pass exited with code $returnCode. Retrying stream-copy fallback pass (container metadata scrub only, without noise dithering)...")
+                        Log.w(TAG, "Primary transcode failed with code ${completedSession.returnCode}; trying metadata-only fallback.")
                         val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
                         val fallbackSession = FFmpegKit.executeWithArgumentsAsync(fallbackArgs.toTypedArray()) { fallbackCompleted ->
                             if (cont.isActive) {
-                                val fallbackSuccess = ReturnCode.isSuccess(fallbackCompleted.returnCode)
-                                if (fallbackSuccess) {
-                                    Log.i(TAG, "Video sanitized via stream-copy fallback (metadata scrubbed)")
+                                val result = if (ReturnCode.isSuccess(fallbackCompleted.returnCode)) {
+                                    Log.w(TAG, "Metadata-only fallback completed; temporal noise filter was not applied.")
+                                    VideoSanitizationResult(VideoSanitizationStatus.METADATA_ONLY_FALLBACK)
+                                } else {
+                                    VideoSanitizationResult(VideoSanitizationStatus.FAILED, "Primary and fallback FFmpeg passes failed")
                                 }
-                                cont.resumeWith(Result.success(fallbackSuccess))
+                                cont.resumeWith(Result.success(result))
                             }
                         }
                         cont.invokeOnCancellation {
@@ -297,16 +307,13 @@ object VideoMetadataSanitizer {
                     }
                 }
             }
-
             cont.invokeOnCancellation {
-                try {
-                    FFmpegKit.cancel(session.sessionId)
-                } catch (_: Throwable) {}
+                try { FFmpegKit.cancel(session.sessionId) } catch (_: Throwable) {}
             }
         } catch (e: Exception) {
             Log.e(TAG, "Video processing failed: ${e.message}", e)
             if (cont.isActive) {
-                cont.resumeWith(Result.success(false))
+                cont.resumeWith(Result.success(VideoSanitizationResult(VideoSanitizationStatus.FAILED, e.message)))
             }
         }
     }
