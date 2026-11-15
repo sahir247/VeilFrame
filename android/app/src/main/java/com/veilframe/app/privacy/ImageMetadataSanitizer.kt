@@ -16,8 +16,9 @@ import java.util.Locale
 
 /**
  * Native Image Privacy and Metadata Sanitization Engine.
- * Implements comprehensive EXIF, XMP, IPTC, and hardware fingerprint scrubbing
- * based on AndroidX ExifInterface, eliminating the need for Python/Pillow on Android.
+ * Provides pixel re-encoding for privacy-oriented metadata removal and a best-effort
+ * AndroidX ExifInterface path for callers that explicitly require lossless EXIF editing.
+ * ExifInterface alone does not guarantee removal of IPTC, Photoshop, or every XMP block.
  */
 object ImageMetadataSanitizer {
 
@@ -185,8 +186,8 @@ object ImageMetadataSanitizer {
     )
 
     /**
-     * Losslessly strips all metadata tags from an existing image file using AndroidX ExifInterface.
-     * Does not re-encode pixels, guaranteeing 100% original visual fidelity.
+     * Removes the listed EXIF tags without re-encoding pixels. This does not remove all
+     * possible non-EXIF metadata blocks; callers requiring broader metadata removal must re-encode.
      */
     fun stripExifLossless(inputFile: File, outputFile: File): Boolean {
         return try {
@@ -196,10 +197,16 @@ object ImageMetadataSanitizer {
             }
 
             val exif = ExifInterface(outputFile.absolutePath)
+            val failedTags = mutableListOf<String>()
             for (tag in ALL_EXIF_TAGS) {
                 try {
                     exif.setAttribute(tag, null)
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                    failedTags += tag
+                }
+            }
+            if (failedTags.isNotEmpty()) {
+                throw IllegalStateException("Unable to clear ${failedTags.size} EXIF tag(s)")
             }
             exif.saveAttributes()
             true
@@ -288,8 +295,9 @@ object ImageMetadataSanitizer {
     }
 
     /**
-     * Exhaustively inspects a file to determine if any identifiable metadata or GPS tags remain.
-     * Returns an explicit [MetadataInspection.Uninspectable] on parsing errors.
+     * Checks a limited set of common identifiable EXIF fields (GPS, make, model, and body serial).
+     * This is not an exhaustive metadata audit and does not inspect IPTC/Photoshop or every XMP block.
+     * Returns [MetadataInspection.Uninspectable] on parsing errors.
      */
     fun inspectIdentifiableMetadata(file: File): MetadataInspection {
         if (!file.exists() || file.length() == 0L) {
@@ -316,9 +324,9 @@ object ImageMetadataSanitizer {
     }
 
     /**
-     * Inspects a file to determine if any identifiable metadata or GPS tags remain.
-     * Hardened to FAIL CLOSED: Returns true if metadata is detected OR if inspection fails.
-     * Only returns false when confirmed completely clean.
+     * Checks the limited EXIF fields covered by [inspectIdentifiableMetadata].
+     * Returns true if one is detected or inspection fails; false means only those checked
+     * fields were absent, not that every metadata block is absent.
      */
     fun hasIdentifiableMetadata(file: File): Boolean {
         return when (inspectIdentifiableMetadata(file)) {
