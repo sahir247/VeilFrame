@@ -26,7 +26,11 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
- * VeilFrame PRNU & Deep Camera Attribution Sanitization Engine.
+ * VeilFrame image privacy sanitization pipeline.
+ *
+ * IMPORTANT: this pipeline does not estimate an independent camera PRNU reference.
+ * Its single-image residual comparison is a diagnostic heuristic only and must never be
+ * represented as verification that sensor PRNU or camera attribution has been removed.
  *
  * Implements the 3-Stage Master Defense Pipeline:
  *  - Stage 1: VeilNet-Nano on-device neural pre-scrambler (sliding halo-padded NCNN inference)
@@ -48,11 +52,11 @@ object PrnuSanitizerEngine {
         ),
         STANDARD_FUSED_REMAP(
             "Standard (Fused Remap)",
-            "Fused coarse-grid remap + asymmetric scale + clean IJG re-encode (|sPCE| < 5.0)"
+            "Fused coarse-grid remap + clean IJG re-encode; no independent PRNU verification"
         ),
         HIGH_SUPPRESSION(
             "High Suppression",
-            "Low-pass downsampling (0.80x) + stochastic warp + clean IJG Q 82-88 (collapses PCE to 1.2-2.9)"
+            "Stochastic geometric remap + clean IJG re-encode; residual diagnostic only"
         ),
         HIGH_DEFENSE(
             "High Defense",
@@ -60,7 +64,7 @@ object PrnuSanitizerEngine {
         ),
         STEALTH_HYBRID(
             "Stealth (2-Stage Hybrid)",
-            "Full VeilNet-Nano NCNN + Fused Coarse Remap + Clean Re-encode (Defeats PRNU & AI Attribution)"
+            "VeilNet-Nano NCNN + fused remap + clean re-encode; attribution resistance is not guaranteed"
         )
     }
 
@@ -72,7 +76,8 @@ object PrnuSanitizerEngine {
         val isAuditPassed: Boolean,
         val measuredPce: Double,
         val measuredMaxStrip: Double,
-        val isConclusive: Boolean = true,
+        val isConclusive: Boolean = false,
+        val residualHeuristicPassed: Boolean = false,
         val errorMessage: String? = null
     )
 
@@ -262,7 +267,9 @@ object PrnuSanitizerEngine {
                 ImageMetadataSanitizer.stripExifLossless(outputFile, outputFile)
             }
 
-            // Run real-time self-audit of sensor correlation on the actual exported artifact against original input
+            // Run a residual-decorrelation diagnostic on the actual exported artifact.
+            // This is NOT PRNU verification: a single image cannot provide an independent
+            // camera fingerprint reference, so this result must never set isAuditPassed=true.
             val exportedMat = Mat().also { matsToRelease.add(it) }
             val readOk = try {
                 val decoded = Imgcodecs.imread(outputFile.absolutePath)
@@ -292,25 +299,17 @@ object PrnuSanitizerEngine {
             }
 
             val auditResult = auditSanitization(originalMat, exportedMat)
-            if (auditResult.verifiedSecure) {
+            if (!auditResult.isConclusive) {
+                Log.w(TAG, "Residual diagnostic inconclusive: baselineSpce=${auditResult.baselineSpce}")
                 onMilestone?.invoke(
-                    "[PRNU] Empirical verification: baseline |sPCE| = %.2f, post |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). Sensor correlation attenuated below detection threshold.".format(
-                        auditResult.baselineSpce,
-                        kotlin.math.abs(auditResult.postSpce),
-                        auditResult.post6StripMaxSpce
-                    )
-                )
-            } else if (!auditResult.isConclusive) {
-                Log.w(TAG, "PRNU audit inconclusive: baselineSpce=${auditResult.baselineSpce} (< 15.0)")
-                onMilestone?.invoke(
-                    "[PRNU] Audit inconclusive: baseline signal (%.2f) too smooth or low-energy for sensor fingerprint verification.".format(
+                    "[Privacy diagnostic] Residual comparison inconclusive (baseline sPCE %.2f). No camera PRNU verification was performed.".format(
                         auditResult.baselineSpce
                     )
                 )
             } else {
-                Log.w(TAG, "PRNU audit: postSpce=${auditResult.postSpce}, maxStrip=${auditResult.post6StripMaxSpce}")
+                val diagnostic = if (auditResult.residualHeuristicPassed) "below" else "not below"
                 onMilestone?.invoke(
-                    "[PRNU] Processing complete: measured |sPCE| = %.2f, max 6-strip = %.2f across exported artifact.".format(
+                    "[Privacy diagnostic] Single-image residual correlation is $diagnostic heuristic thresholds (|sPCE| %.2f; max strip %.2f). This is not proof of PRNU removal or anonymity.".format(
                         kotlin.math.abs(auditResult.postSpce),
                         auditResult.post6StripMaxSpce
                     )
@@ -322,8 +321,11 @@ object PrnuSanitizerEngine {
                 outputFile = if (isExportCreated) outputFile else null,
                 neuralStageExecuted = neuralStageExecuted,
                 geometricStageExecuted = true,
-                isAuditPassed = auditResult.verifiedSecure,
-                isConclusive = auditResult.isConclusive,
+                // No independent camera fingerprint reference is supplied to this API.
+                // Therefore the exported file is never certified as PRNU-sanitized here.
+                isAuditPassed = false,
+                isConclusive = false,
+                residualHeuristicPassed = auditResult.residualHeuristicPassed,
                 measuredPce = auditResult.postSpce,
                 measuredMaxStrip = auditResult.post6StripMaxSpce,
                 errorMessage = null
@@ -698,8 +700,12 @@ object PrnuSanitizerEngine {
         val postSpce: Double,
         val post6StripMaxSpce: Double,
         val stripSpces: List<Double>,
+        /** Always false until an independent, multi-image camera PRNU reference is used. */
         val verifiedSecure: Boolean,
-        val isConclusive: Boolean = true
+        /** Whether the single-image residual diagnostic crossed its heuristic thresholds. */
+        val residualHeuristicPassed: Boolean = false,
+        /** Always false for this reference-free single-image diagnostic. */
+        val isConclusive: Boolean = false
     )
 
     /**
@@ -759,20 +765,23 @@ object PrnuSanitizerEngine {
 
             // Baseline signal validity: require measurable high-pass PRNU energy (sPCE >= 15.0)
             // and finite numerical values. Smooth or synthetic images without PRNU baseline cannot claim verified security.
-            val isConclusive = baselineSpce.isFinite() &&
+            val diagnosticConclusive = baselineSpce.isFinite() &&
                     postSpce.isFinite() &&
                     maxStripSpce.isFinite() &&
                     baselineSpce >= 15.0
 
-            val verifiedSecure = isConclusive && kotlin.math.abs(postSpce) < 5.0 && maxStripSpce < 8.0
+            val residualHeuristicPassed = diagnosticConclusive &&
+                    kotlin.math.abs(postSpce) < 5.0 && maxStripSpce < 8.0
 
             return SelfAuditResult(
                 baselineSpce = baselineSpce,
                 postSpce = postSpce,
                 post6StripMaxSpce = maxStripSpce,
                 stripSpces = stripSpces,
-                verifiedSecure = verifiedSecure,
-                isConclusive = isConclusive
+                // A self-correlation-derived threshold cannot certify camera PRNU removal.
+                verifiedSecure = false,
+                residualHeuristicPassed = residualHeuristicPassed,
+                isConclusive = false
             )
         } finally {
             mats.forEach {
