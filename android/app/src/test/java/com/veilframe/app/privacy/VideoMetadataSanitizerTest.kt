@@ -8,6 +8,20 @@ import org.junit.Test
 class VideoMetadataSanitizerTest {
 
     @Test
+    fun `fallback result is successful but explicitly metadata only`() {
+        val result = VideoSanitizationResult(VideoSanitizationStatus.METADATA_ONLY_FALLBACK)
+        assertTrue(result.isSuccess)
+        assertEquals(VideoSanitizationStatus.METADATA_ONLY_FALLBACK, result.status)
+    }
+
+    @Test
+    fun `failed result is not successful`() {
+        val result = VideoSanitizationResult(VideoSanitizationStatus.FAILED, "FFmpeg failed")
+        assertFalse(result.isSuccess)
+        assertEquals("FFmpeg failed", result.errorMessage)
+    }
+
+    @Test
     fun `test buildArguments strips metadata chapters and scrubs audio for mp4`() {
         val input = "/storage/emulated/0/DCIM/Camera/My Video (test's & special).mp4"
         val output = "/storage/emulated/0/Download/clean.mp4"
