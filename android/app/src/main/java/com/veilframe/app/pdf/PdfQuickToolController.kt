@@ -69,6 +69,7 @@ import com.veilframe.app.pdf.operations.SignaturePlacement
 import com.veilframe.app.pdf.ui.PdfMergePageAdapter
 import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
 import com.veilframe.app.pdf.ui.PdfThumbnailLoader
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -119,6 +120,10 @@ class PdfQuickToolController(
     private var isExecuting: Boolean = false
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
+    private var documentLoadJob: Job? = null
+    private var formAnalysisJob: Job? = null
+    private var documentLoadGeneration: Long = 0L
+    private var formAnalysis: com.veilframe.app.pdf.operations.FormAnalysisResult? = null
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -153,8 +158,22 @@ class PdfQuickToolController(
 
     override fun discardAndReleaseAllResources() {
         activeJob?.cancel()
+        activeJob = null
+        documentLoadJob?.cancel()
+        documentLoadJob = null
+        formAnalysisJob?.cancel()
+        formAnalysisJob = null
+        documentLoadGeneration++
         selectedUris.clear()
+        primaryDocPages = 0
+        primaryDocName = "document.pdf"
+        formAnalysis = null
         isExecuting = false
+        isSaved = false
+        rotateItemTouchHelper?.attachToRecyclerView(null)
+        rotateItemTouchHelper?.attachToRecyclerView(binding.rvRotatePagesThumbnails)
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
         thumbnailLoader.clearCache()
         binding.pdfSignCanvasView.reset()
         binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -285,6 +304,11 @@ class PdfQuickToolController(
                 binding.chipGroupReorderMode.check(R.id.chipReorderDrag)
                 binding.layoutReorderDragTip.visibility = View.VISIBLE
                 binding.containerManualSequence.visibility = View.GONE
+            }
+            QuickMode.FILL_FORMS -> {
+                binding.tvQuickToolPickPrompt.text = "Select PDF with an interactive form"
+                binding.tvQuickToolPickSubtitle.text = "Inspect and edit AcroForm text, checkboxes, choices and lists"
+                binding.btnQuickToolExecute.text = "Open Form Editor"
             }
             QuickMode.SIGN -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Sign"
@@ -769,6 +793,10 @@ class PdfQuickToolController(
 
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        documentLoadJob?.cancel()
+        val loadGeneration = ++documentLoadGeneration
+        formAnalysisJob?.cancel()
+        formAnalysis = null
         isSaved = false
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
@@ -796,26 +824,31 @@ class PdfQuickToolController(
                 inspectAndPreviewOfficeDoc(uri)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
-                scope.launch(Dispatchers.IO) {
+                documentLoadJob = scope.launch(Dispatchers.IO) {
                     try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc ->
-                                primaryDocPages = doc.numberOfPages
-                                withContext(Dispatchers.Main) {
-                                    binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
-                                    splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
-                                    rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
-                                    if (activeMode == QuickMode.SIGN) {
-                                        binding.viewSignaturePad.isDrawingEnabled = true
-                                        refreshSignPagePreview()
-                                        updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
-                                    }
-                                }
+                        val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                        } ?: 0
+                        withContext(Dispatchers.Main) {
+                            if (loadGeneration != documentLoadGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                            primaryDocPages = pageCount
+                            binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
+                            splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
+                            rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
+                            if (activeMode == QuickMode.SIGN) {
+                                binding.viewSignaturePad.isDrawingEnabled = true
+                                refreshSignPagePreview()
+                                updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
                             }
+                            if (activeMode == QuickMode.FILL_FORMS) showFormEditor(uri)
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         withContext(Dispatchers.Main) {
-                            binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            if (loadGeneration == documentLoadGeneration && selectedUris.firstOrNull() == uri) {
+                                binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            }
                         }
                     }
                 }
@@ -1978,7 +2011,192 @@ class PdfQuickToolController(
         }
     }
 
+
+    private fun showFormEditor(uri: Uri) {
+        formAnalysisJob?.cancel()
+        formAnalysisJob = scope.launch(Dispatchers.IO) {
+            val analysis = pdfFormFiller.analyzeForm(activity, uri)
+            withContext(Dispatchers.Main) {
+                if (selectedUris.firstOrNull() != uri || activeMode != QuickMode.FILL_FORMS) return@withContext
+                formAnalysis = analysis
+                if (!analysis.hasForm) {
+                    val message = analysis.errorMessage ?: "This PDF has no interactive AcroForm fields. Scanned or visually printed blanks cannot be typed into with this tool."
+                    Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                buildFormEditorDialog(uri, analysis)
+            }
+        }
+    }
+
+    private fun buildFormEditorDialog(
+        uri: Uri,
+        analysis: com.veilframe.app.pdf.operations.FormAnalysisResult
+    ) {
+        val density = activity.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+        val container = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        val valueReaders = linkedMapOf<String, () -> com.veilframe.app.pdf.operations.FieldValue>()
+        val fieldLabels = mutableListOf<String>()
+
+        for (field in analysis.fields) {
+            val label = android.widget.TextView(activity).apply {
+                text = buildString {
+                    append(field.name)
+                    if (field.isRequired) append("  • Required")
+                    if (field.isReadOnly) append("  • Read only")
+                }
+                textSize = 13f
+                setPadding(0, dp(12), 0, dp(4))
+            }
+            container.addView(label)
+
+            when (field) {
+                is com.veilframe.app.pdf.operations.FormField.TextField -> {
+                    if (field.isReadOnly) {
+                        container.addView(android.widget.TextView(activity).apply { text = field.value.ifBlank { "—" } })
+                    } else {
+                        val edit = android.widget.EditText(activity).apply {
+                            setText(field.value)
+                            textSize = 15f
+                            inputType = if (field.isMultiline) {
+                                android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                            } else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                            if (field.isMultiline) minHeight = dp(84)
+                            field.maxLength?.let { filters = arrayOf(android.text.InputFilter.LengthFilter(it)) }
+                        }
+                        container.addView(edit, android.widget.LinearLayout.LayoutParams(-1, -2))
+                        valueReaders[field.name] = { com.veilframe.app.pdf.operations.FieldValue.Text(edit.text?.toString().orEmpty()) }
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.CheckBoxField -> {
+                    val check = android.widget.CheckBox(activity).apply {
+                        text = if (field.isChecked) "Checked" else "Check this box"
+                        isChecked = field.isChecked
+                        isEnabled = !field.isReadOnly
+                    }
+                    check.setOnCheckedChangeListener { _, checked -> check.text = if (checked) "Checked" else "Check this box" }
+                    container.addView(check)
+                    if (!field.isReadOnly) valueReaders[field.name] = { com.veilframe.app.pdf.operations.FieldValue.CheckBox(check.isChecked) }
+                }
+                is com.veilframe.app.pdf.operations.FormField.RadioButtonField -> {
+                    if (field.options.isEmpty()) {
+                        container.addView(android.widget.TextView(activity).apply { text = "No selectable options" })
+                    } else {
+                        val group = android.widget.RadioGroup(activity).apply { orientation = android.widget.RadioGroup.VERTICAL }
+                        val buttons = field.options.map { option ->
+                            android.widget.RadioButton(activity).apply {
+                                text = option
+                                isEnabled = !field.isReadOnly
+                                isChecked = option == field.selectedOption
+                                tag = option
+                            }.also(group::addView)
+                        }
+                        container.addView(group)
+                        if (!field.isReadOnly) valueReaders[field.name] = {
+                            val selected = buttons.firstOrNull { it.isChecked }?.tag as? String ?: field.selectedOption.orEmpty()
+                            com.veilframe.app.pdf.operations.FieldValue.Radio(selected)
+                        }
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.ComboBoxField -> {
+                    if (field.isReadOnly) {
+                        container.addView(android.widget.TextView(activity).apply { text = field.selectedValue.orEmpty() })
+                    } else {
+                        val spinner = android.widget.Spinner(activity)
+                        val options = field.options.toMutableList()
+                        if (field.isEditable && field.selectedValue != null && field.selectedValue !in options) options.add(0, field.selectedValue)
+                        spinner.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, options)
+                        val selectedIndex = options.indexOf(field.selectedValue).coerceAtLeast(0)
+                        if (options.isNotEmpty()) spinner.setSelection(selectedIndex)
+                        container.addView(spinner)
+                        valueReaders[field.name] = { com.veilframe.app.pdf.operations.FieldValue.Combo(spinner.selectedItem?.toString().orEmpty()) }
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.ListBoxField -> {
+                    val selected = field.selectedValues.toMutableSet()
+                    val button = android.widget.Button(activity).apply {
+                        text = if (selected.isEmpty()) "Choose values" else selected.joinToString()
+                        isEnabled = !field.isReadOnly
+                    }
+                    button.setOnClickListener {
+                        val options = field.options.toTypedArray()
+                        val checked = BooleanArray(options.size) { options[it] in selected }
+                        androidx.appcompat.app.AlertDialog.Builder(activity)
+                            .setTitle(field.name)
+                            .setMultiChoiceItems(options, checked) { _, which, isChecked ->
+                                if (isChecked) selected.add(options[which]) else selected.remove(options[which])
+                            }
+                            .setPositiveButton("Done") { _, _ -> button.text = selected.joinToString().ifBlank { "Choose values" } }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                    container.addView(button)
+                    if (!field.isReadOnly) valueReaders[field.name] = { com.veilframe.app.pdf.operations.FieldValue.ListValue(selected.toList()) }
+                }
+                is com.veilframe.app.pdf.operations.FormField.UnknownField -> {
+                    container.addView(android.widget.TextView(activity).apply {
+                        text = "Unsupported field type: ${field.fieldType}"
+                        alpha = 0.65f
+                    })
+                }
+            }
+            fieldLabels.add(field.name)
+        }
+
+        val flatten = android.widget.CheckBox(activity).apply {
+            text = "Flatten form after filling (fields become non-editable)"
+            isChecked = false
+            setPadding(0, dp(12), 0, 0)
+        }
+        container.addView(flatten)
+
+        val scroll = android.widget.ScrollView(activity).apply {
+            addView(container)
+            isFillViewport = true
+        }
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle("Fill PDF form")
+            .setMessage("${analysis.fillableFields} editable of ${analysis.totalFields} detected fields")
+            .setView(scroll)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Fill & Export", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (valueReaders.isEmpty()) {
+                    Toast.makeText(activity, "This PDF has no supported editable fields", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val values = valueReaders.mapValues { (_, read) -> read() }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                formAnalysisJob = scope.launch(Dispatchers.IO) {
+                    val export = pdfFormFiller.fillFormToBytes(activity, uri, values, flatten.isChecked)
+                    withContext(Dispatchers.Main) {
+                        if (selectedUris.firstOrNull() != uri) return@withContext
+                        if (export.result.success && !export.pdfBytes.isNullOrEmpty()) {
+                            isSaved = true
+                            dialog.dismiss()
+                            onSaveFileRequest(export.pdfBytes, "${primaryDocName.removeSuffix(".pdf")}_filled.pdf")
+                        } else {
+                            dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                            Toast.makeText(activity, export.result.errorMessage ?: "Could not update form fields", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun executeActiveOperation() {
+        if (activeMode == QuickMode.FILL_FORMS) {
+            selectedUris.firstOrNull()?.let { showFormEditor(it) }
+            return
+        }
         if (activeMode != QuickMode.HTML_TO_PDF && selectedUris.isEmpty()) {
             Toast.makeText(activity, "Please select document(s) first", Toast.LENGTH_SHORT).show()
             return
