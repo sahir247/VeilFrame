@@ -395,6 +395,7 @@ class AppUpdateManager(
                 var releaseChangelog = ""
                 var assetSizeBytes = 0L
                 var sha256SumsUrl = ""
+                var releaseAssetSha256 = ""
 
                 val manifestUrlStr = "https://raw.githubusercontent.com/sahir247/VeilFrame/main/android/update.json"
                 if (isAllowedUpdateUrl(manifestUrlStr)) {
@@ -403,6 +404,8 @@ class AppUpdateManager(
                             connectTimeout = 10000
                             readTimeout = 10000
                             setRequestProperty("User-Agent", com.veilframe.app.util.AppVersionProvider.getUserAgent(activity))
+                            setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0")
+                            setRequestProperty("Pragma", "no-cache")
                         }
                         if (manifestConn.responseCode in 200..299) {
                             val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
@@ -463,16 +466,24 @@ class AppUpdateManager(
 
                         val assets = releaseJson.optJSONArray("assets")
                         if (assets != null) {
+                            val requestedApkName = manifestApkName.ifBlank { "VeilFrame-android-arm64.apk" }
                             for (i in 0 until assets.length()) {
                                 val asset = assets.getJSONObject(i)
                                 val name = asset.optString("name", "")
                                 val downloadUrl = asset.optString("browser_download_url", "")
-                                if (name.endsWith(".apk", ignoreCase = true)) {
+                                if (name.equals(requestedApkName, ignoreCase = true)) {
                                     apkDownloadUrl = downloadUrl
+                                    manifestApkName = name
                                     assetSizeBytes = asset.optLong("size", 0L)
-                                    if (manifestApkName.isEmpty()) {
-                                        manifestApkName = name
+                                    val rawDigest = asset.optString("digest", "").trim()
+                                    releaseAssetSha256 = rawDigest.removePrefix("sha256:").lowercase(Locale.ROOT)
+                                    if (releaseAssetSha256.isNotEmpty() &&
+                                        !releaseAssetSha256.matches(Regex("^[a-f0-9]{64}$"))) {
+                                        onLog("[SEC] GitHub release asset supplied a malformed SHA-256 digest; ignoring asset digest.")
+                                        releaseAssetSha256 = ""
                                     }
+                                } else if (name.endsWith(".apk", ignoreCase = true)) {
+                                    onLog("[SEC] Ignoring non-target APK release asset: $name")
                                 } else if (name.equals("SHA256SUMS.txt", ignoreCase = true)) {
                                     sha256SumsUrl = downloadUrl
                                 } else if (name.equals("update.json", ignoreCase = true)) {
@@ -510,6 +521,20 @@ class AppUpdateManager(
                     }
                 }
 
+                // GitHub's release API digest belongs to the exact selected asset and
+                // takes precedence over a potentially stale raw-manifest checksum.
+                if (releaseAssetSha256.isNotEmpty()) {
+                    if (apkExpectedSha256.isNotBlank() &&
+                        !apkExpectedSha256.equals(releaseAssetSha256, ignoreCase = true)) {
+                        onLog("[SEC] Manifest SHA-256 differs from GitHub's selected release asset digest; using the release asset digest.")
+                    }
+                    apkExpectedSha256 = releaseAssetSha256
+                }
+
+                if (apkDownloadUrl.isBlank()) {
+                    onLog("[SEC] No release APK exactly matched manifest target '$manifestApkName'. Refusing to select another APK.")
+                }
+
                 // 3. Fallback SHA-256 resolution from SHA256SUMS.txt or release body
                 if ((apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) && sha256SumsUrl.isNotEmpty()) {
                     try {
@@ -527,7 +552,7 @@ class AppUpdateManager(
                                     if (parts.size >= 2) {
                                         val hash = parts[0].trim().lowercase(Locale.ROOT)
                                         val filePart = parts[1].trim()
-                                        if (filePart.equals(manifestApkName, ignoreCase = true) || filePart.endsWith(".apk", ignoreCase = true)) {
+                                        if (filePart.equals(manifestApkName, ignoreCase = true)) {
                                             if (hash.matches(Regex("^[a-fA-F0-9]{64}$"))) {
                                                 apkExpectedSha256 = hash
                                                 onLog("[SEC] Resolved authentic APK SHA-256 from SHA256SUMS.txt: $apkExpectedSha256")
