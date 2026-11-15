@@ -1559,7 +1559,6 @@ class PdfQuickToolController(
             val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
             withContext(Dispatchers.Main) {
                 if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    bmp?.recycle()
                     return@withContext
                 }
                 binding.pbSignPreviewLoading.visibility = View.GONE
@@ -2898,7 +2897,6 @@ class PdfQuickToolController(
             val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
             withContext(Dispatchers.Main) {
                 if (generation != selectionGeneration || !dialog.isShowing) {
-                    highResBitmap?.recycle()
                     return@withContext
                 }
                 pbLoading.visibility = View.GONE
