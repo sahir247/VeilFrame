@@ -347,6 +347,10 @@ class PdfFormFiller {
                 )
             }
 
+            // Disable deferred viewer-side appearance generation before changing values.
+            // PDFBox will then regenerate widget appearance streams as each field is updated.
+            acroForm.setNeedAppearances(false)
+
             var updated = 0
             for ((name, value) in fieldValues) {
                 val field = acroForm.getField(name)
@@ -361,8 +365,6 @@ class PdfFormFiller {
                 )
             }
 
-            // Ask PDFBox to maintain usable widget appearances for viewers.
-            acroForm.setNeedAppearances(false)
             if (flatten) acroForm.flatten()
 
             val output = ByteArrayOutputStream()
