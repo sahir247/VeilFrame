@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vf_bg_dark"
+    android:orientation="vertical">
+
+    <!-- Top Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:background="@color/vf_surface_variant">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrushClose"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="0dp"
+            app:icon="@drawable/ic_close"
+            app:iconTint="@color/vf_text_secondary"
+            android:contentDescription="Close Brush Canvas" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrushUndo"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="0dp"
+            app:icon="@drawable/ic_undo"
+            app:iconTint="@color/vf_text_primary"
+            android:contentDescription="Undo" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrushRedo"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="0dp"
+            app:icon="@drawable/ic_redo"
+            app:iconTint="@color/vf_text_primary"
+            android:contentDescription="Redo" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrushClear"
+            style="@style/Widget.VeilFrame.Button.Text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clear"
+            android:textColor="?attr/colorError" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrushApply"
+            style="@style/Widget.VeilFrame.Button.Pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="Done" />
+    </LinearLayout>
+
+    <!-- Interactive Painting Canvas -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/vf_bg_dark">
+
+        <com.veilframe.app.ui.views.BlurBrushCanvasView
+            android:id="@+id/blurCanvasView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+
+    <!-- Bottom Controls Card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp"
+        android:background="@color/vf_surface">
+
+        <!-- Mode Segmented Toggle: Paint Blur vs Erase -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="10dp">
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/toggleBrushMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnModeBlurBrush"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Blur Brush"
+                    app:icon="@drawable/ic_brush"
+                    app:iconGravity="textStart" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnModeBlurErase"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Eraser"
+                    app:icon="@drawable/ic_eraser"
+                    app:iconGravity="textStart" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBrushResetZoom"
+                style="@style/Widget.VeilFrame.Button.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Reset View" />
+        </LinearLayout>
+
+        <!-- Brush Size Slider -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Brush Size:"
+                android:textSize="12sp"
+                android:textColor="@color/vf_text_secondary"
+                android:layout_marginEnd="8dp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderBrushSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="10"
+                android:valueTo="180"
+                android:stepSize="1"
+                android:value="35" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

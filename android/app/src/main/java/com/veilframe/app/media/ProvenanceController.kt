@@ -103,27 +103,79 @@ class ProvenanceController(
             }
 
             val isSuccess = !hash.startsWith("Error")
-            val isVeilFrameArchive = name.endsWith(".vfp", ignoreCase = true) || name.endsWith(".zip", ignoreCase = true) || name.endsWith(".aibundle", ignoreCase = true)
+            val isVeilFrameArchive = name.endsWith(".vfp", ignoreCase = true) ||
+                name.endsWith(".zip", ignoreCase = true) ||
+                name.endsWith(".aibundle", ignoreCase = true)
+
+            var manifestFound = false
+            var manifestHasSignature = false
+            var manifestSignatureValid: Boolean? = null
+
+            if (isVeilFrameArchive && isSuccess) {
+                try {
+                    activity.contentResolver.openInputStream(uri)?.use { stream ->
+                        java.util.zip.ZipInputStream(stream).use { zis ->
+                            var entry = zis.nextEntry
+                            while (entry != null) {
+                                if (entry.name.equals("manifest.json", ignoreCase = true) ||
+                                    entry.name.endsWith("/manifest.json", ignoreCase = true)
+                                ) {
+                                    manifestFound = true
+                                    val text = zis.bufferedReader().readText()
+                                    val json = org.json.JSONObject(text)
+                                    val sig = json.optString("signature", "")
+                                    if (sig.isNotBlank()) {
+                                        manifestHasSignature = true
+                                        manifestSignatureValid = com.veilframe.app.updates.AppUpdateManager.verifyManifestSignature(json)
+                                    }
+                                    break
+                                }
+                                entry = zis.nextEntry
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    manifestFound = false
+                }
+            }
 
             withContext(Dispatchers.Main) {
                 if (isSuccess) {
                     currentSha256 = hash
                     binding.tvProvenanceSha256.text = hash
                     binding.btnProvenanceCopyHash.isEnabled = true
-                    binding.tvProvenanceFileSize.text = "Size: ${safStorageManager.formatBytes(sizeBytes)} • Verified"
+                    binding.tvProvenanceFileSize.text = "Size: ${safStorageManager.formatBytes(sizeBytes)}"
                     binding.ivProvenanceStatusIcon.setImageResource(R.drawable.ic_check_circle)
                     binding.ivProvenanceStatusIcon.imageTintList = ColorStateList.valueOf(
                         ContextCompat.getColor(activity, R.color.vf_accent_green)
                     )
-                    binding.tvProvenanceStatusTitle.text = "Cryptographic Integrity Verified"
-                    binding.tvProvenanceStatusDesc.text = "SHA-256 bitstream checksum generated and validated"
+                    binding.tvProvenanceStatusTitle.text = "Bitstream SHA-256 Computed"
+                    binding.tvProvenanceStatusDesc.text = "SHA-256 digest computed across bitstream. Copy hash to compare against trusted publisher checksum."
 
                     if (isVeilFrameArchive) {
-                        binding.tvProvenanceEd25519Status.text = "VeilFrame Ed25519 Provenance Envelope Detected"
-                        binding.tvProvenanceEd25519Details.text = "Algorithm: Ed25519 (EdDSA RFC 8032)\nKeystore: AndroidKeyStore / VeilFrame Attestation Keystore\nDigest: SHA-512 bitstream manifest envelope\nManifest: Cryptographic signature verified against embedded public certificate"
+                        if (manifestFound && manifestHasSignature) {
+                            if (manifestSignatureValid == true) {
+                                binding.tvProvenanceEd25519Status.text = "Ed25519 Signature Verified"
+                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: Valid Ed25519 digital signature verified against embedded public key."
+                            } else {
+                                binding.tvProvenanceEd25519Status.text = "Ed25519 Signature INVALID"
+                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: FAILED verification! Manifest may have been tampered with or signed by an unknown key."
+                                binding.ivProvenanceStatusIcon.setImageResource(R.drawable.ic_info_outline)
+                                binding.ivProvenanceStatusIcon.imageTintList = ColorStateList.valueOf(
+                                    ContextCompat.getColor(activity, R.color.vf_accent_red)
+                                )
+                                binding.tvProvenanceStatusTitle.text = "Signature Verification Failed"
+                            }
+                        } else if (manifestFound) {
+                            binding.tvProvenanceEd25519Status.text = "Unsigned Manifest Present"
+                            binding.tvProvenanceEd25519Details.text = "Archive contains manifest.json, but no digital signature field is present.\nStatus: Unsigned Package"
+                        } else {
+                            binding.tvProvenanceEd25519Status.text = "Standard Archive (No Manifest)"
+                            binding.tvProvenanceEd25519Details.text = "Inspected archive entries: No manifest.json or cryptographic signature envelope found in archive.\nStatus: Unsigned Archive"
+                        }
                     } else {
-                        binding.tvProvenanceEd25519Status.text = "Standalone Artifact"
-                        binding.tvProvenanceEd25519Details.text = "Algorithm: Ed25519 Supported\nKeystore: AndroidKeyStore (Hardware-backed if available)\nPayload Digest: ${hash.take(16)}...${hash.takeLast(8)}\nAttestation: Ready for Ed25519 signature envelope creation"
+                        binding.tvProvenanceEd25519Status.text = "Standalone Artifact (Unsigned)"
+                        binding.tvProvenanceEd25519Details.text = "Raw media file: Standalone media does not carry an embedded provenance envelope.\nUse SHA-256 to verify file integrity against publisher records."
                     }
                 } else {
                     binding.tvProvenanceSha256.text = hash

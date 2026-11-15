@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:viewBindingIgnore="true"
+    android:id="@+id/containerQrScan"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- CameraX preview -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/qr_camera_preview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Scan viewfinder overlay (custom view drawn on top of camera) -->
+    <com.veilframe.app.qr.ui.QrScanOverlayView
+        android:id="@+id/qr_scan_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Dynamic guidance text below targeting reticle -->
+    <TextView
+        android:id="@+id/qr_scan_guidance_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="148dp"
+        android:background="@drawable/bg_pill_accent"
+        android:backgroundTint="#CC1A1A1A"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="9dp"
+        android:text="Point camera at a QR code"
+        android:textColor="#FFFFFF"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:letterSpacing="0.02"
+        android:visibility="gone" />
+
+    <!-- Camera Zoom Presets Bar -->
+    <LinearLayout
+        android:id="@+id/container_qr_zoom_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="94dp"
+        android:background="@drawable/bg_pill_accent"
+        android:backgroundTint="#CC1A1A1A"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_1x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="1x"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_2x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="2x"
+            android:textColor="#B3FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_3x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="3x"
+            android:textColor="#B3FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Torch / Flashlight Toggle Button -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/qr_torch_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        app:fabSize="mini"
+        android:contentDescription="Toggle flashlight"
+        app:srcCompat="@drawable/ic_flash_off"
+        app:tint="#FFFFFF"
+        android:backgroundTint="#80000000"
+        app:elevation="2dp"
+        app:borderWidth="0dp"
+        android:visibility="gone" />
+
+    <!-- Permission-denied State Overlay -->
+    <LinearLayout
+        android:id="@+id/container_camera_permission_denied"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?attr/colorSurface"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp">
+
+            <ImageView
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:src="@drawable/ic_tool_qr"
+                app:tint="?attr/colorOnSurfaceVariant"
+                android:contentDescription="Camera Disabled" />
+
+            <TextView
+                android:id="@+id/qr_camera_permission_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Camera access is disabled"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/qr_camera_permission_desc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="VeilFrame needs camera access to scan QR codes with your device."
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_allow_camera_btn"
+                style="@style/Widget.VeilFrame.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Allow Camera" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_open_settings_btn"
+                style="@style/Widget.VeilFrame.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Open Settings"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_permission_import_gallery_btn"
+                style="@style/Widget.VeilFrame.Button.Quiet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Import from Gallery"
+                app:icon="@drawable/ic_tab_image" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Camera Error State Overlay -->
+    <LinearLayout
+        android:id="@+id/container_camera_error"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?attr/colorSurface"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp">
+
+            <ImageView
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:src="@drawable/ic_info_outline"
+                app:tint="?attr/colorError"
+                android:contentDescription="Camera Error" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Unable to start camera"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/qr_camera_error_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Could not initialize CameraX hardware pipeline."
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_camera_retry_btn"
+                style="@style/Widget.VeilFrame.Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Try Again" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_error_import_gallery_btn"
+                style="@style/Widget.VeilFrame.Button.Quiet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Import from Gallery"
+                app:icon="@drawable/ic_tab_image" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom HUD controls -->
+    <LinearLayout
+        android:id="@+id/container_scan_bottom_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="24dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/qr_scan_gallery_btn"
+            style="@style/Widget.VeilFrame.Button.Elevated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:minHeight="48dp"
+            android:elevation="6dp"
+            app:elevation="6dp"
+            android:paddingHorizontal="24dp"
+            app:cornerRadius="24dp"
+            app:icon="@drawable/ic_tab_image"
+            app:iconGravity="textStart"
+            app:iconPadding="10dp"
+            android:text="Import from Gallery"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <!-- Scan result card (animated in when a QR is detected) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/qr_result_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/qr_result_type"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:letterSpacing="0.06"
+                    android:textColor="?attr/colorSecondary"
+                    android:text="Type" />
+
+                <TextView
+                    android:id="@+id/qr_result_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="6"
+                    android:ellipsize="end"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurface"
+                    android:layout_marginTop="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="12dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_result_toggle_pwd_btn"
+                        style="@style/Widget.VeilFrame.Button.Inline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:cornerRadius="12dp"
+                        app:icon="@drawable/ic_visibility"
+                        app:iconPadding="4dp"
+                        android:text="Show"
+                        android:visibility="gone" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_scan_another_btn"
+                        style="@style/Widget.VeilFrame.Button.Inline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:cornerRadius="12dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="Scan Another" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_result_action_btn"
+                        style="@style/Widget.VeilFrame.Button.Tonal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:cornerRadius="12dp"
+                        android:text="Open" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+</FrameLayout>

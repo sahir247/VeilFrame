@@ -26,18 +26,27 @@ object QrEncoder {
 
     fun encode(
         content: String,
-        errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M
+        errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M,
+        minVersion: Int = 1
     ): EncodedQr {
         if (content.isBlank()) {
             throw QrError.Input.EmptyContent
         }
 
-        val hints = mapOf(
-            EncodeHintType.CHARACTER_SET to "UTF-8"
-        )
-
+        val clampedMin = minVersion.coerceIn(1, 40)
         val qrCode: QRCode = try {
-            Encoder.encode(content, errorCorrection, hints)
+            val baseHints = mapOf(EncodeHintType.CHARACTER_SET to "UTF-8")
+            val autoCode = Encoder.encode(content, errorCorrection, baseHints)
+            val naturalVersion = autoCode.version?.versionNumber ?: calculateVersion(autoCode.matrix.width)
+            if (clampedMin > naturalVersion) {
+                val verHints = mapOf(
+                    EncodeHintType.CHARACTER_SET to "UTF-8",
+                    EncodeHintType.QR_VERSION to clampedMin
+                )
+                Encoder.encode(content, errorCorrection, verHints)
+            } else {
+                autoCode
+            }
         } catch (t: Throwable) {
             throw QrError.fromThrowable(t, "ZXing encoder failure")
         }

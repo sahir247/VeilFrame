@@ -60,6 +60,8 @@ class BubbleRenderer : QrRenderer {
         }
 
         // 1. Position finders via canonical VeilFrame position geometry
+        val posOuterColor = design.eyeStyle.outerColor ?: design.clusterStyle.positionColor
+        val posInnerColor = design.eyeStyle.innerColor ?: design.clusterStyle.positionColor
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(n - 4, 3),
@@ -75,46 +77,34 @@ class BubbleRenderer : QrRenderer {
                     offsetY = oy,
                     style = design.eyeStyle.style,
                     size = design.positionSize,
-                    color = design.clusterStyle.positionColor
+                    color = posOuterColor,
+                    innerColor = posInnerColor
                 )
             )
         }
 
-        // 2. Setup availability matrices
+        // 2. Reserve protected function patterns (finders, timing, alignment, format/version)
+        // so macro cluster rings preserve exact QR finder/timing/alignment alignment locks.
         val avail = Array(n) { BooleanArray(n) { true } }
         val avail2 = Array(n) { BooleanArray(n) { true } }
-
-        val isEfMode = matrix.typeTable != null
-
-        if (isEfMode) {
-            // Artistic mode: Only finders are excluded from clustering
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    if (VeilPositionPatternGeometry.isFinderArea(col, row, n)) {
-                        avail[col][row] = false
-                        avail2[col][row] = false
-                    }
-                }
-            }
-        } else {
-            // SAFE mode: Reserve protected function patterns
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    if (matrix.functionMask.isProtected(col, row)) {
-                        avail[col][row] = false
-                        avail2[col][row] = false
-                        // Draw timing and alignment patterns as clean rounded bubbles
-                        if (matrix.isDark(col, row) && !matrix.functionMask.isFinder(col, row) && !matrix.functionMask.isSeparator(col, row)) {
-                            val (cx, cy) = geometry.moduleCenter(col, row)
-                            nodes.add(
-                                CircleNode(
-                                    cx = cx,
-                                    cy = cy,
-                                    radius = cs * 0.42f,
-                                    fill = fgColor
-                                )
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.functionMask.isFinder(col, row) ||
+                    matrix.functionMask.isSeparator(col, row) ||
+                    matrix.functionMask.isProtected(col, row)
+                ) {
+                    avail[col][row] = false
+                    avail2[col][row] = false
+                    if (matrix.isDark(col, row) && !matrix.functionMask.isFinder(col, row) && !matrix.functionMask.isSeparator(col, row)) {
+                        val (cx, cy) = geometry.moduleCenter(col, row)
+                        nodes.add(
+                            CircleNode(
+                                cx = cx,
+                                cy = cy,
+                                radius = cs * 0.42f,
+                                fill = fgColor
                             )
-                        }
+                        )
                     }
                 }
             }
@@ -128,14 +118,13 @@ class BubbleRenderer : QrRenderer {
         for (col in 0 until n - 2) {
             for (row in 0 until n - 2) {
                 if (avail[col][row] && avail2[col][row]) {
-                    var allAvail2 = true
-                    for (di in 0..2) {
-                        for (dj in 0..2) {
-                            if (!avail2[col + di][row + dj]) allAvail2 = false
-                        }
-                    }
+                    val allArmsAvail = avail2[col + 1][row] &&
+                        avail2[col + 1][row + 2] &&
+                        avail2[col][row + 1] &&
+                        avail2[col + 2][row + 1] &&
+                        avail2[col + 1][row + 1]
 
-                    if (allAvail2 &&
+                    if (allArmsAvail &&
                         matrix.isDark(col + 1, row) && matrix.isDark(col + 1, row + 2) &&
                         matrix.isDark(col, row + 1) && matrix.isDark(col + 2, row + 1)
                     ) {
@@ -150,9 +139,16 @@ class BubbleRenderer : QrRenderer {
                             nodes.add(CircleNode(cx = cx, cy = cy, radius = r2, fill = outlineColor))
                         }
 
+                        // Mark the 5 cross cells consumed while keeping any dark 3x3 corners renderable.
+                        val crossCells = arrayOf(
+                            Pair(1, 0), Pair(0, 1), Pair(1, 1), Pair(2, 1), Pair(1, 2)
+                        )
+                        for ((di, dj) in crossCells) {
+                            avail[col + di][row + dj] = false
+                            avail2[col + di][row + dj] = false
+                        }
                         for (di in 0..2) {
                             for (dj in 0..2) {
-                                avail[col + di][row + dj] = false
                                 avail2[col + di][row + dj] = false
                             }
                         }
@@ -228,8 +224,8 @@ class BubbleRenderer : QrRenderer {
                     } else if (matrix.roleAt(col, row) == QrModuleRole.DATA && design.clusterStyle.ambientBubbles) {
                         if (rng.nextFloat() < design.clusterStyle.ambientDensity) {
                             val (cx, cy) = geometry.moduleCenter(col, row)
-                            val r = 0.5f * (0.85f + rng.nextFloat() * 0.45f) * cs
-                            val sw = (0.15f + rng.nextFloat() * 0.18f) * cs
+                            val r = (0.28f + rng.nextFloat() * 0.14f) * cs
+                            val sw = (0.12f + rng.nextFloat() * 0.10f) * cs
                             nodes.add(CircleNode(cx = cx, cy = cy, radius = r, fill = centerColor, stroke = outlineColor, strokeWidth = sw))
                             avail[col][row] = false
                         }

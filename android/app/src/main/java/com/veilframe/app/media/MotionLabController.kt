@@ -2,21 +2,27 @@ package com.veilframe.app.media
 
 import android.app.Activity
 import android.content.ContentValues
+import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
 import android.view.LayoutInflater
 import com.veilframe.app.databinding.DialogModelRequiredBinding
 import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.media.rife.RifeModelManager
+import com.veilframe.app.media.rife.MotionModelSelectorDialog
+import com.veilframe.app.media.rife.RifeModelRegistry
+import com.veilframe.app.media.rife.RifeModelSpec
 import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutMotionLabBinding
 import androidx.media3.exoplayer.ExoPlayer
@@ -62,6 +68,7 @@ class MotionLabController(
         const val TAG = "VeilFrame.MotionLab"
         const val MAX_DURATION_S = 60
         const val MAX_FRAMES = 1800
+        const val WARN_DURATION_S = 30
     }
 
     enum class MotionMethod {
@@ -78,7 +85,8 @@ class MotionLabController(
     private var method = MotionMethod.RIFE
     private var job: Job? = null
     private var activeJobId: UUID? = null
-    override val isProcessing: Boolean get() = activeJobId != null || job?.isActive == true
+    private var isTrimming = false
+    override val isProcessing: Boolean get() = activeJobId != null || job?.isActive == true || isTrimming
     override val supportsBackgroundExecution: Boolean get() = true
     @Volatile private var cancelRequested = false
     private var outputFile: File? = null
@@ -90,8 +98,15 @@ class MotionLabController(
 
     private fun wire() {
         binding.btnMotionLabBack.setOnClickListener { onNavigateBack() }
-        binding.btnMotionLabPick.setOnClickListener { if (job?.isActive != true) onPickVideoRequest() }
+        binding.btnMotionLabPick.setOnClickListener { if (!isProcessing) onPickVideoRequest() }
         binding.btnMotionLabRun.setOnClickListener {
+            if (isProcessing) return@setOnClickListener
+
+            if (outputFile != null && outputFile?.exists() == true) {
+                saveToGallery()
+                return@setOnClickListener
+            }
+
             if (method == MotionMethod.RIFE) {
                 val rifeManager = RifeModelManager(activity)
                 if (!rifeManager.isModelReady()) {
@@ -104,22 +119,28 @@ class MotionLabController(
             runInterpolation()
         }
         binding.btnCancelMotionLab.setOnClickListener {
-            cancelRequested = true
-            job?.cancel()
-            FFmpegKit.cancel()
-            setStatus("Cancelling…")
+            cancel()
+        }
+        binding.btnMotionLabDiscard.setOnClickListener {
+            discardCurrentWork()
+        }
+        binding.btnMotionLabSave.setOnClickListener {
+            saveToGallery()
         }
         binding.chipMotion60fps.setOnClickListener {
             isTarget60fps = true
             multiplier = 2
+            updateControlStates()
         }
         binding.chipMotion2x.setOnClickListener {
             isTarget60fps = false
             multiplier = 2
+            updateControlStates()
         }
         binding.chipMotion4x.setOnClickListener {
             isTarget60fps = false
             multiplier = 4
+            updateControlStates()
         }
         binding.chipMotionRife.setOnClickListener {
             method = MotionMethod.RIFE
@@ -130,29 +151,99 @@ class MotionLabController(
                     // Ready for interpolation
                 }
             }
+            updateControlStates()
         }
         binding.chipMotionFast.setOnClickListener {
             method = MotionMethod.DIS
             syncRateChipsForMethod()
+            updateControlStates()
         }
         binding.chipMotionQuality.setOnClickListener {
             method = MotionMethod.FARNEBACK
             syncRateChipsForMethod()
+            updateControlStates()
         }
         syncRateChipsForMethod()
-        binding.btnMotionLabTrim.setOnClickListener { openTrimDialog() }
-        binding.btnMotionLabSave.setOnClickListener { saveToGallery() }
+        binding.btnMotionLabTrim.setOnClickListener { if (!isProcessing) openTrimDialog() }
+        binding.btnMotionSwitchModel.setOnClickListener {
+            if (!isProcessing) openModelSelectorDialog()
+        }
+        binding.cardMotionActiveModel.setOnClickListener {
+            if (!isProcessing) openModelSelectorDialog()
+        }
+        updateControlStates()
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
-
 
     override fun hasPickedMedia(): Boolean = sourceUri != null
     override fun hasUnsavedWork(): Boolean = sourceUri != null || outputFile != null
 
+    fun discardCurrentWork() {
+        outputFile?.let { file ->
+            try {
+                if (file.exists()) file.delete()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed deleting output file on discard", t)
+            }
+        }
+        outputFile = null
+        try {
+            activity.cacheDir.listFiles { _, name ->
+                name.startsWith("motion_clip_") || name.startsWith("motion_temp_in_")
+            }?.forEach { it.delete() }
+        } catch (_: Throwable) {}
+        binding.cardMotionLabResult.visibility = View.GONE
+        updateControlStates()
+        Toast.makeText(activity, "Work discarded", Toast.LENGTH_SHORT).show()
+    }
+
     override fun discardAndReleaseAllResources() {
         cancel()
+        outputFile?.let { file ->
+            try {
+                if (file.exists()) file.delete()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed deleting output file on discard", t)
+            }
+        }
+        outputFile = null
+        try {
+            activity.cacheDir.listFiles { _, name ->
+                name.startsWith("motion_clip_") || name.startsWith("motion_temp_in_")
+            }?.forEach { it.delete() }
+        } catch (_: Throwable) {}
         reset()
         MotionLabForegroundService.stop(activity)
+    }
+
+    fun reset() {
+        cancelRequested = true
+        activeJobId?.let { id ->
+            VeilFrameProcessingService.cancelProcessing(activity, id)
+            activeJobId = null
+        }
+        rifeDownloadJob?.cancel()
+        job?.cancel()
+        isTrimming = false
+        outputFile?.let { file ->
+            try {
+                if (file.exists()) file.delete()
+            } catch (_: Throwable) {}
+        }
+        sourceUri = null
+        outputFile = null
+        videoDurationMs = 0L
+        isTarget60fps = true
+        multiplier = 2
+        method = MotionMethod.RIFE
+        binding.chipMotion60fps.isChecked = true
+        binding.chipMotionRife.isChecked = true
+        syncRateChipsForMethod()
+        binding.containerMotionLabProgress.visibility = View.GONE
+        binding.cardMotionLabResult.visibility = View.GONE
+        binding.btnMotionLabTrim.visibility = View.GONE
+        binding.tvMotionLabSource.text = "No video selected"
+        updateControlStates()
     }
 
     override fun moveToBackground() {
@@ -172,19 +263,85 @@ class MotionLabController(
         }
         rifeDownloadJob?.cancel()
         job?.cancel()
+        isTrimming = false
         FFmpegKit.cancel()
         MotionLabForegroundService.stop(activity)
+        outputFile?.let { file ->
+            try { if (file.exists()) file.delete() } catch (_: Throwable) {}
+        }
+        outputFile = null
         scope.launch(Dispatchers.Main) {
+            binding.containerMotionLabProgress.visibility = View.GONE
+            binding.cardMotionLabResult.visibility = View.GONE
             binding.tvMotionLabStatus.text = "Cancelled"
-            binding.btnMotionLabRun.isEnabled = sourceUri != null
+            updateControlStates()
+        }
+    }
+
+    private fun updateControlStates() {
+        val busy = isProcessing
+        val hasSource = sourceUri != null
+        val hasResult = outputFile != null && outputFile?.exists() == true
+
+        // 1. Source & Trim Controls
+        binding.btnMotionLabPick.isEnabled = !busy
+        binding.btnMotionLabPick.alpha = if (!busy) 1.0f else 0.4f
+
+        binding.btnMotionLabTrim.isEnabled = !busy && hasSource
+        binding.btnMotionLabTrim.alpha = if (!busy && hasSource) 1.0f else 0.4f
+
+        // 2. Chips
+        binding.chipMotionRife.isEnabled = !busy
+        binding.chipMotionFast.isEnabled = !busy
+        binding.chipMotionQuality.isEnabled = !busy
+        binding.chipMotion60fps.isEnabled = !busy
+        binding.chipMotion2x.isEnabled = !busy
+        binding.chipMotion4x.isEnabled = !busy
+
+        // 3. Dynamic Action Button
+        when {
+            busy -> {
+                binding.btnMotionLabRun.isEnabled = false
+                binding.btnMotionLabRun.alpha = 0.5f
+                binding.btnMotionLabRun.text = "Processing…"
+                binding.btnMotionLabRun.icon = null
+            }
+            hasResult -> {
+                binding.btnMotionLabRun.isEnabled = true
+                binding.btnMotionLabRun.alpha = 1.0f
+                binding.btnMotionLabRun.text = "Save Video"
+                binding.btnMotionLabRun.setIconResource(R.drawable.ic_action_save)
+            }
+            hasSource -> {
+                binding.btnMotionLabRun.isEnabled = true
+                binding.btnMotionLabRun.alpha = 1.0f
+                binding.btnMotionLabRun.text = "Interpolate"
+                binding.btnMotionLabRun.icon = null
+            }
+            else -> {
+                binding.btnMotionLabRun.isEnabled = false
+                binding.btnMotionLabRun.alpha = 0.4f
+                binding.btnMotionLabRun.text = "Interpolate"
+                binding.btnMotionLabRun.icon = null
+            }
+        }
+
+        // 4. Active RIFE Model Card
+        val isRife = method == MotionMethod.RIFE
+        binding.cardMotionActiveModel.visibility = if (isRife) View.VISIBLE else View.GONE
+        if (isRife) {
+            val rifeManager = RifeModelManager(activity)
+            val selected = rifeManager.getSelectedModel()
+            binding.textMotionActiveModelName.text = selected.displayName
+            val isDownloaded = rifeManager.isModelDownloaded(selected)
+            val statusSuffix = if (isDownloaded) "Ready" else "Download Needed"
+            binding.textMotionActiveModelDetails.text = "${selected.sizeFormatted} • ${selected.requiredPadding}px padding • $statusSuffix"
+            binding.btnMotionSwitchModel.isEnabled = !busy
         }
     }
 
     fun setSource(uri: Uri) {
-        if (job?.isActive == true || activeJobId != null) return
-        sourceUri = uri
-        outputFile = null
-        binding.cardMotionLabResult.visibility = View.GONE
+        if (job?.isActive == true || activeJobId != null || isTrimming) return
         try {
             val retriever = android.media.MediaMetadataRetriever()
             if (uri.scheme == "file" && uri.path != null) {
@@ -201,20 +358,65 @@ class MotionLabController(
             val durationS = durationMs / 1000
             val fpsLabel = if (captureFps != null) " · ~${"%.1f".format(captureFps)} fps" else ""
 
-            binding.btnMotionLabTrim.visibility = View.VISIBLE
-            if (durationS > MAX_DURATION_S) {
-                binding.tvMotionLabSource.text = "$name — ${durationS}s exceeds limit (${MAX_DURATION_S}s). Please trim a segment using button below."
-                binding.btnMotionLabRun.isEnabled = false
+            val prefs = activity.getSharedPreferences("veilframe_motion_lab", Context.MODE_PRIVATE)
+            val skipWarning = prefs.getBoolean("skip_long_video_warning", false)
+
+            if (durationS > WARN_DURATION_S && !skipWarning) {
+                showLongVideoWarningDialog(uri, durationMs, durationS, fpsLabel, name)
             } else {
-                binding.tvMotionLabSource.text = "$name · ${durationS}s$fpsLabel"
-                binding.btnMotionLabRun.isEnabled = true
+                applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
             }
         } catch (e: Exception) {
             Log.e(TAG, "setSource failed", e)
             binding.tvMotionLabSource.text = "Could not read that video: ${e.message}"
-            binding.btnMotionLabRun.isEnabled = false
             binding.btnMotionLabTrim.visibility = View.GONE
+            updateControlStates()
         }
+    }
+
+    private fun showLongVideoWarningDialog(
+        uri: Uri,
+        durationMs: Long,
+        durationS: Long,
+        fpsLabel: String,
+        name: String
+    ) {
+        val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_motion_long_video_warning, null)
+        val cbDoNotShow = dialogView.findViewById<MaterialCheckBox>(R.id.cbDoNotShowAgain)
+        val tvMessage = dialogView.findViewById<TextView>(R.id.tvWarningMessage)
+        tvMessage.text = "The selected video is ${durationS}s long. Processing videos longer than 30 seconds requires intense on-device neural synthesis, which may cause device lag and heating."
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Long Video Warning")
+            .setView(dialogView)
+            .setCancelable(false)
+            .setPositiveButton("Proceed") { _, _ ->
+                if (cbDoNotShow.isChecked) {
+                    val prefs = activity.getSharedPreferences("veilframe_motion_lab", Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("skip_long_video_warning", true).apply()
+                }
+                applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                // User chose not to load long video
+            }
+            .show()
+    }
+
+    private fun applySourceInternal(
+        uri: Uri,
+        durationMs: Long,
+        durationS: Long,
+        fpsLabel: String,
+        name: String
+    ) {
+        sourceUri = uri
+        outputFile = null
+        videoDurationMs = durationMs
+        binding.cardMotionLabResult.visibility = View.GONE
+        binding.btnMotionLabTrim.visibility = View.VISIBLE
+        binding.tvMotionLabSource.text = "$name · ${durationS}s$fpsLabel"
+        updateControlStates()
     }
 
     private fun queryDisplayName(uri: Uri): String? = try {
@@ -278,7 +480,7 @@ class MotionLabController(
         trimPlayer.prepare()
 
         val durSec = (videoDurationMs / 1000.0).toFloat().coerceAtLeast(1f)
-        val initialEndSec = durSec.coerceAtMost(MAX_DURATION_S.toFloat())
+        val initialEndSec = durSec.coerceAtMost(WARN_DURATION_S.toFloat())
         updateRangeSliderSafely(dialogBinding.rangeSliderTrim, 0f, durSec, 0f, initialEndSec)
 
         dialogBinding.tvTrimStartTime.text = "00:00.0"
@@ -369,7 +571,7 @@ class MotionLabController(
             dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
         }
         dialogBinding.chipTrimMiddle.setOnClickListener {
-            val targetLen = MAX_DURATION_S.toFloat().coerceAtMost(durSec)
+            val targetLen = WARN_DURATION_S.toFloat().coerceAtMost(durSec)
             val midStart = ((durSec - targetLen) / 2f).coerceAtLeast(0f)
             val midEnd = (midStart + targetLen).coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
@@ -378,7 +580,7 @@ class MotionLabController(
             dialogBinding.tvTrimPlayheadPosition.text = formatDuration(seekMs)
         }
         dialogBinding.chipTrimFull.setOnClickListener {
-            val e = MAX_DURATION_S.toFloat().coerceAtMost(durSec)
+            val e = durSec
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
             trimPlayer.seekTo(0L)
             dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
@@ -404,10 +606,6 @@ class MotionLabController(
             val sSec = dialogBinding.rangeSliderTrim.values[0]
             val eSec = dialogBinding.rangeSliderTrim.values[1]
             val clipDurSec = eSec - sSec
-            if (clipDurSec > MAX_DURATION_S) {
-                Toast.makeText(activity, "Selected clip (${clipDurSec.toInt()}s) exceeds limit of ${MAX_DURATION_S}s", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
             if (clipDurSec < 0.5f) {
                 Toast.makeText(activity, "Clip too short (minimum 0.5s)", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -421,12 +619,13 @@ class MotionLabController(
     }
 
     private fun executeTrim(inputUri: Uri, startSec: Float, durationSec: Float) {
+        isTrimming = true
         binding.containerMotionLabProgress.visibility = View.VISIBLE
         binding.progressMotionLab.isIndeterminate = true
         binding.tvMotionLabStatus.text = "Trimming clip via FFmpeg…"
-        binding.btnMotionLabRun.isEnabled = false
+        updateControlStates()
 
-        scope.launch(Dispatchers.IO) {
+        job = scope.launch(Dispatchers.IO) {
             try {
                 // Ensure local input file for FFmpeg fast seeking
                 val localInputFile = if (inputUri.scheme == "file") {
@@ -481,20 +680,23 @@ class MotionLabController(
                 }
 
                 withContext(Dispatchers.Main) {
+                    isTrimming = false
                     binding.containerMotionLabProgress.visibility = View.GONE
                     if (finalSuccess) {
                         setSource(Uri.fromFile(trimmedFile))
                         Toast.makeText(activity, "Clip trimmed (${String.format(Locale.US, "%.1f", durationSec)}s)", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(activity, "Trim failed. Please try another segment.", Toast.LENGTH_LONG).show()
-                        binding.btnMotionLabRun.isEnabled = false
                     }
+                    updateControlStates()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "executeTrim error", e)
                 withContext(Dispatchers.Main) {
+                    isTrimming = false
                     binding.containerMotionLabProgress.visibility = View.GONE
                     Toast.makeText(activity, "Trim error: ${e.message}", Toast.LENGTH_LONG).show()
+                    updateControlStates()
                 }
             }
         }
@@ -502,90 +704,23 @@ class MotionLabController(
 
     private var rifeDownloadJob: Job? = null
 
+    private fun openModelSelectorDialog(onModelReady: (() -> Unit)? = null) {
+        val rifeManager = RifeModelManager(activity)
+        val dialog = MotionModelSelectorDialog(activity, scope, rifeManager) { spec ->
+            updateControlStates()
+            Toast.makeText(activity, "Active model: ${spec.shortBadge}", Toast.LENGTH_SHORT).show()
+            onModelReady?.invoke()
+        }
+        dialog.show()
+    }
+
     private fun showRifeDownloadDialog(onModelReady: () -> Unit) {
         val rifeManager = RifeModelManager(activity)
         if (rifeManager.isModelReady()) {
             onModelReady()
             return
         }
-
-        val dialogBinding = DialogModelRequiredBinding.inflate(LayoutInflater.from(activity))
-        val dialog = MaterialAlertDialogBuilder(activity)
-            .setView(dialogBinding.root)
-            .setCancelable(true)
-            .create()
-
-        dialogBinding.tvModelReqTitle.text = "RIFE v4 AI Model Required"
-        dialogBinding.tvModelReqMessage.text =
-            "RIFE v4 AI Frame Interpolation uses neural weights (~10.3 MB) to synthesize smooth 60 FPS video. Would you like to download it now to proceed?"
-
-        dialogBinding.btnModelReqDownload.text = "Download RIFE v4 (~10 MB)"
-        dialogBinding.btnModelReqUseLanczos.text = "Use Fast Optical Flow (DIS) Instead"
-
-        dialogBinding.btnModelReqClose.setOnClickListener {
-            rifeDownloadJob?.cancel()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
-        }
-
-        dialogBinding.btnModelReqCancel.setOnClickListener {
-            rifeDownloadJob?.cancel()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
-        }
-
-        dialogBinding.btnModelReqUseLanczos.setOnClickListener {
-            rifeDownloadJob?.cancel()
-            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
-            method = MotionMethod.DIS
-            binding.chipMotionFast.isChecked = true
-            syncRateChipsForMethod()
-            onModelReady()
-        }
-
-        dialogBinding.btnModelReqDownload.setOnClickListener {
-            dialogBinding.progressModelReq.visibility = View.VISIBLE
-            dialogBinding.progressModelReq.isIndeterminate = true
-            dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
-            dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_blue))
-            dialogBinding.tvModelReqProgressStatus.text = "Connecting to download server…"
-            dialogBinding.btnModelReqDownload.isEnabled = false
-            dialogBinding.btnModelReqUseLanczos.isEnabled = false
-
-            rifeDownloadJob = scope.launch(Dispatchers.IO) {
-                val result = rifeManager.ensureModelDownloaded { pct, msg ->
-                    scope.launch(Dispatchers.Main) {
-                        if (dialog.isShowing) {
-                            dialogBinding.progressModelReq.isIndeterminate = false
-                            dialogBinding.progressModelReq.progress = pct
-                            dialogBinding.tvModelReqProgressStatus.text = msg
-                        }
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    if (!dialog.isShowing) return@withContext
-                    if (result.isSuccess) {
-                        Toast.makeText(activity, "RIFE v4 model ready!", Toast.LENGTH_SHORT).show()
-                        MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
-                        onModelReady()
-                    } else {
-                        val err = result.exceptionOrNull()?.message ?: "Download failed"
-                        dialogBinding.progressModelReq.visibility = View.GONE
-                        dialogBinding.tvModelReqProgressStatus.visibility = View.VISIBLE
-                        dialogBinding.tvModelReqProgressStatus.text = "Download failed: $err"
-                        dialogBinding.tvModelReqProgressStatus.setTextColor(activity.getColor(R.color.vf_accent_red))
-                        dialogBinding.btnModelReqDownload.isEnabled = true
-                        dialogBinding.btnModelReqDownload.text = "Retry Download"
-                        dialogBinding.btnModelReqUseLanczos.isEnabled = true
-                    }
-                }
-            }
-        }
-
-        dialog.setOnDismissListener {
-            rifeDownloadJob?.cancel()
-        }
-
-        MorphDialogController.showWithMorph(dialog, dialogBinding.root, binding.btnMotionLabRun)
+        openModelSelectorDialog(onModelReady)
     }
 
     private fun runInterpolation() {
@@ -597,14 +732,13 @@ class MotionLabController(
             CvRuntime.requireAvailable()
         } catch (e: Exception) {
             binding.tvMotionLabStatus.text = "CV Runtime unavailable: ${e.message}"
-            binding.btnMotionLabRun.isEnabled = true
+            updateControlStates()
             Toast.makeText(activity, "CV Runtime unavailable: ${e.message}", Toast.LENGTH_LONG).show()
             return
         }
 
         binding.containerMotionLabProgress.visibility = View.VISIBLE
         binding.cardMotionLabResult.visibility = View.GONE
-        binding.btnMotionLabRun.isEnabled = false
         binding.progressMotionLab.isIndeterminate = true
         binding.tvMotionLabStatus.text = "Starting Motion Lab in foreground service…"
 
@@ -616,6 +750,7 @@ class MotionLabController(
         outputFile = null
 
         attachJobCallback(jobId)
+        updateControlStates()
 
         VeilFrameProcessingService.startMotionLab(
             context = activity,
@@ -679,7 +814,6 @@ class MotionLabController(
                     }
                     binding.containerMotionLabProgress.visibility = View.VISIBLE
                     binding.cardMotionLabResult.visibility = View.GONE
-                    binding.btnMotionLabRun.isEnabled = false
                     val pct = currentJob.progressPercent
                     if (pct > 0) {
                         binding.progressMotionLab.isIndeterminate = false
@@ -690,6 +824,7 @@ class MotionLabController(
                         binding.tvMotionLabStatus.text = "Processing in background…"
                     }
                     attachJobCallback(currentJob.id)
+                    updateControlStates()
                 }
                 com.veilframe.app.media.JobState.COMPLETED -> {
                     val outUri = currentJob.outputUri
@@ -704,7 +839,7 @@ class MotionLabController(
                         val mb = outFile.length() / (1024.0 * 1024.0)
                         binding.tvMotionLabResultInfo.text =
                             "Interpolation complete · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
-                        binding.btnMotionLabRun.isEnabled = true
+                        updateControlStates()
                     }
                 }
                 com.veilframe.app.media.JobState.FAILED -> {
@@ -712,7 +847,7 @@ class MotionLabController(
                         activeJobId = null
                         binding.containerMotionLabProgress.visibility = View.GONE
                         binding.tvMotionLabStatus.text = "Failed: ${currentJob.errorMessage ?: "Processing failed"}"
-                        binding.btnMotionLabRun.isEnabled = sourceUri != null
+                        updateControlStates()
                     }
                 }
                 else -> {}
@@ -745,7 +880,7 @@ class MotionLabController(
                         val targetFpsStr = if (isTarget60fps) "60 fps" else "${multiplier}x fps"
                         binding.tvMotionLabResultInfo.text =
                             "Interpolation complete · $targetFpsStr · ${String.format(Locale.US, "%.1f", mb)} MB · saved to Library exports"
-                        binding.btnMotionLabRun.isEnabled = true
+                        updateControlStates()
                     }
                 }
             }
@@ -756,7 +891,7 @@ class MotionLabController(
                     scope.launch(Dispatchers.Main) {
                         binding.containerMotionLabProgress.visibility = View.GONE
                         binding.tvMotionLabStatus.text = "Failed: $error"
-                        binding.btnMotionLabRun.isEnabled = sourceUri != null
+                        updateControlStates()
                         Toast.makeText(activity, "Motion Lab: $error", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -764,30 +899,13 @@ class MotionLabController(
         }
     }
 
-    fun reset() {
-        cancelRequested = true
-        activeJobId?.let { id ->
-            VeilFrameProcessingService.cancelProcessing(activity, id)
-            activeJobId = null
-        }
-        rifeDownloadJob?.cancel()
-        job?.cancel()
-        sourceUri = null
-        outputFile = null
-        isTarget60fps = true
-        multiplier = 2
-        method = MotionMethod.RIFE
-        binding.chipMotion60fps.isChecked = true
-        binding.chipMotionRife.isChecked = true
-        syncRateChipsForMethod()
-        binding.containerMotionLabProgress.visibility = View.GONE
-        binding.cardMotionLabResult.visibility = View.GONE
-        binding.btnMotionLabRun.isEnabled = false
-        binding.btnMotionLabTrim.visibility = View.GONE
-        binding.tvMotionLabSource.text = "No video selected"
-    }
-
     private fun syncRateChipsForMethod() {
+        if (isProcessing) {
+            binding.chipMotion60fps.isEnabled = false
+            binding.chipMotion2x.isEnabled = false
+            binding.chipMotion4x.isEnabled = false
+            return
+        }
         when (method) {
             MotionMethod.RIFE -> {
                 // RIFE only supports 60 fps

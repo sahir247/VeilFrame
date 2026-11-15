@@ -28,6 +28,7 @@ add_library(veilframe_ncnn SHARED
     rife_jni.cpp
     rife/rife.cpp
     rife/warp.cpp
+    veilnet_jni.cpp
 )
 
 target_compile_options(veilframe_ncnn PRIVATE -fexceptions)

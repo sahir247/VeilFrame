@@ -5,19 +5,19 @@
   ~ All legacy vf_* names retained for code/layout compatibility.
 -->
 <resources>
-    <!-- Base Surfaces -->
-    <color name="vf_bg_dark">#FAFAFB</color>
-    <color name="vf_background">#FAFAFB</color>
+    <!-- Base Surfaces (Calm neutral stone canvas + crisp lifted cards) -->
+    <color name="vf_bg_dark">#ECEFF4</color>
+    <color name="vf_background">#ECEFF4</color>
     <color name="vf_surface">#FFFFFF</color>
-    <color name="vf_surface_variant">#EAEAEA</color>
+    <color name="vf_surface_variant">#E6EAF2</color>
     <color name="vf_surface_stroke">#D4D4D8</color>
 
-    <!-- Expressive surface-container ladder (NEW) -->
+    <!-- Expressive surface-container ladder (4-tier tonal hierarchy without borders) -->
     <color name="vf_container_lowest">#FFFFFF</color>
-    <color name="vf_container_low">#FAFAFB</color>
-    <color name="vf_container">#F4F4F6</color>
-    <color name="vf_container_high">#EEEEF0</color>
-    <color name="vf_container_highest">#E8E8EB</color>
+    <color name="vf_container_low">#F8F9FC</color>
+    <color name="vf_container">#E8ECF3</color>
+    <color name="vf_container_high">#DEE3EC</color>
+    <color name="vf_container_highest">#D2D8E4</color>
 
     <!-- Monochrome Core (Deep matte black & crisp contrast) -->
     <color name="vf_primary">#18181B</color>

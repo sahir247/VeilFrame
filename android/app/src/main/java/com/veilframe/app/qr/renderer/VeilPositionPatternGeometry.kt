@@ -41,7 +41,8 @@ object VeilPositionPatternGeometry {
         style: FinderStyle,
         size: Float,
         color: Int,
-        bgColor: Int = Color.WHITE
+        bgColor: Int = Color.WHITE,
+        innerColor: Int = color
     ): List<com.veilframe.app.qr.geometry.QrGeometryNode> {
         val cs = moduleSize
         val fx = offsetX + (x - 3) * cs
@@ -52,15 +53,15 @@ object VeilPositionPatternGeometry {
         val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
         when (style) {
             FinderStyle.CLASSIC -> {
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 2f * cs, fy + 2f * cs, 3f * cs, 3f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 2f * cs, fy + 2f * cs, 3f * cs, 3f * cs, fill = innerColor))
                 nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 0.5f * cs, fy + 0.5f * cs, 6f * cs, 6f * cs, stroke = color, strokeWidth = 1f * size * cs, fill = null))
             }
             FinderStyle.CIRCLE -> {
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = innerColor))
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, fill = null, stroke = color, strokeWidth = 1f * size * cs))
             }
             FinderStyle.ROUNDED -> {
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = innerColor))
                 val tx = cx - 3f * cs
                 val ty = cy - 3f * cs
                 val s = 6f * cs / 100f
@@ -78,8 +79,8 @@ object VeilPositionPatternGeometry {
                 ))
             }
             FinderStyle.PLANETS -> {
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, fill = null, stroke = color, strokeWidth = 0.15f * cs, strokeDashArray = "0.5,0.5"))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = innerColor))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, fill = null, stroke = color, strokeWidth = 0.48f * size * cs, strokeDashArray = "0.5,0.5"))
                 val satR = 0.5f * size * cs
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx - 3f * cs, cy, satR, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx + 3f * cs, cy, satR, fill = color))
@@ -93,15 +94,42 @@ object VeilPositionPatternGeometry {
                 val halfW = widthVal / 2.0f
                 val halfArm = armDim / 2.0f
 
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy - halfW, widthVal, widthVal, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy - halfW, widthVal, widthVal, fill = innerColor))
                 nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - 3f * cs - halfArm, cy - halfW, armDim, widthVal, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.RectNode(cx + 3f * cs - halfArm, cy - halfW, armDim, widthVal, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy - 3f * cs - halfArm, widthVal, armDim, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy + 3f * cs - halfArm, widthVal, armDim, fill = color))
             }
-            else -> {
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 2f * cs, fy + 2f * cs, 3f * cs, 3f * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 0.5f * cs, fy + 0.5f * cs, 6f * cs, 6f * cs, stroke = color, strokeWidth = 1f * size * cs, fill = null))
+            FinderStyle.SOFT -> {
+                val corner = 1.5f * cs
+                nodes.add(
+                    com.veilframe.app.qr.geometry.RectNode(
+                        fx + 0.5f * cs, fy + 0.5f * cs, 6f * cs, 6f * cs,
+                        rx = corner, ry = corner,
+                        stroke = color, strokeWidth = 1f * size * cs, fill = null
+                    )
+                )
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = innerColor))
+            }
+            FinderStyle.FRAME -> {
+                val strokeW = 0.8f * size * cs
+                nodes.add(
+                    com.veilframe.app.qr.geometry.RectNode(
+                        fx + 0.4f * cs, fy + 0.4f * cs, 6.2f * cs, 6.2f * cs,
+                        rx = 1f * cs, ry = 1f * cs,
+                        stroke = color, strokeWidth = strokeW, fill = null
+                    )
+                )
+                val pts = listOf(
+                    Pair(cx, cy - 1.5f * cs),
+                    Pair(cx + 1.5f * cs, cy),
+                    Pair(cx, cy + 1.5f * cs),
+                    Pair(cx - 1.5f * cs, cy)
+                )
+                val ptsStr = pts.joinToString(" ") { (px, py) ->
+                    String.format(Locale.US, "%.4f,%.4f", px, py)
+                }
+                nodes.add(com.veilframe.app.qr.geometry.PolygonNode(points = ptsStr, pointsList = pts, fill = innerColor))
             }
         }
         return nodes
@@ -116,7 +144,8 @@ object VeilPositionPatternGeometry {
         offsetY: Float,
         style: FinderStyle,
         size: Float,
-        color: Int
+        color: Int,
+        innerColor: Int = color
     ) {
         val cs = moduleSize
         val ox = offsetX + x * cs
@@ -124,8 +153,12 @@ object VeilPositionPatternGeometry {
         val cx = ox + cs * 0.5f
         val cy = oy + cs * 0.5f
 
-        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val outerFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color
+            this.style = Paint.Style.FILL
+        }
+        val innerFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = innerColor
             this.style = Paint.Style.FILL
         }
         val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -138,32 +171,32 @@ object VeilPositionPatternGeometry {
             FinderStyle.CLASSIC -> { // rectangle
                 val left = ox - cs
                 val top = oy - cs
-                canvas.drawRect(left, top, left + 3 * cs, top + 3 * cs, fillPaint)
+                canvas.drawRect(left, top, left + 3 * cs, top + 3 * cs, innerFillPaint)
                 canvas.drawRect(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs, strokePaint)
             }
             FinderStyle.CIRCLE -> { // round
-                canvas.drawCircle(cx, cy, 1.5f * cs, fillPaint)
+                canvas.drawCircle(cx, cy, 1.5f * cs, innerFillPaint)
                 canvas.drawCircle(cx, cy, 3.0f * cs, strokePaint)
             }
             FinderStyle.ROUNDED -> { // roundedRectangle
-                canvas.drawCircle(cx, cy, 1.5f * cs, fillPaint)
+                canvas.drawCircle(cx, cy, 1.5f * cs, innerFillPaint)
                 val path = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
                     android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs)
                 )
                 canvas.drawPath(path, strokePaint)
             }
             FinderStyle.PLANETS -> { // planets
-                canvas.drawCircle(cx, cy, 1.5f * cs, fillPaint)
+                canvas.drawCircle(cx, cy, 1.5f * cs, innerFillPaint)
                 val dashedPaint = Paint(strokePaint).apply {
-                    strokeWidth = 0.15f * cs
+                    strokeWidth = 0.48f * size * cs
                     pathEffect = DashPathEffect(floatArrayOf(0.5f * cs, 0.5f * cs), 0f)
                 }
                 canvas.drawCircle(cx, cy, 3.0f * cs, dashedPaint)
                 val satR = 0.5f * size * cs
-                canvas.drawCircle(cx + 3f * cs, cy, satR, fillPaint)
-                canvas.drawCircle(cx - 3f * cs, cy, satR, fillPaint)
-                canvas.drawCircle(cx, cy + 3f * cs, satR, fillPaint)
-                canvas.drawCircle(cx, cy - 3f * cs, satR, fillPaint)
+                canvas.drawCircle(cx + 3f * cs, cy, satR, outerFillPaint)
+                canvas.drawCircle(cx - 3f * cs, cy, satR, outerFillPaint)
+                canvas.drawCircle(cx, cy + 3f * cs, satR, outerFillPaint)
+                canvas.drawCircle(cx, cy - 3f * cs, satR, outerFillPaint)
             }
             FinderStyle.DSJ -> { // dsj
                 val widthValue = (3.0f - (1.0f - size)) * cs
@@ -171,21 +204,43 @@ object VeilPositionPatternGeometry {
                 val yTempValue = oy + (1.0f - size) / 2.0f * cs
 
                 // Center
-                canvas.drawRect(xTempValue - cs, yTempValue - cs, xTempValue - cs + widthValue, yTempValue - cs + widthValue, fillPaint)
+                canvas.drawRect(xTempValue - cs, yTempValue - cs, xTempValue - cs + widthValue, yTempValue - cs + widthValue, innerFillPaint)
                 // Left
-                canvas.drawRect(xTempValue - 3f * cs, yTempValue - cs, xTempValue - 3f * cs + size * cs, yTempValue - cs + widthValue, fillPaint)
+                canvas.drawRect(xTempValue - 3f * cs, yTempValue - cs, xTempValue - 3f * cs + size * cs, yTempValue - cs + widthValue, outerFillPaint)
                 // Right
-                canvas.drawRect(xTempValue + 3f * cs, yTempValue - cs, xTempValue + 3f * cs + size * cs, yTempValue - cs + widthValue, fillPaint)
+                canvas.drawRect(xTempValue + 3f * cs, yTempValue - cs, xTempValue + 3f * cs + size * cs, yTempValue - cs + widthValue, outerFillPaint)
                 // Top
-                canvas.drawRect(xTempValue - cs, yTempValue - 3f * cs, xTempValue - cs + widthValue, yTempValue - 3f * cs + size * cs, fillPaint)
+                canvas.drawRect(xTempValue - cs, yTempValue - 3f * cs, xTempValue - cs + widthValue, yTempValue - 3f * cs + size * cs, outerFillPaint)
                 // Bottom
-                canvas.drawRect(xTempValue - cs, yTempValue + 3f * cs, xTempValue - cs + widthValue, yTempValue + 3f * cs + size * cs, fillPaint)
+                canvas.drawRect(xTempValue - cs, yTempValue + 3f * cs, xTempValue - cs + widthValue, yTempValue + 3f * cs + size * cs, outerFillPaint)
             }
-            else -> {
-                val left = ox - cs
-                val top = oy - cs
-                canvas.drawRect(left, top, left + 3 * cs, top + 3 * cs, fillPaint)
-                canvas.drawRect(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs, strokePaint)
+            FinderStyle.SOFT -> {
+                canvas.drawCircle(cx, cy, 1.5f * cs, innerFillPaint)
+                canvas.drawRoundRect(
+                    android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs),
+                    1.5f * cs,
+                    1.5f * cs,
+                    strokePaint
+                )
+            }
+            FinderStyle.FRAME -> {
+                val framePaint = Paint(strokePaint).apply {
+                    strokeWidth = 0.8f * size * cs
+                }
+                canvas.drawRoundRect(
+                    android.graphics.RectF(ox - 2.6f * cs, oy - 2.6f * cs, ox + 3.6f * cs, oy + 3.6f * cs),
+                    1.0f * cs,
+                    1.0f * cs,
+                    framePaint
+                )
+                val diamond = Path().apply {
+                    moveTo(cx, cy - 1.5f * cs)
+                    lineTo(cx + 1.5f * cs, cy)
+                    lineTo(cx, cy + 1.5f * cs)
+                    lineTo(cx - 1.5f * cs, cy)
+                    close()
+                }
+                canvas.drawPath(diamond, innerFillPaint)
             }
         }
     }
@@ -208,13 +263,16 @@ object VeilPositionPatternGeometry {
         alpha: Float,
         idStart: Int,
         qzLeft: Double = qz,
-        qzTop: Double = qz
+        qzTop: Double = qz,
+        innerColorHex: String = colorHex,
+        innerAlpha: Float = alpha
     ): Pair<String, Int> {
         val sb = StringBuilder()
         var id = idStart
         val ax = x + qzLeft
         val ay = y + qzTop
         val alphaStr = String.format(Locale.US, "%.2f", alpha)
+        val innerAlphaStr = String.format(Locale.US, "%.2f", innerAlpha)
         val posSizeStr = String.format(Locale.US, "%.3f", size)
         val axMinus1 = formatCoord(ax - 1.0)
         val ayMinus1 = formatCoord(ay - 1.0)
@@ -225,28 +283,29 @@ object VeilPositionPatternGeometry {
 
         when (style) {
             FinderStyle.CLASSIC -> { // rectangle
-                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="$axMinus1" y="$ayMinus1"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$innerAlphaStr" width="3" height="3" fill="$innerColorHex" x="$axMinus1" y="$ayMinus1"/>""").append("\n")
                 id++
                 sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="$axMinus25" y="$ayMinus25" width="6" height="6"/>""").append("\n")
                 id++
             }
             FinderStyle.CIRCLE -> { // round
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$innerAlphaStr" fill="$innerColorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
                 sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" cx="$cx" cy="$cy" r="3"/>""").append("\n")
                 id++
             }
             FinderStyle.ROUNDED -> { // roundedRectangle
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$innerAlphaStr" fill="$innerColorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
                 val sw = String.format(Locale.US, "%.3f", 100.0 / 6.0 * size)
                 sb.append("""  <path key="$id" opacity="$alphaStr" d="$SQ25_PATH" stroke="$colorHex" stroke-width="$sw" fill="none" transform="translate($axMinus25,$ayMinus25) scale(0.06,0.06)"/>""").append("\n")
                 id++
             }
             FinderStyle.PLANETS -> { // planets
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$innerAlphaStr" fill="$innerColorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="0.15" stroke-dasharray="0.5,0.5" stroke="$colorHex" cx="$cx" cy="$cy" r="3"/>""").append("\n")
+                val orbitSw = String.format(Locale.US, "%.3f", 0.48 * size)
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="$orbitSw" stroke-dasharray="0.5,0.5" stroke="$colorHex" cx="$cx" cy="$cy" r="3"/>""").append("\n")
                 id++
                 val satR = String.format(Locale.US, "%.3f", 0.5 * size)
                 val cxPlus3 = formatCoord(ax + 3.5)
@@ -270,7 +329,7 @@ object VeilPositionPatternGeometry {
                 val xtStr = String.format(Locale.US, "%.3f", xTemp - 1)
                 val ytStr = String.format(Locale.US, "%.3f", yTemp - 1)
 
-                sb.append("""  <rect key="$id" opacity="$alphaStr" width="$widthValStr" height="$widthValStr" fill="$colorHex" x="$xtStr" y="$ytStr"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$innerAlphaStr" width="$widthValStr" height="$widthValStr" fill="$innerColorHex" x="$xtStr" y="$ytStr"/>""").append("\n")
                 id++
                 val xLStr = String.format(Locale.US, "%.3f", xTemp - 3)
                 sb.append("""  <rect key="$id" opacity="$alphaStr" width="$posSizeStr" height="$widthValStr" fill="$colorHex" x="$xLStr" y="$ytStr"/>""").append("\n")
@@ -285,10 +344,23 @@ object VeilPositionPatternGeometry {
                 sb.append("""  <rect key="$id" opacity="$alphaStr" width="$widthValStr" height="$posSizeStr" fill="$colorHex" x="$xtStr" y="$yBStr"/>""").append("\n")
                 id++
             }
-            else -> {
-                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="$axMinus1" y="$ayMinus1"/>""").append("\n")
+            FinderStyle.SOFT -> {
+                sb.append("""  <circle key="$id" opacity="$innerAlphaStr" fill="$innerColorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
-                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="$axMinus25" y="$ayMinus25" width="6" height="6"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="$axMinus25" y="$ayMinus25" width="6" height="6" rx="1.5" ry="1.5"/>""").append("\n")
+                id++
+            }
+            FinderStyle.FRAME -> {
+                val swFrame = String.format(Locale.US, "%.3f", 0.8 * size)
+                val xFrame = formatCoord(ax - 2.6)
+                val yFrame = formatCoord(ay - 2.6)
+                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$swFrame" stroke="$colorHex" x="$xFrame" y="$yFrame" width="6.2" height="6.2" rx="1" ry="1"/>""").append("\n")
+                id++
+                val topY = formatCoord(ay + 0.5 - 1.5)
+                val rightX = formatCoord(ax + 0.5 + 1.5)
+                val bottomY = formatCoord(ay + 0.5 + 1.5)
+                val leftX = formatCoord(ax + 0.5 - 1.5)
+                sb.append("""  <polygon key="$id" opacity="$innerAlphaStr" fill="$innerColorHex" points="$cx,$topY $rightX,$cy $cx,$bottomY $leftX,$cy"/>""").append("\n")
                 id++
             }
         }
@@ -305,7 +377,9 @@ object VeilPositionPatternGeometry {
         alpha: Float,
         idStart: Int,
         qzLeft: Int = qz,
-        qzTop: Int = qz
+        qzTop: Int = qz,
+        innerColorHex: String = colorHex,
+        innerAlpha: Float = alpha
     ): Pair<String, Int> = buildSvgElements(
         x = x,
         y = y,
@@ -316,6 +390,8 @@ object VeilPositionPatternGeometry {
         alpha = alpha,
         idStart = idStart,
         qzLeft = qzLeft.toDouble(),
-        qzTop = qzTop.toDouble()
+        qzTop = qzTop.toDouble(),
+        innerColorHex = innerColorHex,
+        innerAlpha = innerAlpha
     )
 }

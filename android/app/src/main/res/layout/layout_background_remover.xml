@@ -184,11 +184,10 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:visibility="gone"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="10dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="@color/vf_surface_stroke">
+                app:strokeWidth="0dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -233,7 +232,7 @@
             android:id="@+id/containerBgControls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:maxHeight="220dp"
+            android:maxHeight="260dp"
             android:visibility="gone"
             android:fillViewport="true">
 
@@ -245,39 +244,28 @@
                 android:paddingEnd="16dp"
                 android:paddingBottom="4dp">
 
-                <!-- Active Model Selection Card -->
-                <com.google.android.material.card.MaterialCardView
+                <!-- Active Model Selection Section (Tonal Card) -->
+                <LinearLayout
                     android:id="@+id/cardBgActiveModel"
-                    style="@style/Widget.Material3.CardView.Filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:cardCornerRadius="16dp"
-                    app:strokeColor="@color/vf_surface_stroke"
-                    app:strokeWidth="1dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
+                    android:orientation="vertical"
+                    android:layout_marginBottom="12dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:paddingHorizontal="4dp"
+                            android:paddingBottom="4dp"
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
                             <TextView
+                                style="@style/Widget.VeilFrame.SectionHeading"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="MATTING ENGINE MODE"
-                                android:textColor="@color/vf_text_muted"
-                                android:textSize="10sp"
-                                android:textStyle="bold"
-                                android:letterSpacing="0.06" />
+                                android:text="Matting Engine Mode" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnBgModelInfo"
@@ -290,11 +278,22 @@
                                 app:iconTint="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
 
+                        <com.google.android.material.card.MaterialCardView
+                            style="@style/Widget.VeilFrame.Card.Section"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="14dp">
+
                         <!-- Direct User-Facing Segmented Mode Selector -->
                         <com.google.android.material.button.MaterialButtonToggleGroup
                             android:id="@+id/toggleGroupMattingMode"
                             android:layout_width="match_parent"
-                            android:layout_height="36dp"
+                            android:layout_height="40dp"
                             android:layout_marginTop="6dp"
                             android:layout_marginBottom="4dp"
                             app:singleSelection="true"
@@ -307,12 +306,14 @@
                                 android:layout_height="match_parent"
                                 android:layout_weight="1"
                                 android:text="Hybrid"
-                                android:textSize="12sp"
+                                android:textSize="11sp"
+                                android:gravity="center"
+                                android:includeFontPadding="false"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 android:minHeight="0dp"
-                                android:paddingStart="4dp"
-                                android:paddingEnd="4dp" />
+                                android:paddingStart="1dp"
+                                android:paddingEnd="1dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnModeSelectU2Net"
@@ -321,12 +322,14 @@
                                 android:layout_height="match_parent"
                                 android:layout_weight="1"
                                 android:text="U²-Net-P"
-                                android:textSize="12sp"
+                                android:textSize="11sp"
+                                android:gravity="center"
+                                android:includeFontPadding="false"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 android:minHeight="0dp"
-                                android:paddingStart="4dp"
-                                android:paddingEnd="4dp" />
+                                android:paddingStart="1dp"
+                                android:paddingEnd="1dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnModeSelectModNet"
@@ -334,13 +337,31 @@
                                 android:layout_width="0dp"
                                 android:layout_height="match_parent"
                                 android:layout_weight="1"
-                                android:text="MODNet HD"
-                                android:textSize="12sp"
+                                android:text="MODNet"
+                                android:textSize="11sp"
+                                android:gravity="center"
+                                android:includeFontPadding="false"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 android:minHeight="0dp"
-                                android:paddingStart="4dp"
-                                android:paddingEnd="4dp" />
+                                android:paddingStart="1dp"
+                                android:paddingEnd="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnModeSelectLiftAndShift"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:layout_weight="1"
+                                android:text="Lift &amp; Shift"
+                                android:textSize="11sp"
+                                android:gravity="center"
+                                android:includeFontPadding="false"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
+                                android:paddingStart="1dp"
+                                android:paddingEnd="1dp" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
 
                         <!-- Dynamic Mode Description & Badge -->
@@ -349,12 +370,17 @@
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
-                            android:layout_marginTop="2dp">
+                            android:layout_marginTop="4dp"
+                            android:paddingBottom="2dp">
 
                             <TextView
                                 android:id="@+id/tvBgCurrentModelName"
-                                android:layout_width="wrap_content"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"
                                 android:text="Hybrid (Smart Auto)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="13sp"
@@ -365,48 +391,44 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="8dp"
+                                android:singleLine="true"
                                 android:background="@drawable/bg_badge_pass"
                                 android:paddingStart="6dp"
                                 android:paddingEnd="6dp"
                                 android:paddingTop="2dp"
                                 android:paddingBottom="2dp"
+                                android:includeFontPadding="false"
                                 android:text="Smart Auto"
                                 android:textColor="@color/vf_accent_green"
                                 android:textSize="10sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
 
+                </LinearLayout>
 
+                <!-- Processing Options (Tighten, Feather, Trim) -->
+                <TextView
+                    style="@style/Widget.VeilFrame.SectionHeading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="8dp"
+                    android:paddingHorizontal="4dp"
+                    android:text="Processing Options" />
 
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Processing Options Card (Tighten, Feather, Trim) -->
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.Material3.CardView.Filled"
+                    style="@style/Widget.VeilFrame.Card.Section"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:cardCornerRadius="16dp"
-                    app:strokeColor="@color/vf_surface_stroke"
-                    app:strokeWidth="1dp">
+                    android:layout_marginBottom="10dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="PROCESSING OPTIONS"
-                            android:textColor="@color/vf_text_muted"
-                            android:textSize="10sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.06"
-                            android:layout_marginBottom="6dp" />
+                        android:padding="14dp">
 
                         <!-- Trim Transparent Borders -->
                         <LinearLayout
@@ -532,10 +554,10 @@
             android:layout_marginBottom="16dp"
             android:clipChildren="false"
             android:clipToPadding="false"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             app:cardCornerRadius="24dp"
             app:cardElevation="6dp"
-            app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -552,14 +574,22 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBgChangeImage"
                     style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
                     android:contentDescription="Change Photo"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="20dp"
                     app:iconTint="?attr/colorOnSurfaceVariant" />
 
                 <LinearLayout
+                    android:id="@+id/containerBgActionButtons"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -567,17 +597,14 @@
                     android:gravity="center"
                     android:clipChildren="false"
                     android:clipToPadding="false"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp">
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBgExecuteRemoval"
                         style="@style/Widget.VeilFrame.Button.Primary"
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="44dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:includeFontPadding="false"
@@ -588,16 +615,23 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBgRefineBrush"
                         style="@style/Widget.VeilFrame.Button.Action"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="44dp"
-                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
                         android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
                         android:includeFontPadding="false"
                         android:visibility="gone"
-                        android:text="Refine Brush"
+                        android:text="Refine"
+                        android:textSize="13sp"
                         app:icon="@drawable/ic_brush"
+                        app:iconPadding="4dp"
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -607,20 +641,39 @@
                         android:layout_height="44dp"
                         android:layout_weight="1"
                         android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
                         android:includeFontPadding="false"
                         android:visibility="gone"
-                        android:text="Save Cutout"
+                        android:text="Save"
+                        android:textSize="13sp"
                         app:icon="@drawable/ic_action_save"
-                        app:iconSize="18dp" />
+                        app:iconPadding="4dp"
+                        app:iconSize="16dp" />
                 </LinearLayout>
 
-                <Space
-                    android:id="@+id/spaceBgActionDockBalance"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnBgMoreOptions"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:visibility="gone"
+                    android:contentDescription="More Options"
+                    app:icon="@drawable/ic_more_vert"
+                    app:iconSize="20dp"
+                    app:iconTint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -634,10 +687,10 @@
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="16dp"
             android:visibility="gone"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             app:cardCornerRadius="24dp"
             app:cardElevation="8dp"
-            app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -655,7 +708,7 @@
                     <com.google.android.material.button.MaterialButtonToggleGroup
                         android:id="@+id/toggleGroupBrushMode"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="40dp"
                         app:singleSelection="true"
                         app:selectionRequired="true">
 
@@ -663,8 +716,14 @@
                             android:id="@+id/btnModeErase"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:text="Erase"
+                            android:textSize="12sp"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
                             app:icon="@drawable/ic_eraser"
                             app:iconSize="16dp" />
 
@@ -672,8 +731,14 @@
                             android:id="@+id/btnModeRestore"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
+                            android:layout_height="match_parent"
                             android:text="Restore"
+                            android:textSize="12sp"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
                             app:icon="@drawable/ic_brush"
                             app:iconSize="16dp" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -688,6 +753,13 @@
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
+                        android:minWidth="40dp"
+                        android:minHeight="40dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:padding="0dp"
                         android:contentDescription="Undo stroke"
                         app:icon="@drawable/ic_undo"
                         app:iconSize="18dp" />
@@ -697,6 +769,14 @@
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
+                        android:minWidth="40dp"
+                        android:minHeight="40dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:layout_marginStart="4dp"
                         android:contentDescription="Redo stroke"
                         app:icon="@drawable/ic_redo"
                         app:iconSize="18dp" />
@@ -706,6 +786,14 @@
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
+                        android:minWidth="40dp"
+                        android:minHeight="40dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:layout_marginStart="4dp"
                         android:contentDescription="Reset zoom"
                         app:icon="@drawable/ic_reset"
                         app:iconSize="18dp" />
@@ -771,7 +859,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="6dp"
-                        android:text="Apply Refinement"
+                        android:text="Apply"
                         app:icon="@drawable/ic_done"
                         app:iconSize="16dp" />
                 </LinearLayout>

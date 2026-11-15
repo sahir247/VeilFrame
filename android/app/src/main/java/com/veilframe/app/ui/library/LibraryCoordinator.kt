@@ -133,8 +133,7 @@ class LibraryCoordinator(
                 val margin12 = (12 * density).toInt()
 
                 // Theme-aware colors that adapt to Material You dynamic tone & palettes
-                val colorSurface = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSurface, activity.getColor(R.color.vf_surface))
-                val colorStroke = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOutlineVariant, activity.getColor(R.color.vf_surface_variant))
+                val colorSurface = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSurfaceContainerLow, activity.getColor(R.color.vf_surface))
                 val colorPrimary = MaterialColors.getColor(activity, androidx.appcompat.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
                 val colorTextPrimary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnSurface, activity.getColor(R.color.vf_text_primary))
                 val colorTextSecondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnSurfaceVariant, activity.getColor(R.color.vf_text_secondary))
@@ -152,10 +151,9 @@ class LibraryCoordinator(
                                 bottomMargin = margin12
                             }
                             radius = 16 * density
-                            cardElevation = 1 * density
+                            cardElevation = 0f
                             setCardBackgroundColor(colorSurface)
-                            strokeColor = colorStroke
-                            strokeWidth = (1 * density).toInt()
+                            strokeWidth = 0
                         }
 
                         val row = LinearLayout(activity).apply {
@@ -268,10 +266,9 @@ class LibraryCoordinator(
                                 bottomMargin = margin12
                             }
                             radius = 16 * density
-                            cardElevation = 1 * density
+                            cardElevation = 0f
                             setCardBackgroundColor(colorSurface)
-                            strokeColor = colorStroke
-                            strokeWidth = (1 * density).toInt()
+                            strokeWidth = 0
                             isClickable = true
                             isFocusable = true
                         }

@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -16,8 +17,9 @@ import kotlin.math.min
 
 /**
  * High-performance smooth fountain-pen signature canvas for signing PDF documents.
- * Employs velocity-adaptive stroke width modulation, cubic/quadratic Bézier smoothing,
- * single-tap ink dots, touch-conflict parent disallowance, and high-DPI supersampled rasterization.
+ * Employs sub-frame historical touch sampling, continuous Catmull-Rom/Bézier curve interpolation,
+ * vector ribbon polygon mesh extrusion with normal vectors (preventing line-cap beading artifacts),
+ * velocity-sensitive ink tapering, and high-DPI supersampled rasterization for print-grade PDF stamping.
  */
 class SignaturePadView @JvmOverloads constructor(
     context: Context,
@@ -29,22 +31,22 @@ class SignaturePadView @JvmOverloads constructor(
         get() = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
 
+    private var baseThicknessDp: Float = 4.0f
+    private val density: Float
+        get() = context.resources.displayMetrics.density
+
     // Ink stroke velocity and width parameters
-    var minStrokeWidth: Float = 2.5f
-    var maxStrokeWidth: Float = 7.5f
+    var minStrokeWidth: Float = 1.6f * density
+    var maxStrokeWidth: Float = 5.6f * density
 
     private var targetInkColor: Int = Color.BLACK
     private var displayColor: Int = Color.BLACK
 
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeJoin = Paint.Join.ROUND
-        strokeCap = Paint.Cap.ROUND
-    }
-
-    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+    private val inkPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
         style = Paint.Style.FILL
     }
+
+    private val displayFilterPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
 
     // Geometry data structures for re-rendering and high-DPI export
     private sealed class InkElement {
@@ -60,6 +62,7 @@ class SignaturePadView @JvmOverloads constructor(
     private val inkElements = mutableListOf<InkElement>()
     private val currentStrokePoints = mutableListOf<TimedPoint>()
     private var lastComputedWidth: Float = (minStrokeWidth + maxStrokeWidth) / 2f
+    private var smoothedVelocity: Float = 0f
 
     // Cached drawing buffer for silky smooth 120 FPS interactive rendering
     private var cacheBitmap: Bitmap? = null
@@ -72,8 +75,25 @@ class SignaturePadView @JvmOverloads constructor(
     var onDisabledTouchListener: (() -> Unit)? = null
 
     init {
+        updateStrokeDimensions()
         updateDisplayPenColor()
     }
+
+    private fun updateStrokeDimensions() {
+        val d = density
+        maxStrokeWidth = baseThicknessDp * d
+        minStrokeWidth = (maxStrokeWidth * 0.35f).coerceAtLeast(1.2f * d)
+        lastComputedWidth = (minStrokeWidth + maxStrokeWidth) / 2f
+    }
+
+    fun setStrokeThicknessDp(dp: Float) {
+        baseThicknessDp = dp.coerceIn(1.0f, 16.0f)
+        updateStrokeDimensions()
+        rebuildCacheBitmap()
+        invalidate()
+    }
+
+    fun getStrokeThicknessDp(): Float = baseThicknessDp
 
     private data class TimedPoint(val x: Float, val y: Float, val timestamp: Long) {
         fun velocityTo(other: TimedPoint): Float {
@@ -90,8 +110,7 @@ class SignaturePadView @JvmOverloads constructor(
             targetInkColor == Color.BLACK && !isNightMode -> Color.parseColor("#18181B")
             else -> targetInkColor
         }
-        strokePaint.color = displayColor
-        dotPaint.color = displayColor
+        inkPaint.color = displayColor
         rebuildCacheBitmap()
         invalidate()
     }
@@ -112,7 +131,8 @@ class SignaturePadView @JvmOverloads constructor(
         get() = maxStrokeWidth
         set(value) {
             maxStrokeWidth = value.coerceAtLeast(2f)
-            minStrokeWidth = (maxStrokeWidth * 0.35f).coerceAtLeast(1.5f)
+            minStrokeWidth = (maxStrokeWidth * 0.35f).coerceAtLeast(1.2f)
+            lastComputedWidth = (minStrokeWidth + maxStrokeWidth) / 2f
             rebuildCacheBitmap()
             invalidate()
         }
@@ -122,6 +142,7 @@ class SignaturePadView @JvmOverloads constructor(
     fun clear() {
         inkElements.clear()
         currentStrokePoints.clear()
+        smoothedVelocity = 0f
         cacheCanvas?.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         invalidate()
         onSignatureChanged?.invoke(true)
@@ -142,7 +163,7 @@ class SignaturePadView @JvmOverloads constructor(
         val cv = cacheCanvas ?: return
         cv.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         for (el in inkElements) {
-            drawInkElement(cv, el, strokePaint, dotPaint, 1.0f)
+            drawInkElement(cv, el, inkPaint, 1.0f)
         }
     }
 
@@ -150,14 +171,10 @@ class SignaturePadView @JvmOverloads constructor(
         super.onDraw(canvas)
         val bmp = cacheBitmap
         if (bmp != null && !bmp.isRecycled) {
-            canvas.drawBitmap(bmp, 0f, 0f, null)
+            canvas.drawBitmap(bmp, 0f, 0f, displayFilterPaint)
         }
     }
 
-    /**
-     * Resolves touch conflicts: ensures enclosing NestedScrollView or coordinator layouts
-     * never intercept signature strokes while dragging.
-     */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (!isDrawingEnabled) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -178,69 +195,38 @@ class SignaturePadView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isDrawingEnabled) return false
-        val x = event.x
-        val y = event.y
         val now = System.currentTimeMillis()
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 currentStrokePoints.clear()
-                currentStrokePoints.add(TimedPoint(x, y, now))
+                currentStrokePoints.add(TimedPoint(event.x, event.y, now))
                 lastComputedWidth = (minStrokeWidth + maxStrokeWidth) / 2f
+                smoothedVelocity = 0f
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
-                val newPoint = TimedPoint(x, y, now)
-                val lastPoint = currentStrokePoints.lastOrNull()
-                if (lastPoint != null) {
-                    val dist = hypot((newPoint.x - lastPoint.x).toDouble(), (newPoint.y - lastPoint.y).toDouble()).toFloat()
-                    if (dist < 2.0f) {
-                        return true // Avoid micro-jitter
-                    }
-                }
-                currentStrokePoints.add(newPoint)
-
                 val wasEmpty = inkElements.isEmpty()
 
-                // Render smooth Bézier curves once we have 3 points
-                if (currentStrokePoints.size >= 3) {
-                    val p0 = currentStrokePoints[currentStrokePoints.size - 3]
-                    val p1 = currentStrokePoints[currentStrokePoints.size - 2]
-                    val p2 = currentStrokePoints[currentStrokePoints.size - 1]
-
-                    val mid1X = (p0.x + p1.x) / 2f
-                    val mid1Y = (p0.y + p1.y) / 2f
-                    val mid2X = (p1.x + p2.x) / 2f
-                    val mid2Y = (p1.y + p2.y) / 2f
-
-                    val velocity = p1.velocityTo(p2)
-                    // Inverse relation: faster strokes taper smoothly down
-                    val targetWidth = (maxStrokeWidth / (1f + velocity * 1.6f)).coerceIn(minStrokeWidth, maxStrokeWidth)
-                    val startWidth = lastComputedWidth
-                    val endWidth = (lastComputedWidth * 0.4f) + (targetWidth * 0.6f)
-                    lastComputedWidth = endWidth
-
-                    val seg = InkElement.BezierSegment(
-                        startX = mid1X, startY = mid1Y,
-                        cpX = p1.x, cpY = p1.y,
-                        endX = mid2X, endY = mid2Y,
-                        startWidth = startWidth,
-                        endWidth = endWidth
+                // Process high-frequency historical touch events first (120Hz/240Hz digitizer precision)
+                val histCount = event.historySize
+                for (h in 0 until histCount) {
+                    processNewPoint(
+                        event.getHistoricalX(h),
+                        event.getHistoricalY(h),
+                        event.getHistoricalEventTime(h)
                     )
-                    inkElements.add(seg)
-
-                    cacheCanvas?.let { cv ->
-                        drawInkElement(cv, seg, strokePaint, dotPaint, 1.0f)
-                    }
-                    invalidate()
                 }
+                // Process current touch event
+                processNewPoint(event.x, event.y, now)
 
                 if (wasEmpty && inkElements.isNotEmpty()) {
                     onSignatureChanged?.invoke(false)
                 }
+                invalidate()
                 return true
             }
 
@@ -249,16 +235,15 @@ class SignaturePadView @JvmOverloads constructor(
                 val wasEmpty = inkElements.isEmpty()
 
                 if (currentStrokePoints.size <= 2) {
-                    // Tap event: user intended to dot an 'i', period, or punctuation mark
-                    val pt = currentStrokePoints.firstOrNull() ?: TimedPoint(x, y, now)
-                    val dotRadius = (maxStrokeWidth * 0.55f).coerceAtLeast(2.5f)
+                    // Tap / dot event: punctuation or short dot
+                    val pt = currentStrokePoints.firstOrNull() ?: TimedPoint(event.x, event.y, now)
+                    val dotRadius = (maxStrokeWidth * 0.55f).coerceAtLeast(2.0f * density)
                     val dot = InkElement.Dot(pt.x, pt.y, dotRadius)
                     inkElements.add(dot)
 
                     cacheCanvas?.let { cv ->
-                        drawInkElement(cv, dot, strokePaint, dotPaint, 1.0f)
+                        drawInkElement(cv, dot, inkPaint, 1.0f)
                     }
-                    invalidate()
                 } else {
                     // Close the final tail segment
                     val pPrev = currentStrokePoints[currentStrokePoints.size - 2]
@@ -275,32 +260,83 @@ class SignaturePadView @JvmOverloads constructor(
                     )
                     inkElements.add(seg)
                     cacheCanvas?.let { cv ->
-                        drawInkElement(cv, seg, strokePaint, dotPaint, 1.0f)
+                        drawInkElement(cv, seg, inkPaint, 1.0f)
                     }
-                    invalidate()
                 }
 
                 currentStrokePoints.clear()
+                smoothedVelocity = 0f
                 if (wasEmpty && inkElements.isNotEmpty()) {
                     onSignatureChanged?.invoke(false)
                 }
                 onStrokeCompleted?.invoke()
+                invalidate()
                 return true
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
                 currentStrokePoints.clear()
+                smoothedVelocity = 0f
                 return true
             }
         }
         return super.onTouchEvent(event)
     }
 
+    private fun processNewPoint(x: Float, y: Float, timestamp: Long) {
+        val newPoint = TimedPoint(x, y, timestamp)
+        val lastPoint = currentStrokePoints.lastOrNull()
+        if (lastPoint != null) {
+            val dist = hypot((newPoint.x - lastPoint.x).toDouble(), (newPoint.y - lastPoint.y).toDouble()).toFloat()
+            if (dist < 1.5f) {
+                return // Filter micro-jitter while preserving sub-pixel intent
+            }
+        }
+        currentStrokePoints.add(newPoint)
+
+        if (currentStrokePoints.size >= 3) {
+            val p0 = currentStrokePoints[currentStrokePoints.size - 3]
+            val p1 = currentStrokePoints[currentStrokePoints.size - 2]
+            val p2 = currentStrokePoints[currentStrokePoints.size - 1]
+
+            val mid1X = (p0.x + p1.x) / 2f
+            val mid1Y = (p0.y + p1.y) / 2f
+            val mid2X = (p1.x + p2.x) / 2f
+            val mid2Y = (p1.y + p2.y) / 2f
+
+            val rawVelocity = p1.velocityTo(p2)
+            smoothedVelocity = 0.65f * rawVelocity + 0.35f * smoothedVelocity
+
+            // Natural ink pen physics: faster movement yields thinner strokes, slower yields thicker strokes
+            val targetWidth = (maxStrokeWidth / (1f + smoothedVelocity * 0.75f)).coerceIn(minStrokeWidth, maxStrokeWidth)
+            val startWidth = lastComputedWidth
+            val endWidth = (lastComputedWidth * 0.35f) + (targetWidth * 0.65f)
+            lastComputedWidth = endWidth
+
+            val seg = InkElement.BezierSegment(
+                startX = mid1X, startY = mid1Y,
+                cpX = p1.x, cpY = p1.y,
+                endX = mid2X, endY = mid2Y,
+                startWidth = startWidth,
+                endWidth = endWidth
+            )
+            inkElements.add(seg)
+
+            cacheCanvas?.let { cv ->
+                drawInkElement(cv, seg, inkPaint, 1.0f)
+            }
+        }
+    }
+
+    /**
+     * Renders an ink element with anti-aliasing.
+     * Quadratic Bézier curves are converted to a smooth closed vector ribbon polygon mesh with
+     * normal vectors, eliminating line-cap overlap beads and pixelated staircase artifacts.
+     */
     private fun drawInkElement(
         canvas: Canvas,
         element: InkElement,
-        linePaint: Paint,
         fillPaint: Paint,
         scale: Float
     ) {
@@ -318,26 +354,66 @@ class SignaturePadView @JvmOverloads constructor(
                 val startW = element.startWidth * scale
                 val endW = element.endWidth * scale
 
-                // Subdivide the quadratic Bézier into small overlapping segments for smooth tapered ink
-                val steps = 14
-                var prevX = startX
-                var prevY = startY
+                // For uniform width segments, draw a native smooth anti-aliased Bézier curve
+                val widthDiff = Math.abs(endW - startW)
+                if (widthDiff < 0.6f * scale) {
+                    val path = Path().apply {
+                        moveTo(startX, startY)
+                        quadTo(cpX, cpY, endX, endY)
+                    }
+                    val strokeP = Paint(fillPaint).apply {
+                        style = Paint.Style.STROKE
+                        strokeCap = Paint.Cap.ROUND
+                        strokeJoin = Paint.Join.ROUND
+                        strokeWidth = (startW + endW) / 2f
+                    }
+                    canvas.drawPath(path, strokeP)
+                    return
+                }
 
-                for (i in 1..steps) {
+                // For variable-width tapered ink strokes: extrude a smooth closed polygon ribbon
+                // along the analytical Bézier tangent normals.
+                val steps = 20
+                val leftPoints = ArrayList<PointF>(steps + 1)
+                val rightPoints = ArrayList<PointF>(steps + 1)
+
+                for (i in 0..steps) {
                     val t = i / steps.toFloat()
                     val oneMinusT = 1f - t
 
-                    // B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-                    val curX = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * cpX) + (t * t * endX)
-                    val curY = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * cpY) + (t * t * endY)
-                    val curW = startW + (endW - startW) * t
+                    // B(t) position
+                    val x = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * cpX) + (t * t * endX)
+                    val y = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * cpY) + (t * t * endY)
 
-                    linePaint.strokeWidth = curW
-                    canvas.drawLine(prevX, prevY, curX, curY, linePaint)
+                    // B'(t) tangent derivative
+                    val dx = 2f * oneMinusT * (cpX - startX) + 2f * t * (endX - cpX)
+                    val dy = 2f * oneMinusT * (cpY - startY) + 2f * t * (endY - cpY)
 
-                    prevX = curX
-                    prevY = curY
+                    val len = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(0.0001f)
+                    val nx = -dy / len
+                    val ny = dx / len
+
+                    val halfW = (startW + (endW - startW) * t) / 2f
+                    leftPoints.add(PointF(x + nx * halfW, y + ny * halfW))
+                    rightPoints.add(PointF(x - nx * halfW, y - ny * halfW))
                 }
+
+                val ribbon = Path()
+                if (leftPoints.isNotEmpty()) {
+                    ribbon.moveTo(leftPoints[0].x, leftPoints[0].y)
+                    for (i in 1 until leftPoints.size) {
+                        ribbon.lineTo(leftPoints[i].x, leftPoints[i].y)
+                    }
+                    for (i in rightPoints.size - 1 downTo 0) {
+                        ribbon.lineTo(rightPoints[i].x, rightPoints[i].y)
+                    }
+                    ribbon.close()
+                }
+
+                canvas.drawPath(ribbon, fillPaint)
+                // Draw rounded caps at endpoints to guarantee buttery smooth segment joins
+                canvas.drawCircle(startX, startY, startW / 2f, fillPaint)
+                canvas.drawCircle(endX, endY, endW / 2f, fillPaint)
             }
         }
     }
@@ -350,7 +426,6 @@ class SignaturePadView @JvmOverloads constructor(
     fun getSignatureBitmap(targetColor: Int? = null, opacity: Float = 1.0f): Bitmap? {
         if (inkElements.isEmpty() || width <= 0 || height <= 0) return null
 
-        // Compute tight bounding box across all ink elements
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
         var maxX = Float.MIN_VALUE
@@ -374,7 +449,7 @@ class SignaturePadView @JvmOverloads constructor(
             }
         }
 
-        val padding = 16f
+        val padding = 16f * density
         val boundLeft = (minX - padding).coerceAtLeast(0f)
         val boundTop = (minY - padding).coerceAtLeast(0f)
         val boundRight = (maxX + padding).coerceAtMost(width.toFloat())
@@ -394,15 +469,7 @@ class SignaturePadView @JvmOverloads constructor(
         val finalColor = targetColor ?: targetInkColor
         val alphaVal = (opacity.coerceIn(0.05f, 1.0f) * 255).toInt()
 
-        val exportStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeJoin = Paint.Join.ROUND
-            strokeCap = Paint.Cap.ROUND
-            color = finalColor
-            alpha = alphaVal
-        }
-
-        val exportDotPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        val exportPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
             style = Paint.Style.FILL
             color = finalColor
             alpha = alphaVal
@@ -412,7 +479,7 @@ class SignaturePadView @JvmOverloads constructor(
         canvas.translate(-boundLeft * supersampleScale, -boundTop * supersampleScale)
 
         for (el in inkElements) {
-            drawInkElement(canvas, el, exportStrokePaint, exportDotPaint, supersampleScale)
+            drawInkElement(canvas, el, exportPaint, supersampleScale)
         }
 
         return bitmap

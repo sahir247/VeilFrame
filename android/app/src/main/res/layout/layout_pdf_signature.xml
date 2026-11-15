@@ -85,9 +85,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardBackgroundColor="@color/vf_surface"
-                    app:strokeColor="@color/vf_outline_variant"
-                    app:strokeWidth="1dp">
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -141,22 +142,20 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
-                    <!-- PDF Preview Card at Top (Consistent with VeilFrame tools) -->
+                    <!-- PDF Preview Card -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardPdfPreview"
-                        style="@style/Widget.Material3.CardView.Filled"
+                        style="@style/Widget.VeilFrame.Card.Canvas"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
-                            android:padding="12dp">
+                            android:padding="14dp">
 
                             <LinearLayout
                                 android:layout_width="match_parent"
@@ -244,16 +243,17 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
-                    <!-- Status Banner Card -->
+                    <!-- Status Banner (Borderless Tonal Banner) -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardPdfStatusBanner"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -298,7 +298,7 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
-                    <!-- Untrusted Signer Banner (if mathematically valid but not yet pinned) -->
+                    <!-- Untrusted Signer Banner (Borderless Amber Tonal Surface) -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardUntrustedPrompt"
                         style="@style/Widget.Material3.CardView.Filled"
@@ -307,8 +307,9 @@
                         android:layout_marginBottom="16dp"
                         android:visibility="gone"
                         app:cardBackgroundColor="#FFF8E1"
-                        app:strokeColor="#FFE082"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -347,91 +348,79 @@
 
                     <!-- Signatures Breakdown Header -->
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="DIGITAL SIGNATURES"
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:text="Digital Signatures" />
 
                     <!-- Container for Signature Cards -->
                     <LinearLayout
                         android:id="@+id/containerSignaturesList"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="20dp"
                         android:orientation="vertical" />
 
-                    <!-- Actions Card -->
-                    <com.google.android.material.card.MaterialCardView
-                        style="@style/Widget.Material3.CardView.Filled"
+                    <!-- Export Actions (Heading + Subtle Tonal Surface) -->
+                    <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="Document Export" />
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="24dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        android:background="@drawable/bg_m3_section_card"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="14dp"
+                            android:text="Rectify appearance with authentic Adobe 15w green tick mark and export."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSaveValidatedPdf"
+                            style="@style/Widget.VeilFrame.Button.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:text="Save PDF"
+                            app:icon="@drawable/ic_action_save" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:padding="16dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="DOCUMENT EXPORT"
-                                android:textColor="@color/vf_text_muted"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:layout_marginBottom="16dp"
-                                android:text="Rectify appearance with authentic Adobe 15w green tick mark and export."
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="12sp" />
+                            android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnSaveValidatedPdf"
-                                style="@style/Widget.VeilFrame.Button.Primary"
-                                android:layout_width="match_parent"
+                                android:id="@+id/btnShareValidatedPdf"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_marginBottom="8dp"
-                                android:text="Save PDF"
-                                app:icon="@drawable/ic_action_save" />
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                android:text="Share PDF"
+                                app:icon="@drawable/ic_action_share" />
 
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnPrintValidatedPdf"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal">
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/btnShareValidatedPdf"
-                                    style="@style/Widget.VeilFrame.Button.Action"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:layout_marginEnd="6dp"
-                                    android:text="Share PDF"
-                                    app:icon="@drawable/ic_action_share" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/btnPrintValidatedPdf"
-                                    style="@style/Widget.VeilFrame.Button.Action"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:layout_marginStart="6dp"
-                                    android:text="Print"
-                                    app:icon="@drawable/ic_print" />
-                            </LinearLayout>
+                                android:layout_weight="1"
+                                android:layout_marginStart="6dp"
+                                android:text="Print"
+                                app:icon="@drawable/ic_print" />
                         </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>

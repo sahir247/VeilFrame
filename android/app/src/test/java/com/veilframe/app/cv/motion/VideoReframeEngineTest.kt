@@ -465,4 +465,48 @@ class VideoReframeEngineTest {
             mockFrames.forEach { it.release() }
         }
     }
+
+    @Test
+    fun testSameAspectDetectionAndAvailableTargetsForPortraitVideo() {
+        // 1080x1920 vertical video: 9:16 is ALREADY source aspect and must be flagged redundant!
+        assertTrue(VideoReframeEngine.isSameAspectRatio(1080, 1920, 9f / 16f))
+        assertTrue(VideoReframeEngine.isSameAspectRatio(1080, 1916, 9f / 16f))
+        assertFalse(VideoReframeEngine.isSameAspectRatio(1080, 1920, 1f))
+        assertFalse(VideoReframeEngine.isSameAspectRatio(1080, 1920, 4f / 5f))
+
+        val portraitOptions = VideoReframeEngine.availableTargetsForSource(1080, 1920)
+        val portrait916 = portraitOptions.first { it.target == ReframeTarget.PORTRAIT_9_16 }
+        val portrait45 = portraitOptions.first { it.target == ReframeTarget.PORTRAIT_4_5 }
+        val square11 = portraitOptions.first { it.target == ReframeTarget.SQUARE_1_1 }
+        val landscape169 = portraitOptions.first { it.target == ReframeTarget.LANDSCAPE_16_9 }
+
+        assertTrue("9:16 must be marked redundant for 1080x1920 video", portrait916.isAlreadySourceAspect)
+        assertFalse(portrait916.isRecommended)
+        assertFalse(portrait45.isAlreadySourceAspect)
+        assertTrue("4:5 feed should be recommended for already-vertical 9:16 source", portrait45.isRecommended)
+        assertEquals(1080, portrait45.outputWidth)
+        assertEquals(1350, portrait45.outputHeight)
+        assertEquals(1080, square11.outputWidth)
+        assertEquals(1080, square11.outputHeight)
+        assertEquals(1080, landscape169.outputWidth)
+        assertEquals(608, landscape169.outputHeight)
+
+        // Landscape 1920x1080: 16:9 is redundant and 9:16 is recommended
+        val landscapeOptions = VideoReframeEngine.availableTargetsForSource(1920, 1080)
+        assertTrue(landscapeOptions.first { it.target == ReframeTarget.LANDSCAPE_16_9 }.isAlreadySourceAspect)
+        assertTrue(landscapeOptions.first { it.target == ReframeTarget.PORTRAIT_9_16 }.isRecommended)
+    }
+
+    @Test
+    fun testDynamicCropFilterQuotesExpressionsSoFfmpegCommasDoNotSplitChain() {
+        val trajectory = listOf(
+            TrajectoryPoint(0L, 200f, 540f),
+            TrajectoryPoint(2000L, 1600f, 540f),
+            TrajectoryPoint(4000L, 200f, 540f)
+        )
+        val filter = VideoReframeEngine.generateFfmpegCropFilter(trajectory, 1920, 1080, targetAspect = 9f / 16f)
+        assertTrue(filter.startsWith("crop="))
+        assertTrue("Multi-segment if(...) expression must be single-quoted for FFmpeg -vf", filter.contains(":'trunc(("))
+        assertTrue(filter.contains("/2)*2'"))
+    }
 }

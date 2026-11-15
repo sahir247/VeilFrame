@@ -484,6 +484,80 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         }
     }
 
+    // QR Studio Launchers
+    private val qrCameraPermissionLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (activity.isQrStudioControllerInitialized) {
+            activity.qrStudioController.onCameraPermissionResult(isGranted)
+        }
+    }
+
+    private val qrGalleryDecodeLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleGalleryDecode(it)
+            }
+        }
+    }
+
+    private val qrLogoPickerLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            activity.safStorageManager.persistReadPermission(it)
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleLogoSelected(it)
+            }
+        }
+    }
+
+    private val qrBackdropPickerLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            activity.safStorageManager.persistReadPermission(it)
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleBackdropSelected(it)
+            }
+        }
+    }
+
+    private val qrSourceImagePickerLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            activity.safStorageManager.persistReadPermission(it)
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleSourceSelected(it)
+            }
+        }
+    }
+
+    private val qrBgImagePickerLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            activity.safStorageManager.persistReadPermission(it)
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleBgImageSelected(it)
+            }
+        }
+    }
+
+    private val qrResampleBackdropPickerLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            activity.safStorageManager.persistReadPermission(it)
+            if (activity.isQrStudioControllerInitialized) {
+                activity.qrStudioController.handleResampleBackdropSelected(it)
+            }
+        }
+    }
+
     // Public Trigger APIs
 
     fun launchMarkdownPicker() {
@@ -677,5 +751,33 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    fun launchQrCameraPermission() {
+        qrCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+    }
+
+    fun launchQrGalleryDecode() {
+        qrGalleryDecodeLauncher.launch("image/*")
+    }
+
+    fun launchQrLogoPicker() {
+        qrLogoPickerLauncher.launch(arrayOf("image/*", "video/*"))
+    }
+
+    fun launchQrBackdropPicker() {
+        qrBackdropPickerLauncher.launch(arrayOf("image/*"))
+    }
+
+    fun launchQrSourceImagePicker() {
+        qrSourceImagePickerLauncher.launch(arrayOf("image/*", "video/*"))
+    }
+
+    fun launchQrBgImagePicker() {
+        qrBgImagePickerLauncher.launch(arrayOf("image/*"))
+    }
+
+    fun launchQrResampleBackdropPicker() {
+        qrResampleBackdropPickerLauncher.launch(arrayOf("image/*"))
     }
 }

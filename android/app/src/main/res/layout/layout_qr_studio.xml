@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutQrStudioRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- ============================================================= -->
+        <!-- TOP APP BAR                                                   -->
+        <!-- ============================================================= -->
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbarQrStudio"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:navigationIconTint="?attr/colorOnSurface"
+            app:title="QR Studio"
+            app:titleTextAppearance="@style/TextAppearance.VeilFrame.Title.Workspace"
+            app:titleTextColor="?attr/colorOnSurface"
+            app:subtitle="Artistic Vector &amp; Offline Scanner"
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnQrReset"
+                style="@style/Widget.VeilFrame.IconButton.Compact"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="12dp"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.VeilFrame.Pill"
+                android:contentDescription="Reset to defaults"
+                app:icon="@drawable/ic_reset"
+                app:iconTint="?attr/colorOnSurface" />
+        </com.google.android.material.appbar.MaterialToolbar>
+
+        <!-- ============================================================= -->
+        <!-- MODE SELECTOR (Modern Floating Pill Segmented Switcher)       -->
+        <!-- ============================================================= -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorSurface"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="12dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_m3_pill_container"
+                android:padding="4dp">
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/toggleQrMode"
+                    style="@style/Widget.Material3Expressive.MaterialButtonToggleGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="true"
+                    app:selectionRequired="true"
+                    app:checkedButton="@id/btnModeGenerate">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnModeGenerate"
+                        style="@style/Widget.Material3Expressive.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="Design"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.VeilFrame.Pill"
+                        app:strokeWidth="0dp"
+                        app:icon="@drawable/ic_tool_qr"
+                        app:iconGravity="textStart"
+                        app:iconSize="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnModeScan"
+                        style="@style/Widget.Material3Expressive.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="Scanner"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.VeilFrame.Pill"
+                        app:strokeWidth="0dp"
+                        app:icon="@drawable/ic_camera"
+                        app:iconGravity="textStart"
+                        app:iconSize="18dp" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- ============================================================= -->
+        <!-- CONTENT CONTAINER                                             -->
+        <!-- ============================================================= -->
+        <FrameLayout
+            android:id="@+id/containerQrContent"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <!-- 1. GENERATE / DESIGN WORKSPACE -->
+            <include
+                android:id="@+id/scrollQrGenerate"
+                layout="@layout/layout_qr_generate_content"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="visible" />
+
+            <!-- 2. SCANNER WORKSPACE -->
+            <include
+                android:id="@+id/containerQrScan"
+                layout="@layout/layout_qr_scan_content"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <!-- 3. PROGRESS LOADING OVERLAY -->
+            <FrameLayout
+                android:id="@+id/qr_loading_progress"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#80000000"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    style="@style/Widget.VeilFrame.Progress.Circular.Wavy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:indeterminate="true" />
+            </FrameLayout>
+
+        </FrameLayout>
+    </LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

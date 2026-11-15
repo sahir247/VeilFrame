@@ -27,6 +27,34 @@ data class TrajectoryPoint(
 )
 
 /**
+ * Supported target aspect ratios for Smart Auto-Reframe.
+ */
+enum class ReframeTarget(
+    val ratioLabel: String,
+    val displayTitle: String,
+    val aspect: Float,
+    val subtitle: String
+) {
+    PORTRAIT_9_16("9:16", "9:16 Vertical", 9f / 16f, "Reels, Shorts & TikTok"),
+    PORTRAIT_4_5("4:5", "4:5 Portrait Feed", 4f / 5f, "Instagram & LinkedIn tall feed"),
+    SQUARE_1_1("1:1", "1:1 Square", 1f, "Square social post & carousel"),
+    PORTRAIT_3_4("3:4", "3:4 Classic Portrait", 3f / 4f, "Classic vertical photo/video frame"),
+    CLASSIC_4_3("4:3", "4:3 Standard", 4f / 3f, "Classic horizontal frame"),
+    LANDSCAPE_16_9("16:9", "16:9 Widescreen", 16f / 9f, "YouTube & desktop landscape")
+}
+
+/**
+ * Source-aware availability info for a [ReframeTarget].
+ */
+data class ReframeTargetOption(
+    val target: ReframeTarget,
+    val isAlreadySourceAspect: Boolean,
+    val outputWidth: Int,
+    val outputHeight: Int,
+    val isRecommended: Boolean
+)
+
+/**
  * Pluggable abstraction for bounding box tracking across video frames.
  * Uses native OpenCV [TrackerMIL] in production, and falls back to a deterministic
  * centroid tracker on host JVM / unit test environments.
@@ -106,6 +134,57 @@ class VideoReframeEngine(
                 }
             } else {
                 CentroidTracker()
+            }
+        }
+
+        /**
+         * Returns true when the source frame dimensions already match [targetAspect] within [tolerance] (default 2.5%).
+         * Prevents pointless no-op reframing such as applying 9:16 auto-reframe to an already 9:16 vertical clip.
+         */
+        fun isSameAspectRatio(
+            srcW: Int,
+            srcH: Int,
+            targetAspect: Float,
+            tolerance: Float = 0.025f
+        ): Boolean {
+            if (srcW <= 0 || srcH <= 0 || targetAspect <= 0f) return false
+            val srcAspect = srcW.toFloat() / srcH.toFloat()
+            return Math.abs(srcAspect - targetAspect) / targetAspect <= tolerance
+        }
+
+        /**
+         * Evaluates all [ReframeTarget] options relative to source dimensions ([srcW]x[srcH]), marking
+         * matching aspect ratios as redundant and computing exact even-aligned cropped output resolution.
+         */
+        fun availableTargetsForSource(srcW: Int, srcH: Int): List<ReframeTargetOption> {
+            val safeW = srcW.coerceAtLeast(2)
+            val safeH = srcH.coerceAtLeast(2)
+            val isLandscapeOrSquare = safeW >= safeH
+            val recommendedTarget = when {
+                !isSameAspectRatio(safeW, safeH, ReframeTarget.PORTRAIT_9_16.aspect) && isLandscapeOrSquare ->
+                    ReframeTarget.PORTRAIT_9_16
+                !isSameAspectRatio(safeW, safeH, ReframeTarget.PORTRAIT_4_5.aspect) && !isLandscapeOrSquare ->
+                    ReframeTarget.PORTRAIT_4_5
+                !isSameAspectRatio(safeW, safeH, ReframeTarget.SQUARE_1_1.aspect) ->
+                    ReframeTarget.SQUARE_1_1
+                else -> ReframeTarget.LANDSCAPE_16_9
+            }
+
+            return ReframeTarget.entries.map { target ->
+                val same = isSameAspectRatio(safeW, safeH, target.aspect)
+                val cropBox = calculateCropBox(
+                    TrajectoryPoint(0L, safeW / 2f, safeH / 2f),
+                    safeW,
+                    safeH,
+                    target.aspect
+                )
+                ReframeTargetOption(
+                    target = target,
+                    isAlreadySourceAspect = same,
+                    outputWidth = cropBox.width,
+                    outputHeight = cropBox.height,
+                    isRecommended = !same && target == recommendedTarget
+                )
             }
         }
 
@@ -311,14 +390,14 @@ class VideoReframeEngine(
             }
 
             val xExpr = if (dynamicX) {
-                buildPiecewiseExpr { it.x }
+                "'${buildPiecewiseExpr { it.x }}'"
             } else {
                 val avgX = cropBoxes.map { it.x }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
                 avgX.toString()
             }
 
             val yExpr = if (dynamicY) {
-                buildPiecewiseExpr { it.y }
+                "'${buildPiecewiseExpr { it.y }}'"
             } else {
                 val avgY = cropBoxes.map { it.y }.average().toInt().let { if (it % 2 != 0) it - 1 else it }
                 avgY.toString()
@@ -422,46 +501,56 @@ class VideoReframeEngine(
     }
 
     /**
-     * Samples keyframes from a video file via [MediaMetadataRetriever] and constructs a smooth trajectory.
+     * Samples keyframes from a video file via [MediaMetadataRetriever] across `[startMs, startMs + durationMs]`
+     * and constructs a smooth subject-centered trajectory.
      */
     fun generateTrajectoryFromRetriever(
         retriever: MediaMetadataRetriever,
         durationMs: Long,
         fps: Double = 30.0,
-        sampleIntervalMs: Long = 500L
+        sampleIntervalMs: Long = 500L,
+        startMs: Long = 0L
     ): List<TrajectoryPoint> {
         val trajectory = mutableListOf<TrajectoryPoint>()
-        var timeUs = 0L
-        val stepUs = sampleIntervalMs * 1000L
-        val maxUs = durationMs * 1000L
+        val safeStartMs = startMs.coerceAtLeast(0L)
+        val safeDurMs = durationMs.coerceAtLeast(500L)
+        val effectiveStepMs = maxOf(sampleIntervalMs.coerceAtLeast(150L), safeDurMs / 40L)
+        val stepUs = effectiveStepMs * 1000L
+        val maxRelUs = safeDurMs * 1000L
 
-        var defaultW = 1920
-        var defaultH = 1080
-        var lastCenterX = defaultW / 2f
-        var lastCenterY = defaultH / 2f
+        var hasDetection = false
+        var lastCenterX = 540f
+        var lastCenterY = 540f
+        var relUs = 0L
 
-        while (timeUs <= maxUs) {
+        while (relUs <= maxRelUs) {
+            val absUs = (safeStartMs * 1000L) + relUs
             val frameBmp = try {
-                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-            } catch (ignored: Exception) {
+                retriever.getFrameAtTime(absUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            } catch (_: Exception) {
                 null
             }
 
             if (frameBmp != null) {
-                defaultW = frameBmp.width
-                defaultH = frameBmp.height
-                val detections = piiEngine?.detect(frameBmp, confThreshold = 0.40f) ?: emptyList()
+                if (!hasDetection) {
+                    lastCenterX = frameBmp.width / 2f
+                    lastCenterY = frameBmp.height / 2f
+                }
+                val detections = bitmapDetector?.invoke(frameBmp)
+                    ?: piiEngine?.detect(frameBmp, confThreshold = 0.40f)
+                    ?: emptyList()
                 val subject = selectPrimarySubject(detections)
 
                 if (subject != null) {
+                    hasDetection = true
                     lastCenterX = (subject.rect.left + subject.rect.right) / 2f
                     lastCenterY = (subject.rect.top + subject.rect.bottom) / 2f
                 }
-                frameBmp.recycle()
+                if (!frameBmp.isRecycled) frameBmp.recycle()
             }
 
-            trajectory.add(TrajectoryPoint(timeUs / 1000L, lastCenterX, lastCenterY))
-            timeUs += stepUs
+            trajectory.add(TrajectoryPoint(relUs / 1000L, lastCenterX, lastCenterY))
+            relUs += stepUs
         }
 
         return smoothTrajectory(trajectory)

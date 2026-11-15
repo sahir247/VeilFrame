@@ -12,9 +12,11 @@ object RifeNcnnNative {
     }
 
     @JvmStatic
+    @JvmOverloads
     external fun nativeInit(
         modelDir: String,
-        useGpu: Boolean
+        useGpu: Boolean,
+        padding: Int = 0
     ): Boolean
 
     @JvmStatic
@@ -26,6 +28,25 @@ object RifeNcnnNative {
 
     @JvmStatic
     external fun nativeRelease()
+
+    @JvmStatic
+    external fun nativeGetGpuName(): String
+
+    /**
+     * Resolves the hardware GPU device name (e.g. "Adreno (TM) 829", "Mali-G715 Immortalis",
+     * "Samsung Xclipse 940", etc.) via Vulkan physical device properties.
+     */
+    fun getGpuDeviceName(): String {
+        if (isEmulator()) {
+            return "Host Emulator Vulkan"
+        }
+        return try {
+            val name = nativeGetGpuName().trim()
+            if (name.isNotEmpty()) name else "Vulkan GPU"
+        } catch (t: Throwable) {
+            "Vulkan GPU"
+        }
+    }
 
     /**
      * Detects if running on Android Studio Emulator / QEMU / Virtual device.

@@ -553,21 +553,23 @@ class PdfSigner(private val context: Context) {
         val pdfY: Float
 
         if (placement.rotationDegrees != 0f) {
+            val origW = bitmap.width.toFloat()
+            val origH = bitmap.height.toFloat()
             val rad = Math.toRadians(Math.abs(placement.rotationDegrees.toDouble()))
             val cos = Math.cos(rad)
             val sin = Math.sin(rad)
             drawW = (srcW * cos + srcH * sin).toFloat()
             drawH = (srcW * sin + srcH * cos).toFloat()
-            val rotW = Math.max(1, drawW.toInt())
-            val rotH = Math.max(1, drawH.toInt())
+            val rotW = Math.max(1, (origW * cos + origH * sin).toInt())
+            val rotH = Math.max(1, (origW * sin + origH * cos).toInt())
             finalBitmap = Bitmap.createBitmap(rotW, rotH, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(finalBitmap)
             canvas.save()
             canvas.translate(rotW / 2f, rotH / 2f)
             canvas.rotate(placement.rotationDegrees)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-            val halfW = srcW / 2f
-            val halfH = srcH / 2f
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+            val halfW = origW / 2f
+            val halfH = origH / 2f
             canvas.drawBitmap(bitmap, null, android.graphics.RectF(-halfW, -halfH, halfW, halfH), paint)
             canvas.restore()
 
@@ -762,30 +764,25 @@ class PdfSigner(private val context: Context) {
                 val drawH: Float
 
                 if (item.rotationDegrees != 0f) {
+                    val origW = item.bitmap.width.toFloat()
+                    val origH = item.bitmap.height.toFloat()
                     val rad = Math.toRadians(Math.abs(item.rotationDegrees.toDouble()))
                     val cos = Math.cos(rad)
                     val sin = Math.sin(rad)
                     drawW = (item.width * cos + item.height * sin).toFloat()
                     drawH = (item.width * sin + item.height * cos).toFloat()
-                    val rotW = Math.max(1, drawW.toInt())
-                    val rotH = Math.max(1, drawH.toInt())
+                    val rotW = Math.max(1, (origW * cos + origH * sin).toInt())
+                    val rotH = Math.max(1, (origW * sin + origH * cos).toInt())
                     finalBitmap = Bitmap.createBitmap(rotW, rotH, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(finalBitmap)
                     canvas.save()
                     canvas.translate(rotW / 2f, rotH / 2f)
                     canvas.rotate(item.rotationDegrees)
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                    val halfW = item.width / 2f
-                    val halfH = item.height / 2f
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+                    val halfW = origW / 2f
+                    val halfH = origH / 2f
                     canvas.drawBitmap(item.bitmap, null, android.graphics.RectF(-halfW, -halfH, halfW, halfH), paint)
                     canvas.restore()
-                } else if (item.bitmap.width != targetW || item.bitmap.height != targetH) {
-                    drawW = item.width
-                    drawH = item.height
-                    finalBitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(finalBitmap)
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                    canvas.drawBitmap(item.bitmap, null, android.graphics.RectF(0f, 0f, targetW.toFloat(), targetH.toFloat()), paint)
                 } else {
                     finalBitmap = item.bitmap
                     drawW = item.width

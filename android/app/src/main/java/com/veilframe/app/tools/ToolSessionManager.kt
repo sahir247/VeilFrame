@@ -40,11 +40,11 @@ class ToolSessionManager(
             switch3Checked = true   // Re-encode bitstream
         ),
         ToolMode.IMAGE_CLEANER to ToolSessionState(
-            primaryOptionIndex = 0, // Standard 95%
+            primaryOptionIndex = 0, // Stealth (2-Stage)
             formatOptionIndex = 0,  // Original / Auto
             switch1Checked = true,  // Strip EXIF
-            switch2Checked = true,  // Remove thumbnails
-            switch3Checked = false  // Sanitize ICC
+            switch2Checked = true,  // PRNU Sensor Pattern Defense
+            switch3Checked = true   // Clean IJG Re-Encode
         ),
         ToolMode.FOLDER_SCANNER to ToolSessionState(
             primaryOptionIndex = 0, // Quick Audit
@@ -343,8 +343,8 @@ class ToolSessionManager(
                 )
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvToolTitle.text = "Image Cleaner"
-                binding.tvToolSubtitle.text = "Strip metadata, camera maker notes, and trace artifacts"
+                binding.tvToolTitle.text = "Image Cleaner & PRNU Purifier"
+                binding.tvToolSubtitle.text = "Scrub camera fingerprints, sensor PRNU, AI attribution manifolds & EXIF"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Image"
 
@@ -354,31 +354,31 @@ class ToolSessionManager(
                 binding.sliderToolIntensity.valueTo = 100f
                 binding.sliderToolIntensity.stepSize = 5f
                 val clamped = currentState.sliderValue.coerceIn(50f, 100f)
-                val initialVal = if (clamped < 50f) 95f else clamped
+                val initialVal = if (clamped < 50f) 90f else clamped
                 currentState.sliderValue = initialVal
                 binding.sliderToolIntensity.value = initialVal
                 binding.tvToolSliderValue.text = "${initialVal.toInt()}%"
 
                 configureOptions(
-                    paramHeader = "IMAGE PRIVACY PARAMETERS",
-                    primaryLabel = "Privacy / Quality Fidelity",
-                    primaryDesc = "Compression ratio balance while scrubbing forensic traces",
-                    primaryChips = listOf("Standard (95%)", "High (90%)", "Aggressive (85%)"),
+                    paramHeader = "FORENSIC PRIVACY PARAMETERS",
+                    primaryLabel = "Suppression Preset",
+                    primaryDesc = "Sensor fingerprint & PRNU suppression strategy",
+                    primaryChips = listOf("Stealth (2-Stage)", "Standard (Remap)", "High Suppression", "Metadata Only"),
                     primaryDefaultIndex = 0,
                     formatLabel = "Image Format",
-                    formatDesc = "Output image encoding and color profile",
+                    formatDesc = "Output image encoding container",
                     formatChips = listOf("Original / Auto", "JPEG (.jpg)", "PNG (.png)", "WebP (.webp)", "BMP (.bmp)", "TIFF (.tiff)", "GIF (.gif)", "HEIF (.heif)"),
                     formatDefaultIndex = 0,
                     switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
-                    switch1Desc = "Eliminates location, aperture, camera serials, and dates",
+                    switch1Desc = "Eliminates location, aperture, camera serials, and timestamps",
                     switch1Checked = true,
-                    switch2Title = "Remove Embedded Thumbnails",
-                    switch2Desc = "Purges uncompressed embedded preview thumbnails and caches",
+                    switch2Title = "PRNU Sensor & Demosaicing Suppression",
+                    switch2Desc = "VeilNet-Nano NCNN + Fused Coarse-Grid Remap (|sPCE| < 5.0, 6-strip < 8.0)",
                     switch2Checked = true,
-                    switch3Title = "Sanitize ICC Color Profile Metadata",
-                    switch3Desc = "Strips proprietary tags while preserving standard sRGB color",
-                    switch3Checked = false,
-                    executeText = "Scrub image metadata"
+                    switch3Title = "Clean IJG Re-Encode",
+                    switch3Desc = "Randomized IJG quantization tables (86-91 / 82-88), purges vendor matrices",
+                    switch3Checked = true,
+                    executeText = "Purify & scrub image"
                 )
             }
             ToolMode.FOLDER_SCANNER -> {
@@ -712,15 +712,21 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Camera EXIF, GPS coordinates & device serials purged" else "• EXIF & GPS retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Audio stream stripped completely" else "• Audio stream preserved (metadata tags scrubbed)"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked (PRNU sensor pattern noise mitigated)" else "• Stream remuxed without pixel alteration"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked with temporal dithering & asymmetric scaling" else "• Stream remuxed without pixel alteration"
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvPrivacyProfileBadge.text = "Metadata Strip"
+                val mode = when (getSelectedOptionIndex()) {
+                    0 -> "Stealth 2-Stage"
+                    1 -> "Fused Remap"
+                    2 -> "High Suppression"
+                    else -> "Metadata Strip"
+                }
+                binding.tvPrivacyProfileBadge.text = "$mode PRNU Suppression".uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Embedded preview thumbnails & caches eliminated" else "• Thumbnails preserved"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• ICC color profile sanitized to standard sRGB" else "• ICC profile preserved"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• PRNU sensor pattern suppressed (|sPCE| < 5.0, 6-strip < 8.0)" else "• Sensor PRNU preserved"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization tables applied (device attribution neutralized)" else "• Container re-encode skipped"
             }
             ToolMode.FOLDER_SCANNER -> {
                 val mode = when (getSelectedOptionIndex()) {

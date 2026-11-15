@@ -10,6 +10,34 @@
 
 ## Release Milestones & Architecture Status
 
+### v2.3.1 (Current)
+- **VeilNet-Nano On-Device Neural PRNU Purification (`VeilNetNanoNative`, `veilnet_jni.cpp`)**:
+  - 8,643-parameter FP16 NCNN model (17.62 KB binary) bundled directly in assets, operating with dilation-4 wide-band de-correlation to scramble camera-specific sensor fingerprints and AI attribution manifolds.
+  - Seam-free 480px core sliding tiling with 16px reflection halos supporting arbitrary 4K/8K/50MP+ resolutions.
+- **Fused Coarse-Grid Isotropic Remap & Chroma Decorrelation**:
+  - Uniform isotropic 0.8% inward scaling ($s_x = s_y = 0.992$) eliminating 6-strip block sPCE leakage from 113.04 down to 4.08 (< 8.0 ceiling) with 100% native resolution and zero aspect distortion.
+  - Sub-pixel $3\times 3, \sigma=0.65$ Cr/Cb chroma Gaussian smoothing and luminance S-curve micro-contrast LUT defeating ResNet50 surrogate juries.
+- **Zero-Bundle On-Demand Model Policy**:
+  - RIFE optical flow models (v4.15-lite, v4.22-lite, v4.25, v4.26) and ColorOS Lift & Shift (`image_matting_mobile.tflite`) hosted on GitHub and downloaded on demand via Model Manager or mode selection, eliminating ~55 MB of APK bloat.
+- **Bundled In-App Forensic Validation Report (`VEILFRAME_FORENSIC_VALIDATION_REPORT.md`)**:
+  - Comprehensive Dresden camera database audit proving |sPCE| < 5.0 and strip sPCE < 8.0 with PSNR > 39.5 dB and SSIM > 0.975.
+- **Native Memory Hardening & Zero-Emoji Standard**:
+  - Scoped OpenCV Mat and Bitmap recycling, thread-safe JNI mutex synchronization, and strict zero-emoji SVG icon standard across documentation.
+
+### v2.3.0 — November 2026 Post-Release Enhancements
+- **Multi-Modal Photo & Video PII Auto-Redaction (`PiiMultiModalDetector`, `VideoPiiRedactionEngine`)**:
+  - Unified UltraFace RFB-320 + YOLOv8n (`FACE`, `PLATE`, `SCREEN`, `CARD`, `PERSON`) + WeChatQRCode/ML Kit barcodes (`BARCODE`) + ML Kit OCR `PiiTextClassifier` (`TEXT_PII`) across Photo Studio and dense keyframe tracking in Video Studio (velocity-predicted association, dropout bridging, swept sub-intervals, and late-frame preservation).
+  - Selectable obfuscation modes (`Solid Black`, `Solid White`, `Pixelate`, `Blur`) via shared `PiiRedactionDialog`, plus removal of upscaler model-manager shortcut buttons from Photo and Video Studios.
+- **Two-Pass Pro Video Stabilization (EIS) & Source-Aware AI Auto-Reframe**:
+  - Upgraded EIS (`VideoStabilizerEngine`, `VideoEisConfig`, `VideoEisDialog`, `MediaProcessor`) to full two-pass FFmpeg `libvidstab` (`vidstabdetect` → `vidstabtransform` + `unsharp`) with 6 scenario presets, `gauss`/`opt` path solvers, virtual tripod lock, `optzoom`, `bilinear`/`bicubic` interpolation, and 540p fast mode.
+  - Upgraded `VideoReframeEngine` & `VideoReframeDialog` to inspect source aspect ratios, disable redundant same-ratio options (such as 9:16 on 9:16 video), offer multi-target ratios (`9:16`, `4:5`, `1:1`, `3:4`, `4:3`, `16:9`), and quote piecewise expressions safely for FFmpeg `-vf`.
+- **Background Remover ColorOS Lift & Shift Mode (`ColorOsMattingPlugin`)**:
+  - Added `RembgModel.COLOROS_LIFT_SHIFT` (`RembgMode.LIFT_AND_SHIFT`) backed by `image_matting_mobile.tflite` on LiteRT GPU delegate with CPU XNNPACK fallback exclusively inside Background Remover (isolated from Video Studio).
+- **QR Code Studio Overhaul (`QrStyleRegistry`, `ScanabilityValidator`, `AnimatedMediaHelper`)**:
+  - 12 capability-gated styles with corrected defaults (`Bubble` Circle, `Line` Planets, `DSJ`), `Line` inner/outer eye color split fix, improved `IMAGE_RESAMPLE` subject dithering & `D25` scannability, pure SVG vector export fixes, `WeChatQRCode` primary + ML Kit fallback verification, calibrated contrast reporting, continuous looping animated preview with configurable `12–360` frame budget, inline `i` tooltips, `OpenDocument` multi-media picker (photo/GIF/WebP/video), `"Animated"` naming, and full exit teardown.
+- **M3 Expressive Tonal Hierarchy & Stacked Predictive Back (`NavigationMotionController`)**:
+  - Applied a 4-tier surface-container tonal ladder across all Android layouts with stacked-page navigation transitions synchronized to Predictive Back gestures.
+
 ### v2.3.0 (Stable)
 - **Motion Lab RIFE v4 AI Neural Frame Synthesis & 60 FPS Target**:
   - Neural frame interpolation powered by RIFE v4 model, pairing with OpenCV DIS and Farnebäck algorithms.

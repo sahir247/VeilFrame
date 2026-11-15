@@ -85,13 +85,10 @@
                 <!-- Image Preview / Empty Container -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardQualityPreview"
-                    style="@style/Widget.Material3.CardView.Filled"
+                    style="@style/Widget.VeilFrame.Card.Canvas"
                     android:layout_width="match_parent"
                     android:layout_height="220dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="1dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/vf_surface_stroke">
+                    app:cardCornerRadius="20dp">
 
                     <FrameLayout
                         android:layout_width="match_parent"
@@ -138,15 +135,16 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
-                    <!-- Overall Score Card -->
+                    <!-- Overall Score Banner (Borderless Tonal Separation) -->
                     <com.google.android.material.card.MaterialCardView
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        app:cardCornerRadius="16dp"
-                        app:strokeWidth="1dp"
-                        app:strokeColor="@color/vf_surface_stroke">
+                        android:layout_marginBottom="16dp"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                        app:cardCornerRadius="18dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -239,10 +237,10 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
             app:cardCornerRadius="28dp"
             app:cardElevation="6dp"
-            app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="wrap_content"

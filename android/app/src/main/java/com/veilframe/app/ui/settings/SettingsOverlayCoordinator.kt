@@ -148,7 +148,7 @@ class SettingsOverlayCoordinator(
             val outlineVariantColor = activity.getColor(R.color.vf_outline_variant)
 
             fun highlight(card: MaterialCardView, isSelected: Boolean) {
-                card.strokeWidth = if (isSelected) 4 else 2
+                card.strokeWidth = if (isSelected) 4 else 0
                 card.strokeColor = if (isSelected) primaryColor else outlineVariantColor
             }
 
@@ -292,6 +292,7 @@ class SettingsOverlayCoordinator(
                 settingsContainer = settingsContainer,
                 scrimView = scrimSettings
             ) {
+                (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
                 if (ThemeSettingsManager.consumePendingRecreate()) {
                     activity.recreate()
                 }
@@ -299,6 +300,7 @@ class SettingsOverlayCoordinator(
         } else {
             settingsContainer.visibility = View.GONE
             scrimSettings.visibility = View.GONE
+            (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
             if (ThemeSettingsManager.consumePendingRecreate()) {
                 activity.recreate()
             }

@@ -17,6 +17,7 @@ import com.veilframe.app.databinding.LayoutPdfStudioBinding
 import com.veilframe.app.databinding.LayoutPdfUnlockBinding
 import com.veilframe.app.databinding.LayoutPdfWatermarkBinding
 import com.veilframe.app.databinding.LayoutProvenanceBinding
+import com.veilframe.app.databinding.LayoutQrStudioBinding
 import com.veilframe.app.ui.insets.WorkspaceInsets
 
 /**
@@ -36,7 +37,8 @@ enum class SecondaryWorkspace {
     PDF_EXTRACT_PAGES,
     PDF_FLATTEN,
     PDF_IMPOSITION,
-    PDF_QUICK_TOOL
+    PDF_QUICK_TOOL,
+    QR_STUDIO
 }
 
 /**
@@ -58,7 +60,8 @@ class WorkspaceHost(
     var onPdfExtractPagesInflated: ((LayoutPdfExtractPagesBinding) -> Unit)? = null,
     var onPdfFlattenInflated: ((LayoutPdfFlattenBinding) -> Unit)? = null,
     var onPdfImpositionInflated: ((LayoutPdfImpositionBinding) -> Unit)? = null,
-    var onPdfQuickToolInflated: ((LayoutPdfQuickToolBinding) -> Unit)? = null
+    var onPdfQuickToolInflated: ((LayoutPdfQuickToolBinding) -> Unit)? = null,
+    var onQrStudioInflated: ((LayoutQrStudioBinding) -> Unit)? = null
 ) {
     data class InsetCache(
         val statusBarTop: Int = 0,
@@ -101,6 +104,8 @@ class WorkspaceHost(
         private set
     var pdfQuickToolBinding: LayoutPdfQuickToolBinding? = null
         private set
+    var qrStudioBinding: LayoutQrStudioBinding? = null
+        private set
 
     val imageUpscalerRoot: View? get() = imageUpscalerBinding?.root
     val docScannerRoot: View? get() = docScannerBinding?.root
@@ -116,6 +121,7 @@ class WorkspaceHost(
     val pdfFlattenRoot: View? get() = pdfFlattenBinding?.root
     val pdfImpositionRoot: View? get() = pdfImpositionBinding?.root
     val pdfQuickToolRoot: View? get() = pdfQuickToolBinding?.root
+    val qrStudioRoot: View? get() = qrStudioBinding?.root
 
     val isImageUpscalerInflated: Boolean get() = imageUpscalerBinding != null
     val isDocScannerInflated: Boolean get() = docScannerBinding != null
@@ -125,6 +131,7 @@ class WorkspaceHost(
     val isPdfSignatureInflated: Boolean get() = pdfSignatureBinding != null
     val isPdfUnlockInflated: Boolean get() = pdfUnlockBinding != null
     val isPdfStudioInflated: Boolean get() = pdfStudioBinding != null
+    val isQrStudioInflated: Boolean get() = qrStudioBinding != null
     val isPdfWatermarkInflated: Boolean get() = pdfWatermarkBinding != null
     val isPdfExtractTextInflated: Boolean get() = pdfExtractTextBinding != null
     val isPdfExtractPagesInflated: Boolean get() = pdfExtractPagesBinding != null
@@ -147,6 +154,7 @@ class WorkspaceHost(
         SecondaryWorkspace.PDF_FLATTEN -> isPdfFlattenInflated
         SecondaryWorkspace.PDF_IMPOSITION -> isPdfImpositionInflated
         SecondaryWorkspace.PDF_QUICK_TOOL -> isPdfQuickToolInflated
+        SecondaryWorkspace.QR_STUDIO -> isQrStudioInflated
     }
 
     fun getRoot(workspace: SecondaryWorkspace): View? = when (workspace) {
@@ -164,6 +172,7 @@ class WorkspaceHost(
         SecondaryWorkspace.PDF_FLATTEN -> pdfFlattenRoot
         SecondaryWorkspace.PDF_IMPOSITION -> pdfImpositionRoot
         SecondaryWorkspace.PDF_QUICK_TOOL -> pdfQuickToolRoot
+        SecondaryWorkspace.QR_STUDIO -> qrStudioRoot
     }
 
     @MainThread
@@ -446,6 +455,26 @@ class WorkspaceHost(
         return pdfQuickToolBinding!!
     }
 
+    @MainThread
+    fun getOrInflateQrStudio(): LayoutQrStudioBinding {
+        if (qrStudioBinding == null) {
+            val stub = binding.stubQrStudio
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutQrStudioRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutQrStudioBinding.bind(view)
+                qrStudioBinding = b
+                applyInsetsToDefault(b.root)
+                onQrStudioInflated?.invoke(b)
+            }
+        }
+        return qrStudioBinding!!
+    }
+
     fun getOrInflate(workspace: SecondaryWorkspace): View = when (workspace) {
         SecondaryWorkspace.IMAGE_UPSCALER -> getOrInflateImageUpscaler().root
         SecondaryWorkspace.DOCUMENT_SCANNER -> getOrInflateDocScanner().root
@@ -461,6 +490,7 @@ class WorkspaceHost(
         SecondaryWorkspace.PDF_FLATTEN -> getOrInflatePdfFlatten().root
         SecondaryWorkspace.PDF_IMPOSITION -> getOrInflatePdfImposition().root
         SecondaryWorkspace.PDF_QUICK_TOOL -> getOrInflatePdfQuickTool().root
+        SecondaryWorkspace.QR_STUDIO -> getOrInflateQrStudio().root
     }
 
     @MainThread
@@ -473,8 +503,16 @@ class WorkspaceHost(
     @MainThread
     fun deactivate(workspace: SecondaryWorkspace) {
         getRoot(workspace)?.let {
+            it.animate().cancel()
             it.visibility = View.GONE
+            it.alpha = 1f
+            it.scaleX = 1f
+            it.scaleY = 1f
             it.translationX = 0f
+            it.translationY = 0f
+            it.translationZ = 0f
+            it.elevation = 0f
+            it.clipToOutline = false
         }
         if (activeWorkspace == workspace) {
             activeWorkspace = null
@@ -515,6 +553,7 @@ class WorkspaceHost(
         pdfFlattenBinding?.root?.let { applyInsetsToDefault(it) }
         pdfImpositionBinding?.root?.let { applyInsetsToDefault(it) }
         pdfQuickToolBinding?.root?.let { applyInsetsToDefault(it) }
+        qrStudioBinding?.root?.let { applyInsetsToDefault(it) }
     }
 
     private fun applyInsetsToScrolledAppbar(view: View) {
@@ -558,5 +597,6 @@ class WorkspaceHost(
         pdfFlattenBinding = null
         pdfImpositionBinding = null
         pdfQuickToolBinding = null
+        qrStudioBinding = null
     }
 }

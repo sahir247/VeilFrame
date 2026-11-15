@@ -701,35 +701,35 @@ The research attribution benchmark suite (`research/attribution_benchmarks/`) pr
 
 ---
 
-## QR Code Studio & Safe Payload Subsystem (v2.2.8 Architecture)
+## QR Code Studio & Safe Payload Subsystem (v2.3.0 Architecture)
 
-VeilFrame v2.2.8 integrates the **QR Code Studio (8th Tool)** (`com.veilframe.app.qr.*`), providing an offline creative generation engine with 11 artistic rendering modes and a live CameraX scanner with defensive payload validation:
+VeilFrame integrates **QR Code Studio** (`com.veilframe.app.qr.*`), providing an offline creative generation engine across **12 visual rendering styles** (`QrStyleRegistry`), animated media synthesis, and a live CameraX scanner with defensive payload validation:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     QR CODE STUDIO & SAFE PAYLOAD SUBSYSTEM (v2.2.8)                             │
+│                     QR CODE STUDIO & SAFE PAYLOAD SUBSYSTEM (v2.3.0)                             │
 ├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
-│        11 ARTISTIC RENDERERS         │          DEFENSIVE SCANNER & SAFE PAYLOAD ENGINE          │
+│        12 ARTISTIC RENDERERS         │          DEFENSIVE SCANNER & VERIFICATION ENGINE          │
 │                                      │                                                           │
-│ • Basic: Custom corner module shapes │ • CameraX Analysis: Live PlanarYUV Luminance Stream       │
-│ • Bubble: Organic clustered circles  │ • Reticle Overlay: Dynamic viewport target tracking       │
-│ • 2.5D: Isometric 3D cube projection │ • Gallery Photo Decoder: Local lossless RGB parsing       │
-│ • DSJ: Turntable concentric markers  │ • 11-Format Safe Payload Parser:                          │
-│ • Image Fill: Hardware BitmapShader  │   - Wi-Fi (WPA/WPA2/WPA3 credentials)                     │
-│ • Image Overlay: Dynamic mask blend  │   - UPI Payment Strings (with merchant verification)      │
-│ • Image Resample: Luminance grid map │   - URL with IDN homograph phishing defenses              │
-│ • Line: Interlocking stripe geometry │   - Phone (tel:), SMS (smsto:), Email (mailto:)           │
-│ • Random Rectangle: Pseudo-jitter    │   - Geo Coordinates, vCard/MeCard, Calendar, OtpAuth     │
-│ • Function: Polar coordinate shapes  │ • Intent Gate: Mandatory user confirmation prior to firing│
-│ • Style Function: Modulated function │ • Multi-Format Exporter: PNG, JPEG, vector SVG & PDF      │
+│ • Basic: Custom corner module shapes │ • Primary Verification: WeChatQRCode CNN                  │
+│ • Bubble: Organic clustered circles  │ • Fallback Verification: Google ML Kit BarcodeScanning    │
+│ • 2.5D: Isometric 3D cube projection │ • CameraX Analysis: Live PlanarYUV Luminance Stream       │
+│ • DSJ: Turntable concentric markers  │ • Multi-Media Animated Picker: Photo / GIF / WebP / Video │
+│ • Image Fill: Hardware BitmapShader  │ • 11-Format Safe Payload Parser:                          │
+│ • Image Overlay: Dynamic mask blend  │   - Wi-Fi (WPA/WPA2/WPA3 credentials)                     │
+│ • Image Resample: Luminance dithering│   - UPI Payment Strings (with merchant verification)      │
+│ • Line: Planets finder + eye split   │   - URL with IDN homograph phishing defenses              │
+│ • Random Rectangle: Pseudo-jitter    │   - Phone (tel:), SMS (smsto:), Email (mailto:)           │
+│ • Function & Style Function waves    │   - Geo Coordinates, vCard/MeCard, Calendar, OtpAuth     │
+│ • Connected Organic: Graph paths     │ • Multi-Format Exporter: PNG, JPEG, vector SVG & GIF      │
 └──────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
-### 1. Matrix Generation & The 11 Visual Renderers
-- **`QrGenerator` Core Pipeline:** Employs ZXing `QRCodeWriter` with explicit Reed-Solomon Error Correction (`L`, `M`, `Q`, `H`), encoding content into a normalized `QrMatrix` abstraction.
-- **Position Detection Pattern (PDP) Isolation:** Finder patterns (outer $7 \times 7$ rings, $5 \times 5$ separators, and $3 \times 3$ inner cores) are isolated from alignment and data patterns, allowing distinctive foreground and background styling without sacrificing barcode readability.
-- **Hardware Shader Acceleration:** `ImageFillRenderer` binds user-selected textures to Android `BitmapShader` with clamp tiling, scaling raster textures across individual modules without multi-pass canvas blits.
-- **Cubic Projection Math:** `Renderer25D` projects isometric coordinate vertices rendering lit polygonal paths with distinct shading tones for true 3D spatial depth.
+### 1. Matrix Generation, Capability Registry & The 12 Visual Renderers
+- **`QrStyleRegistry` & `QrGenerator` Core Pipeline:** Binds all 12 `QrStyle` modes (10 canonical EFQRCode styles plus `STYLE_FUNCTION` and `CONNECTED_ORGANIC`) to default module/finder geometry (`Bubble -> Circle`, `Line -> Planets`, `DSJ -> DSJ`) and UI capability flags so unsupported options remain hidden.
+- **Position Detection Pattern (PDP) & Eye Split:** Finder patterns ($7 \times 7$ outer rings, $5 \times 5$ separators, $3 \times 3$ inner cores) preserve independent outer/inner eye colors across styles including `LINE`.
+- **Animated Media & Hardware Shaders:** `AnimatedMediaHelper` decodes animated GIF, WebP, and video sources selected via `OpenDocument` across a configurable `12–360` frame budget (`maxAnimationFrames`, default `120`) while `ImageFillRenderer` binds raster textures via Android `BitmapShader`.
+- **Verification Chain (`ScanabilityValidator`):** Validates strict export readiness and preview scannability using **WeChatQRCode CNN** (`WeChatQrDecoder`) first, falling back to **Google ML Kit BarcodeScanning** (`MlKitQrDecoder`) and ZXing for JVM host coverage.
 
 ### 2. Defensive Payload Parsing & Phishing Countermeasures
 - **IDN Homograph & Punycode Normalization:** Web URLs are scrutinized for mixed Cyrillic/Latin homoglyphs and Punycode spoofing (`xn--`) before displaying host identities.
@@ -737,13 +737,13 @@ VeilFrame v2.2.8 integrates the **QR Code Studio (8th Tool)** (`com.veilframe.ap
 - **Strict Intent Guard:** Scanning an external action payload (payment, dialer, browser URL) presents an immutable breakdown card; intents are never dispatched automatically without explicit user authorization.
 
 ### 3. Vector Path Exporter (Pure SVG & PDF)
-- **Zero Pixelation Guarantee:** In addition to high-resolution raster export (PNG and JPEG up to 2048x2048 px), `QrExporter` compiles the active matrix into clean, uncompressed vector SVG `<path>` and `<rect>` elements and PDF document streams.
+- **Zero Pixelation Guarantee:** `SvgExporter` and `QrExporter` compile the active matrix into clean, deterministic vector SVG `<path>` / `<rect>` elements alongside high-resolution PNG/JPEG and looping animated GIF outputs.
 
 ---
 
-## Mobile Shell & Modular Workspace Architecture (ADR 0004)
+## Mobile Shell, Multi-Modal Privacy & Modular Workspace Architecture (ADR 0004)
 
-VeilFrame v2.3.0 locks the architectural design for the Android application shell redesign ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)). The application architecture remains rooted in native **XML layouts, ViewBinding, and Material 3 components**, strictly rejecting a premature Jetpack Compose rewrite while extending the existing controller foundations:
+VeilFrame locks the architectural design for the Android application shell ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)), pairing native **XML layouts, ViewBinding, and Material 3 Expressive components** with a 4-tier surface-container tonal ladder (`colors.xml`, `values-night/colors.xml`), stacked-card Predictive Back choreography (`NavigationMotionController`), multi-modal PII redaction (`PiiMultiModalDetector`, `VideoPiiRedactionEngine`), and LiteRT ColorOS Lift & Shift matting (`ColorOsMattingPlugin`):
 
 ```text
                                  ┌────────────────────────┐
@@ -767,15 +767,15 @@ VeilFrame v2.3.0 locks the architectural design for the Android application shel
       ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┬──────────────────┐
       ▼                  ▼                   ▼                   ▼                  ▼                  ▼
 [ IMAGE STUDIO ]  [ VIDEO STUDIO ]    [ QR STUDIO ]      [ DOC SCANNER ]     [ BG REMOVER ]     [ MOTION LAB ]
-(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • NCNN U^2-Net-P   • RIFE v4 AI (60fps)
-• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • Dual Pan/Zoom    • DIS / Farnebäck
-• Denoise/Enhance • Transcode Engine  • EF Parity        • Page Manager      • Trimap & Guided  • 2× / 4× FPS
-                                                         • Shared Editor     • Refine Brush     • MediaStore Out
+• Multi-Modal PII • Tracked PII Mask  • 12 Art Styles    • Entry             • NCNN U^2-Net-P   • RIFE v4 AI (60fps)
+• Smart Crop      • 2-Pass libvidstab • WeChatQR/ML Kit  • Live Camera       • Lift & Shift TFL • DIS / Farnebäck
+• Compress/EXIF   • Source-Aware Crop • Anim/Vector SVG  • Page Manager      • Refine Brush     • 2× / 4× FPS
+                                                         • Shared Editor     • Trimap & Guided  • MediaStore Out
                                                          • PDF/Img Export
 ```
 
 ### 1. Architectural Invariants
-1. **No Compose Rewrite**: All visual components leverage ViewBinding, XML layouts, and Material Components (M3). Existing production studio controllers (`ImageStudioController`, `VideoStudioController`, `QR Studio`) remain intact without disruptive refactoring.
+1. **Native ViewBinding & Expressive UI**: All visual components leverage ViewBinding, XML layouts, and Material 3 Expressive tonal hierarchy with stacked card transitions (`NavigationMotionController`). Existing studio controllers (`ImageStudioController`, `VideoStudioController`, `QrStudioController`) remain clean and modular without legacy model-manager cross-leaks.
 2. **`WorkspaceRoute` vs `ToolMode` Decoupling**: User-facing navigation routes (`WorkspaceRoute`) are cleanly decoupled from the legacy `ToolMode` batch-execution state machine.
 3. **Tri-Destination Shell**: Navigation is organized around `Home` (intent-first launcher), `Tools` (14-workspace catalogue grouped under Create & Edit, Privacy, Analyze, and Developer with synonym search), and `Library` (recents, resumable multi-page scanner sessions, and export management).
 4. **Window Size Classes**: Adaptive layout adapts to `Compact` (bottom navigation) and `Medium`/`Expanded` (vertical navigation rail) via Android Window Size Classes, eliminating fragile device-name branching.

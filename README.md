@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame/releases/tag/v2.3.0"><img src="https://img.shields.io/badge/version-2.3.0-blue.svg" alt="Version 2.3.0" /></a>
+  <a href="https://github.com/sahir247/VeilFrame/releases/tag/v2.3.1"><img src="https://img.shields.io/badge/version-2.3.1-blue.svg" alt="Version 2.3.1" /></a>
   <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20Linux%20%7C%20macOS-blue.svg" alt="Platform Support" /></a>
   <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/kotlin-Android%20SDK%2035-purple.svg" alt="Kotlin Android SDK 35" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-green.svg" alt="Python 3.10+" /></a>
@@ -47,16 +47,16 @@ To make VeilFrame's extensive toolset easy to navigate, its 14 workspaces are or
 ```
 
 ### 1. <img src="docs/images/icons/upscale.svg" width="18" height="18" alt="" /> AI & Neural Computer Vision
-High-throughput on-device neural processing powered exclusively by **native Tencent NCNN C++** and **Vulkan GPU compute**, completely free of ONNX dependencies:
+High-throughput on-device neural processing powered exclusively by **native Tencent NCNN C++**, **Vulkan GPU compute**, and **LiteRT**, completely free of ONNX dependencies:
 * **AI Image Upscaler:** Native Real-ESRGAN super-resolution (2×, 3×, 4×) with dual Vulkan compute queues, smoothstep Hermite tiled streaming, and dynamic memory governance.
 * **Motion Lab:** AI neural frame synthesis powered by **RIFE v4** with a dedicated default **60 FPS target mode**, dynamic timestep scheduling, and OpenCV DIS/Farnebäck optical flow fallbacks.
-* **Background Remover & Adaptive Detail Enhancer:** High-speed U^2-Net-P segmentation with morphological trimap generation, guided alpha filtering, and an interactive on-screen touch brush/eraser interface.
-* **QR Code Studio:** Cleanroom QR code generation with 11 artistic visual rendering modes, pure vector SVG export, and real-time CameraX WeChatQRCode scanning.
+* **Background Remover & Lift & Shift Matting:** High-speed U^2-Net-P / MODNet NCNN segmentation and **ColorOS Lift & Shift** (`RembgModel.COLOROS_LIFT_SHIFT`, `image_matting_mobile.tflite` LiteRT GPU/XNNPACK) strictly inside Background Remover, with morphological trimap generation, guided alpha filtering, and interactive touch brush/eraser refinement.
+* **QR Code Studio:** Cleanroom QR code generation with **12 visual rendering modes** (`QrStyleRegistry`), capability-filtered controls, pure vector SVG export, configurable multi-frame animated QR generation (photo/GIF/WebP/video), and **WeChatQRCode CNN** + **ML Kit** verification/scanning.
 
-### 2. <img src="docs/images/icons/video_studio.svg" width="18" height="18" alt="" /> Creative Media Processing
+### 2. <img src="docs/images/icons/video_studio.svg" width="18" height="18" alt="" /> Creative Media Processing & AI PII Redaction
 Local-first video and image post-processing with zero loss of control:
-* **Video Studio & Visual Compressor:** Powered by FFmpeg 8.1.7 and Media3 ExoPlayer. Features sub-100ms instant preview via direct URIs, guaranteed universal YUV420p output encoding, timeline range trimming, and adaptive bitrate presets.
-* **Image Studio & Creative Compressor:** Continuous quality scaling (1–100%), multi-lobe Lanczos-3 resampling, aspect-ratio cropping, official Passport 600×600 preset, color grading filters, and export optimization.
+* **Video Studio & Visual Compressor:** Powered by FFmpeg 8.1.7 (`--enable-libvidstab`) and Media3 ExoPlayer. Features sub-100ms instant preview via direct URIs, guaranteed universal YUV420p output encoding, timeline range trimming, **two-pass Pro `libvidstab` EIS** stabilization with full analysis/transform presets, **source-aware multi-aspect AI Auto-Reframe** (`9:16`, `4:5`, `1:1`, `3:4`, `4:3`, `16:9`), adaptive bitrate presets, and **tracked multi-modal temporal AI PII Auto-Redaction** (`delogo` / `drawbox`).
+* **Image Studio & Creative Compressor:** Continuous quality scaling (1–100%), multi-lobe Lanczos-3 resampling, aspect-ratio cropping, official Passport 600×600 preset, color grading filters, EXIF scrubbing, and **multi-modal AI PII Auto-Redaction** across faces, plates/vehicles, screens/laptops, phones/documents, barcodes/QR, and sensitive OCR text.
 
 ### 3. <img src="docs/images/icons/document.svg" width="18" height="18" alt="" /> Document & Vector Studios
 Precision document manipulation and cryptographic signing:
@@ -139,18 +139,19 @@ Motion Lab provides zero-trust, on-device video frame interpolation targeting hi
 * **Optical Flow Fallbacks:** High-speed DIS Optical Flow and dense Farnebäck Optical Flow algorithms.
 * **Clean Gallery Export:** Encodes to universal YUV420p MP4 committed directly to `Movies/VeilFrame` in the device gallery.
 
-### 3. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Background Remover & Adaptive Detail Enhancer
+### 3. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Background Remover & ColorOS Lift & Shift
 Portrait and object matting with transparent alpha output:
-* **Native U^2-Net-P Segmentation:** Quantized U^2-Net-P running in native C++ memory (`matting_jni.cpp`) for instant salient object isolation.
+* **Multi-Engine Segmentation:** Quantized NCNN U^2-Net-P and MODNet (`matting_jni.cpp`) paired with **ColorOS Lift & Shift** (`ColorOsMattingPlugin` running `image_matting_mobile.tflite` via LiteRT GPU delegate with multi-threaded CPU XNNPACK fallback).
 * **Adaptive Detail Enhancer:** Hybrid dual-model segmentation combining coarse masks with morphological trimap generation and a guided alpha filter to retain fine strands of hair and subtle edge contours.
 * **Interactive Touch Refine Canvas (`RefineBrushCanvasView`):** On-screen touch brush and eraser tools with live concentric circle stroke preview, gesture isolation (smooth two-finger panning/zooming), and non-destructive alpha editing.
 * **Direct Gallery Export:** Transparent PNGs saved to `Pictures/VeilFrame` with Android 10+ MediaStore compliance.
 
-### 4. <img src="docs/images/icons/qr.svg" width="20" height="20" alt="" /> QR Code Studio (11 Modes & Live Scanner)
+### 4. <img src="docs/images/icons/qr.svg" width="20" height="20" alt="" /> QR Code Studio (12 Modes, Animated QR & WeChatQR Verification)
 Artistic QR code generation and decoding:
-* **11 Visual Styles:** Basic, Bubble, 2.5D Isometric, DSJ Turntable, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, and Style Function.
-* **Cleanroom QR code parity:** Authoritative Canonical Geometry IR (`effectiveDesignForMode()`) guaranteeing deterministic shape, quiet zone, and node order parity.
-* **Vector & Animated SVG:** Full XML `<path>` and `<rect>` SVG output without raster blurring, plus animated GIF/SVG generation.
+* **12 Visual Styles (`QrStyleRegistry`):** Basic, Bubble (default Circle finder), 2.5D Isometric, DSJ Cross (default DSJ finder), Image Fill, Image Backdrop, Image Resample (Floyd-Steinberg/subject dithering), Line Stripe (default Planets finder & independent inner/outer eye colors), Random Rectangle, Parametric Function, Style Function, and Connected Organic.
+* **Style-Aware State Control & Guided UX:** Controls automatically adapt to the capabilities supported by each selected style, paired with inline contextual help tooltips (`i`), continuous looping animated QR preview, and configurable frame limits (12–360 frames).
+* **Smart Multi-Media Animated Picker (`AnimatedMediaHelper`):** Unified `OpenDocument` media picker accepting still photos, animated GIFs, WebPs, and video files (`image/*`, `video/*`) for Animated Backdrop and Animated Logo inputs, with clean session teardown and resource release on exit.
+* **Pure Vector SVG & Scannability Gate (`ScanabilityValidator`):** XML `<path>` / `<rect>` SVG output (`SvgExporter`) and verification powered primarily by **WeChatQRCode CNN** with **Google ML Kit BarcodeScanning** fallback (and ZXing legacy host coverage).
 * **Live CameraX Scanner:** Real-time WeChatQRCode CNN detector with animated corner-bracket reticle (`QrScanOverlayView`) and safe payload parsing across 11 formats (Wi-Fi, UPI payments, URLs with query strings, contact cards, and plain text).
 
 ### 5. <img src="docs/images/icons/document.svg" width="20" height="20" alt="" /> PDF Studio Hub & Smooth Vector Signature Pad
@@ -166,18 +167,27 @@ Offline camera document capture powered by OpenCV 4.14.0:
 * **Progressive Multi-Page PDF:** Configurable page dimensions (A4, Letter, Legal), margins, and orientation.
 
 ### 7. <img src="docs/images/icons/video_studio.svg" width="20" height="20" alt="" /> Video Studio & Visual Compressor
-Dedicated video compression and editing powered by FFmpeg 8.1.7 and Media3 ExoPlayer:
+Dedicated video compression, editing, and privacy protection powered by FFmpeg 8.1.7 and Media3 ExoPlayer:
 * **Sub-100ms Instant Preview:** Direct URI handoff to Media3 ExoPlayer eliminating intermediate disk copies and cache stalls.
 * **Universal YUV420p Compatibility:** Guaranteed `-pix_fmt yuv420p` encoding across all export paths for seamless playback on legacy hardware decoders and messaging apps.
+* **Two-Pass Pro EIS (`VideoStabilizerEngine` / `VideoEisDialog`):** Full two-pass FFmpeg `libvidstab` pipeline (`vidstabdetect` motion scan → `.trf` trajectory file → `vidstabtransform` + `unsharp` sharpening) with presets (`Handheld Walk`, `Action / Run`, `Cinema Pan`, `Tripod Lock`, `Fast 540p Mode`), tunable shakiness/accuracy/step size, smoothing (`0–30`), adaptive edge zoom (`optzoom`), `gauss`/`opt` camera path solvers, border keep/black fill, `bilinear`/`bicubic` warping, and virtual tripod lock.
+* **Source-Aware Smart AI Auto-Reframe (`VideoReframeEngine` / `VideoReframeDialog`):** Evaluates source dimensions before tracking, disables redundant targets already matching source aspect within 2.5% (e.g., skipping 9:16 on native 9:16 vertical video), recommends alternate ratios (`4:5`, `1:1`, `3:4`, `4:3`, `16:9`, `9:16`), and generates quoted piecewise FFmpeg `crop` trajectories.
+* **Tracked Video PII Auto-Redaction (`VideoPiiRedactionEngine`):** Samples adaptive keyframes (`6–48` frames) across NCNN UltraFace/YOLOv8n, WeChatQRCode/ML Kit barcodes, and ML Kit OCR `PiiTextClassifier`, associates moving detections into identity tracks, bridges short dropouts, coalesces static boxes, subdivides moving targets with velocity-swept intervals, and compresses safely within filter budgets without dropping late-video timestamps.
 * **Visual Scrubber & Presets:** Dual-thumb timeline trimmer and target size budget presets (WhatsApp 16 MB, Discord 25/50 MB, Email 8/25 MB, Web faststart).
 * **Multi-Codec Support:** H.264, H.265, VP9, and AV1 in MP4, MKV, WebM, MOV, and AVI containers.
 
-### 8. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Image Studio & Creative Compressor
-Deep image transformation and compression studio:
+### 8. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Image Studio, Multi-Modal AI PII Redactor & Creative Compressor
+Deep image transformation, compression, and offline PII sanitization studio:
 * **Continuous Quality Compression:** Precision quality scaling (1% to 100%) with empirical output size estimation.
 * **Dimension Scaling & Cropping:** Multi-lobe Lanczos-3 resampling, arbitrary scaling, and aspect-ratio cropping (Free, 1:1, 4:3, 16:9, 9:16).
-* **Official Passport Preset:** Dedicated 600×600 px document export preset with strict 1:1 aspect constraint.
-* **Color Grading & EXIF Scrubbing:** Grayscale, Sepia, Vintage, Cool, and Warm tone grading with zero-leakage metadata scrubbing.
+* **Multi-Modal On-Device PII Auto-Redactor (`PiiMultiModalDetector`):** Combines **UltraFace RFB-320** (faces), **YOLOv8n** (people, vehicles/plates, monitors/TVs/laptop screens, phones/documents), **WeChatQRCode + ML Kit** (QR/barcodes), and **ML Kit TextRecognition + `PiiTextClassifier`** (emails, phones, Luhn-verified card numbers, UPI handles, SSN/PAN/national IDs, API keys/tokens, IPv4 addresses).
+* **Selectable Redaction Styles & Verification (`PiiRedactionDialog`):** Supports Solid Black & Solid White (Layer C with `QualityGate` zero-residual verification) plus Pixelate & Blur obfuscation, alongside isolated studio tooling.
+* **Official Passport Preset & EXIF Scrubbing:** Dedicated 600×600 px 1:1 export preset, tone grading filters, and zero-leakage metadata scrubbing.
+
+### 8b. <img src="docs/images/icons/overview.svg" width="20" height="20" alt="" /> Material 3 Expressive Tonal Hierarchy & Predictive Stacked Navigation
+Modernized Android shell aligning tactile physics with visual hierarchy:
+* **4-Tier Borderless Tonal Ladder:** Structured `vf_container_lowest` → `vf_container_highest` surface separation with section headings and balanced card containment across studios, PDF tools, dashboards, and settings (`values/colors.xml`, `values-night/colors.xml`).
+* **Stacked Card Navigation & Predictive Back:** `NavigationMotionController` delivers parallax-depth stacked page transitions synced with Android Predictive Back swipe previews across tool screens and nested studio modes.
 
 ### 9. <img src="docs/images/icons/security.svg" width="20" height="20" alt="" /> Video Privacy & Bounded Forensic Disruption
 Bounded orthogonal signal perturbations disrupting machine re-identification while preserving perceptual quality:
@@ -220,7 +230,7 @@ Integrated offline GitHub Flavored Markdown workspace:
 
 ## <img src="docs/images/icons/downloads.svg" width="22" height="22" alt="" /> Downloads & Installation
 
-Pre-built release packages are available on the [GitHub Releases Page](https://github.com/sahir247/VeilFrame/releases/tag/v2.3.0):
+Pre-built release packages are available on the [GitHub Releases Page](https://github.com/sahir247/VeilFrame/releases/tag/v2.3.1):
 
 | Platform | Package / Asset | Target Architecture | Notes |
 |---|---|---|---|
@@ -230,11 +240,11 @@ Pre-built release packages are available on the [GitHub Releases Page](https://g
 | **Linux (Portable)** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Portable standalone binary bundle |
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (M1/M2/M3/M4) | Signed desktop application bundle |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (M1/M2/M3/M4) | Portable standalone executable bundle |
-| **Python Package** | `veilframe-2.3.0-py3-none-any.whl` | Universal (`pip install`) | CLI and headless transformation engine |
+| **Python Package** | `veilframe-2.3.1-py3-none-any.whl` | Universal (`pip install`) | CLI and headless transformation engine |
 
 ```bash
 # Install Python package from wheel
-pip install veilframe-2.3.0-py3-none-any.whl
+pip install veilframe-2.3.1-py3-none-any.whl
 
 # Or install from source
 git clone https://github.com/sahir247/VeilFrame.git

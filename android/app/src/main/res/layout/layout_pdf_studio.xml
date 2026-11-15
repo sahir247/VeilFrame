@@ -56,15 +56,11 @@
                 <!-- Search Input Container (collapsible or filter) -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/tilPdfStudioSearch"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
                     android:hint="Search PDF tools..."
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp"
                     app:startIconDrawable="@drawable/ic_search">
 
                     <com.google.android.material.textfield.TextInputEditText
@@ -91,7 +87,7 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipPdfCatAll"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:checked="true"
@@ -99,28 +95,28 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipPdfCatOrganize"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Organize" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipPdfCatConvert"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Convert &amp; OCR" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipPdfCatSecurity"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Security" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipPdfCatPrint"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Print &amp; Forms" />
@@ -158,9 +154,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -208,9 +205,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -268,9 +266,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -318,9 +317,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -378,9 +378,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -428,9 +429,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -500,9 +502,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -550,9 +553,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -610,9 +614,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -660,9 +665,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -720,9 +726,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -770,9 +777,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -842,9 +850,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -892,9 +901,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -952,9 +962,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1002,9 +1013,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1062,9 +1074,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1112,9 +1125,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1184,9 +1198,10 @@
                         android:layout_marginEnd="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1234,9 +1249,10 @@
                         android:layout_marginStart="5dp"
                         android:clickable="true"
                         android:focusable="true"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp">
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1281,13 +1297,14 @@
                     style="@style/Widget.Material3.CardView.Filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
                     android:layout_marginBottom="24dp"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="16dp"
-                    app:cardBackgroundColor="@color/vf_container"
-                    app:strokeColor="@color/vf_surface_variant"
-                    app:strokeWidth="1dp">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"

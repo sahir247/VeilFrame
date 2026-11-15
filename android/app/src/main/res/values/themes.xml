@@ -56,6 +56,8 @@
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.VeilFrame.MaterialAlertDialog</item>
         <item name="linearProgressIndicatorStyle">@style/Widget.VeilFrame.Progress.Thick</item>
         <item name="sliderStyle">@style/Widget.VeilFrame.Slider</item>
+        <item name="spinnerStyle">@style/Widget.VeilFrame.Spinner</item>
+        <item name="android:spinnerStyle">@style/Widget.VeilFrame.Spinner</item>
     </style>
 
     <!-- ============ DIALOG OVERLAY (28dp XL shape retained — expressive-aligned) ============ -->
@@ -133,13 +135,13 @@
     <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:colorBackground">@android:color/black</item>
-        <item name="colorSurface">#000000</item>
-        <item name="colorSurfaceVariant">#0A0A0C</item>
+        <item name="colorSurface">#151720</item>
+        <item name="colorSurfaceVariant">#1E212E</item>
         <item name="colorSurfaceContainerLowest">#000000</item>
-        <item name="colorSurfaceContainerLow">#000000</item>
-        <item name="colorSurfaceContainer">#000000</item>
-        <item name="colorSurfaceContainerHigh">#0B0B0E</item>
-        <item name="colorSurfaceContainerHighest">#121216</item>
+        <item name="colorSurfaceContainerLow">#0D0F14</item>
+        <item name="colorSurfaceContainer">#151720</item>
+        <item name="colorSurfaceContainerHigh">#1E212E</item>
+        <item name="colorSurfaceContainerHighest">#282C3C</item>
         <item name="colorOnSurface">@color/vf_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
         <item name="colorOutlineVariant">#2C2C32</item>

@@ -354,7 +354,8 @@ object SvgExporter {
                     style = design.imageSource,
                     seed = design.resampleStyle.seed,
                     policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy.from(design),
-                    includeCenterAnchors = false
+                    includeCenterAnchors = false,
+                    ditherMode = design.resampleStyle.ditherMode
                 ) { col, row, subX, subY, isCenter ->
                     if (!isCenter) {
                         val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
@@ -821,8 +822,12 @@ object SvgExporter {
         val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
         val hasBackdropImg = design.backdropStyle.image != null
 
-        val posColorHex = hexColor(design.eyeStyle.outerColor ?: design.palette.foreground)
-        val posAlpha = colorAlpha(design.eyeStyle.outerColor ?: design.palette.foreground)
+        val posOuterResolved = design.eyeStyle.outerColor ?: design.palette.foreground
+        val posInnerResolved = design.eyeStyle.innerColor ?: design.palette.foreground
+        val posColorHex = hexColor(posOuterResolved)
+        val posAlpha = colorAlpha(posOuterResolved)
+        val posInnerHex = hexColor(posInnerResolved)
+        val posInnerAlpha = colorAlpha(posInnerResolved)
         val posStyle = design.eyeStyle.style
         val posSize = design.positionSize
 
@@ -889,7 +894,9 @@ object SvgExporter {
                 alpha = posAlpha,
                 idStart = id,
                 qzLeft = qzLeft,
-                qzTop = qzTop
+                qzTop = qzTop,
+                innerColorHex = posInnerHex,
+                innerAlpha = posInnerAlpha
             )
             id = nextId
             sb.append(svgChunk)

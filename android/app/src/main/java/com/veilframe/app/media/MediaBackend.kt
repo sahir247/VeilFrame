@@ -2,6 +2,7 @@ package com.veilframe.app.media
 
 import android.content.Context
 import android.util.Log
+import com.veilframe.app.cv.prnu.PrnuSanitizerEngine
 import com.veilframe.app.privacy.ImageMetadataSanitizer
 import com.veilframe.app.privacy.VideoMetadataSanitizer
 import java.io.File
@@ -31,6 +32,24 @@ interface IMediaBackend {
         stripThumbnails: Boolean = true,
         sanitizeIcc: Boolean = true
     ): Boolean
+
+    fun cleanImageWithDefense(
+        inputPath: String,
+        outputPath: String,
+        defenseMode: String = "stealth",
+        stripExif: Boolean = true,
+        quality: Int = 90,
+        targetExtension: String? = null,
+        onMilestone: ((String) -> Unit)? = null
+    ): Boolean = cleanImage(
+        inputPath = inputPath,
+        outputPath = outputPath,
+        stripExif = stripExif,
+        quality = quality,
+        targetExtension = targetExtension,
+        stripThumbnails = true,
+        sanitizeIcc = true
+    )
 
     fun getBackendDiagnostics(): String
 }
@@ -105,6 +124,41 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
             ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
         }
         return success && outFile.exists() && outFile.length() > 0L
+    }
+
+    override fun cleanImageWithDefense(
+        inputPath: String,
+        outputPath: String,
+        defenseMode: String,
+        stripExif: Boolean,
+        quality: Int,
+        targetExtension: String?,
+        onMilestone: ((String) -> Unit)?
+    ): Boolean {
+        val mode = when (defenseMode.lowercase()) {
+            "stealth", "hybrid", "2-stage", "stealth (2-stage hybrid)", "stealth (2-stage)" ->
+                PrnuSanitizerEngine.DefenseMode.STEALTH_HYBRID
+            "standard", "remap", "fused remap", "standard (fused remap)" ->
+                PrnuSanitizerEngine.DefenseMode.STANDARD_FUSED_REMAP
+            "high suppression", "suppression", "max suppression", "maximum privacy" ->
+                PrnuSanitizerEngine.DefenseMode.HIGH_SUPPRESSION
+            "high", "high defense" ->
+                PrnuSanitizerEngine.DefenseMode.HIGH_DEFENSE
+            "metadata only", "metadata" ->
+                PrnuSanitizerEngine.DefenseMode.METADATA_ONLY
+            else ->
+                PrnuSanitizerEngine.DefenseMode.STEALTH_HYBRID
+        }
+        val inFile = File(inputPath)
+        val outFile = File(outputPath)
+        return PrnuSanitizerEngine.sanitizeImageFile(
+            context = context,
+            inputFile = inFile,
+            outputFile = outFile,
+            mode = mode,
+            targetQuality = quality,
+            onMilestone = onMilestone
+        )
     }
 
     override fun getBackendDiagnostics(): String {

@@ -5,19 +5,19 @@
   ~ All legacy vf_* names retained for code/layout compatibility.
 -->
 <resources>
-    <!-- Base Surfaces (Charcoal Matte Dark) -->
-    <color name="vf_bg_dark">#121214</color>
-    <color name="vf_background">#121214</color>
-    <color name="vf_surface">#1C1C20</color>
-    <color name="vf_surface_variant">#27272A</color>
+    <!-- Base Surfaces (Deep slate-charcoal canvas + stepped card elevation) -->
+    <color name="vf_bg_dark">#101116</color>
+    <color name="vf_background">#101116</color>
+    <color name="vf_surface">#21242F</color>
+    <color name="vf_surface_variant">#2A2E3B</color>
     <color name="vf_surface_stroke">#3F3F46</color>
 
-    <!-- Expressive surface-container ladder (Charcoal Matte Dark) -->
-    <color name="vf_container_lowest">#0E0E10</color>
-    <color name="vf_container_low">#16161A</color>
-    <color name="vf_container">#1C1C20</color>
-    <color name="vf_container_high">#242428</color>
-    <color name="vf_container_highest">#2C2C32</color>
+    <!-- Expressive surface-container ladder (4-tier tonal separation without borders) -->
+    <color name="vf_container_lowest">#0A0B0F</color>
+    <color name="vf_container_low">#181A22</color>
+    <color name="vf_container">#21242F</color>
+    <color name="vf_container_high">#2A2E3B</color>
+    <color name="vf_container_highest">#343948</color>
 
     <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
     <color name="vf_primary">#E4E4E7</color>

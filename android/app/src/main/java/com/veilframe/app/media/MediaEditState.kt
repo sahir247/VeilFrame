@@ -1,5 +1,7 @@
 package com.veilframe.app.media
 
+import android.graphics.Bitmap
+
 /**
  * Output format mode for video/animation pipelines.
  */
@@ -117,7 +119,13 @@ data class ImageEditState(
     var exifSoftware: String = "",
     var exifDateTime: String = "",
     var exifGps: String = "",
-    var piiDetections: List<com.veilframe.app.privacy.PiiDetection> = emptyList()
+    var piiDetections: List<com.veilframe.app.privacy.PiiDetection> = emptyList(),
+    var piiRedactionStyle: com.veilframe.app.privacy.PiiRedactionStyle = com.veilframe.app.privacy.PiiRedactionStyle.SOLID_BLACK,
+    var blurScope: ImageBlurScope = ImageBlurScope.NONE,
+    var blurType: ImageBlurType = ImageBlurType.GAUSSIAN,
+    var blurRadius: Int = 25,
+    var blurBrushMask: Bitmap? = null,
+    var blurBgSubjectCutout: Bitmap? = null
 ) {
     fun isCropped(): Boolean {
         return (cropAspect != "Free" && cropAspect != "Original") ||
@@ -140,7 +148,8 @@ data class ImageEditState(
                 exifSoftware.isNotEmpty() ||
                 exifDateTime.isNotEmpty() ||
                 exifGps.isNotEmpty() ||
-                piiDetections.isNotEmpty()
+                piiDetections.isNotEmpty() ||
+                (blurScope != ImageBlurScope.NONE)
     }
 
     fun reset() {
@@ -171,10 +180,19 @@ data class ImageEditState(
         exifDateTime = ""
         exifGps = ""
         piiDetections = emptyList()
+        piiRedactionStyle = com.veilframe.app.privacy.PiiRedactionStyle.SOLID_BLACK
+        blurScope = ImageBlurScope.NONE
+        blurType = ImageBlurType.GAUSSIAN
+        blurRadius = 25
+        blurBrushMask = null
+        blurBgSubjectCutout = null
     }
 
     fun deepCopy(): ImageEditState {
-        return this.copy()
+        return this.copy(
+            blurBrushMask = blurBrushMask?.let { Bitmap.createBitmap(it) },
+            blurBgSubjectCutout = blurBgSubjectCutout?.let { Bitmap.createBitmap(it) }
+        )
     }
 
     fun copyFrom(other: ImageEditState) {
@@ -205,7 +223,33 @@ data class ImageEditState(
         exifDateTime = other.exifDateTime
         exifGps = other.exifGps
         piiDetections = other.piiDetections
+        piiRedactionStyle = other.piiRedactionStyle
+        blurScope = other.blurScope
+        blurType = other.blurType
+        blurRadius = other.blurRadius
+        blurBrushMask = other.blurBrushMask?.let { Bitmap.createBitmap(it) }
+        blurBgSubjectCutout = other.blurBgSubjectCutout?.let { Bitmap.createBitmap(it) }
     }
+}
+
+enum class ImageBlurScope(val label: String) {
+    NONE("None"),
+    BACKGROUND("Background Blur"),
+    FULL("Full Photo Blur"),
+    BRUSH("Manual Brush Canvas")
+}
+
+enum class ImageBlurType(val label: String) {
+    GAUSSIAN("Gaussian Blur"),
+    BOX("Box Blur"),
+    MOSAIC("Mosaic / Pixelate"),
+    GLASS("Frosted Glass"),
+    MOTION("Motion Blur"),
+    BOKEH("Lens Bokeh"),
+    SOLID("Blackout Fill"),
+    PAINT("Artistic Paint"),
+    WATER("Water Splash"),
+    ZOOM("Zoom Radial")
 }
 
 /**
@@ -243,7 +287,12 @@ data class VideoEditState(
     var colorProfile: String = "Original",
     var dynamicCropFilter: String? = null,
     var isStabilized: Boolean = false,
-    var stabilizationMarginPercent: Int = 5
+    var isStabilizationBaked: Boolean = false,
+    var stabilizationMarginPercent: Int = 5,
+    var eisConfig: VideoEisConfig = VideoEisConfig(),
+    var isPiiBaked: Boolean = false,
+    var piiRedactionFilter: String? = null,
+    var piiRedactionSummary: String = ""
 ) {
     fun hasEdits(): Boolean {
         return (trimStartMs > 0L) ||
@@ -261,7 +310,9 @@ data class VideoEditState(
                 (customCropPercent > 0) ||
                 (fps != null) ||
                 (!dynamicCropFilter.isNullOrBlank()) ||
-                isStabilized
+                isStabilized ||
+                isPiiBaked ||
+                (!piiRedactionFilter.isNullOrBlank())
     }
 
     fun hasVideoTransforms(): Boolean {
@@ -275,7 +326,9 @@ data class VideoEditState(
                 (customCropPercent > 0) ||
                 (fps != null && fps!! > 0) ||
                 (!dynamicCropFilter.isNullOrBlank()) ||
-                isStabilized
+                isStabilized ||
+                isPiiBaked ||
+                (!piiRedactionFilter.isNullOrBlank())
     }
 
     val trimmedDurationMs: Long
@@ -305,7 +358,12 @@ data class VideoEditState(
         fps = null
         dynamicCropFilter = null
         isStabilized = false
+        isStabilizationBaked = false
         stabilizationMarginPercent = 5
+        eisConfig = VideoEisConfig()
+        isPiiBaked = false
+        piiRedactionFilter = null
+        piiRedactionSummary = ""
     }
 
     fun copyFrom(other: VideoEditState) {
@@ -328,7 +386,12 @@ data class VideoEditState(
         colorProfile = other.colorProfile
         dynamicCropFilter = other.dynamicCropFilter
         isStabilized = other.isStabilized
+        isStabilizationBaked = other.isStabilizationBaked
         stabilizationMarginPercent = other.stabilizationMarginPercent
+        eisConfig = other.eisConfig
+        isPiiBaked = other.isPiiBaked
+        piiRedactionFilter = other.piiRedactionFilter
+        piiRedactionSummary = other.piiRedactionSummary
     }
 }
 

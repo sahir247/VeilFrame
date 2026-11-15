@@ -3,9 +3,11 @@ package com.veilframe.app.media
 import android.graphics.Bitmap
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.ReturnCode
 import com.arthenica.ffmpegkit.Statistics
 import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.compression.ImageCompressionEngine
 import java.io.File
 import java.util.Locale
@@ -64,7 +66,8 @@ object VideoProcessor {
         editState: VideoEditState,
         outputConfig: VideoOutputConfig,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
-        onSessionId: ((Long) -> Unit)? = null
+        onSessionId: ((Long) -> Unit)? = null,
+        onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
     ): CompressionResult {
         val trimStartSec = editState.trimStartSeconds
         val trimDurationSec = editState.trimmedDurationSeconds
@@ -113,6 +116,7 @@ object VideoProcessor {
                 outFile.name.endsWith(".gif", ignoreCase = true)
 
         val isMuted = isGifMode || audioActionStr == "mute" || outputConfig.audioCodec.equals("mute", ignoreCase = true)
+        val shouldStabilizeInPass = editState.isStabilized && !editState.isStabilizationBaked
 
         // Route WhatsApp Status destination directly to dedicated WhatsappStatusMediaPipeline.
         // Distinct from generic "WhatsApp (16 MB)" chat attachment preset.
@@ -123,86 +127,191 @@ object VideoProcessor {
             val cropSpec = if (editState.customCropPercent > 0) {
                 CropSpec.fromCustomCropPercent(editState.customCropPercent)
             } else null
-            return com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
-                srcFile = srcFile,
-                outFile = outFile,
-                resolution = statusResolution,
-                aspect = editState.aspect,
-                cropSpec = cropSpec,
-                trimStartSec = trimStartSec,
-                trimDurationSec = trimDurationSec,
-                flipH = editState.flipH,
-                flipV = editState.flipV,
-                rotate = editState.rotationAngle,
-                speed = editState.speed,
-                colorProfile = editState.colorProfile,
-                isMuted = isMuted,
-                onStatistics = onStatistics,
-                onSessionId = onSessionId
-            )
+
+            val needsPreFilterPass = shouldStabilizeInPass ||
+                !editState.dynamicCropFilter.isNullOrBlank() ||
+                !editState.piiRedactionFilter.isNullOrBlank()
+
+            if (!needsPreFilterPass) {
+                return com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
+                    srcFile = srcFile,
+                    outFile = outFile,
+                    resolution = statusResolution,
+                    aspect = editState.aspect,
+                    cropSpec = cropSpec,
+                    trimStartSec = trimStartSec,
+                    trimDurationSec = trimDurationSec,
+                    flipH = editState.flipH,
+                    flipV = editState.flipV,
+                    rotate = editState.rotationAngle,
+                    speed = editState.speed,
+                    colorProfile = editState.colorProfile,
+                    isMuted = isMuted,
+                    onStatistics = onStatistics,
+                    onSessionId = onSessionId
+                )
+            }
+
+            // Apply AI PII redaction / 2-pass EIS / dynamic reframe in a clean high-quality pre-pass
+            // before handing off to WhatsappStatusMediaPipeline so HDR/bitrate/29.97fps invariants stay intact.
+            val tmpParent = outFile.parentFile ?: srcFile.parentFile ?: File(System.getProperty("java.io.tmpdir") ?: ".")
+            val prePassFile = File.createTempFile("vf_status_pre_", ".mp4", tmpParent)
+            return try {
+                val preRes = executeNativeFFmpeg(
+                    srcFile = srcFile,
+                    outFile = prePassFile,
+                    trimStartSec = trimStartSec,
+                    trimDurationSec = trimDurationSec,
+                    resolutionStr = null,
+                    aspectStr = null,
+                    dynamicCropFilter = editState.dynamicCropFilter,
+                    isStabilized = shouldStabilizeInPass,
+                    stabilizationMarginPercent = editState.stabilizationMarginPercent,
+                    eisConfig = editState.eisConfig,
+                    piiRedactionFilter = editState.piiRedactionFilter,
+                    speed = 1.0f,
+                    colorProfile = "Original",
+                    audioAction = if (isMuted) "mute" else "keep",
+                    audioVolume = 1.0f,
+                    audioChannels = "auto",
+                    audioCodec = if (isMuted) "mute" else "copy",
+                    codec = "libx264",
+                    crf = 16,
+                    compressionPreset = "fast",
+                    flipH = false,
+                    flipV = false,
+                    rotate = 0,
+                    customCropPercent = 0,
+                    fps = null,
+                    targetSizeMb = null,
+                    pixelFormat = "yuv420p",
+                    isGifMode = false,
+                    bitrateReductionFactor = 1.0,
+                    targetPreset = null,
+                    onStatistics = null,
+                    onSessionId = onSessionId,
+                    onProgressPhase = onProgressPhase
+                )
+                if (!preRes.success || !prePassFile.exists() || prePassFile.length() == 0L) {
+                    preRes.copy(outputPath = outFile.absolutePath)
+                } else {
+                    com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
+                        srcFile = prePassFile,
+                        outFile = outFile,
+                        resolution = statusResolution,
+                        aspect = editState.aspect,
+                        cropSpec = cropSpec,
+                        trimStartSec = 0.0,
+                        trimDurationSec = 0.0,
+                        flipH = editState.flipH,
+                        flipV = editState.flipV,
+                        rotate = editState.rotationAngle,
+                        speed = editState.speed,
+                        colorProfile = editState.colorProfile,
+                        isMuted = isMuted,
+                        onStatistics = onStatistics,
+                        onSessionId = onSessionId
+                    )
+                }
+            } finally {
+                if (prePassFile.exists()) prePassFile.delete()
+            }
         }
 
         if (targetSizeMb != null && targetSizeMb > 0) {
             val targetBytes = (targetSizeMb * 1024.0 * 1024.0).toLong()
-            var attempt = 0
-            var reduction = 1.0
-            var lastResult: CompressionResult? = null
-            while (attempt < 3) {
-                val res = executeNativeFFmpeg(
-                    srcFile = srcFile,
-                    outFile = outFile,
-                    trimStartSec = trimStartSec,
-                    trimDurationSec = trimDurationSec,
-                    resolutionStr = resolutionStr,
-                    aspectStr = aspectStr,
-                    dynamicCropFilter = editState.dynamicCropFilter,
-                    isStabilized = editState.isStabilized,
-                    stabilizationMarginPercent = editState.stabilizationMarginPercent,
-                    speed = editState.speed,
-                    colorProfile = editState.colorProfile,
-                    audioAction = audioActionStr,
-                    audioVolume = editState.audioVolume,
-                    audioChannels = editState.audioChannels,
-                    audioCodec = outputConfig.audioCodec,
-                    codec = codecParam,
-                    crf = outputConfig.crf,
-                    compressionPreset = outputConfig.compressionPreset,
-                    flipH = editState.flipH,
-                    flipV = editState.flipV,
-                    rotate = editState.rotationAngle,
-                    customCropPercent = editState.customCropPercent,
-                    fps = editState.fps,
-                    targetSizeMb = targetSizeMb,
-                    pixelFormat = outputConfig.pixelFormat,
-                    isGifMode = isGifMode,
-                    bitrateReductionFactor = reduction,
-                    targetPreset = outputConfig.targetPreset,
-                    onStatistics = onStatistics,
-                    onSessionId = onSessionId
+            var sharedTrfFile: File? = null
+            var resolvedSharedEis: VideoEisConfig? = null
+            try {
+                if (shouldStabilizeInPass) {
+                    val cfg = resolveEisConfig(editState)
+                    resolvedSharedEis = cfg
+                    val trfParent = outFile.parentFile ?: srcFile.parentFile ?: File(System.getProperty("java.io.tmpdir") ?: ".")
+                    val pass1 = runVidstabPass1(
+                        srcFile = srcFile,
+                        outFile = outFile,
+                        trfParent = trfParent,
+                        trimStartSec = trimStartSec,
+                        trimDurationSec = trimDurationSec,
+                        eisConfig = cfg,
+                        onStatistics = onStatistics,
+                        onSessionId = onSessionId,
+                        onProgressPhase = onProgressPhase
+                    )
+                    if (pass1.errorResult != null) {
+                        return pass1.errorResult
+                    }
+                    sharedTrfFile = pass1.trfFile
+                }
+
+                var attempt = 0
+                var reduction = 1.0
+                var lastResult: CompressionResult? = null
+                while (attempt < 3) {
+                    val res = executeNativeFFmpeg(
+                        srcFile = srcFile,
+                        outFile = outFile,
+                        trimStartSec = trimStartSec,
+                        trimDurationSec = trimDurationSec,
+                        resolutionStr = resolutionStr,
+                        aspectStr = aspectStr,
+                        dynamicCropFilter = editState.dynamicCropFilter,
+                        isStabilized = shouldStabilizeInPass,
+                        stabilizationMarginPercent = editState.stabilizationMarginPercent,
+                        eisConfig = resolvedSharedEis ?: editState.eisConfig,
+                        piiRedactionFilter = editState.piiRedactionFilter,
+                        speed = editState.speed,
+                        colorProfile = editState.colorProfile,
+                        audioAction = audioActionStr,
+                        audioVolume = editState.audioVolume,
+                        audioChannels = editState.audioChannels,
+                        audioCodec = outputConfig.audioCodec,
+                        codec = codecParam,
+                        crf = outputConfig.crf,
+                        compressionPreset = outputConfig.compressionPreset,
+                        flipH = editState.flipH,
+                        flipV = editState.flipV,
+                        rotate = editState.rotationAngle,
+                        customCropPercent = editState.customCropPercent,
+                        fps = editState.fps,
+                        targetSizeMb = targetSizeMb,
+                        pixelFormat = outputConfig.pixelFormat,
+                        isGifMode = isGifMode,
+                        bitrateReductionFactor = reduction,
+                        targetPreset = outputConfig.targetPreset,
+                        precomputedTrfFile = sharedTrfFile,
+                        onStatistics = onStatistics,
+                        onSessionId = onSessionId,
+                        onProgressPhase = onProgressPhase
+                    )
+                    lastResult = res
+                    if (!res.success) {
+                        return res
+                    }
+                    if (res.sizeBytes <= targetBytes) {
+                        return res
+                    }
+                    // Overshot target ceiling: reduce bitrate by 15% and retry (max 2 retries)
+                    attempt++
+                    reduction *= 0.85
+                    Log.w(TAG, "Output size ${formatBytes(res.sizeBytes)} exceeded target ceiling ${formatBytes(targetBytes)}. Retry attempt $attempt/2 with 15% bitrate reduction (factor $reduction)...")
+                }
+                val finalSize = lastResult?.sizeBytes ?: outFile.length()
+                val errMsg = "SIZE_LIMIT_UNACHIEVABLE: Encoded output ($finalSize bytes) exceeds target ceiling ($targetBytes bytes) after 2 retries."
+                Log.e(TAG, errMsg)
+                return CompressionResult(
+                    success = false,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = finalSize,
+                    savingsPercent = lastResult?.savingsPercent ?: 0.0,
+                    duration = trimDurationSec,
+                    error = errMsg
                 )
-                lastResult = res
-                if (!res.success) {
-                    return res
+            } finally {
+                if (sharedTrfFile != null && sharedTrfFile.exists()) {
+                    sharedTrfFile.delete()
                 }
-                if (res.sizeBytes <= targetBytes) {
-                    return res
-                }
-                // Overshot target ceiling: reduce bitrate by 15% and retry (max 2 retries)
-                attempt++
-                reduction *= 0.85
-                Log.w(TAG, "Output size ${formatBytes(res.sizeBytes)} exceeded target ceiling ${formatBytes(targetBytes)}. Retry attempt $attempt/2 with 15% bitrate reduction (factor $reduction)...")
             }
-            val finalSize = lastResult?.sizeBytes ?: outFile.length()
-            val errMsg = "SIZE_LIMIT_UNACHIEVABLE: Encoded output ($finalSize bytes) exceeds target ceiling ($targetBytes bytes) after 2 retries."
-            Log.e(TAG, errMsg)
-            return CompressionResult(
-                success = false,
-                outputPath = outFile.absolutePath,
-                sizeBytes = finalSize,
-                savingsPercent = lastResult?.savingsPercent ?: 0.0,
-                duration = trimDurationSec,
-                error = errMsg
-            )
         }
 
         // Authoritative Android FFmpegKit direct argument-array execution layer
@@ -214,8 +323,10 @@ object VideoProcessor {
             resolutionStr = resolutionStr,
             aspectStr = aspectStr,
             dynamicCropFilter = editState.dynamicCropFilter,
-            isStabilized = editState.isStabilized,
+            isStabilized = shouldStabilizeInPass,
             stabilizationMarginPercent = editState.stabilizationMarginPercent,
+            eisConfig = editState.eisConfig,
+            piiRedactionFilter = editState.piiRedactionFilter,
             speed = editState.speed,
             colorProfile = editState.colorProfile,
             audioAction = audioActionStr,
@@ -236,7 +347,8 @@ object VideoProcessor {
             bitrateReductionFactor = 1.0,
             targetPreset = outputConfig.targetPreset,
             onStatistics = onStatistics,
-            onSessionId = onSessionId
+            onSessionId = onSessionId,
+            onProgressPhase = onProgressPhase
         )
     }
 
@@ -258,6 +370,293 @@ object VideoProcessor {
         return process(srcFile, outFile, state, outputConfig)
     }
 
+    internal fun shouldSkipResolutionAfter540pEis(
+        resolutionStr: String?,
+        isStabilized: Boolean,
+        eisConfig: VideoEisConfig
+    ): Boolean {
+        return isStabilized &&
+            eisConfig.downscaleTo540p &&
+            (resolutionStr == "1080p" || resolutionStr == "720p")
+    }
+
+    private fun resolveEisConfig(
+        eisConfig: VideoEisConfig,
+        stabilizationMarginPercent: Int
+    ): VideoEisConfig {
+        return if (eisConfig.zoomPercent == 0 && stabilizationMarginPercent != 5 && eisConfig.presetProfile == EisPresetProfile.HANDHELD_WALK) {
+            eisConfig.copy(zoomPercent = stabilizationMarginPercent.coerceIn(0, 30)).clamped()
+        } else {
+            eisConfig.clamped()
+        }
+    }
+
+    private fun resolveEisConfig(editState: VideoEditState): VideoEisConfig {
+        return resolveEisConfig(editState.eisConfig, editState.stabilizationMarginPercent)
+    }
+
+    private data class VidstabPass1Outcome(
+        val trfFile: File? = null,
+        val errorResult: CompressionResult? = null
+    )
+
+    private fun runVidstabPass1(
+        srcFile: File,
+        outFile: File,
+        trfParent: File,
+        trimStartSec: Double,
+        trimDurationSec: Double,
+        eisConfig: VideoEisConfig,
+        onStatistics: ((encodedMs: Long) -> Unit)?,
+        onSessionId: ((Long) -> Unit)?,
+        onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)?
+    ): VidstabPass1Outcome {
+        val trfFile = File.createTempFile("vf_vidstab_", ".trf", trfParent)
+        val effectiveDurMs = (trimDurationSec * 1000.0).coerceAtLeast(1000.0)
+        val pass1Cmd = mutableListOf<String>().apply {
+            add("-y")
+            add("-nostdin")
+            add("-filter_threads"); add("1")
+            add("-filter_complex_threads"); add("1")
+            if (trimStartSec > 0.05) {
+                add("-ss")
+                add(String.format(Locale.US, "%.3f", trimStartSec))
+            }
+            if (trimDurationSec > 0.05) {
+                add("-t")
+                add(String.format(Locale.US, "%.3f", trimDurationSec))
+            }
+            add("-threads"); add("2")
+            add("-i"); add(srcFile.absolutePath)
+            add("-map"); add("0:v:0")
+            add("-an"); add("-sn"); add("-dn")
+            add("-vf"); add(VideoStabilizerEngine.buildVidstabDetectFilter(trfFile.absolutePath, eisConfig))
+            add("-f"); add("null")
+            add("-")
+        }
+        Log.d(TAG, "Executing EIS Pass 1 (vidstabdetect): -vf ${VideoStabilizerEngine.buildVidstabDetectFilter("[TRF_PATH]", eisConfig)}")
+        val pass1Session = runFFmpegSession(
+            cmdArray = pass1Cmd.toTypedArray(),
+            onStatistics = { encMs ->
+                val rawRatio = (encMs / effectiveDurMs).coerceIn(0.0, 1.0)
+                val weightedPct = (rawRatio * 45.0).toInt().coerceIn(0, 45)
+                onProgressPhase?.invoke("Step 1/2: Analyzing motion", encMs, weightedPct)
+                onStatistics?.invoke((encMs * 0.45).toLong())
+            },
+            onSessionId = onSessionId
+        )
+        val p1Rc = pass1Session?.returnCode
+        if (!ReturnCode.isSuccess(p1Rc) || !trfFile.exists() || trfFile.length() == 0L) {
+            if (trfFile.exists()) trfFile.delete()
+            val tailLogs = (pass1Session?.allLogsAsString ?: "No Pass 1 logs").lines().takeLast(12).joinToString("\n")
+            val errMsg = if (ReturnCode.isCancel(p1Rc)) {
+                "Video stabilization cancelled during motion analysis"
+            } else {
+                "EIS Pass 1 (vidstabdetect) failed (code $p1Rc)\n\nFFmpeg Log:\n$tailLogs"
+            }
+            Log.e(TAG, errMsg)
+            return VidstabPass1Outcome(
+                errorResult = CompressionResult(
+                    success = false,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = 0L,
+                    error = errMsg
+                )
+            )
+        }
+        return VidstabPass1Outcome(trfFile = trfFile)
+    }
+
+    /**
+     * Dedicated standalone two-pass Electronic Image Stabilization (EIS) pipeline.
+     * Executes Pass 1 (vidstabdetect motion estimation) followed immediately by Pass 2
+     * (vidstabtransform frame warping & edge sharpening) without monolithic filter graph concatenation.
+     * Preserves original audio losslessly (-c:a copy) and produces a clean stabilized video file.
+     */
+    fun stabilizeVideoStandalone(
+        srcFile: File,
+        outFile: File,
+        eisConfig: VideoEisConfig,
+        onSessionId: ((Long) -> Unit)? = null,
+        onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
+    ): CompressionResult {
+        val safeConfig = eisConfig.clamped()
+        val trfParent = outFile.parentFile ?: srcFile.parentFile ?: File(System.getProperty("java.io.tmpdir") ?: ".")
+
+        // Pass 1: Motion vector extraction
+        val pass1Outcome = runVidstabPass1(
+            srcFile = srcFile,
+            outFile = outFile,
+            trfParent = trfParent,
+            trimStartSec = 0.0,
+            trimDurationSec = 0.0,
+            eisConfig = safeConfig,
+            onStatistics = null,
+            onSessionId = onSessionId,
+            onProgressPhase = onProgressPhase
+        )
+        if (pass1Outcome.errorResult != null) {
+            return pass1Outcome.errorResult
+        }
+        val trfFile = pass1Outcome.trfFile ?: return CompressionResult(
+            success = false,
+            outputPath = outFile.absolutePath,
+            sizeBytes = 0L,
+            error = "MOTION_ANALYSIS_NO_RESULTS: Motion vector calculation failed."
+        )
+
+        try {
+            // Pass 2: Frame warping & stabilization
+            val transformVf = VideoStabilizerEngine.buildVidstabTransformFilter(trfFile.absolutePath, safeConfig)
+            val cmd = mutableListOf<String>().apply {
+                add("-y")
+                add("-nostdin")
+                add("-threads"); add("2")
+                add("-i"); add(srcFile.absolutePath)
+                add("-map_metadata"); add("-1")
+                add("-map_chapters"); add("-1")
+                add("-vf"); add(transformVf)
+                add("-c:v"); add("libx264")
+                add("-preset"); add("fast")
+                add("-crf"); add("20")
+                add("-pix_fmt"); add("yuv420p")
+                add("-c:a"); add("copy")
+                add("-movflags"); add("+faststart")
+                add(outFile.absolutePath)
+            }
+
+            Log.d(TAG, "Executing Standalone EIS Pass 2 (vidstabtransform): -vf $transformVf")
+            val durMs = try {
+                val mmr = android.media.MediaMetadataRetriever()
+                mmr.setDataSource(srcFile.absolutePath)
+                val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
+                mmr.release()
+                d
+            } catch (_: Throwable) { 1000L }
+
+            val pass2Session = runFFmpegSession(
+                cmdArray = cmd.toTypedArray(),
+                onStatistics = { encMs ->
+                    val ratio = (encMs.toDouble() / durMs.toDouble()).coerceIn(0.0, 1.0)
+                    val pct = (45 + (ratio * 55.0)).toInt().coerceIn(45, 100)
+                    onProgressPhase?.invoke("Step 2/2: Stabilizing frames", encMs, pct)
+                },
+                onSessionId = onSessionId
+            )
+
+            val p2Rc = pass2Session?.returnCode
+            if (!ReturnCode.isSuccess(p2Rc) || !outFile.exists() || outFile.length() == 0L) {
+                val tailLogs = (pass2Session?.allLogsAsString ?: "No Pass 2 logs").lines().takeLast(16).joinToString("\n")
+                val errMsg = if (ReturnCode.isCancel(p2Rc)) {
+                    "Video stabilization cancelled by user"
+                } else {
+                    "STABILIZATION_FAILED: EIS Pass 2 failed (code $p2Rc)\n\nFFmpeg Log:\n$tailLogs"
+                }
+                Log.e(TAG, errMsg)
+                return CompressionResult(
+                    success = false,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = 0L,
+                    error = errMsg
+                )
+            }
+
+            val originalSize = srcFile.length()
+            val finalSize = outFile.length()
+            val savings = if (originalSize > 0) ((originalSize - finalSize).toDouble() / originalSize.toDouble()) * 100.0 else 0.0
+
+            return CompressionResult(
+                success = true,
+                outputPath = outFile.absolutePath,
+                sizeBytes = finalSize,
+                savingsPercent = savings,
+                error = null
+            )
+        } finally {
+            if (trfFile.exists()) {
+                trfFile.delete()
+            }
+        }
+    }
+
+    /**
+     * Dedicated standalone Video PII Redaction execution pipeline.
+     * Bakes the temporal redaction filter graph directly into the video file,
+     * preserving high visual fidelity (crf 18, fast preset) and original audio losslessly (-c:a copy).
+     */
+    fun redactVideoStandalone(
+        srcFile: File,
+        outFile: File,
+        filterChain: String,
+        onSessionId: ((Long) -> Unit)? = null,
+        onProgress: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
+    ): CompressionResult {
+        val durMs = try {
+            val mmr = android.media.MediaMetadataRetriever()
+            mmr.setDataSource(srcFile.absolutePath)
+            val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
+            mmr.release()
+            d
+        } catch (_: Throwable) { 1000L }
+
+        val cmd = mutableListOf<String>().apply {
+            add("-y")
+            add("-nostdin")
+            add("-threads"); add("2")
+            add("-i"); add(srcFile.absolutePath)
+            add("-map_metadata"); add("-1")
+            add("-map_chapters"); add("-1")
+            add("-vf"); add(filterChain)
+            add("-c:v"); add("libx264")
+            add("-preset"); add("fast")
+            add("-crf"); add("18")
+            add("-pix_fmt"); add("yuv420p")
+            add("-c:a"); add("copy")
+            add("-movflags"); add("+faststart")
+            add(outFile.absolutePath)
+        }
+
+        Log.d(TAG, "Executing Standalone Video PII Redaction: -vf $filterChain")
+        val session = runFFmpegSession(
+            cmdArray = cmd.toTypedArray(),
+            onStatistics = { encMs ->
+                val ratio = (encMs.toDouble() / durMs.toDouble()).coerceIn(0.0, 1.0)
+                val pct = (ratio * 100.0).toInt().coerceIn(0, 100)
+                onProgress?.invoke("Redacting video frames", encMs, pct)
+            },
+            onSessionId = onSessionId
+        )
+
+        val rc = session?.returnCode
+        if (!ReturnCode.isSuccess(rc) || !outFile.exists() || outFile.length() == 0L) {
+            val tailLogs = (session?.allLogsAsString ?: "No FFmpeg logs").lines().takeLast(16).joinToString("\n")
+            val errMsg = if (ReturnCode.isCancel(rc)) {
+                "Video PII redaction cancelled by user"
+            } else {
+                "REDACTION_FAILED: Video PII redaction failed (code $rc)\n\nFFmpeg Log:\n$tailLogs"
+            }
+            Log.e(TAG, errMsg)
+            return CompressionResult(
+                success = false,
+                outputPath = outFile.absolutePath,
+                sizeBytes = 0L,
+                error = errMsg
+            )
+        }
+
+        val originalSize = srcFile.length()
+        val finalSize = outFile.length()
+        val savings = if (originalSize > 0) ((originalSize - finalSize).toDouble() / originalSize.toDouble()) * 100.0 else 0.0
+
+        return CompressionResult(
+            success = true,
+            outputPath = outFile.absolutePath,
+            sizeBytes = finalSize,
+            savingsPercent = savings,
+            error = null
+        )
+    }
+
     private fun executeNativeFFmpeg(
         srcFile: File,
         outFile: File,
@@ -268,6 +667,8 @@ object VideoProcessor {
         dynamicCropFilter: String? = null,
         isStabilized: Boolean = false,
         stabilizationMarginPercent: Int = 5,
+        eisConfig: VideoEisConfig = VideoEisConfig(),
+        piiRedactionFilter: String? = null,
         speed: Float,
         colorProfile: String = "Original",
         audioAction: String,
@@ -287,15 +688,46 @@ object VideoProcessor {
         isGifMode: Boolean = false,
         bitrateReductionFactor: Double = 1.0,
         targetPreset: String? = null,
+        precomputedTrfFile: File? = null,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
-        onSessionId: ((Long) -> Unit)? = null
+        onSessionId: ((Long) -> Unit)? = null,
+        onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
     ): CompressionResult {
+        var trfFile: File? = precomputedTrfFile
+        val ownsTrfFile = precomputedTrfFile == null
         return try {
             // Delete any stale output from a previous failed encode
             if (outFile.exists()) outFile.delete()
 
+            val effectiveDurMs = (trimDurationSec * 1000.0).coerceAtLeast(1000.0)
+            val resolvedEisConfig = if (isStabilized) {
+                resolveEisConfig(eisConfig, stabilizationMarginPercent)
+            } else {
+                eisConfig
+            }
+
+            if (isStabilized && trfFile == null) {
+                val trfParent = outFile.parentFile ?: srcFile.parentFile ?: File(System.getProperty("java.io.tmpdir") ?: ".")
+                val pass1 = runVidstabPass1(
+                    srcFile = srcFile,
+                    outFile = outFile,
+                    trfParent = trfParent,
+                    trimStartSec = trimStartSec,
+                    trimDurationSec = trimDurationSec,
+                    eisConfig = resolvedEisConfig,
+                    onStatistics = onStatistics,
+                    onSessionId = onSessionId,
+                    onProgressPhase = onProgressPhase
+                )
+                if (pass1.errorResult != null) {
+                    return pass1.errorResult
+                }
+                trfFile = pass1.trfFile
+            }
+
             val cmd = mutableListOf<String>()
             cmd.add("-y")
+            cmd.add("-nostdin")
 
             if (trimStartSec > 0.05) {
                 cmd.add("-ss")
@@ -319,12 +751,13 @@ object VideoProcessor {
             // Video filters
             val vfFilters = mutableListOf<String>()
 
-            if (isStabilized) {
-                // Fail clearly if the native CV runtime is unavailable before using CV-backed stabilization.
-                CvRuntime.requireAvailable()
-                val clampedZoom = stabilizationMarginPercent.coerceIn(0, 20)
-                val filter = com.veilframe.app.cv.motion.VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedZoom)
-                vfFilters.add(filter)
+            // Apply AI PII redaction masks first so frame-space coordinates align prior to warping/scaling/cropping
+            if (!piiRedactionFilter.isNullOrBlank()) {
+                vfFilters.add(piiRedactionFilter)
+            }
+
+            if (isStabilized && trfFile != null) {
+                vfFilters.add(VideoStabilizerEngine.buildVidstabTransformFilter(trfFile!!.absolutePath, resolvedEisConfig))
             }
 
             if (!dynamicCropFilter.isNullOrBlank()) {
@@ -332,6 +765,7 @@ object VideoProcessor {
             } else if (aspectStr != null) {
                 when (aspectStr) {
                     "9:16" -> vfFilters.add("crop=trunc(min(iw\\,ih*9/16)/2)*2:trunc(min(ih\\,iw*16/9)/2)*2")
+                    "4:5" -> vfFilters.add("crop=trunc(min(iw\\,ih*4/5)/2)*2:trunc(min(ih\\,iw*5/4)/2)*2")
                     "1:1" -> vfFilters.add("crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2")
                     "16:9" -> vfFilters.add("crop=trunc(min(iw\\,ih*16/9)/2)*2:trunc(min(ih\\,iw*9/16)/2)*2")
                     "4:3" -> vfFilters.add("crop=trunc(min(iw\\,ih*4/3)/2)*2:trunc(min(ih\\,iw*3/4)/2)*2")
@@ -353,7 +787,12 @@ object VideoProcessor {
                 270 -> vfFilters.add("transpose=2")
             }
 
-            if (resolutionStr != null) {
+            val skipUpscaleOver540p = shouldSkipResolutionAfter540pEis(
+                resolutionStr = resolutionStr,
+                isStabilized = isStabilized,
+                eisConfig = resolvedEisConfig
+            )
+            if (resolutionStr != null && !skipUpscaleOver540p) {
                 when (resolutionStr) {
                     "1080p" -> vfFilters.add("scale=-2:1080")
                     "720p" -> vfFilters.add("scale=-2:720")
@@ -596,7 +1035,9 @@ object VideoProcessor {
             }
 
             // Container-specific flags
-            if (outFile.name.endsWith(".mp4", ignoreCase = true) || outFile.name.endsWith(".mov", ignoreCase = true)) {
+            if (!isGifMode && (outFile.name.endsWith(".mp4", ignoreCase = true) || outFile.name.endsWith(".mov", ignoreCase = true))) {
+                cmd.add("-avoid_negative_ts")
+                cmd.add("make_zero")
                 cmd.add("-movflags")
                 cmd.add("+faststart")
             }
@@ -607,32 +1048,28 @@ object VideoProcessor {
             val sanitizedCmd = cmdArray.map { arg ->
                 if (arg == srcFile.absolutePath) "[INPUT_PATH]"
                 else if (arg == outFile.absolutePath) "[OUTPUT_PATH]"
+                else if (trfFile != null && arg.contains(trfFile!!.absolutePath)) arg.replace(trfFile!!.absolutePath, "[TRF_PATH]")
                 else arg
             }.joinToString(" ")
             Log.d(TAG, "Executing native FFmpegKit with ${cmdArray.size} arguments: $sanitizedCmd")
 
-            var activeSessionId = -1L
-            val resultHolder = arrayOfNulls<com.arthenica.ffmpegkit.FFmpegSession>(1)
-            val latch = java.util.concurrent.CountDownLatch(1)
-
-            // Direct argument array execution — zero shell string concatenation or shell escaping
-            val asyncSession = FFmpegKit.executeWithArgumentsAsync(
-                cmdArray,
-                { session ->
-                    resultHolder[0] = session
-                    latch.countDown()
+            val pass2DurMs = ((trimDurationSec / speed.coerceAtLeast(0.1f)) * 1000.0).coerceAtLeast(1000.0)
+            val session = runFFmpegSession(
+                cmdArray = cmdArray,
+                onStatistics = { encMs ->
+                    if (isStabilized) {
+                        val rawRatio = (encMs / pass2DurMs).coerceIn(0.0, 1.0)
+                        val weightedPct = (45 + (rawRatio * 54.0).toInt()).coerceIn(45, 99)
+                        onProgressPhase?.invoke("Step 2/2: Stabilizing & encoding", encMs, weightedPct)
+                        onStatistics?.invoke((effectiveDurMs * (weightedPct / 100.0)).toLong())
+                    } else {
+                        val pct = ((encMs / pass2DurMs) * 100.0).toInt().coerceIn(0, 99)
+                        onProgressPhase?.invoke("Encoding", encMs, pct)
+                        onStatistics?.invoke(encMs)
+                    }
                 },
-                null,
-                { stats: Statistics ->
-                    val encMs = stats.time.toLong().coerceAtLeast(0L)
-                    onStatistics?.invoke(encMs)
-                }
+                onSessionId = onSessionId
             )
-            activeSessionId = asyncSession?.sessionId ?: -1L
-            onSessionId?.invoke(activeSessionId)
-            latch.await()
-
-            val session = resultHolder[0]
             val returnCode = session?.returnCode
 
             if (ReturnCode.isSuccess(returnCode) && outFile.exists() && outFile.length() > 0L) {
@@ -698,7 +1135,36 @@ object VideoProcessor {
                 sizeBytes = 0L,
                 error = e.message
             )
+        } finally {
+            if (ownsTrfFile && trfFile != null && trfFile.exists()) {
+                trfFile.delete()
+            }
         }
+    }
+
+    private fun runFFmpegSession(
+        cmdArray: Array<String>,
+        onStatistics: ((encodedMs: Long) -> Unit)? = null,
+        onSessionId: ((Long) -> Unit)? = null
+    ): FFmpegSession? {
+        val resultHolder = arrayOfNulls<FFmpegSession>(1)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val asyncSession = FFmpegKit.executeWithArgumentsAsync(
+            cmdArray,
+            { session ->
+                resultHolder[0] = session
+                latch.countDown()
+            },
+            null,
+            { stats: Statistics ->
+                val encMs = stats.time.toLong().coerceAtLeast(0L)
+                onStatistics?.invoke(encMs)
+            }
+        )
+        val activeSessionId = asyncSession?.sessionId ?: -1L
+        onSessionId?.invoke(activeSessionId)
+        latch.await()
+        return resultHolder[0]
     }
 
     private fun formatBytes(bytes: Long): String {

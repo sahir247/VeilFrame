@@ -447,15 +447,18 @@ class ToolExecutionController(
     private suspend fun runImageSanitization(uri: Uri) {
         val state = sessionManager.currentState
         val formatIndex = sessionManager.getSelectedFormatIndex()
-        val quality = when (sessionManager.getSelectedOptionIndex()) {
-            0 -> 95
-            1 -> 90
-            2 -> 85
-            else -> state.sliderValue.toInt().coerceIn(50, 100)
+        val optionIndex = sessionManager.getSelectedOptionIndex()
+        val defenseName = when (optionIndex) {
+            0 -> "stealth"
+            1 -> "standard"
+            2 -> "high suppression"
+            else -> "metadata"
         }
+        val quality = state.sliderValue.toInt().coerceIn(50, 100)
         val stripExif = binding.switchOption1.isChecked
-        val stripThumbnails = binding.switchOption2.isChecked
-        val sanitizeIcc = binding.switchOption3.isChecked
+        val prnuDefense = binding.switchOption2.isChecked
+        val cleanReencode = binding.switchOption3.isChecked
+        val effectiveDefense = if (!prnuDefense && optionIndex != 3) "metadata" else defenseName
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backend = AndroidMediaBackend(activity)
 
@@ -485,8 +488,8 @@ class ToolExecutionController(
             }
 
             withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing ${candidateFiles.size} images (Quality: $quality%)...")
-                onLog("[BATCH] Found ${candidateFiles.size} images with mixed formats. Beginning batch scrubbing...")
+                sessionManager.updateJobState(JobState.PROCESSING, "Purifying ${candidateFiles.size} images (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
+                onLog("[BATCH] Found ${candidateFiles.size} images. Beginning forensic purification (Defense: ${effectiveDefense.uppercase()})...")
             }
 
             var successCount = 0
@@ -507,20 +510,34 @@ class ToolExecutionController(
                     val percent = ((idx * 100) / candidateFiles.size)
                     binding.progressIndicator.isIndeterminate = false
                     binding.progressIndicator.progress = percent
-                    binding.tvProgressDetails.text = "Scrubbing ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
-                    onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Scrubbing ${inputFile.name} -> $targetExt")
+                    binding.tvProgressDetails.text = "Purifying ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
+                    onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Purifying ${inputFile.name} -> $targetExt")
                 }
 
                 val ok = withContext(Dispatchers.IO) {
-                    backend.cleanImage(
-                        inputFile.absolutePath,
-                        outputFile.absolutePath,
-                        stripExif = stripExif,
-                        quality = quality,
-                        targetExtension = targetExt,
-                        stripThumbnails = stripThumbnails,
-                        sanitizeIcc = sanitizeIcc
-                    )
+                    if (effectiveDefense != "metadata") {
+                        backend.cleanImageWithDefense(
+                            inputFile.absolutePath,
+                            outputFile.absolutePath,
+                            defenseMode = effectiveDefense,
+                            stripExif = stripExif,
+                            quality = quality,
+                            targetExtension = targetExt,
+                            onMilestone = { milestone ->
+                                activity.runOnUiThread { onLog(milestone) }
+                            }
+                        )
+                    } else {
+                        backend.cleanImage(
+                            inputFile.absolutePath,
+                            outputFile.absolutePath,
+                            stripExif = stripExif,
+                            quality = quality,
+                            targetExtension = targetExt,
+                            stripThumbnails = true,
+                            sanitizeIcc = true
+                        )
+                    }
                 }
                 if (ok && outputFile.exists() && outputFile.length() > 0) {
                     successCount++
@@ -604,20 +621,34 @@ class ToolExecutionController(
             val outputFile = File(activity.cacheDir, "Cleaned_$timeStamp.$targetExt")
 
             withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels (Quality: $quality%)...")
-                onLog("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
+                sessionManager.updateJobState(JobState.PROCESSING, "Purifying image forensic traces (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
+                onLog("[RUN] Initiating forensic purification (Defense: ${effectiveDefense.uppercase()})...")
             }
 
             val processed = withContext(Dispatchers.IO) {
-                backend.cleanImage(
-                    tempInput.absolutePath,
-                    outputFile.absolutePath,
-                    stripExif = stripExif,
-                    quality = quality,
-                    targetExtension = targetExt,
-                    stripThumbnails = stripThumbnails,
-                    sanitizeIcc = sanitizeIcc
-                )
+                if (effectiveDefense != "metadata") {
+                    backend.cleanImageWithDefense(
+                        tempInput.absolutePath,
+                        outputFile.absolutePath,
+                        defenseMode = effectiveDefense,
+                        stripExif = stripExif,
+                        quality = quality,
+                        targetExtension = targetExt,
+                        onMilestone = { milestone ->
+                            activity.runOnUiThread { onLog(milestone) }
+                        }
+                    )
+                } else {
+                    backend.cleanImage(
+                        tempInput.absolutePath,
+                        outputFile.absolutePath,
+                        stripExif = stripExif,
+                        quality = quality,
+                        targetExtension = targetExt,
+                        stripThumbnails = true,
+                        sanitizeIcc = true
+                    )
+                }
             }
 
             tempInput.delete()
@@ -628,16 +659,16 @@ class ToolExecutionController(
                 state.progressDetailsText = "100% complete"
 
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.COMPLETE, "Image clean: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    sessionManager.updateJobState(JobState.COMPLETE, "Image purified: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
                     binding.progressIndicator.isIndeterminate = false
                     binding.progressIndicator.progress = 100
                     binding.tvProgressDetails.text = "100% complete"
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata stripped"
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • PRNU & Metadata Purified"
 
-                    onLog("[OK] Image scrubbed successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[OK] Image purified successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true

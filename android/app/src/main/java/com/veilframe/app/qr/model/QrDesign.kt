@@ -179,6 +179,11 @@ enum class BackdropBlendMode {
     OVERLAY
 }
 
+enum class ResampleDitherMode {
+    STOCHASTIC_EF,
+    FLOYD_STEINBERG
+}
+
 data class ResampleStyle(
     val seed: Long = 42L,
     val useSourceAsBackdrop: Boolean = false,
@@ -188,7 +193,9 @@ data class ResampleStyle(
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
     val backdropTint: Int? = null,
     val backdropCornerRadius: Float = 0.0f,
-    val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED
+    val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED,
+    val ditherMode: ResampleDitherMode = ResampleDitherMode.STOCHASTIC_EF,
+    val minVersion: Int = 1
 ) {
     /** True if a backdrop image should be rendered (either via an independent backdropBitmap or by reusing sourceImage). */
     val hasBackdrop: Boolean get() = backdropBitmap != null || useSourceAsBackdrop
@@ -784,8 +791,8 @@ data class QrDesign(
                 ),
                 eyeStyle = EyeStyle(
                     style = finderStyle,
-                    outerColor = params.positionColor ?: params.foreground,
-                    innerColor = params.positionColor ?: params.foreground
+                    outerColor = if (params.style == QrStyle.BUBBLE) params.positionColor else (params.positionColor ?: params.foreground),
+                    innerColor = if (params.style == QrStyle.BUBBLE) params.positionColor else (params.positionColor ?: params.foreground)
                 ),
                 palette = PaletteStyle(
                     foreground = params.foreground,

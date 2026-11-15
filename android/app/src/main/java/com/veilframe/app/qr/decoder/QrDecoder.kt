@@ -227,11 +227,26 @@ class MlKitQrDecoder : QrDecoder {
     private val scanner by lazy {
         val options = BarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAllPotentialBarcodes()
             .build()
         BarcodeScanning.getClient(options)
     }
 
-    override suspend fun decode(bitmap: Bitmap): DecodeResult = suspendCancellableCoroutine { cont ->
+    data class DetectionPassResult(
+        val decodeResult: DecodeResult,
+        val candidateBoxes: List<android.graphics.Rect> = emptyList(),
+        val runtimeUnavailable: Boolean = false
+    )
+
+    private fun isRuntimeUnavailableMessage(msg: String?): Boolean {
+        if (msg.isNullOrBlank()) return false
+        return msg.contains("MlKitContext", ignoreCase = true) ||
+            msg.contains("not initialized", ignoreCase = true) ||
+            msg.contains("dynamite", ignoreCase = true) ||
+            msg.contains("UnsatisfiedLinkError", ignoreCase = true)
+    }
+
+    suspend fun decodeWithCandidateBoxes(bitmap: Bitmap): DetectionPassResult = suspendCancellableCoroutine { cont ->
         val startTime = System.currentTimeMillis()
         try {
             val image = InputImage.fromBitmap(bitmap, 0)
@@ -240,24 +255,31 @@ class MlKitQrDecoder : QrDecoder {
             task.addOnSuccessListener(executor) { barcodes ->
                 if (!cont.isActive) return@addOnSuccessListener
                 val latency = System.currentTimeMillis() - startTime
-                val found = barcodes.firstOrNull()
-                if (found != null && found.rawValue != null) {
+                val found = barcodes.firstOrNull { !it.rawValue.isNullOrEmpty() }
+                val boxes = barcodes.mapNotNull { it.boundingBox }.filter { it.width() > 0 && it.height() > 0 }
+                if (found?.rawValue != null) {
                     cont.resume(
-                        DecodeResult(
-                            success = true,
-                            text = found.rawValue,
-                            latencyMs = latency,
-                            decoderId = id
+                        DetectionPassResult(
+                            decodeResult = DecodeResult(
+                                success = true,
+                                text = found.rawValue,
+                                latencyMs = latency,
+                                decoderId = id
+                            ),
+                            candidateBoxes = boxes
                         )
                     )
                 } else {
                     cont.resume(
-                        DecodeResult(
-                            success = false,
-                            text = null,
-                            latencyMs = latency,
-                            error = "No barcode found",
-                            decoderId = id
+                        DetectionPassResult(
+                            decodeResult = DecodeResult(
+                                success = false,
+                                text = null,
+                                latencyMs = latency,
+                                error = "No barcode found",
+                                decoderId = id
+                            ),
+                            candidateBoxes = boxes
                         )
                     )
                 }
@@ -265,32 +287,197 @@ class MlKitQrDecoder : QrDecoder {
             task.addOnFailureListener(executor) { exception ->
                 if (!cont.isActive) return@addOnFailureListener
                 val latency = System.currentTimeMillis() - startTime
+                val msg = exception.message ?: "ML Kit error"
                 cont.resume(
-                    DecodeResult(
-                        success = false,
-                        text = null,
-                        latencyMs = latency,
-                        error = exception.message ?: "ML Kit error",
-                        decoderId = id
+                    DetectionPassResult(
+                        decodeResult = DecodeResult(
+                            success = false,
+                            text = null,
+                            latencyMs = latency,
+                            error = msg,
+                            decoderId = id
+                        ),
+                        runtimeUnavailable = isRuntimeUnavailableMessage(msg)
                     )
                 )
             }
             cont.invokeOnCancellation {
                 // Cooperative cancellation check in callbacks via cont.isActive
             }
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             val latency = System.currentTimeMillis() - startTime
+            val msg = t.message ?: "Failed to process bitmap"
             if (cont.isActive) {
                 cont.resume(
-                    DecodeResult(
-                        success = false,
-                        text = null,
-                        latencyMs = latency,
-                        error = e.message ?: "Failed to process bitmap",
-                        decoderId = id
+                    DetectionPassResult(
+                        decodeResult = DecodeResult(
+                            success = false,
+                            text = null,
+                            latencyMs = latency,
+                            error = msg,
+                            decoderId = id
+                        ),
+                        runtimeUnavailable = t is LinkageError || isRuntimeUnavailableMessage(msg)
                     )
                 )
             }
+        }
+    }
+
+    override suspend fun decode(bitmap: Bitmap): DecodeResult = decodeWithCandidateBoxes(bitmap).decodeResult
+
+    /**
+     * Fallback verification pipeline mirroring QrScanner's multi-pass retry strategy:
+     * 1. Direct bitmap (using enableAllPotentialBarcodes for ROI localization)
+     * 2. Localized candidate ROI crops + 20% white quiet-zone margin
+     * 3. Resolution normalization (512px halftone smoothing / 1024px upscale)
+     * 4. Quiet-zone padded contrast-boosted bitmap
+     * 5. Inverted luminance bitmap (dark-backdrop QRs)
+     */
+    suspend fun decodeWithRetries(
+        bitmap: Bitmap,
+        expectedContent: String? = null
+    ): DetectionPassResult {
+        fun matches(res: DecodeResult): Boolean =
+            res.success && !res.text.isNullOrEmpty() && (expectedContent == null || res.text == expectedContent)
+
+        val direct = decodeWithCandidateBoxes(bitmap)
+        if (matches(direct.decodeResult) || direct.runtimeUnavailable) {
+            return direct
+        }
+
+        // Retry 1: Candidate bounding-box ROI crops with white quiet-zone padding (QrScanner parity)
+        for (box in direct.candidateBoxes.take(3)) {
+            val roiBmp = cropWithQuietZone(bitmap, box) ?: continue
+            try {
+                val roiPass = decodeWithCandidateBoxes(roiBmp)
+                if (matches(roiPass.decodeResult)) return roiPass
+            } finally {
+                if (roiBmp !== bitmap && !roiBmp.isRecycled) roiBmp.recycle()
+            }
+        }
+
+        // Retry 2: 512px bilinear downscale (merges 3x3 halftone dots) or 1024px upscale (helps thin hairlines)
+        val maxDim = maxOf(bitmap.width, bitmap.height)
+        val targetDim = when {
+            maxDim > 640 -> 512
+            maxDim < 720 -> 1024
+            else -> null
+        }
+        if (targetDim != null) {
+            val scaled = try {
+                val scale = targetDim.toFloat() / maxDim
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            } catch (_: Throwable) { null }
+            if (scaled != null) {
+                try {
+                    val scaledPass = decodeWithCandidateBoxes(scaled)
+                    if (matches(scaledPass.decodeResult)) return scaledPass
+                } finally {
+                    if (scaled !== bitmap && !scaled.isRecycled) scaled.recycle()
+                }
+            }
+        }
+
+        // Retry 3: White quiet-zone padding + mild contrast boost (rescues tight qz=0/1 & shaded 2.5D borders)
+        val paddedContrast = createPaddedContrastBitmap(bitmap, contrastGain = 1.45f, invert = false)
+        if (paddedContrast != null) {
+            try {
+                val pass = decodeWithCandidateBoxes(paddedContrast)
+                if (matches(pass.decodeResult)) return pass
+            } finally {
+                if (!paddedContrast.isRecycled) paddedContrast.recycle()
+            }
+        }
+
+        // Retry 4: Inverted luminance pass (light modules on dark backdrop)
+        val invertedBmp = createPaddedContrastBitmap(bitmap, contrastGain = 1.25f, invert = true)
+        if (invertedBmp != null) {
+            try {
+                val pass = decodeWithCandidateBoxes(invertedBmp)
+                if (matches(pass.decodeResult)) return pass
+            } finally {
+                if (!invertedBmp.isRecycled) invertedBmp.recycle()
+            }
+        }
+
+        return direct
+    }
+
+    private fun cropWithQuietZone(bitmap: Bitmap, box: android.graphics.Rect): Bitmap? {
+        return try {
+            val cw = (box.right - box.left).coerceAtLeast(1)
+            val ch = (box.bottom - box.top).coerceAtLeast(1)
+            val pad = (maxOf(cw, ch) * 0.20f).toInt().coerceAtLeast(16)
+            val cropL = (box.left - pad).coerceIn(0, bitmap.width - 1)
+            val cropT = (box.top - pad).coerceIn(0, bitmap.height - 1)
+            val cropR = (box.right + pad).coerceIn(cropL + 1, bitmap.width)
+            val cropB = (box.bottom + pad).coerceIn(cropT + 1, bitmap.height)
+            val srcW = cropR - cropL
+            val srcH = cropB - cropT
+            val out = Bitmap.createBitmap(srcW + pad * 2, srcH + pad * 2, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(out)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            canvas.drawBitmap(
+                bitmap,
+                android.graphics.Rect(cropL, cropT, cropR, cropB),
+                android.graphics.Rect(pad, pad, pad + srcW, pad + srcH),
+                null
+            )
+            out
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun createPaddedContrastBitmap(bitmap: Bitmap, contrastGain: Float, invert: Boolean): Bitmap? {
+        return try {
+            val baseDim = maxOf(bitmap.width, bitmap.height).coerceIn(320, 1024)
+            val scale = baseDim.toFloat() / maxOf(1, maxOf(bitmap.width, bitmap.height))
+            val drawW = (bitmap.width * scale).toInt().coerceAtLeast(1)
+            val drawH = (bitmap.height * scale).toInt().coerceAtLeast(1)
+            val pad = (baseDim * 0.14f).toInt().coerceAtLeast(24)
+            val out = Bitmap.createBitmap(drawW + pad * 2, drawH + pad * 2, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(out)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+            val cm = if (invert) {
+                val c = -contrastGain
+                val t = 255f * (1f + (contrastGain - 1f) * 0.5f)
+                android.graphics.ColorMatrix(
+                    floatArrayOf(
+                        c, 0f, 0f, 0f, t,
+                        0f, c, 0f, 0f, t,
+                        0f, 0f, c, 0f, t,
+                        0f, 0f, 0f, 1f, 0f
+                    )
+                )
+            } else {
+                val t = 128f * (1f - contrastGain)
+                android.graphics.ColorMatrix(
+                    floatArrayOf(
+                        contrastGain, 0f, 0f, 0f, t,
+                        0f, contrastGain, 0f, 0f, t,
+                        0f, 0f, contrastGain, 0f, t,
+                        0f, 0f, 0f, 1f, 0f
+                    )
+                )
+            }
+            paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+            canvas.drawBitmap(
+                bitmap,
+                null,
+                android.graphics.Rect(pad, pad, pad + drawW, pad + drawH),
+                paint
+            )
+            out
+        } catch (_: Throwable) {
+            null
         }
     }
 

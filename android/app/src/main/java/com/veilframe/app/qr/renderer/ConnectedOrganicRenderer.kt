@@ -208,7 +208,8 @@ class ConnectedOrganicRenderer : QrRenderer {
                     style = design.eyeStyle.style,
                     size = design.positionSize,
                     color = design.eyeStyle.outerColor ?: fgColor,
-                    bgColor = bgColor
+                    bgColor = bgColor,
+                    innerColor = design.eyeStyle.innerColor ?: fgColor
                 )
             )
         }

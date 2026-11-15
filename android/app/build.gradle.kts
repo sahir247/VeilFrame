@@ -28,8 +28,8 @@ android {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 230
-        versionName = "2.3.0"
+        versionCode = 231
+        versionName = "2.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -126,7 +126,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite")
     }
 
     ndkVersion = "26.1.10909125"
@@ -210,8 +210,10 @@ dependencies {
     // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
     implementation(project(":opencv-sdk"))
 
-    // TensorFlow Lite runtime for neural document segmentation (FairScan SOTA model)
-    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    // Google AI Edge LiteRT Core & GPU runtimes (surgically replaces legacy TensorFlow Lite 2.17.0)
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu-api:1.0.1")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")

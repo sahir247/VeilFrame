@@ -39,6 +39,7 @@
     <com.veilframe.app.ui.MaxHeightNestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?android:attr/colorBackground"
         android:maxHeight="520dp"
         android:fillViewport="true">
 
@@ -50,62 +51,58 @@
 
             <!-- Storage Summary Card -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.VeilFrame.Card.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface_variant"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                android:layout_marginBottom="18dp"
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="12dp">
 
-                    <TextView
-                        android:id="@+id/tvModelStorageSummary"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Models Storage: 0 MB used"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:layout_marginBottom="4dp" />
+                <TextView
+                    android:id="@+id/tvModelStorageSummary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Models Storage: 0 MB used"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
 
-                    <TextView
-                        android:id="@+id/tvModelCountSummary"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0 NCNN Models Installed"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                <TextView
+                    android:id="@+id/tvModelCountSummary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 NCNN Models Installed"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnImportCustomModel"
-                        android:enabled="true"
-                        style="@style/Widget.VeilFrame.Button.Action"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:text="Import Custom NCNN Model (.zip / .param)"
-                        android:textColor="@color/vf_accent_blue"
-                        app:icon="@drawable/ic_file_pick"
-                        app:iconTint="@color/vf_accent_blue" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnImportCustomModel"
+                    android:enabled="true"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Import Custom NCNN Model (.zip / .param)"
+                    android:textColor="@color/vf_accent_blue"
+                    app:icon="@drawable/ic_file_pick"
+                    app:iconTint="@color/vf_accent_blue" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <!-- SECTION HEADER: NATIVE NCNN MODELS -->
             <TextView
+                style="@style/Widget.VeilFrame.SectionHeading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="DOWNLOADABLE NCNN MODELS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06"
-                android:layout_marginBottom="8dp" />
+                android:text="Downloadable NCNN Models"
+                android:layout_marginBottom="10dp" />
 
             <!-- DYNAMIC NCNN MODELS CONTAINER -->
             <LinearLayout
@@ -116,28 +113,26 @@
 
             <!-- SECTION HEADER: BUILT-IN MATHEMATICAL MODELS -->
             <TextView
+                style="@style/Widget.VeilFrame.SectionHeading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="BUILT-IN MATHEMATICAL MODELS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06"
+                android:text="Built-in Mathematical Models"
+                android:layout_marginTop="10dp"
                 android:layout_marginBottom="8dp" />
 
             <!-- Built-in models card -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.VeilFrame.Card.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface_variant"
-                app:cardCornerRadius="12dp">
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="12dp">
+                    android:padding="14dp">
 
                     <TextView
                         android:layout_width="wrap_content"

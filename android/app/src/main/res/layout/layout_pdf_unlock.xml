@@ -73,9 +73,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardBackgroundColor="@color/vf_surface"
-                    app:strokeColor="@color/vf_outline_variant"
-                    app:strokeWidth="1dp">
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                    app:cardCornerRadius="22dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -129,22 +130,20 @@
                     android:orientation="vertical"
                     android:visibility="gone">
 
-                    <!-- PDF Preview Card at Top (Consistent with VeilFrame tools) -->
+                    <!-- PDF Preview Card -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardPdfUnlockPreview"
-                        style="@style/Widget.Material3.CardView.Filled"
+                        style="@style/Widget.VeilFrame.Card.Canvas"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
-                            android:padding="12dp">
+                            android:padding="14dp">
 
                             <LinearLayout
                                 android:layout_width="match_parent"
@@ -198,16 +197,17 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
-                    <!-- Unlocked Animation & Success Banner Card -->
+                    <!-- Unlocked Animation & Success Banner (Borderless Tonal Banner) -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardPdfUnlockedBanner"
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -253,15 +253,12 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
-                    <!-- Document Information Card -->
+                    <!-- Document Security Information Card -->
                     <com.google.android.material.card.MaterialCardView
-                        style="@style/Widget.Material3.CardView.Filled"
+                        style="@style/Widget.VeilFrame.Card.Section"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="16dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -270,12 +267,10 @@
                             android:padding="16dp">
 
                             <TextView
+                                style="@style/Widget.VeilFrame.SectionHeading"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="SECURITY STATUS"
-                                android:textColor="@color/vf_text_muted"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
+                                android:text="Security Status" />
 
                             <TextView
                                 android:id="@+id/tvUnlockSecurityDetails"
@@ -297,15 +292,21 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
-                    <!-- Export Actions Card -->
+                    <!-- Export Actions (Heading + Featured Card) -->
+                    <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:layout_marginBottom="8dp"
+                        android:text="Document Export" />
+
                     <com.google.android.material.card.MaterialCardView
-                        style="@style/Widget.Material3.CardView.Filled"
+                        style="@style/Widget.VeilFrame.Card.Featured"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="24dp"
-                        app:cardBackgroundColor="@color/vf_surface"
-                        app:strokeColor="@color/vf_outline_variant"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="18dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -313,57 +314,48 @@
                             android:orientation="vertical"
                             android:padding="16dp">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="DOCUMENT EXPORT"
-                                android:textColor="@color/vf_text_muted"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="14dp"
+                            android:text="Save or share the completely decrypted PDF document."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp" />
 
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:layout_marginBottom="16dp"
-                                android:text="Save or share the completely decrypted PDF document."
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="12sp" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSaveUnlockedPdf"
+                            style="@style/Widget.VeilFrame.Button.Execute"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:text="Save Unlocked PDF"
+                            app:icon="@drawable/ic_action_save" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnSaveUnlockedPdf"
-                                style="@style/Widget.VeilFrame.Button.Execute"
-                                android:layout_width="match_parent"
+                                android:id="@+id/btnShareUnlockedPdf"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_marginBottom="8dp"
-                                android:text="Save Unlocked PDF"
-                                app:icon="@drawable/ic_action_save" />
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                android:text="Share PDF"
+                                app:icon="@drawable/ic_action_share" />
 
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnPrintUnlockedPdf"
+                                style="@style/Widget.VeilFrame.Button.Action"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal">
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/btnShareUnlockedPdf"
-                                    style="@style/Widget.VeilFrame.Button.Action"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:layout_marginEnd="6dp"
-                                    android:text="Share PDF"
-                                    app:icon="@drawable/ic_action_share" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/btnPrintUnlockedPdf"
-                                    style="@style/Widget.VeilFrame.Button.Action"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:layout_marginStart="6dp"
-                                    android:text="Print"
-                                    app:icon="@drawable/ic_print" />
-                            </LinearLayout>
+                                android:layout_weight="1"
+                                android:layout_marginStart="6dp"
+                                android:text="Print"
+                                app:icon="@drawable/ic_print" />
+                        </LinearLayout>
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>

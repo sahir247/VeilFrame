@@ -129,7 +129,8 @@ object ResampleGeometryBuilder {
                         style = design.imageSource,
                         seed = design.resampleStyle.seed,
                         policy = ArtisticResamplePolicy.from(design),
-                        includeCenterAnchors = false
+                        includeCenterAnchors = false,
+                        ditherMode = design.resampleStyle.ditherMode
                     ) { col, row, sx, sy, isCenterAnchor ->
                         if (!isCenterAnchor) {
                             val rect = SubpixelGeometry.computeEfCanvasRect(
@@ -155,7 +156,8 @@ object ResampleGeometryBuilder {
                 style = design.imageSource,
                 seed = design.resampleStyle.seed,
                 policy = ArtisticResamplePolicy.from(design),
-                includeCenterAnchors = false
+                includeCenterAnchors = false,
+                ditherMode = design.resampleStyle.ditherMode
             ) { col, row, sx, sy, isCenterAnchor ->
                 if (!isCenterAnchor) {
                     val rect = SubpixelGeometry.computeEfCanvasRect(
@@ -177,7 +179,8 @@ object ResampleGeometryBuilder {
                 style = design.imageSource,
                 seed = design.resampleStyle.seed,
                 policy = ArtisticResamplePolicy.from(design),
-                includeCenterAnchors = false
+                includeCenterAnchors = false,
+                ditherMode = design.resampleStyle.ditherMode
             ) { col, row, sx, sy, isCenterAnchor ->
                 if (!isCenterAnchor) {
                     val rect = SubpixelGeometry.computeEfCanvasRect(
@@ -259,8 +262,8 @@ object ResampleGeometryBuilder {
                 }
                 FinderStyle.DSJ -> {
                     val widthVal = (3.0f - (1.0f - posSize)) * mSize
-                    val xTemp = fx + (1.0f - posSize) / 2.0f * mSize
-                    val yTemp = fy + (1.0f - posSize) / 2.0f * mSize
+                    val xTemp = fx + (3f + (1.0f - posSize) / 2.0f) * mSize
+                    val yTemp = fy + (3f + (1.0f - posSize) / 2.0f) * mSize
                     nodes.add(RectNode(xTemp - mSize, yTemp - mSize, widthVal, widthVal, fill = eyeInner))
                     nodes.add(RectNode(xTemp - 3f * mSize, yTemp - mSize, posSize * mSize, widthVal, fill = eyeOuter))
                     nodes.add(RectNode(xTemp + 3f * mSize, yTemp - mSize, posSize * mSize, widthVal, fill = eyeOuter))

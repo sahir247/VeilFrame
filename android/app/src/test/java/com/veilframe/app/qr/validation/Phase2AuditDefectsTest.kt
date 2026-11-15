@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import com.veilframe.app.qr.AnimatedQrGenerator
 import com.veilframe.app.qr.AnimatedQrGenerator.FrameDropPolicy
+import com.veilframe.app.qr.GenerationMode
 import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrRenderResult
 import com.veilframe.app.qr.QrStyle
@@ -102,9 +103,12 @@ class Phase2AuditDefectsTest {
         }
         assertTrue("D25 rasterized SVG must have dark QR modules rendered on canvas (got $darkPixelCount)", darkPixelCount > 20)
 
-        // Verify validateSvgScanability passes now that D25 viewBox and isometric projection are centered
+        // Verify ScanabilityValidator does NOT emit a D25 false positive when undecodable,
+        // and verify contrast + negative viewBox centered geometry hold honestly.
+        val contrastReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(rasterBmp, design, matrix, payload)
+        assertFalse("Opaque depth=1.0 D25 undecodable on flat JVM must NOT report false-positive isScanReady=true", contrastReport.isScanReady)
         val err = QrExporter.validateSvgScanability(svg, design, matrix, payload)
-        assertNull("validateSvgScanability must pass for D25 SVG: ${err?.description}", err)
+        assertNotNull("validateSvgScanability must reject un-decoded D25 rather than faking a pass", err)
 
         rasterBmp.recycle()
     }
@@ -425,5 +429,78 @@ class Phase2AuditDefectsTest {
         val emptyFile = java.io.File(app.cacheDir, "non_existent.png")
         val result = QrExporter.saveApngTyped(app, emptyFile)
         assertTrue("saveApngTyped must fail for non-existent file", result is QrOutputResult.Failure)
+    }
+
+    @Test
+    fun testLineCircuitFinderOuterVsInnerColorSeparation() {
+        val design = QrDesign(
+            style = QrStyle.LINE,
+            outputSize = 512,
+            eyeStyle = EyeStyle(
+                style = FinderStyle.PLANETS,
+                outerColor = Color.RED,
+                innerColor = Color.BLUE
+            ),
+            lineStyle = LineStyle(
+                variant = LineVariant.CIRCUIT,
+                positionStyle = FinderStyle.PLANETS,
+                positionColor = Color.RED
+            )
+        )
+        val matrix = QrGenerator.generateMatrix(payload, design, GenerationMode.ARTISTIC_ENGINE)
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+        assertTrue("Line SVG must contain outer finder color #FF0000", svg.contains("#FF0000"))
+        assertTrue("Line SVG must contain independent inner finder color #0000FF", svg.contains("#0000FF"))
+
+        val geom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, 512f, 512f, design)
+        val ir = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, geom)
+        val circles = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        assertTrue("IR must contain blue inner finder cores", circles.any { it.fill == Color.BLUE })
+        assertTrue("IR must contain red outer orbits or satellites", circles.any { it.stroke == Color.RED || it.fill == Color.RED })
+    }
+
+    @Test
+    fun testDeterministicSvgRasterizer_ParsesRgbaAndStrokeDashArray() {
+        val svg = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100" height="100">
+              <rect x="0" y="0" width="10" height="10" fill="rgba(255,255,255,1.000)" />
+              <path d="M 1 5 L 9 5" stroke="rgba(255,0,0,1.0)" stroke-width="2" stroke-linecap="round" stroke-dasharray="2,1" fill="none" />
+            </svg>
+        """.trimIndent()
+        val bmp = DeterministicSvgRasterizer.rasterize(svg, 100, 100)
+        assertEquals(Color.WHITE, bmp.getPixel(5, 5))
+        val strokedPixel = bmp.getPixel(12, 50)
+        assertTrue("rgba red stroke must render red instead of falling back to black", Color.red(strokedPixel) > 200 && Color.blue(strokedPixel) < 50)
+        bmp.recycle()
+    }
+
+    @Test
+    fun testArtisticStyles_NoFalseLowLuminanceSeparationWarning() = runBlocking {
+        val lineDesign = QrDesign(
+            style = QrStyle.LINE,
+            outputSize = 512,
+            palette = PaletteStyle(foreground = Color.BLACK, background = Color.WHITE),
+            eyeStyle = EyeStyle(style = FinderStyle.PLANETS),
+            lineStyle = LineStyle(variant = LineVariant.CIRCUIT, positionStyle = FinderStyle.PLANETS)
+        )
+        val matrix = QrGenerator.generateMatrix(payload, lineDesign, GenerationMode.ARTISTIC_ENGINE)
+        val bmp = QrGenerator.generateBitmap(matrix, lineDesign)!!
+        val report = ScanabilityValidator.validateStrict(bmp, lineDesign, matrix, payload)
+        assertTrue("Black-on-white Line & Circuit must pass contrast separation (got ${report.contrast.separation})", report.contrast.isContrastAdequate)
+        assertFalse("Must not emit false Low luminance separation warning: ${report.warnings}", report.warnings.any { it.contains("Low luminance separation") })
+        bmp.recycle()
+
+        val bubbleDesign = QrDesign(
+            style = QrStyle.BUBBLE,
+            outputSize = 512,
+            eyeStyle = EyeStyle(style = FinderStyle.CIRCLE)
+        )
+        val bubbleMatrix = QrGenerator.generateMatrix(payload, bubbleDesign, GenerationMode.ARTISTIC_ENGINE)
+        val bubbleBmp = QrGenerator.generateBitmap(bubbleMatrix, bubbleDesign)!!
+        val bubbleReport = ScanabilityValidator.validateStrict(bubbleBmp, bubbleDesign, bubbleMatrix, payload)
+        assertTrue("Default Bubble Cluster must pass contrast separation (got ${bubbleReport.contrast.separation})", bubbleReport.contrast.isContrastAdequate)
+        assertFalse("Bubble must not emit false Low luminance separation warning: ${bubbleReport.warnings}", bubbleReport.warnings.any { it.contains("Low luminance separation") })
+        bubbleBmp.recycle()
     }
 }

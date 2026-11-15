@@ -13,6 +13,8 @@ import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.gpu.GpuDelegateFactory
 import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -123,14 +125,20 @@ class DocumentSegmentationService(
     }
 
     private var interpreter: Interpreter? = null
+    private var gpuDelegate: GpuDelegate? = null
     private val inferenceLock = ReentrantLock()
 
     var isModelAvailable: Boolean = false
         private set
+    var isGpuAccelerated: Boolean = false
+        private set
+    var lastInferenceTimeMs: Long = 0L
+        private set
 
     /**
-     * Initializes the TFLite interpreter from Android assets or explicit file.
-     * Fails gracefully to classical CV if native libraries are unavailable.
+     * Initializes the LiteRT interpreter from Android assets or explicit file.
+     * Tries LiteRT GPU Delegate first with FP16 precision loss allowed,
+     * falling back seamlessly to LiteRT CPU (XNNPACK).
      */
     fun initialize(modelFile: File? = null): Boolean {
         return try {
@@ -141,22 +149,46 @@ class DocumentSegmentationService(
             }
 
             if (byteBuffer != null) {
-                val processors = Runtime.getRuntime().availableProcessors()
-                val threads = minOf(4, maxOf(2, processors / 2))
-                val options = Interpreter.Options().apply {
-                    numThreads = threads
+                var delegate: GpuDelegate? = null
+                try {
+                    val gpuDelegateOptions = GpuDelegateFactory.Options().apply {
+                        setPrecisionLossAllowed(true)
+                        setInferencePreference(GpuDelegateFactory.Options.INFERENCE_PREFERENCE_FAST_SINGLE_ANSWER)
+                    }
+                    delegate = GpuDelegate(gpuDelegateOptions)
+                    val gpuOptions = Interpreter.Options().apply {
+                        addDelegate(delegate)
+                    }
+                    interpreter = Interpreter(byteBuffer, gpuOptions)
+                    gpuDelegate = delegate
+                    isGpuAccelerated = true
+                    Log.i(TAG, "Loaded FairScan document segmentation with LiteRT GPU acceleration!")
+                } catch (t: Throwable) {
+                    Log.w(TAG, "LiteRT GPU acceleration bypassed (${t.message}), falling back to LiteRT CPU (XNNPACK)")
+                    delegate?.close()
+                    gpuDelegate = null
+                    val processors = Runtime.getRuntime().availableProcessors()
+                    val threads = minOf(4, maxOf(2, processors / 2))
+                    val cpuOptions = Interpreter.Options().apply {
+                        numThreads = threads
+                        setUseXNNPACK(true)
+                    }
+                    interpreter = Interpreter(byteBuffer, cpuOptions)
+                    isGpuAccelerated = false
+                    Log.i(TAG, "Loaded FairScan document segmentation with LiteRT CPU (threads=$threads)")
                 }
-                interpreter = Interpreter(byteBuffer, options)
                 isModelAvailable = true
-                Log.i(TAG, "Loaded FairScan document segmentation model successfully")
                 true
             } else {
                 isModelAvailable = false
                 false
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "TFLite segmentation model initialization skipped: ${e.message}")
+            Log.w(TAG, "LiteRT segmentation model initialization skipped: ${e.message}")
             interpreter = null
+            gpuDelegate?.close()
+            gpuDelegate = null
+            isGpuAccelerated = false
             isModelAvailable = false
             false
         }
@@ -214,6 +246,8 @@ class DocumentSegmentationService(
                 }
 
                 val inferenceTimeMs = SystemClock.uptimeMillis() - startTime
+                lastInferenceTimeMs = inferenceTimeMs
+                Log.i(TAG, "FairScan segmentation completed in ${inferenceTimeMs} ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU" else "LiteRT CPU"})")
                 SegmentationResult(
                     segmentation = DocumentSegmentation(probmap, INPUT_WIDTH, INPUT_HEIGHT),
                     inferenceTimeMs = inferenceTimeMs
@@ -284,6 +318,8 @@ class DocumentSegmentationService(
                 }
 
                 val inferenceTimeMs = SystemClock.uptimeMillis() - startTime
+                lastInferenceTimeMs = inferenceTimeMs
+                Log.i(TAG, "FairScan segmentation completed in ${inferenceTimeMs} ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU" else "LiteRT CPU"})")
                 SegmentationResult(
                     segmentation = DocumentSegmentation(probmap, INPUT_WIDTH, INPUT_HEIGHT),
                     inferenceTimeMs = inferenceTimeMs
@@ -301,21 +337,30 @@ class DocumentSegmentationService(
     suspend fun runSegmentation(mat: Mat): SegmentationResult? = runSegmentationDirect(mat)
 
     fun close() {
-        interpreter?.close()
-        interpreter = null
-        isModelAvailable = false
+        inferenceLock.lock()
+        try {
+            interpreter?.close()
+            interpreter = null
+            gpuDelegate?.close()
+            gpuDelegate = null
+            isGpuAccelerated = false
+            isModelAvailable = false
+        } finally {
+            inferenceLock.unlock()
+        }
     }
 
     private fun loadMappedAsset(context: Context, assetName: String): ByteBuffer? {
         return try {
-            val fileDescriptor = context.assets.openFd(assetName)
-            FileInputStream(fileDescriptor.fileDescriptor).use { inputStream ->
-                val fileChannel = inputStream.channel
-                fileChannel.map(
-                    FileChannel.MapMode.READ_ONLY,
-                    fileDescriptor.startOffset,
-                    fileDescriptor.declaredLength
-                )
+            context.assets.openFd(assetName).use { fileDescriptor ->
+                FileInputStream(fileDescriptor.fileDescriptor).use { inputStream ->
+                    val fileChannel = inputStream.channel
+                    fileChannel.map(
+                        FileChannel.MapMode.READ_ONLY,
+                        fileDescriptor.startOffset,
+                        fileDescriptor.declaredLength
+                    )
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Asset $assetName not found or unreadable: ${e.message}")

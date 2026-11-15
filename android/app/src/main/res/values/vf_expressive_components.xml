@@ -13,7 +13,9 @@
     <!-- Default filled (inherits expressive filled; Small=40dp default size) -->
     <style name="Widget.VeilFrame.Button.Primary" parent="Widget.Material3Expressive.Button">
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -24,7 +26,9 @@
         <item name="android:textAppearance">?attr/textAppearanceLabelLargeEmphasized</item>
         <item name="android:letterSpacing">0.02</item>
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -33,7 +37,9 @@
     <style name="Widget.VeilFrame.Button.CTA" parent="Widget.Material3Expressive.Button">
         <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Large</item>
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -42,7 +48,9 @@
     <style name="Widget.VeilFrame.Button.Action" parent="Widget.Material3Expressive.Button.TonalButton">
         <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Medium</item>
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -51,7 +59,9 @@
     <style name="Widget.VeilFrame.Button.Utility" parent="Widget.Material3Expressive.Button.OutlinedButton">
         <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -62,7 +72,9 @@
     <!-- Quiet actions (dialogs, inline links, overflow rows) -->
     <style name="Widget.VeilFrame.Button.Quiet" parent="Widget.Material3Expressive.Button.TextButton">
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -70,7 +82,9 @@
     <!-- Elevated (rare; kept for legacy parity) -->
     <style name="Widget.VeilFrame.Button.Elevated" parent="Widget.Material3Expressive.Button.ElevatedButton">
         <item name="iconGravity">textStart</item>
-        <item name="android:includeFontPadding">true</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">end</item>
     </style>
@@ -88,6 +102,137 @@
 
     <!-- Connected groups (export modes, aspect ratios, edit scope) -->
     <style name="Widget.VeilFrame.ButtonGroup.Connected" parent="Widget.Material3Expressive.MaterialButtonGroup.Connected" />
+
+    <!-- Compact / Hero expressive variants (wrap_content height, zero clipping in dense rows) -->
+    <style name="Widget.VeilFrame.Button.Hero" parent="Widget.Material3Expressive.Button">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Medium</item>
+        <item name="android:textAppearance">?attr/textAppearanceLabelLargeEmphasized</item>
+        <item name="android:letterSpacing">0.02</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">10dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Button.Tonal" parent="Widget.Material3Expressive.Button.TonalButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.M</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconSize">18dp</item>
+        <item name="iconPadding">6dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">42dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Button.Compact" parent="Widget.Material3Expressive.Button.TonalButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.M</item>
+        <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="iconTint">?attr/colorOnSurfaceVariant</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconSize">18dp</item>
+        <item name="iconPadding">6dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">42dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Button.Inline" parent="Widget.Material3Expressive.Button.TextButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Xsmall</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconSize">16dp</item>
+        <item name="iconPadding">4dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">36dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.VeilFrame.IconButton.Compact" parent="Widget.Material3Expressive.Button.IconButton.Tonal">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.IconButton.Small</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.M</item>
+        <item name="android:minWidth">40dp</item>
+        <item name="android:minHeight">42dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+    </style>
+
+    <style name="Widget.VeilFrame.InfoButton" parent="">
+        <item name="android:layout_width">28dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:padding">5dp</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:src">@drawable/ic_info_outline</item>
+        <item name="android:scaleType">centerInside</item>
+        <item name="android:contentDescription">Option info</item>
+    </style>
+
+    <!-- ================= DROPDOWNS / SPINNERS ================= -->
+    <style name="Widget.VeilFrame.Spinner" parent="Widget.AppCompat.Spinner">
+        <item name="android:background">@drawable/bg_m3_dropdown_field</item>
+        <item name="android:popupBackground">@drawable/bg_m3_dropdown_popup</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">40dp</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <!-- ================= CHIPS & FORM FIELDS ================= -->
+    <style name="Widget.VeilFrame.Chip.Filter" parent="Widget.Material3.Chip.Filter">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.M</item>
+        <item name="chipStrokeWidth">0dp</item>
+        <item name="chipBackgroundColor">@color/selector_vf_chip_bg</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Chip.Assist" parent="Widget.Material3.Chip.Assist">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.M</item>
+        <item name="chipStrokeWidth">0dp</item>
+        <item name="chipBackgroundColor">@color/selector_vf_chip_bg</item>
+    </style>
+
+    <style name="Widget.VeilFrame.SectionHeading" parent="">
+        <item name="android:textAppearance">?attr/textAppearanceTitleSmallEmphasized</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
+    </style>
+
+    <style name="Widget.VeilFrame.TextInputLayout.Tonal" parent="Widget.Material3.TextInputLayout.FilledBox">
+        <item name="boxBackgroundColor">?attr/colorSurfaceContainerHigh</item>
+        <item name="boxStrokeWidth">0dp</item>
+        <item name="boxStrokeWidthFocused">2dp</item>
+        <item name="boxCornerRadiusTopStart">14dp</item>
+        <item name="boxCornerRadiusTopEnd">14dp</item>
+        <item name="boxCornerRadiusBottomStart">14dp</item>
+        <item name="boxCornerRadiusBottomEnd">14dp</item>
+    </style>
 
     <!-- ================= PROGRESS (living waits) ================= -->
 
@@ -128,13 +273,28 @@
         <item name="strokeWidth">0dp</item>
     </style>
 
-    <!-- Standard workspace/list card -->
+    <!-- Standard workspace/list tile (borderless tonal separation) -->
     <style name="Widget.VeilFrame.Card.Workspace" parent="Widget.Material3.CardView.Filled">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.L</item>
-        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
         <item name="cardElevation">0dp</item>
-        <item name="strokeColor">?attr/colorOutlineVariant</item>
-        <item name="strokeWidth">1dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- Grouped section/settings/form card (tier 1: soft card lifted off page canvas) -->
+    <style name="Widget.VeilFrame.Card.Section" parent="Widget.Material3.CardView.Filled">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.LPlus</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- Featured focal card (tier 2: file intake, active status, disclosure header, result summary) -->
+    <style name="Widget.VeilFrame.Card.Featured" parent="Widget.Material3.CardView.Filled">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.LPlus</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardElevation">1dp</item>
+        <item name="strokeWidth">0dp</item>
     </style>
 
     <!-- Segment wrapper (Library / catalogue groups) -->
@@ -142,6 +302,22 @@
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XL</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
         <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- Borderless tonal inspector / preview panels (creative studio sub-panels) -->
+    <style name="Widget.VeilFrame.Card.Inspector" parent="Widget.Material3.CardView.Filled">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.LPlus</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Card.Canvas" parent="Widget.Material3.CardView.Filled">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XL</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardElevation">1dp</item>
+        <item name="strokeWidth">0dp</item>
     </style>
 
     <!-- Floating action dock (Hero Moment #1 shell) -->

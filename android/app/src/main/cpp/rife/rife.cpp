@@ -44,7 +44,7 @@ struct VkAllocatorScope {
 
 DEFINE_LAYER_CREATOR(Warp)
 
-RIFE::RIFE(int gpuid, bool _tta_mode, bool _tta_temporal_mode, bool _uhd_mode, int _num_threads, bool _rife_v2, bool _rife_v4)
+RIFE::RIFE(int gpuid, bool _tta_mode, bool _tta_temporal_mode, bool _uhd_mode, int _num_threads, bool _rife_v2, bool _rife_v4, int _padding)
 {
     vkdev = gpuid == -1 ? 0 : ncnn::get_gpu_device(gpuid);
 
@@ -64,6 +64,17 @@ RIFE::RIFE(int gpuid, bool _tta_mode, bool _tta_temporal_mode, bool _uhd_mode, i
     num_threads = _num_threads;
     rife_v2 = _rife_v2;
     rife_v4 = _rife_v4;
+    padding = _padding > 0 ? _padding : 32;
+}
+
+void RIFE::set_padding(int p)
+{
+    if (p > 0) padding = p;
+}
+
+int RIFE::get_padding() const
+{
+    return padding;
 }
 
 RIFE::~RIFE()
@@ -195,6 +206,45 @@ int RIFE::load(const std::string& modeldir)
         if (ret != 0) return ret;
         ret = load_param_model(fusionnet, modeldir, "fusionnet");
         if (ret != 0) return ret;
+    }
+    else
+    {
+        // Auto-detect required padding for modern RIFE models (v4.15 - v4.26)
+        if (modeldir.find("v4.25-lite") != std::string::npos)
+        {
+            padding = 128;
+        }
+        else if (modeldir.find("v4.25") != std::string::npos ||
+                 modeldir.find("v4.26") != std::string::npos ||
+                 modeldir.find("v2.6") != std::string::npos)
+        {
+            padding = 64;
+        }
+
+        std::string parampath = modeldir + "/flownet.param";
+        FILE* pfp = fopen(parampath.c_str(), "rb");
+        if (pfp)
+        {
+            fseek(pfp, 0, SEEK_END);
+            long sz = ftell(pfp);
+            fseek(pfp, 0, SEEK_SET);
+            if (sz > 0 && sz < 200000)
+            {
+                std::string content(sz, '\0');
+                if (fread(&content[0], 1, sz, pfp) == (size_t)sz)
+                {
+                    if (content.find("3.125000e-02") != std::string::npos)
+                    {
+                        padding = 128;
+                    }
+                    else if (content.find("6.250000e-02") != std::string::npos)
+                    {
+                        padding = 64;
+                    }
+                }
+            }
+            fclose(pfp);
+        }
     }
 #endif
 
@@ -456,9 +506,10 @@ int RIFE::process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float ti
     opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
-    // pad to 32n
-    int w_padded = (w + 31) / 32 * 32;
-    int h_padded = (h + 31) / 32 * 32;
+    // pad to 32n / 64n
+    int p = padding > 0 ? padding : 32;
+    int w_padded = (w + p - 1) / p * p;
+    int h_padded = (h + p - 1) / p * p;
 
     const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
 
@@ -1272,9 +1323,10 @@ int RIFE::process_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, floa
 
     ncnn::Option opt = flownet.opt;
 
-    // pad to 32n
-    int w_padded = (w + 31) / 32 * 32;
-    int h_padded = (h + 31) / 32 * 32;
+    // pad to 32n / 64n
+    int p = padding > 0 ? padding : 32;
+    int w_padded = (w + p - 1) / p * p;
+    int h_padded = (h + p - 1) / p * p;
 
     ncnn::Mat in0;
     ncnn::Mat in1;
@@ -2533,9 +2585,10 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
     opt.workspace_vkallocator = blob_vkallocator;
     opt.staging_vkallocator = staging_vkallocator;
 
-    // pad to 32n
-    int w_padded = (w + 31) / 32 * 32;
-    int h_padded = (h + 31) / 32 * 32;
+    // pad to 32n / 64n
+    int p = padding > 0 ? padding : 32;
+    int w_padded = (w + p - 1) / p * p;
+    int h_padded = (h + p - 1) / p * p;
 
     const size_t in_out_tile_elemsize = opt.use_fp16_storage ? 2u : 4u;
 
@@ -3264,9 +3317,10 @@ int RIFE::process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, f
 
     ncnn::Option opt = flownet.opt;
 
-    // pad to 32n
-    int w_padded = (w + 31) / 32 * 32;
-    int h_padded = (h + 31) / 32 * 32;
+    // pad to 32n / 64n
+    int p = padding > 0 ? padding : 32;
+    int w_padded = (w + p - 1) / p * p;
+    int h_padded = (h + p - 1) / p * p;
 
     ncnn::Mat in0;
     ncnn::Mat in1;

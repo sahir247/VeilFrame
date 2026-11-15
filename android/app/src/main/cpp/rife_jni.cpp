@@ -33,13 +33,11 @@ static std::vector<unsigned char> g_rgb0;
 static std::vector<unsigned char> g_rgb1;
 static std::vector<unsigned char> g_rgb_out;
 
-extern "C" {
-
-JNIEXPORT jboolean JNICALL
-Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
-    JNIEnv* env, jclass clazz,
+static jboolean do_rife_native_init(
+    JNIEnv* env,
     jstring modelDir,
-    jboolean useGpu
+    jboolean useGpu,
+    jint padding
 ) {
     try {
         std::lock_guard<std::mutex> lock(g_rife_mutex);
@@ -98,8 +96,9 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
         int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
         if (cpu_threads > 4) cpu_threads = 4; // Balance thermal headroom on mobile
 
-        // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4
-        g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true);
+        // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4, padding
+        int init_padding = padding > 0 ? padding : 32;
+        g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding);
 
         int ret = g_rife->load(dir_str);
         if (ret != 0 && g_rife_gpuid >= 0) {
@@ -107,7 +106,7 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
             delete g_rife;
             g_rife_gpuid = -1;
             local_gpu_lease.reset();
-            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
+            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding);
             ret = g_rife->load(dir_str);
         }
         if (ret != 0) {
@@ -146,7 +145,8 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
             }
         }
 
-        LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d)", g_rife_gpuid, cpu_threads);
+        LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d, padding: %d)",
+             g_rife_gpuid, cpu_threads, g_rife->get_padding());
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
         LOGE("Out of memory in RIFE nativeInit: %s", e.what());
@@ -158,6 +158,37 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
         LOGE("Unknown exception in RIFE nativeInit");
         return JNI_FALSE;
     }
+}
+
+extern "C" {
+
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit(
+    JNIEnv* env, jclass clazz,
+    jstring modelDir,
+    jboolean useGpu,
+    jint padding
+) {
+    return do_rife_native_init(env, modelDir, useGpu, padding);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit__Ljava_lang_String_2ZI(
+    JNIEnv* env, jclass clazz,
+    jstring modelDir,
+    jboolean useGpu,
+    jint padding
+) {
+    return do_rife_native_init(env, modelDir, useGpu, padding);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInit__Ljava_lang_String_2Z(
+    JNIEnv* env, jclass clazz,
+    jstring modelDir,
+    jboolean useGpu
+) {
+    return do_rife_native_init(env, modelDir, useGpu, 0);
 }
 
 JNIEXPORT jobject JNICALL
@@ -362,6 +393,29 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeRelease(
         LOGI("RIFE engine released and buffers reclaimed");
     } catch (...) {
         LOGE("Exception in RIFE nativeRelease");
+    }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeGetGpuName(
+    JNIEnv* env, jclass clazz
+) {
+    try {
+        veilframe::GpuInstanceLease lease(true);
+        if (!lease.is_acquired() || ncnn::get_gpu_count() <= 0) {
+            return env->NewStringUTF("");
+        }
+        ncnn::VulkanDevice* vkdev = ncnn::get_gpu_device(0);
+        if (!vkdev) {
+            return env->NewStringUTF("");
+        }
+        const char* name = vkdev->info.device_name();
+        if (!name) {
+            return env->NewStringUTF("");
+        }
+        return env->NewStringUTF(name);
+    } catch (...) {
+        return env->NewStringUTF("");
     }
 }
 

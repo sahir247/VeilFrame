@@ -322,7 +322,7 @@ object LineTopologyBuilder {
                                     }
                                     (baseStrokeWidth * 0.5f) * factor
                                 } else {
-                                    baseStrokeWidth * pseudoRandom(x, y, 1, 0.45f, 1.0f)
+                                    baseStrokeWidth * pseudoRandom(x, y, 1, 0.68f, 0.96f)
                                 }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
@@ -354,7 +354,7 @@ object LineTopologyBuilder {
                                     }
                                     (baseStrokeWidth * 0.5f) * factor
                                 } else {
-                                    baseStrokeWidth * pseudoRandom(x, y, 2, 0.45f, 1.0f)
+                                    baseStrokeWidth * pseudoRandom(x, y, 2, 0.68f, 0.96f)
                                 }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
@@ -366,7 +366,7 @@ object LineTopologyBuilder {
                     }
                 }
 
-                // In Target #6 circuit mode, also connect short orthogonal spine bridges between isolated clusters
+                // In Target #6 circuit mode, connect orthogonal bus bridges between adjacent dark modules
                 if (circuitBridgesEnabled) {
                     val avaH = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
                     for (y in 0 until n) {
@@ -377,13 +377,13 @@ object LineTopologyBuilder {
                                 while (end + 1 < n && avaH[end + 1][y] && (end - x) < 3) {
                                     end++
                                 }
-                                if (end > x && (x + y) % 3 == 0) {
+                                if (end > x && (x + y) % 2 == 0) {
                                     for (i in x..end) avaH[i][y] = false
                                     val lx1 = ox + (x + 0.5f) * cs
                                     val ly1 = oy + (y + 0.5f) * cs
                                     val lx2 = ox + (end + 0.5f) * cs
                                     val ly2 = oy + (y + 0.5f) * cs
-                                    segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.HORIZONTAL, baseStrokeWidth * 0.75f))
+                                    segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.HORIZONTAL, baseStrokeWidth * 0.85f))
                                 }
                                 x = end + 1
                             } else {
@@ -442,7 +442,8 @@ object LineTopologyBuilder {
                             pseudoRandom(x, y, 3, 0.33f, 0.90f)
                         }
                     } else {
-                        pseudoRandom(x, y, 3, 0.40f, 0.88f)
+                        val minPad = if (matrix.isProtected(x, y)) 0.78f else 0.66f
+                        pseudoRandom(x, y, 3, minPad, 0.94f)
                     }
                     val r = cs * 0.5f * rFactor * clampedLength.coerceIn(0.5f, 1.0f)
                     nodes.add(CircleNode(cx, cy, r, fill = lineColor))
@@ -450,7 +451,7 @@ object LineTopologyBuilder {
                     // Accent target rings on selected circuit nodes (Target #6)
                     if (addAccentRings && (x * 17 + y * 23) % 7 == 0) {
                         val ringR = cs * 0.46f * clampedLength.coerceIn(0.5f, 1.0f)
-                        val ringSw = (cs * 0.08f).coerceAtLeast(1.5f)
+                        val ringSw = cs * 0.08f
                         nodes.add(
                             CircleNode(
                                 cx = cx,
@@ -463,7 +464,10 @@ object LineTopologyBuilder {
                     }
                 } else {
                     if (unconsumed[x][y]) {
-                        nodes.add(CircleNode(cx, cy, nodeRadius * clampedLength.coerceIn(0.5f, 1.0f), fill = lineColor))
+                        val effNodeR = if (variant == com.veilframe.app.qr.model.LineVariant.CIRCUIT) {
+                            maxOf(nodeRadius, cs * 0.36f)
+                        } else nodeRadius
+                        nodes.add(CircleNode(cx, cy, effNodeR * clampedLength.coerceIn(0.5f, 1.0f), fill = lineColor))
                         if (addAccentRings && (x * 19 + y * 23) % 5 == 0) {
                             val ringR = cs * 0.44f * clampedLength.coerceIn(0.5f, 1.0f)
                             val ringSw = cs * 0.08f

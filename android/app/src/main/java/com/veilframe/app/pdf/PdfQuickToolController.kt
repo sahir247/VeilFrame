@@ -1339,6 +1339,18 @@ class PdfQuickToolController(
             updateMiniatureSignaturePreview()
         }
 
+        binding.sliderSignStrokeThickness.addOnChangeListener { _, value, _ ->
+            val label = when {
+                value <= 2.0f -> "Fine (${value} dp)"
+                value <= 5.0f -> "Medium (${value} dp)"
+                value <= 8.5f -> "Thick (${value} dp)"
+                else -> "Bold (${value} dp)"
+            }
+            binding.tvSignStrokeThicknessVal.text = label
+            binding.viewSignaturePad.setStrokeThicknessDp(value)
+            updateMiniatureSignaturePreview()
+        }
+
         binding.sliderSignScale.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 applySignScale(value / 100f, updateSlider = false)
@@ -1563,6 +1575,7 @@ class PdfQuickToolController(
             setPadding(32, 24, 32, 16)
         }
 
+        val currentThickness = binding.sliderSignStrokeThickness.value
         val pad = SignaturePadView(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1570,6 +1583,41 @@ class PdfQuickToolController(
             )
             setBackgroundColor(Color.parseColor("#18181C"))
             setInkColor(selectedSignColor)
+            setStrokeThicknessDp(currentThickness)
+        }
+
+        val thicknessHeader = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, (10 * activity.resources.displayMetrics.density).toInt(), 0, 0)
+        }
+        val tvThicknessTitle = TextView(activity).apply {
+            text = "STROKE THICKNESS"
+            setTextColor(activity.getColor(R.color.vf_secondary))
+            textSize = 11f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            letterSpacing = 0.08f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val tvThicknessVal = TextView(activity).apply {
+            text = "${currentThickness} dp"
+            setTextColor(activity.getColor(R.color.vf_text_primary))
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        thicknessHeader.addView(tvThicknessTitle)
+        thicknessHeader.addView(tvThicknessVal)
+
+        val dialogThicknessSlider = com.google.android.material.slider.Slider(activity).apply {
+            valueFrom = 1.0f
+            valueTo = 12.0f
+            value = currentThickness
+            stepSize = 0.5f
+            addOnChangeListener { _, value, _ ->
+                tvThicknessVal.text = "${value} dp"
+                pad.setStrokeThicknessDp(value)
+                binding.sliderSignStrokeThickness.value = value
+            }
         }
 
         val btnClear = com.google.android.material.button.MaterialButton(
@@ -1582,12 +1630,14 @@ class PdfQuickToolController(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = (8 * activity.resources.displayMetrics.density).toInt()
+                topMargin = (4 * activity.resources.displayMetrics.density).toInt()
             }
             setOnClickListener { pad.clear() }
         }
 
         padContainer.addView(pad)
+        padContainer.addView(thicknessHeader)
+        padContainer.addView(dialogThicknessSlider)
         padContainer.addView(btnClear)
 
         MaterialAlertDialogBuilder(activity)

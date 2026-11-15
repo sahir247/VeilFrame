@@ -105,6 +105,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             return JNI_FALSE;
         }
 
+        const bool use_vulkan = net->opt.use_vulkan_compute;
         if (modelType == MODEL_U2NETP) {
             if (g_u2netp_net != nullptr) {
                 delete g_u2netp_net;
@@ -119,7 +120,7 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             g_modnet_gpu_lease = std::move(local_lease);
         }
 
-        LOGI("Matting model %d loaded successfully (GPU: %d)", modelType, net->opt.use_vulkan_compute ? 1 : 0);
+        LOGI("Matting model %d loaded successfully (GPU: %d)", modelType, use_vulkan ? 1 : 0);
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
         LOGE("Out of memory in Matting nativeInit: %s", e.what());

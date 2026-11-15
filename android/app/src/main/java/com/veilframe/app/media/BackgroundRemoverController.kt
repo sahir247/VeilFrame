@@ -13,11 +13,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
 import com.veilframe.app.cv.core.CvPriority
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.rembg.CelBackgroundRemover
+import com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin
+import com.veilframe.app.cv.segmentation.rembg.RembgProgress
 import com.veilframe.app.cv.segmentation.rembg.RembgSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
@@ -32,6 +35,12 @@ import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.ui.views.BeforeAfterSplitView
 import com.veilframe.app.ui.views.RefineBrushCanvasView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.appcompat.widget.PopupMenu
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.content.res.ColorStateList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +101,8 @@ class BackgroundRemoverController(
     enum class RembgMode {
         HYBRID,
         U2NETP,
-        MODNET
+        MODNET,
+        LIFT_AND_SHIFT
     }
 
     var currentMode: RembgMode = RembgMode.HYBRID
@@ -136,11 +146,30 @@ class BackgroundRemoverController(
                 RembgMode.HYBRID -> binding.btnModeSelectHybrid.id
                 RembgMode.U2NETP -> binding.btnModeSelectU2Net.id
                 RembgMode.MODNET -> binding.btnModeSelectModNet.id
+                RembgMode.LIFT_AND_SHIFT -> binding.btnModeSelectLiftAndShift.id
             }
         )
         binding.toggleGroupMattingMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 currentMode = when (checkedId) {
+                    binding.btnModeSelectLiftAndShift.id -> {
+                        currentModel = RembgModel.COLOROS_LIFT_SHIFT
+                        if (sourceBytes == null && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
+                            showRequiredModelDownloadDialog(
+                                title = "Download ColorOS Lift & Shift?",
+                                message = "ColorOS Lift & Shift (8.4 MB) provides Snapdragon 8 Gen 5 hardware-accelerated subject separation.\n\nWould you like to download Lift & Shift now, or proceed with the bundled engine?",
+                                targetModel = RembgModel.COLOROS_LIFT_SHIFT,
+                                originView = binding.btnModeSelectLiftAndShift,
+                                onProceedWithBundled = {
+                                    currentMode = RembgMode.U2NETP
+                                    currentModel = RembgModel.U2NETP
+                                    binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
+                                    updateActiveModelBadge()
+                                }
+                            )
+                        }
+                        RembgMode.LIFT_AND_SHIFT
+                    }
                     binding.btnModeSelectU2Net.id -> {
                         currentModel = RembgModel.U2NETP
                         RembgMode.U2NETP
@@ -155,6 +184,9 @@ class BackgroundRemoverController(
                     }
                 }
                 updateActiveModelBadge()
+                if (sourceBytes != null) {
+                    executeRemoval()
+                }
             }
         }
 
@@ -170,12 +202,17 @@ class BackgroundRemoverController(
             executeRemoval()
         }
 
+        binding.btnBgMoreOptions.setOnClickListener {
+            showMoreOptionsMenu(binding.btnBgMoreOptions)
+        }
 
         binding.btnBgSavePng.setOnClickListener {
+            if (currentSaveCutoutState == SaveCutoutState.SAVING) return@setOnClickListener
             exportImage()
         }
 
         binding.btnBgToolbarExport.setOnClickListener {
+            if (currentSaveCutoutState == SaveCutoutState.SAVING) return@setOnClickListener
             exportImage()
         }
 
@@ -275,6 +312,7 @@ class BackgroundRemoverController(
     fun cleanup() {
         try {
             binding.refineBrushCanvas.cleanup()
+            com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin.close()
             sessionManager.closeAll()
             downloadManager.cancelDownload()
             sourceBitmap?.recycle()
@@ -332,6 +370,23 @@ class BackgroundRemoverController(
     private fun executeRemoval() {
         val bytes = sourceBytes ?: return
 
+        if (currentMode == RembgMode.LIFT_AND_SHIFT && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
+            showRequiredModelDownloadDialog(
+                title = "ColorOS Lift & Shift Model Required",
+                message = "ColorOS Lift & Shift (8.4 MB) provides Snapdragon 8 Gen 5 hardware-accelerated subject separation.\n\nWould you like to download Lift & Shift now, or switch to the bundled U²-Net-P model?",
+                targetModel = RembgModel.COLOROS_LIFT_SHIFT,
+                originView = binding.btnBgExecuteRemoval,
+                onProceedWithBundled = {
+                    currentMode = RembgMode.U2NETP
+                    currentModel = RembgModel.U2NETP
+                    binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
+                    updateActiveModelBadge()
+                    runRemovalPipeline(bytes)
+                }
+            )
+            return
+        }
+
         if (currentMode == RembgMode.MODNET && !repository.isModelReady(RembgModel.MODNET)) {
             showRequiredModelDownloadDialog(
                 title = "MODNet HD Model Required",
@@ -381,7 +436,7 @@ class BackgroundRemoverController(
         dialogBinding.tvModelReqTitle.text = title
         dialogBinding.tvModelReqMessage.text = message
         dialogBinding.btnModelReqDownload.text = "Download & Process"
-        dialogBinding.btnModelReqUseLanczos.text = "Use Bundled U²-Net-P (Instant)"
+        dialogBinding.btnModelReqUseLanczos.text = "Use Bundled U²-Net-P"
 
         dialogBinding.btnModelReqClose.setOnClickListener {
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -486,6 +541,7 @@ class BackgroundRemoverController(
 
     private fun runRemovalPipeline(bytes: ByteArray) {
         val effectiveModel = when (currentMode) {
+            RembgMode.LIFT_AND_SHIFT -> RembgModel.COLOROS_LIFT_SHIFT
             RembgMode.U2NETP -> RembgModel.U2NETP
             RembgMode.MODNET -> RembgModel.MODNET
             RembgMode.HYBRID -> {
@@ -502,6 +558,7 @@ class BackgroundRemoverController(
         binding.progressBgInference.progress = 10
         binding.tvBgProgressPercent.text = "10%"
         binding.tvBgProgressMessage.text = when (currentMode) {
+            RembgMode.LIFT_AND_SHIFT -> "Running Lift & Shift Cutout…"
             RembgMode.HYBRID -> "Running Hybrid Engine (YOLO + ${effectiveModel.displayName})…"
             else -> "Loading ${effectiveModel.displayName}…"
         }
@@ -526,22 +583,39 @@ class BackgroundRemoverController(
                 // Cooperative cancellation check
                 ctx.ensureActive()
 
-                remover.removeBackground(
-                    imageBytes = bytes,
-                    model = effectiveModel,
-                    trim = false,
-                    tightenEdges = tighten,
-                    featherEdges = feather,
-                    onProgress = { progress ->
-                        ctx.ensureActive()
-                        ctx.reportProgress(progress.percent / 100f)
-                        withContext(Dispatchers.Main) {
-                            binding.progressBgInference.progress = progress.percent
-                            binding.tvBgProgressPercent.text = "${progress.percent}%"
-                            binding.tvBgProgressMessage.text = progress.message
+                if (currentMode == RembgMode.LIFT_AND_SHIFT) {
+                    ColorOsMattingPlugin.process(
+                        context = activity,
+                        imageBytes = bytes,
+                        trim = false,
+                        onProgress = { progress ->
+                            ctx.ensureActive()
+                            ctx.reportProgress(progress.percent / 100f)
+                            withContext(Dispatchers.Main) {
+                                binding.progressBgInference.progress = progress.percent
+                                binding.tvBgProgressPercent.text = "${progress.percent}%"
+                                binding.tvBgProgressMessage.text = progress.message
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    remover.removeBackground(
+                        imageBytes = bytes,
+                        model = effectiveModel,
+                        trim = false,
+                        tightenEdges = tighten,
+                        featherEdges = feather,
+                        onProgress = { progress ->
+                            ctx.ensureActive()
+                            ctx.reportProgress(progress.percent / 100f)
+                            withContext(Dispatchers.Main) {
+                                binding.progressBgInference.progress = progress.percent
+                                binding.tvBgProgressPercent.text = "${progress.percent}%"
+                                binding.tvBgProgressMessage.text = progress.message
+                            }
+                        }
+                    )
+                }
             }
 
             val outcome = job.await()
@@ -589,6 +663,8 @@ class BackgroundRemoverController(
         com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle("AI Matting Engines")
             .setMessage(
+                "• Lift & Shift (Cutout)\n" +
+                "Hardware-accelerated neural subject separation running on-device via LiteRT GPU/CPU for clean subject cutouts.\n\n" +
                 "• Hybrid (Smart Auto)\n" +
                 "Intelligently routes humans, animals, and objects for optimal edge preservation. Uses MODNet for portraits when available, and U\u00b2-Net-P for general objects.\n\n" +
                 "• U\u00b2-Net-P (Bundled)\n" +
@@ -615,41 +691,51 @@ class BackgroundRemoverController(
 
         val managerListener = object : ModelDownloadBackgroundService.DownloadListener {
             override fun onProgress(modelId: String, downloaded: Long, total: Long, percent: Int, speedBytesPerSec: Long) {
-                if (modelId != RembgModel.MODNET.id) return
                 activity.runOnUiThread {
                     if (dialog.isShowing) {
-                        dialogBinding.progressModelIsNet.visibility = View.VISIBLE
-                        dialogBinding.progressModelIsNet.isIndeterminate = false
-                        dialogBinding.progressModelIsNet.progress = percent
-                        dialogBinding.btnDownloadModelIsNet.isEnabled = false
-                        dialogBinding.btnRedownloadModelIsNet.isEnabled = false
+                        if (modelId == RembgModel.MODNET.id) {
+                            dialogBinding.progressModelIsNet.visibility = View.VISIBLE
+                            dialogBinding.progressModelIsNet.isIndeterminate = false
+                            dialogBinding.progressModelIsNet.progress = percent
+                            dialogBinding.btnDownloadModelIsNet.isEnabled = false
+                            dialogBinding.btnRedownloadModelIsNet.isEnabled = false
+                        } else if (modelId == RembgModel.COLOROS_LIFT_SHIFT.id) {
+                            dialogBinding.progressModelU2Net.visibility = View.VISIBLE
+                            dialogBinding.progressModelU2Net.isIndeterminate = false
+                            dialogBinding.progressModelU2Net.progress = percent
+                            dialogBinding.btnDownloadModelU2Net.isEnabled = false
+                            dialogBinding.btnRedownloadModelU2Net.isEnabled = false
+                        }
                     }
                 }
             }
 
             override fun onVerifying(modelId: String) {
-                if (modelId != RembgModel.MODNET.id) return
                 activity.runOnUiThread {
                     if (dialog.isShowing) {
-                        dialogBinding.progressModelIsNet.visibility = View.VISIBLE
-                        dialogBinding.progressModelIsNet.isIndeterminate = true
+                        if (modelId == RembgModel.MODNET.id) {
+                            dialogBinding.progressModelIsNet.visibility = View.VISIBLE
+                            dialogBinding.progressModelIsNet.isIndeterminate = true
+                        } else if (modelId == RembgModel.COLOROS_LIFT_SHIFT.id) {
+                            dialogBinding.progressModelU2Net.visibility = View.VISIBLE
+                            dialogBinding.progressModelU2Net.isIndeterminate = true
+                        }
                     }
                 }
             }
 
             override fun onSuccess(modelId: String, modelType: String) {
-                if (modelId != RembgModel.MODNET.id) return
                 activity.runOnUiThread {
                     if (dialog.isShowing) {
                         refreshCards()
                     }
                     updateActiveModelBadge()
-                    Toast.makeText(activity, "MODNet ready!", Toast.LENGTH_SHORT).show()
+                    val name = if (modelId == RembgModel.COLOROS_LIFT_SHIFT.id) "ColorOS Lift & Shift" else "MODNet"
+                    Toast.makeText(activity, "$name ready!", Toast.LENGTH_SHORT).show()
                 }
             }
 
             override fun onError(modelId: String, error: String) {
-                if (modelId != RembgModel.MODNET.id) return
                 activity.runOnUiThread {
                     if (dialog.isShowing) {
                         refreshCards()
@@ -659,7 +745,6 @@ class BackgroundRemoverController(
             }
 
             override fun onCancelled(modelId: String) {
-                if (modelId != RembgModel.MODNET.id) return
                 activity.runOnUiThread {
                     if (dialog.isShowing) {
                         refreshCards()
@@ -685,7 +770,7 @@ class BackgroundRemoverController(
             dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
             val readyCount = repository.listReadyModels().size
-            dialogBinding.tvModelCountSummary.text = "$readyCount of 2 AI Models Ready"
+            dialogBinding.tvModelCountSummary.text = "$readyCount of 3 AI Models Ready"
 
             // Card 1: U^2-Net-P (Bundled)
             dialogBinding.tvModelStatusBiRefNet.text = "Bundled in App"
@@ -739,8 +824,43 @@ class BackgroundRemoverController(
                 dialogBinding.btnRedownloadModelIsNet.isEnabled = true
             }
 
-            // Card 3: Hidden
-            dialogBinding.cardModelU2Net.visibility = View.GONE
+            // Card 3: ColorOS Lift & Shift (Downloadable)
+            dialogBinding.cardModelU2Net.visibility = View.VISIBLE
+            val isLiftShiftReady = repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)
+            if (isLiftShiftReady) {
+                dialogBinding.tvModelStatusU2Net.text = "Installed"
+                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_accent_green))
+                dialogBinding.btnDownloadModelU2Net.visibility = View.GONE
+                dialogBinding.btnDeleteModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnRedownloadModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnSelectModelU2Net.visibility = View.VISIBLE
+                if (currentMode == RembgMode.LIFT_AND_SHIFT) {
+                    dialogBinding.btnSelectModelU2Net.text = "Active"
+                    dialogBinding.btnSelectModelU2Net.isEnabled = false
+                } else {
+                    dialogBinding.btnSelectModelU2Net.text = "Select"
+                    dialogBinding.btnSelectModelU2Net.isEnabled = true
+                }
+            } else {
+                dialogBinding.tvModelStatusU2Net.text = "Not Installed"
+                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_text_muted))
+                dialogBinding.btnDownloadModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnDeleteModelU2Net.visibility = View.GONE
+                dialogBinding.btnRedownloadModelU2Net.visibility = View.GONE
+                dialogBinding.btnSelectModelU2Net.visibility = View.GONE
+            }
+
+            val isLiftShiftDownloading = ModelDownloadBackgroundService.isDownloading(RembgModel.COLOROS_LIFT_SHIFT.id)
+            if (isLiftShiftDownloading) {
+                dialogBinding.progressModelU2Net.visibility = View.VISIBLE
+                dialogBinding.progressModelU2Net.isIndeterminate = true
+                dialogBinding.btnDownloadModelU2Net.isEnabled = false
+                dialogBinding.btnRedownloadModelU2Net.isEnabled = false
+            } else {
+                dialogBinding.progressModelU2Net.visibility = View.GONE
+                dialogBinding.btnDownloadModelU2Net.isEnabled = true
+                dialogBinding.btnRedownloadModelU2Net.isEnabled = true
+            }
         }
 
         fun download(model: RembgModel, progressView: com.google.android.material.progressindicator.LinearProgressIndicator, triggerButton: View) {
@@ -794,6 +914,38 @@ class BackgroundRemoverController(
             updateUi()
         }
 
+        // Lift & Shift (Card 3) listeners
+        dialogBinding.btnDownloadModelU2Net.setOnClickListener {
+            download(RembgModel.COLOROS_LIFT_SHIFT, dialogBinding.progressModelU2Net, dialogBinding.btnDownloadModelU2Net)
+        }
+        dialogBinding.btnRedownloadModelU2Net.setOnClickListener {
+            repository.deleteModel(RembgModel.COLOROS_LIFT_SHIFT)
+            ColorOsMattingPlugin.close()
+            download(RembgModel.COLOROS_LIFT_SHIFT, dialogBinding.progressModelU2Net, dialogBinding.btnRedownloadModelU2Net)
+        }
+        dialogBinding.btnDeleteModelU2Net.setOnClickListener {
+            ModelDownloadBackgroundService.cancelDownload(activity, RembgModel.COLOROS_LIFT_SHIFT.id)
+            repository.deleteModel(RembgModel.COLOROS_LIFT_SHIFT)
+            ColorOsMattingPlugin.close()
+            if (currentMode == RembgMode.LIFT_AND_SHIFT) {
+                currentMode = RembgMode.U2NETP
+                binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
+            }
+            currentModel = RembgModel.U2NETP
+            refreshCards()
+            updateActiveModelBadge()
+        }
+        dialogBinding.btnSelectModelU2Net.setOnClickListener {
+            currentMode = RembgMode.LIFT_AND_SHIFT
+            currentModel = RembgModel.COLOROS_LIFT_SHIFT
+            binding.toggleGroupMattingMode.check(binding.btnModeSelectLiftAndShift.id)
+            refreshCards()
+            updateActiveModelBadge()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+            releaseCutoutBitmaps()
+            updateUi()
+        }
+
         refreshCards()
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
@@ -801,6 +953,19 @@ class BackgroundRemoverController(
     private fun updateActiveModelBadge() {
         val isModNetReady = repository.isModelReady(RembgModel.MODNET)
         when (currentMode) {
+            RembgMode.LIFT_AND_SHIFT -> {
+                binding.tvBgCurrentModelName.text = "Lift & Shift (Cutout)"
+                val isReady = repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)
+                if (isReady) {
+                    binding.tvBgModelBadge.text = "Ready (LiteRT)"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                } else {
+                    binding.tvBgModelBadge.text = "Download Needed"
+                    binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
+                    binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                }
+            }
             RembgMode.HYBRID -> {
                 binding.tvBgCurrentModelName.text = "Hybrid (Smart Auto)"
                 if (isModNetReady) {
@@ -852,6 +1017,7 @@ class BackgroundRemoverController(
         binding.refineBrushCanvas.setBitmaps(src, res)
         binding.toolbarBgRemover.title = "Refine Cutout"
         binding.toolbarBgRemover.subtitle = "Erase residue or restore details"
+        (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
     }
 
     fun exitRefineMode(applyEdits: Boolean) {
@@ -878,6 +1044,8 @@ class BackgroundRemoverController(
         }
 
         isRefineMode = false
+        binding.cardBgRefineDock.translationY = 0f
+        binding.refineBrushCanvas.alpha = 1f
         binding.refineBrushCanvas.visibility = View.GONE
         binding.cardBgRefineDock.visibility = View.GONE
 
@@ -888,10 +1056,43 @@ class BackgroundRemoverController(
         binding.toolbarBgRemover.title = "BG Remover"
         binding.toolbarBgRemover.subtitle = "On-Device Neural Matting"
         updateUi()
+        (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
+    }
+
+    fun getRefineDockView(): View = binding.cardBgRefineDock
+
+    fun handlePredictiveBackProgress(progress: Float, edge: Int) {
+        if (!isRefineMode) return
+        val dockHeight = binding.cardBgRefineDock.height.toFloat().coerceAtLeast(100f)
+        binding.cardBgRefineDock.translationY = progress * dockHeight
+        binding.refineBrushCanvas.alpha = (1f - (progress * 0.4f)).coerceIn(0f, 1f)
+    }
+
+    fun handlePredictiveBackCancelled() {
+        if (!isRefineMode) return
+        binding.cardBgRefineDock.animate()
+            ?.translationY(0f)
+            ?.setDuration(180L)
+            ?.setInterpolator(FastOutSlowInInterpolator())
+            ?.start()
+        binding.refineBrushCanvas.animate()
+            ?.alpha(1f)
+            ?.setDuration(180L)
+            ?.setInterpolator(FastOutSlowInInterpolator())
+            ?.start()
+    }
+
+    fun handleBackPressed(): Boolean {
+        if (isRefineMode) {
+            exitRefineMode(applyEdits = false)
+            return true
+        }
+        return false
     }
 
     private fun updateSaveCutoutButton() {
         if (resultBitmap == null) {
+            binding.btnBgExecuteRemoval.visibility = View.VISIBLE
             binding.btnBgExecuteRemoval.text = "Remove Background"
             binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_eraser)
             binding.btnBgExecuteRemoval.isEnabled = true
@@ -899,40 +1100,218 @@ class BackgroundRemoverController(
             binding.btnBgSavePng.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
             binding.btnBgRefineBrush.visibility = View.GONE
+            binding.btnBgMoreOptions.visibility = View.GONE
             return
         }
 
-        binding.btnBgExecuteRemoval.text = "Re-process"
-        binding.btnBgExecuteRemoval.setIconResource(R.drawable.ic_reset)
-        binding.btnBgExecuteRemoval.isEnabled = true
-        binding.btnBgExecuteRemoval.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_surface_variant)
-
+        binding.btnBgExecuteRemoval.visibility = View.GONE
         binding.btnBgRefineBrush.visibility = if (!isRefineMode) View.VISIBLE else View.GONE
+        binding.btnBgRefineBrush.text = "Refine"
+        binding.btnBgRefineBrush.setIconResource(R.drawable.ic_brush)
         binding.btnBgSavePng.visibility = View.VISIBLE
+        binding.btnBgMoreOptions.visibility = View.VISIBLE
+        binding.btnBgMoreOptions.isEnabled = true
+
+        val colorPrimary = ContextCompat.getColor(activity, R.color.vf_primary)
+        val colorOnPrimary = ContextCompat.getColor(activity, R.color.vf_on_primary)
+        val primaryStateList = ColorStateList.valueOf(colorPrimary)
+        val onPrimaryStateList = ColorStateList.valueOf(colorOnPrimary)
+
         when (currentSaveCutoutState) {
             SaveCutoutState.IDLE -> {
-                binding.btnBgSavePng.text = "Save Cutout"
+                binding.btnBgSavePng.text = "Save"
                 binding.btnBgSavePng.setIconResource(R.drawable.ic_action_save)
                 binding.btnBgSavePng.isEnabled = true
-                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+                binding.btnBgSavePng.backgroundTintList = primaryStateList
+                binding.btnBgSavePng.setTextColor(colorOnPrimary)
+                binding.btnBgSavePng.iconTint = onPrimaryStateList
             }
             SaveCutoutState.SAVING -> {
                 binding.btnBgSavePng.text = "Saving…"
-                binding.btnBgSavePng.setIconResource(R.drawable.ic_loading_spinner)
-                binding.btnBgSavePng.isEnabled = false
-                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+                binding.btnBgSavePng.isEnabled = true
+                binding.btnBgSavePng.backgroundTintList = primaryStateList
+                binding.btnBgSavePng.setTextColor(colorOnPrimary)
+                binding.btnBgSavePng.iconTint = onPrimaryStateList
+
+                try {
+                    val density = activity.resources.displayMetrics.density
+                    val spec = com.google.android.material.progressindicator.CircularProgressIndicatorSpec(
+                        activity,
+                        null,
+                        0,
+                        com.google.android.material.R.style.Widget_Material3_CircularProgressIndicator
+                    ).apply {
+                        indicatorColors = intArrayOf(colorOnPrimary)
+                        indicatorSize = (16 * density).toInt()
+                        trackThickness = (2.2f * density).toInt()
+                    }
+                    val progressDrawable = com.google.android.material.progressindicator.IndeterminateDrawable.createCircularDrawable(activity, spec)
+                    binding.btnBgSavePng.icon = progressDrawable
+                    progressDrawable.start()
+                } catch (_: Throwable) {
+                    binding.btnBgSavePng.setIconResource(R.drawable.ic_loading_spinner)
+                }
             }
             SaveCutoutState.SAVED -> {
                 binding.btnBgSavePng.text = "Saved"
                 binding.btnBgSavePng.setIconResource(R.drawable.ic_done)
-                binding.btnBgSavePng.isEnabled = false
-                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_accent_green)
+                binding.btnBgSavePng.isEnabled = true
+                binding.btnBgSavePng.backgroundTintList = primaryStateList
+                binding.btnBgSavePng.setTextColor(colorOnPrimary)
+                binding.btnBgSavePng.iconTint = ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.vf_accent_green))
             }
             SaveCutoutState.SAVE_AGAIN -> {
-                binding.btnBgSavePng.text = "Save Again"
+                binding.btnBgSavePng.text = "Save"
                 binding.btnBgSavePng.setIconResource(R.drawable.ic_action_save)
                 binding.btnBgSavePng.isEnabled = true
-                binding.btnBgSavePng.backgroundTintList = ContextCompat.getColorStateList(activity, R.color.vf_primary)
+                binding.btnBgSavePng.backgroundTintList = primaryStateList
+                binding.btnBgSavePng.setTextColor(colorOnPrimary)
+                binding.btnBgSavePng.iconTint = onPrimaryStateList
+            }
+        }
+    }
+
+    private fun showMoreOptionsMenu(anchor: View) {
+        val popup = PopupMenu(activity, anchor)
+        popup.menu.add(0, 1, 0, "Save as Sticker").setIcon(R.drawable.ic_sticker)
+        popup.menu.add(0, 2, 1, "Copy Image").setIcon(R.drawable.ic_action_copy)
+        popup.menu.add(0, 3, 2, "Share").setIcon(R.drawable.ic_action_share)
+        popup.menu.add(0, 4, 3, "Re-process").setIcon(R.drawable.ic_reset)
+
+        try {
+            val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
+            fieldMPopup.isAccessible = true
+            val mPopup = fieldMPopup.get(popup)
+            mPopup?.javaClass?.getDeclaredMethod("setForceShowIcon", Boolean::class.javaPrimitiveType)?.invoke(mPopup, true)
+        } catch (_: Throwable) {}
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> saveAsSticker()
+                2 -> copyImageToClipboard()
+                3 -> shareCutoutImage()
+                4 -> executeRemoval()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun saveAsSticker() {
+        val bmp = resultBitmap ?: run {
+            Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val trimmed = com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(bmp)
+            val resolver = activity.contentResolver
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+            val fileName = "${sourceFileName}_STICKER_${System.currentTimeMillis()}.png"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame/Stickers")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            var success = false
+            try {
+                val savedUri = resolver.insert(collection, values)
+                    ?: throw java.io.IOException("MediaStore insert failed")
+                resolver.openOutputStream(savedUri)?.use { out ->
+                    trimmed.compress(Bitmap.CompressFormat.PNG, 100, out)
+                } ?: throw java.io.IOException("openOutputStream failed")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(savedUri, values, null, null)
+                }
+                success = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Save sticker failed", e)
+            } finally {
+                if (trimmed !== bmp) {
+                    trimmed.recycle()
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(activity, "Saved as sticker to Gallery (Pictures/VeilFrame/Stickers)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(activity, "Failed to save sticker", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun copyImageToClipboard() {
+        val bmp = resultBitmap ?: run {
+            Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val cacheDir = File(activity.cacheDir, "clipboard").apply { mkdirs() }
+                val cacheFile = File(cacheDir, "cutout_clipboard.png")
+                FileOutputStream(cacheFile).use { fos ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                }
+                val uri = FileProvider.getUriForFile(
+                    activity,
+                    "${activity.packageName}.provider",
+                    cacheFile
+                )
+                val clip = ClipData.newUri(activity.contentResolver, "VeilFrame Cutout", uri)
+                withContext(Dispatchers.Main) {
+                    val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(activity, "Cutout copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Copy to clipboard failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Could not copy image: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun shareCutoutImage() {
+        val bmp = resultBitmap ?: run {
+            Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val cacheDir = File(activity.cacheDir, "shares").apply { mkdirs() }
+                val cacheFile = File(cacheDir, "${sourceFileName}_cutout.png")
+                FileOutputStream(cacheFile).use { fos ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                }
+                val uri = FileProvider.getUriForFile(
+                    activity,
+                    "${activity.packageName}.provider",
+                    cacheFile
+                )
+                withContext(Dispatchers.Main) {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/png"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    activity.startActivity(Intent.createChooser(shareIntent, "Share Cutout"))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Share failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Share failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1098,13 +1477,16 @@ class BackgroundRemoverController(
 
     override fun discardAndReleaseAllResources() {
         cancelProcessing()
+        binding.splitViewBgCompare.setBitmaps(null, null)
+        binding.refineBrushCanvas.cleanup()
+        sessionManager.closeAll()
+        com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin.close()
+        downloadManager.cancelDownload()
         sourceBitmap?.recycle()
         sourceBitmap = null
-        resultBitmap?.recycle()
-        resultBitmap = null
+        releaseCutoutBitmaps()
         sourceBytes = null
         currentSourceUri = null
-        binding.splitViewBgCompare.setBitmaps(null, null)
         updateUi()
     }
 

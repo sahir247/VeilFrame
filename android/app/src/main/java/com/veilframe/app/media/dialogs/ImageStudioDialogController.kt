@@ -1,5 +1,6 @@
 package com.veilframe.app.media.dialogs
 
+import android.app.Dialog
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.text.Editable
@@ -15,15 +16,22 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.DialogColorFilterBinding
 import com.veilframe.app.databinding.DialogCropBinding
 import com.veilframe.app.databinding.DialogExifBinding
+import com.veilframe.app.databinding.DialogImageBlurBinding
+import com.veilframe.app.databinding.DialogBlurBrushCanvasBinding
 import com.veilframe.app.databinding.DialogResizeBinding
 import com.veilframe.app.databinding.DialogRotateBinding
 import com.veilframe.app.databinding.DialogTextWatermarkBinding
+import com.veilframe.app.media.ImageBlurScope
+import com.veilframe.app.media.ImageBlurType
 import com.veilframe.app.media.ImageEditState
+import com.veilframe.app.media.blur.ImageBlurEngine
+import com.veilframe.app.ui.views.BlurBrushCanvasView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Isolated dialog controller for Image Studio editing tools.
@@ -688,13 +696,23 @@ class ImageStudioDialogController(
 
         updateFilterPreview()
 
-        when (draftFilter) {
-            "Grayscale" -> dialogBinding.chipFilterGrayscale.isChecked = true
-            "Sepia" -> dialogBinding.chipFilterSepia.isChecked = true
-            "Vintage" -> dialogBinding.chipFilterVintage.isChecked = true
-            "Cool" -> dialogBinding.chipFilterCool.isChecked = true
-            "Warm" -> dialogBinding.chipFilterWarm.isChecked = true
-            else -> dialogBinding.chipFilterDefault.isChecked = true
+        // Dynamically populate all filters from VideoColorFilterHelper
+        dialogBinding.chipGroupFilters.removeAllViews()
+        for (profile in com.veilframe.app.media.preview.VideoColorFilterHelper.PROFILES) {
+            val chip = com.google.android.material.chip.Chip(activity).apply {
+                text = profile.name
+                isCheckable = true
+                isChecked = (draftFilter.equals(profile.id, ignoreCase = true) ||
+                        draftFilter.equals(profile.name, ignoreCase = true) ||
+                        (draftFilter == "Default" && profile.id == "Original"))
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) {
+                        draftFilter = if (profile.id == "Original") "Default" else profile.id
+                        updateFilterPreview()
+                    }
+                }
+            }
+            dialogBinding.chipGroupFilters.addView(chip)
         }
 
         when (draftBgType) {
@@ -702,21 +720,6 @@ class ImageStudioDialogController(
             "White" -> dialogBinding.chipBgWhite.isChecked = true
             "Blurred Fill" -> dialogBinding.chipBgBlur.isChecked = true
             else -> dialogBinding.chipBgTrans.isChecked = true
-        }
-
-        dialogBinding.chipGroupFilters.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupFilters.findViewById<Chip>(checkedIds[0])
-                draftFilter = when (chip?.id) {
-                    R.id.chipFilterGrayscale -> "Grayscale"
-                    R.id.chipFilterSepia -> "Sepia"
-                    R.id.chipFilterVintage -> "Vintage"
-                    R.id.chipFilterCool -> "Cool"
-                    R.id.chipFilterWarm -> "Warm"
-                    else -> "Default"
-                }
-                updateFilterPreview()
-            }
         }
 
         dialogBinding.chipGroupBackgroundType.setOnCheckedStateChangeListener { _, checkedIds ->
@@ -809,5 +812,250 @@ class ImageStudioDialogController(
             morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
         morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
+    }
+
+    fun showBlurDialog(originView: View? = null) {
+        val dialogBinding = DialogImageBlurBinding.inflate(activity.layoutInflater)
+        val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
+
+        var draftScope = editState.blurScope.takeIf { it != ImageBlurScope.NONE } ?: ImageBlurScope.BACKGROUND
+        var draftType = editState.blurType
+        var draftRadius = editState.blurRadius
+        var draftMask = editState.blurBrushMask?.let { Bitmap.createBitmap(it) }
+        var draftSubjectCutout = editState.blurBgSubjectCutout?.let { Bitmap.createBitmap(it) }
+        var isExtractingSubject = false
+
+        fun ensureSubjectCutoutLoaded(onReady: () -> Unit) {
+            if (draftSubjectCutout != null) {
+                onReady()
+                return
+            }
+            if (isExtractingSubject) return
+            isExtractingSubject = true
+            val baseBmp = renderLivePreview(editState.deepCopy().apply { blurScope = ImageBlurScope.NONE })
+            if (baseBmp == null) {
+                isExtractingSubject = false
+                onReady()
+                return
+            }
+            scope.launch(Dispatchers.Default) {
+                val cutout = ImageBlurEngine.extractSubjectMask(activity, baseBmp)
+                withContext(Dispatchers.Main) {
+                    isExtractingSubject = false
+                    draftSubjectCutout = cutout
+                    onReady()
+                }
+            }
+        }
+
+        val originalBaseBmp = renderLivePreview(editState.deepCopy().apply { blurScope = ImageBlurScope.NONE })
+        var currentPreviewBitmap: Bitmap? = null
+
+        fun updateBlurPreview() {
+            if (draftScope == ImageBlurScope.BACKGROUND && draftSubjectCutout == null) {
+                ensureSubjectCutoutLoaded {
+                    updateBlurPreview()
+                }
+            }
+            val draft = editState.deepCopy().apply {
+                blurScope = draftScope
+                blurType = draftType
+                blurRadius = draftRadius
+                blurBrushMask = draftMask
+                blurBgSubjectCutout = draftSubjectCutout
+            }
+            val rendered = renderLivePreview(draft)
+            currentPreviewBitmap = rendered
+            dialogBinding.imgBlurPreview.setImageBitmap(rendered)
+        }
+
+        dialogBinding.imgBlurPreview.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    if (originalBaseBmp != null) {
+                        dialogBinding.imgBlurPreview.setImageBitmap(originalBaseBmp)
+                        dialogBinding.tvBlurBeforeBadge.visibility = View.VISIBLE
+                        v.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    dialogBinding.tvBlurBeforeBadge.visibility = View.GONE
+                    if (currentPreviewBitmap != null) {
+                        dialogBinding.imgBlurPreview.setImageBitmap(currentPreviewBitmap)
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        updateBlurPreview()
+
+        when (draftScope) {
+            ImageBlurScope.FULL -> dialogBinding.chipBlurFull.isChecked = true
+            else -> dialogBinding.chipBlurBg.isChecked = true
+        }
+
+        if (draftMask != null) {
+            dialogBinding.tvBlurBrushStatus.visibility = View.VISIBLE
+        } else {
+            dialogBinding.tvBlurBrushStatus.visibility = View.GONE
+        }
+
+        when (draftType) {
+            ImageBlurType.BOX -> dialogBinding.chipBlurBox.isChecked = true
+            ImageBlurType.MOSAIC -> dialogBinding.chipBlurMosaic.isChecked = true
+            ImageBlurType.GLASS -> dialogBinding.chipBlurGlass.isChecked = true
+            ImageBlurType.MOTION -> dialogBinding.chipBlurMotion.isChecked = true
+            ImageBlurType.BOKEH -> dialogBinding.chipBlurBokeh.isChecked = true
+            ImageBlurType.SOLID -> dialogBinding.chipBlurSolid.isChecked = true
+            ImageBlurType.PAINT -> dialogBinding.chipBlurPaint.isChecked = true
+            ImageBlurType.WATER -> dialogBinding.chipBlurWater.isChecked = true
+            ImageBlurType.ZOOM -> dialogBinding.chipBlurZoom.isChecked = true
+            else -> dialogBinding.chipBlurGaussian.isChecked = true
+        }
+
+        dialogBinding.sliderBlurRadius.value = draftRadius.toFloat().coerceIn(5f, 80f)
+        dialogBinding.tvBlurRadiusValue.text = "$draftRadius px"
+
+        dialogBinding.chipGroupBlurScope.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupBlurScope.findViewById<Chip>(checkedIds[0])
+                draftScope = when (chip?.id) {
+                    R.id.chipBlurFull -> ImageBlurScope.FULL
+                    else -> ImageBlurScope.BACKGROUND
+                }
+                updateBlurPreview()
+            }
+        }
+
+        dialogBinding.chipGroupBlurType.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupBlurType.findViewById<Chip>(checkedIds[0])
+                draftType = when (chip?.id) {
+                    R.id.chipBlurBox -> ImageBlurType.BOX
+                    R.id.chipBlurMosaic -> ImageBlurType.MOSAIC
+                    R.id.chipBlurGlass -> ImageBlurType.GLASS
+                    R.id.chipBlurMotion -> ImageBlurType.MOTION
+                    R.id.chipBlurBokeh -> ImageBlurType.BOKEH
+                    R.id.chipBlurSolid -> ImageBlurType.SOLID
+                    R.id.chipBlurPaint -> ImageBlurType.PAINT
+                    R.id.chipBlurWater -> ImageBlurType.WATER
+                    R.id.chipBlurZoom -> ImageBlurType.ZOOM
+                    else -> ImageBlurType.GAUSSIAN
+                }
+                updateBlurPreview()
+            }
+        }
+
+        dialogBinding.sliderBlurRadius.addOnChangeListener { _, value, fromUser ->
+            draftRadius = value.toInt()
+            dialogBinding.tvBlurRadiusValue.text = "$draftRadius px"
+            if (fromUser) updateBlurPreview()
+        }
+
+        dialogBinding.btnOpenBlurBrushCanvas.setOnClickListener {
+            // Pick up active blur work so the interactive canvas opens with background/full blur already applied
+            val draftForCanvas = editState.deepCopy().apply {
+                blurScope = draftScope
+                blurType = draftType
+                blurRadius = draftRadius
+                blurBgSubjectCutout = draftSubjectCutout
+            }
+            val previewBmp = renderLivePreview(draftForCanvas) ?: originalBaseBmp
+            if (previewBmp != null) {
+                showBlurBrushCanvasDialog(previewBmp, draftType, draftRadius, draftMask) { newMask ->
+                    draftMask = newMask
+                    if (newMask != null) {
+                        dialogBinding.tvBlurBrushStatus.visibility = View.VISIBLE
+                    } else {
+                        dialogBinding.tvBlurBrushStatus.visibility = View.GONE
+                    }
+                    updateBlurPreview()
+                }
+            } else {
+                Toast.makeText(activity, "Preview bitmap unavailable for canvas", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        dialogBinding.btnBlurApply.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.blurScope = draftScope
+                editState.blurType = draftType
+                editState.blurRadius = draftRadius
+                editState.blurBrushMask = draftMask
+                editState.blurBgSubjectCutout = draftSubjectCutout
+                onEditsChanged()
+            })
+        }
+
+        dialogBinding.btnBlurReset.setOnClickListener {
+            draftScope = ImageBlurScope.NONE
+            draftMask = null
+            draftSubjectCutout = null
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.blurScope = ImageBlurScope.NONE
+                editState.blurBrushMask = null
+                editState.blurBgSubjectCutout = null
+                onEditsChanged()
+            })
+        }
+
+        dialogBinding.btnBlurCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnBlurClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
+    }
+
+    fun showBlurBrushCanvasDialog(
+        sourceBitmap: Bitmap,
+        blurType: ImageBlurType,
+        radius: Int,
+        initialMask: Bitmap?,
+        onDone: (Bitmap?) -> Unit
+    ) {
+        val dialogBinding = DialogBlurBrushCanvasBinding.inflate(activity.layoutInflater)
+        val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
+            setContentView(dialogBinding.root)
+        }
+
+        val blurred = ImageBlurEngine.applyBlur(sourceBitmap, blurType, radius)
+        dialogBinding.blurCanvasView.setBitmaps(sourceBitmap, blurred, initialMask)
+
+        dialogBinding.btnModeBlurBrush.isChecked = true
+        dialogBinding.toggleBrushMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                when (checkedId) {
+                    R.id.btnModeBlurBrush -> dialogBinding.blurCanvasView.mode = BlurBrushCanvasView.Mode.BLUR
+                    R.id.btnModeBlurErase -> dialogBinding.blurCanvasView.mode = BlurBrushCanvasView.Mode.ERASE
+                }
+            }
+        }
+
+        dialogBinding.sliderBrushSize.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                dialogBinding.blurCanvasView.brushRadiusPx = value
+            }
+        }
+
+        dialogBinding.btnBrushUndo.setOnClickListener { dialogBinding.blurCanvasView.undo() }
+        dialogBinding.btnBrushRedo.setOnClickListener { dialogBinding.blurCanvasView.redo() }
+        dialogBinding.btnBrushClear.setOnClickListener { dialogBinding.blurCanvasView.clearMask() }
+        dialogBinding.btnBrushResetZoom.setOnClickListener { dialogBinding.blurCanvasView.resetZoom() }
+
+        dialogBinding.btnBrushClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnBrushApply.setOnClickListener {
+            val mask = dialogBinding.blurCanvasView.getMaskBitmap()
+            onDone(mask)
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 }

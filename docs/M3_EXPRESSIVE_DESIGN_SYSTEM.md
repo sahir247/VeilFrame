@@ -29,12 +29,12 @@
 | **tertiary (new)** | `#3F3F46` | `#D4D4D8` | `#D4D4D8` |
 | **tertiaryContainer (new)** | `#D4D4D8` | `#2C2C32` | `#1C1C20` |
 | **onTertiaryContainer** | `#18181B` | `#F4F4F5` | `#F4F4F5` |
-| background | `#FAFAFB` | `#121214` | `#000000` |
-| surfaceContainerLowest | `#FFFFFF` | `#0E0E10` | `#000000` |
-| surfaceContainerLow | `#FAFAFB` | `#16161A` | `#000000` |
-| surfaceContainer | `#F4F4F6` | `#1C1C20` | `#000000` |
-| surfaceContainerHigh | `#EEEEF0` | `#242428` | `#0B0B0E` |
-| surfaceContainerHighest | `#E8E8EB` | `#2C2C32` | `#121216` |
+| background | `#ECEFF4` | `#101116` | `#000000` |
+| surfaceContainerLowest | `#FFFFFF` | `#0A0B0F` | `#000000` |
+| surfaceContainerLow | `#F8F9FC` | `#181A22` | `#000000` |
+| surfaceContainer | `#E8ECF3` | `#21242F` | `#000000` |
+| surfaceContainerHigh | `#DEE3EC` | `#2A2E3B` | `#0B0B0E` |
+| surfaceContainerHighest | `#D2D8E4` | `#343948` | `#121216` |
 | onSurface / Variant | `#09090B` / `#52525B` | `#F4F4F5` / `#A1A1AA` | same as dark |
 | outline / outlineVariant | `#A1A1AA` / `#D4D4D8` | `#52525B` / `#3F3F46` | `#52525B` / `#2C2C32` |
 

@@ -6,6 +6,7 @@ import android.graphics.RectF
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -437,6 +438,93 @@ class PiiNcnnEngineTest {
         assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.BIN_URL))
         assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.PARAM_CDN_URL))
         assertTrue(com.veilframe.app.media.rife.RifeModelManager.isAllowedUrl(com.veilframe.app.media.rife.RifeModelManager.BIN_CDN_URL))
+    }
+
+    @Test
+    fun testExpandedCocoScreenMappingAndDetailLabel() {
+        assertEquals(PiiClass.SCREEN, PiiNcnnEngine.mapClassIndex(62, 80)) // tv/monitor
+        assertEquals(PiiClass.SCREEN, PiiNcnnEngine.mapClassIndex(63, 80)) // laptop
+        assertEquals("Laptop Screen", PiiNcnnEngine.cocoPiiDetailLabel(63, PiiClass.SCREEN))
+        assertEquals("Phone Screen", PiiNcnnEngine.cocoPiiDetailLabel(67, PiiClass.CARD))
+    }
+
+    @Test
+    fun testPiiTextClassifierCoversSensitivePatterns() {
+        assertEquals("Email", PiiTextClassifier.classifySensitiveText("contact parvezsahir@example.com for invoice"))
+        assertEquals("Phone", PiiTextClassifier.classifySensitiveText("Call +1 415-555-0198 urgently"))
+        assertEquals("Phone (WhatsApp)", PiiTextClassifier.classifySensitiveText("WhatsApp No: 8017071714"))
+        assertEquals("Toll Free Phone", PiiTextClassifier.classifySensitiveText("Toll Free No: 1800-120-2130"))
+        assertEquals("Phone", PiiTextClassifier.classifySensitiveText("Contact 9876543210"))
+        assertEquals("SSN", PiiTextClassifier.classifySensitiveText("SSN: 123-45-6789"))
+        assertEquals("Tax / PAN ID", PiiTextClassifier.classifySensitiveText("PAN ABCDE1234F"))
+        assertEquals("Card Number", PiiTextClassifier.classifySensitiveText("Card 4532 0151 1283 0366"))
+        assertEquals("National ID", PiiTextClassifier.classifySensitiveText("ID 2345 6789 0123"))
+        assertEquals("UPI Handle", PiiTextClassifier.classifySensitiveText("Pay merchant@okaxis"))
+        assertEquals("Credential / Key", PiiTextClassifier.classifySensitiveText("Authorization: ghp_1234567890abcdef1234567890"))
+        assertEquals("IPv4 Address", PiiTextClassifier.classifySensitiveText("Server IP 192.168.10.42"))
+        assertNull(PiiTextClassifier.classifySensitiveText("Sunset over mountain lake"))
+        assertNull(PiiTextClassifier.classifySensitiveText("4532 0151 1283 0367")) // Fails Luhn checksum
+    }
+
+    @Test
+    fun testMultiStyleRedactionAndManifest() {
+        val bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        // Paint checkerboard inside ROI so Pixelate/Blur produce visible changes while Solid removes them completely
+        for (y in 0 until 100) {
+            for (x in 0 until 100) {
+                val color = if (((x / 4) + (y / 4)) % 2 == 0) Color.BLUE else Color.YELLOW
+                bmp.setPixel(x, y, color)
+            }
+        }
+        val det = PiiDetection(RectF(20f, 20f, 60f, 60f), PiiClass.SCREEN, 0.9f, "Laptop Screen")
+
+        val solidWhite = PiiNcnnEngine.applyRedaction(bmp, listOf(det), PiiRedactionStyle.SOLID_WHITE)
+        assertEquals(Color.WHITE, solidWhite.getPixel(40, 40))
+        assertTrue(PiiNcnnEngine.verifyZeroResidualSignals(solidWhite, listOf(det), Color.WHITE))
+        val whiteManifest = PiiNcnnEngine.exportRedactionManifest(listOf(det), 100, 100, style = PiiRedactionStyle.SOLID_WHITE)
+        assertEquals("Layer_C_Isolated_Solid_Redaction", whiteManifest.getString("layer"))
+        assertEquals("SOLID_WHITE", whiteManifest.getString("redactionStyle"))
+
+        val pixelated = PiiNcnnEngine.applyRedaction(bmp, listOf(det), PiiRedactionStyle.PIXELATE)
+        assertEquals(100, pixelated.width)
+        val blurred = PiiNcnnEngine.applyRedaction(bmp, listOf(det), PiiRedactionStyle.BLUR)
+        assertEquals(100, blurred.height)
+        val blurManifest = PiiNcnnEngine.exportRedactionManifest(listOf(det), 100, 100, style = PiiRedactionStyle.BLUR)
+        assertEquals("Layer_B_Visual_Obfuscation_BLUR", blurManifest.getString("layer"))
+    }
+
+    @Test
+    fun testVideoPiiTemporalMergeAndFfmpegFilters() {
+        val regions = listOf(
+            com.veilframe.app.cv.motion.TimedPiiRegion(0.0, 1.0, RectF(100f, 100f, 200f, 200f), PiiClass.FACE, "Face"),
+            com.veilframe.app.cv.motion.TimedPiiRegion(0.9, 2.0, RectF(102f, 102f, 202f, 202f), PiiClass.FACE, "Face"),
+            com.veilframe.app.cv.motion.TimedPiiRegion(5.0, 6.0, RectF(0f, 0f, 1920f, 1080f), PiiClass.SCREEN, "Monitor")
+        )
+        val merged = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.mergeTemporalOverlaps(regions)
+        assertEquals(2, merged.size)
+        assertEquals(0.0, merged[0].startSec, 0.001)
+        assertEquals(2.0, merged[0].endSec, 0.001)
+
+        val delogoChain = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+            regions = merged,
+            frameW = 1920,
+            frameH = 1080,
+            style = PiiRedactionStyle.BLUR
+        )
+        assertNotNull(delogoChain)
+        assertTrue(delogoChain!!.contains("delogo=x="))
+        // Clamped strictly inside 1920x1080 bounds for full-frame delogo
+        assertTrue(delogoChain.contains("delogo=x=1:y=1:w=1918:h=1078"))
+
+        val drawboxChain = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+            regions = merged,
+            frameW = 1920,
+            frameH = 1080,
+            style = PiiRedactionStyle.SOLID_BLACK
+        )
+        assertNotNull(drawboxChain)
+        assertTrue(drawboxChain!!.contains("drawbox="))
+        assertTrue(drawboxChain.contains("color=black:t=fill"))
     }
 
     private fun findModelFile(name: String): File? {

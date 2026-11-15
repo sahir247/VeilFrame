@@ -197,20 +197,50 @@ object QrGenerator {
             }
         }
 
+        val minVersion = if (design.style == QrStyle.IMAGE_RESAMPLE) {
+            design.resampleStyle.minVersion.coerceIn(1, 40)
+        } else 1
+
         return when (mode) {
             GenerationMode.ARTISTIC_ENGINE -> {
                 val hasNonAscii = content.any { it.code > 127 }
                 val writeEci = design.forceEci ?: hasNonAscii
-                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = writeEci).matrix
+                val artBitmap = design.imageSource.bitmap ?: design.imageSource.animatedFrames?.firstOrNull()
+                if (design.style == QrStyle.IMAGE_RESAMPLE &&
+                    design.resampleStyle.ditherMode == com.veilframe.app.qr.model.ResampleDitherMode.FLOYD_STEINBERG &&
+                    artBitmap != null &&
+                    !artBitmap.isRecycled
+                ) {
+                    ResampleSubpixelEngine.selectBestMatrixForImage(
+                        content = content,
+                        ecLevel = ecLevel,
+                        writeEci = writeEci,
+                        minVersion = minVersion,
+                        source = artBitmap,
+                        style = design.imageSource
+                    )
+                } else {
+                    com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(
+                        content,
+                        ecLevel,
+                        writeEci = writeEci,
+                        minVersion = minVersion
+                    ).matrix
+                }
             }
             GenerationMode.PARITY_EF -> {
                 // Parity with EFQRCode 7.0.3 / QRCodeSwift 2.3.1: Upstream byte mode does not write ECI blocks by default.
                 // Callers can explicitly specify forceEci = true to emit ISO/IEC 18004 ECI headers.
                 val writeEci = design.forceEci ?: false
-                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = writeEci).matrix
+                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(
+                    content,
+                    ecLevel,
+                    writeEci = writeEci,
+                    minVersion = minVersion
+                ).matrix
             }
             GenerationMode.SAFE -> {
-                QrEncoder.encode(content, ecLevel).matrix
+                QrEncoder.encode(content, ecLevel, minVersion = minVersion).matrix
             }
         }
     }

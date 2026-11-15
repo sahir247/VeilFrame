@@ -1,6 +1,8 @@
 package com.veilframe.app.cv
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.util.Log
+import com.veilframe.app.cv.segmentation.DocumentSegmentationService
 import com.veilframe.app.cv.color.ColorEngine
 import com.veilframe.app.cv.core.MatPool
 import com.veilframe.app.cv.geometry.PerspectiveCorrector
@@ -235,5 +237,36 @@ class CvNativeSubsystemTest {
         flow.release()
         frame1.release()
         frame2.release()
+    }
+
+    @Test
+    fun documentScannerNeuralSegmentationAndOpenCvQuadDetection() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val service = DocumentSegmentationService.getInstance(context)
+        assertTrue("DocumentSegmentationService must be available via LiteRT", service.isModelAvailable)
+
+        // Create a synthetic document image (white document rectangle on dark desk)
+        val bitmap = android.graphics.Bitmap.createBitmap(512, 512, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.DKGRAY)
+        val paint = android.graphics.Paint().apply { color = android.graphics.Color.WHITE }
+        canvas.drawRect(80f, 80f, 432f, 432f, paint)
+
+        // 1. Run neural segmentation via LiteRT
+        val result = service.runSegmentationDirect(bitmap)
+        assertNotNull("Segmentation result must not be null", result)
+        Log.i("CvNativeSubsystemTest", "Document segmentation inference time: ${result!!.inferenceTimeMs} ms (GPU: ${service.isGpuAccelerated})")
+        assertTrue("Inference time must be positive", result.inferenceTimeMs > 0)
+
+        // 2. Run document quad detection (executes Imgproc.GaussianBlur_3, threshold, morphologyEx, contours)
+        val quad = com.veilframe.app.cv.document.detectDocumentQuad(
+            mask = result.segmentation,
+            originalSize = com.veilframe.app.cv.geometry.ImageSize(bitmap.width, bitmap.height),
+            mode = com.veilframe.app.cv.document.Mode.IMPORT
+        )
+        assertNotNull("detectDocumentQuad must successfully compute quadrilateral without UnsatisfiedLinkError", quad)
+        Log.i("CvNativeSubsystemTest", "Detected document quad: $quad")
+
+        bitmap.recycle()
     }
 }

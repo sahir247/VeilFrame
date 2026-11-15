@@ -1145,7 +1145,7 @@ class QrStudioViewModelExportValidationTest {
         assertTrue(action is com.veilframe.app.qr.scanner.QrAction.Wifi)
 
         // 1. Default masked presentation: hides password behind bullets
-        val maskedSummary = QrScanTabFragment.formatActionSummary(action, maskWifiPassword = true)
+        val maskedSummary = com.veilframe.app.qr.ui.QrStudioController.formatActionSummary(action, maskWifiPassword = true)
         assertTrue(maskedSummary.contains("Network: HomeNetwork"))
         assertTrue(maskedSummary.contains("Security: WPA"))
         assertTrue(maskedSummary.contains("Password: ••••••••"))
@@ -1153,7 +1153,7 @@ class QrStudioViewModelExportValidationTest {
         assertTrue(maskedSummary.contains("(Hidden)"))
 
         // 2. Explicit reveal presentation: displays plaintext password
-        val revealedSummary = QrScanTabFragment.formatActionSummary(action, maskWifiPassword = false)
+        val revealedSummary = com.veilframe.app.qr.ui.QrStudioController.formatActionSummary(action, maskWifiPassword = false)
         assertTrue(revealedSummary.contains("Password: SuperSecretPass"))
         assertFalse(revealedSummary.contains("••••••••"))
     }

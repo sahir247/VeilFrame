@@ -101,21 +101,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val alignmentColor: Int? = null,
 
         // Style-Specific Customization Parameters
-        val d25Depth: Float = 1.0f,
-        val d25PositionDepth: Float = 1.0f,
+        val d25Depth: Float = 0.40f,
+        val d25PositionDepth: Float = 0.30f,
         val d25Angle: Float = 45f,
         val d25TopColor: Int? = null,
-        val d25LeftColor: Int = 0x33000000,
-        val d25RightColor: Int = 0x99000000.toInt(),
+        val d25LeftColor: Int = 0x22000000,
+        val d25RightColor: Int = 0x42000000.toInt(),
         val lineDirection: LineDirection = LineDirection.X,
-        val lineThickness: Float = 0.5f,
-        val lineVariant: LineVariant = LineVariant.EF,
+        val lineThickness: Float = 0.75f,
+        val lineVariant: LineVariant = LineVariant.CIRCUIT,
         val lineLengthFraction: Float = 1.0f,
         val lineColor: Int? = null,
         val lineHorizontalColor: Int? = null,
         val lineVerticalColor: Int? = null,
-        val lineAccentRings: Boolean = false,
-        val lineCircuitBridges: Boolean = false,
+        val lineAccentRings: Boolean = true,
+        val lineCircuitBridges: Boolean = true,
         val dsjLineSize: Float = 0.7f,
         val dsjXSize: Float = 0.7f,
         val dsjHorizontalColor: Int = 0xFFF6B506.toInt(),
@@ -157,6 +157,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val resampleBackdropTint: Int? = null,
         val resampleBackdropCornerRadius: Float = 0.0f,
         val resampleRngMode: RngMode = RngMode.SYSTEM_UNSEEDED,
+        val resampleDitherMode: ResampleDitherMode = ResampleDitherMode.FLOYD_STEINBERG,
+        val resampleMinVersion: Int = 6,
         val backdropColor: Int? = null,
         val backdropCornerRadius: Float = 0.0f,
         val backdropImage: Bitmap? = null,
@@ -186,6 +188,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val resampleDataColor: Int? = null,
         val logoAnimatedFrames: List<Bitmap> = emptyList(),
         val logoFrameDelaysMs: List<Int> = emptyList(),
+        val maxAnimationFrames: Int = 120,
         val geometryPolicy: com.veilframe.app.qr.model.QrGeometryPolicy = com.veilframe.app.qr.model.QrGeometryPolicy.SafeProduction,
         val generationMode: GenerationMode = GenerationMode.PARITY_EF,
         val isAdvancedExpanded: Boolean = false,
@@ -365,11 +368,54 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateStyle(style: QrStyle) {
-        _state.value = _state.value.copy(
-            style = style,
-            repairNotice = null
-        )
+        val nextDef = com.veilframe.app.qr.registry.QrStyleRegistry.get(style)
+        val cur = _state.value
+        val updatedState = when (style) {
+            QrStyle.LINE -> cur.copy(
+                style = style,
+                finderStyle = nextDef.defaultFinderStyle,
+                dataShape = nextDef.defaultModuleShape,
+                lineVariant = LineVariant.CIRCUIT,
+                lineAccentRings = true,
+                lineCircuitBridges = true,
+                lineThickness = if (cur.style != QrStyle.LINE) 0.75f else cur.lineThickness,
+                repairNotice = null
+            )
+            QrStyle.D25 -> cur.copy(
+                style = style,
+                finderStyle = nextDef.defaultFinderStyle,
+                dataShape = nextDef.defaultModuleShape,
+                d25Depth = if (cur.style != QrStyle.D25 && cur.d25Depth >= 0.99f) 0.40f else cur.d25Depth,
+                d25PositionDepth = if (cur.style != QrStyle.D25 && cur.d25PositionDepth >= 0.99f) 0.30f else cur.d25PositionDepth,
+                d25LeftColor = if (cur.style != QrStyle.D25 && cur.d25LeftColor == 0x33000000) 0x22000000 else cur.d25LeftColor,
+                d25RightColor = if (cur.style != QrStyle.D25 && cur.d25RightColor == 0x99000000.toInt()) 0x42000000.toInt() else cur.d25RightColor,
+                repairNotice = null
+            )
+            else -> cur.copy(
+                style = style,
+                finderStyle = nextDef.defaultFinderStyle,
+                dataShape = nextDef.defaultModuleShape,
+                repairNotice = null
+            )
+        }
+        _state.value = updatedState
         regenerate(debounceMs = 0)
+    }
+
+    fun updateMaxAnimationFrames(maxFrames: Int) {
+        val clamped = maxFrames.coerceIn(12, 360)
+        if (_state.value.maxAnimationFrames == clamped) return
+        _state.value = _state.value.copy(maxAnimationFrames = clamped)
+        if (isStyleAnimationActive(_state.value)) {
+            regenerate(debounceMs = 0)
+        }
+    }
+
+    fun isStyleAnimationActive(s: UiState = _state.value): Boolean {
+        val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
+        val sourceAnim = def.supportsAnimatedSource && s.animatedFrames.size > 1
+        val logoAnim = def.supportsAnimatedLogo && s.logoAnimatedFrames.size > 1
+        return sourceAnim || logoAnim
     }
 
     fun updateOutputSize(size: Int) {
@@ -394,10 +440,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateLogo(bmp: Bitmap?, autoRecycleSuperseded: Boolean = true) {
         val oldLogo = _state.value.logo
-        _state.value = _state.value.copy(logo = bmp, repairNotice = null)
+        val oldFrames = _state.value.logoAnimatedFrames
+        _state.value = _state.value.copy(
+            logo = bmp,
+            logoAnimatedFrames = emptyList(),
+            logoFrameDelaysMs = emptyList(),
+            repairNotice = null
+        )
         val gen = renderGeneration.get()
         if (autoRecycleSuperseded && oldLogo != null && oldLogo !== bmp) {
             retireBitmap(oldLogo, gen, BitmapOwnership.USER_SUPPLIED)
+        }
+        if (autoRecycleSuperseded) {
+            for (f in oldFrames) {
+                if (f !== bmp) {
+                    retireBitmap(f, gen, BitmapOwnership.USER_SUPPLIED)
+                }
+            }
         }
         regenerate(debounceMs = 0)
     }
@@ -563,7 +622,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateImageDataScale(scale: Float) {
-        _state.value = _state.value.copy(imageDataScale = maxOf(0f, scale), repairNotice = null)
+        val clamped = maxOf(0f, scale)
+        _state.value = _state.value.copy(
+            imageDataScale = clamped,
+            dataScale = clamped.coerceIn(0.1f, 1.0f),
+            repairNotice = null
+        )
         regenerate(debounceMs = 120)
     }
 
@@ -760,26 +824,60 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
                 _state.update { it.copy(isRenderingPreview = true, errorMessage = null) }
 
-                val design = customDesign ?: buildDesignFromState(_state.value)
+                val latestState = _state.value
+                val design = customDesign ?: buildDesignFromState(latestState)
                 ensureActive()
                 if (generation != renderGeneration.get()) return@launch
 
-                val mode = s.generationMode
+                // Ensure primary WeChatQR engine is installed on Android before running ScanabilityValidator
+                val fp = android.os.Build.FINGERPRINT ?: ""
+                if (!fp.contains("robolectric", ignoreCase = true) &&
+                    com.veilframe.app.cv.core.CvRuntime.isNativeAvailable &&
+                    !com.veilframe.app.cv.qr.WeChatQrEngine.isAvailable()
+                ) {
+                    runCatching { com.veilframe.app.cv.qr.WeChatQrEngine.install(getApplication()) }
+                }
+
+                val mode = latestState.generationMode
                 val renderResult = QrGenerator.generateWithResultSuspend(effectiveContent, design, mode = mode)
                 ensureActive()
                 if (generation != renderGeneration.get()) return@launch
 
-                val animPreviewFrames: List<QrFrame> = if (renderResult is QrRenderResult.Success && AnimatedQrGenerator.isDesignAnimated(design)) {
+                val styleDef = com.veilframe.app.qr.registry.QrStyleRegistry.get(design.style)
+                val hasSupportedAnimSource = styleDef.supportsAnimatedSource &&
+                    (design.imageSource.isAnimated || design.imageSource.animatedFrames?.isNotEmpty() == true)
+                val hasSupportedAnimLogo = styleDef.supportsAnimatedLogo &&
+                    (design.logo?.isAnimated == true || design.logo?.animatedFrames?.isNotEmpty() == true)
+
+                val animPreviewFrames: List<QrFrame> = if (
+                    renderResult is QrRenderResult.Success &&
+                    (hasSupportedAnimSource || hasSupportedAnimLogo)
+                ) {
                     try {
+                        val previewAnimDesign = if (!styleDef.supportsAnimatedSource && design.imageSource.isAnimated) {
+                            design.copy(
+                                imageSource = design.imageSource.copy(
+                                    source = design.imageSource.bitmap?.let { ImageSource.Memory(it) },
+                                    overrideAnimatedFrames = null
+                                )
+                            )
+                        } else {
+                            design
+                        }
+                        val previewOutSize = if (latestState.maxAnimationFrames > 150) {
+                            minOf(design.outputSize, 256)
+                        } else {
+                            minOf(design.outputSize, 320)
+                        }
                         val animResult = QrGenerator.generateAnimatedFramesResult(
                             content = effectiveContent,
-                            design = design,
-                            outputSize = minOf(design.outputSize, 384),
+                            design = previewAnimDesign,
+                            outputSize = previewOutSize,
                             mode = mode,
                             policy = AnimatedQrGenerator.FrameDropPolicy.SkipFailedFrames
                         )
                         if (animResult is QrOutputResult.Success) {
-                            animResult.value.take(24)
+                            animResult.value.take(latestState.maxAnimationFrames.coerceIn(12, 360))
                         } else {
                             emptyList()
                         }
@@ -897,8 +995,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ),
             eyeStyle = EyeStyle(
                 style = s.finderStyle,
-                outerColor = s.finderOuterColor ?: s.foreground,
-                innerColor = s.finderInnerColor ?: s.foreground
+                outerColor = if (s.style == QrStyle.BUBBLE) s.finderOuterColor else (s.finderOuterColor ?: s.foreground),
+                innerColor = if (s.style == QrStyle.BUBBLE) s.finderInnerColor else (s.finderInnerColor ?: s.foreground)
             ),
             palette = PaletteStyle(
                 foreground = s.foreground,
@@ -965,7 +1063,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 color = s.lineColor ?: s.foreground,
                 positionStyle = s.finderStyle,
                 positionSize = s.positionSize,
-                positionColor = s.finderOuterColor ?: s.finderInnerColor ?: s.foreground,
+                positionColor = s.finderOuterColor,
                 variant = s.lineVariant,
                 accentRingsEnabled = s.lineAccentRings || s.lineVariant == LineVariant.CIRCUIT,
                 circuitBridgesEnabled = s.lineCircuitBridges || s.lineVariant == LineVariant.CIRCUIT
@@ -1069,7 +1167,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 backdropScaleMode = s.resampleBackdropScaleMode,
                 backdropTint = s.resampleBackdropTint,
                 backdropCornerRadius = s.resampleBackdropCornerRadius,
-                rngMode = s.resampleRngMode
+                rngMode = s.resampleRngMode,
+                ditherMode = s.resampleDitherMode,
+                minVersion = s.resampleMinVersion
             ),
             backdropStyle = BackdropStyle(
                 color = s.backdropColor,
@@ -1170,7 +1270,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateLineVariant(variant: LineVariant) {
-        _state.value = _state.value.copy(lineVariant = variant)
+        val currentFinder = _state.value.finderStyle
+        val updatedFinder = if (variant == LineVariant.CIRCUIT && currentFinder == FinderStyle.CLASSIC) {
+            FinderStyle.PLANETS
+        } else {
+            currentFinder
+        }
+        _state.value = _state.value.copy(
+            lineVariant = variant,
+            finderStyle = updatedFinder
+        )
         regenerate(debounceMs = 0)
     }
 
@@ -1276,7 +1385,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateDataScale(scale: Float) {
-        _state.value = _state.value.copy(dataScale = scale.coerceIn(0.1f, 1.0f))
+        val clamped = scale.coerceIn(0.1f, 1.0f)
+        _state.value = _state.value.copy(
+            dataScale = clamped,
+            imageDataScale = clamped
+        )
         regenerate(debounceMs = 120)
     }
 
@@ -1686,6 +1799,18 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 0)
     }
 
+    fun updateResampleDitherMode(mode: ResampleDitherMode) {
+        _state.value = _state.value.copy(resampleDitherMode = mode)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateResampleMinVersion(minVersion: Int) {
+        val clamped = minVersion.coerceIn(1, 10)
+        if (_state.value.resampleMinVersion == clamped) return
+        _state.value = _state.value.copy(resampleMinVersion = clamped)
+        regenerate(debounceMs = 120)
+    }
+
     fun updateLogoShape(shape: LogoShape) {
         _state.value = _state.value.copy(logoShape = shape)
         regenerate(debounceMs = 0)
@@ -1881,12 +2006,18 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = launchExportJob {
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+            val s = _state.value
+            val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
+            val exportDesign = buildDesignFromState(s, isPreview = false)
+            val hasSourceAnim = def.supportsAnimatedSource && s.animatedFrames.isNotEmpty()
+            val hasLogoAnim = def.supportsAnimatedLogo && s.logoAnimatedFrames.isNotEmpty()
+            val frames = when {
+                hasSourceAnim -> s.animatedFrames.take(s.maxAnimationFrames)
+                hasLogoAnim -> s.logoAnimatedFrames.map { QrFrame(it, 100) }.take(s.maxAnimationFrames)
+                else -> {
+                    val baseBmp = if (def.supportsSourceImage) s.sourceImage ?: s.backgroundImage else null
+                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+                }
             }
 
             if (frames.isEmpty()) {
@@ -1896,7 +2027,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
 
-            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && hasSourceAnim) {
                 exportDesign.copy(
                     imageSource = exportDesign.imageSource.copy(
                         source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
@@ -1925,14 +2056,18 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = launchExportJob {
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                if (baseBmp != null) {
-                    (0 until 15).map { QrFrame(baseBmp, 66) }
-                } else emptyList()
+            val s = _state.value
+            val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
+            val exportDesign = buildDesignFromState(s, isPreview = false)
+            val hasSourceAnim = def.supportsAnimatedSource && s.animatedFrames.isNotEmpty()
+            val hasLogoAnim = def.supportsAnimatedLogo && s.logoAnimatedFrames.isNotEmpty()
+            val frames = when {
+                hasSourceAnim -> s.animatedFrames.take(s.maxAnimationFrames)
+                hasLogoAnim -> s.logoAnimatedFrames.map { QrFrame(it, 100) }.take(s.maxAnimationFrames)
+                else -> {
+                    val baseBmp = if (def.supportsSourceImage) s.sourceImage ?: s.backgroundImage else null
+                    if (baseBmp != null) (0 until 15).map { QrFrame(baseBmp, 66) } else emptyList()
+                }
             }
 
             if (frames.isEmpty()) {
@@ -1942,7 +2077,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
 
-            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && hasSourceAnim) {
                 exportDesign.copy(
                     imageSource = exportDesign.imageSource.copy(
                         source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
@@ -1976,12 +2111,18 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = launchExportJob {
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+            val s = _state.value
+            val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
+            val exportDesign = buildDesignFromState(s, isPreview = false)
+            val hasSourceAnim = def.supportsAnimatedSource && s.animatedFrames.isNotEmpty()
+            val hasLogoAnim = def.supportsAnimatedLogo && s.logoAnimatedFrames.isNotEmpty()
+            val frames = when {
+                hasSourceAnim -> s.animatedFrames.take(s.maxAnimationFrames)
+                hasLogoAnim -> s.logoAnimatedFrames.map { QrFrame(it, 100) }.take(s.maxAnimationFrames)
+                else -> {
+                    val baseBmp = if (def.supportsSourceImage) s.sourceImage ?: s.backgroundImage else null
+                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+                }
             }
 
             if (frames.isEmpty()) {
@@ -1991,7 +2132,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
 
-            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && hasSourceAnim) {
                 exportDesign.copy(
                     imageSource = exportDesign.imageSource.copy(
                         source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })

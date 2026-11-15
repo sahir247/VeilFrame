@@ -102,7 +102,7 @@ object ImageTransformEngine {
     ): Bitmap {
         var result = src
 
-        // 0. Layer C Isolated Solid Redaction (AI PII Auto-Redactor)
+        // 0. Layer C Isolated Redaction (AI PII Auto-Redactor)
         if (state.piiDetections.isNotEmpty()) {
             val scaledDetections = PiiNcnnEngine.scaleDetections(
                 detections = state.piiDetections,
@@ -111,7 +111,7 @@ object ImageTransformEngine {
                 dstW = result.width,
                 dstH = result.height
             )
-            result = PiiNcnnEngine.applySolidRedaction(result, scaledDetections)
+            result = PiiNcnnEngine.applyRedaction(result, scaledDetections, state.piiRedactionStyle)
         }
 
         // 1. Crop
@@ -173,6 +173,38 @@ object ImageTransformEngine {
             }
         }
 
+        // 2b. Photo Studio Blur (Full, Background, Brush Canvas)
+        if (state.blurScope != com.veilframe.app.media.ImageBlurScope.NONE) {
+            try {
+                result = when (state.blurScope) {
+                    com.veilframe.app.media.ImageBlurScope.FULL -> {
+                        com.veilframe.app.media.blur.ImageBlurEngine.applyBlur(result, state.blurType, state.blurRadius)
+                    }
+                    com.veilframe.app.media.ImageBlurScope.BACKGROUND -> {
+                        com.veilframe.app.media.blur.ImageBlurEngine.applyBgBlur(result, state.blurType, state.blurRadius, state.blurBgSubjectCutout)
+                    }
+                    com.veilframe.app.media.ImageBlurScope.BRUSH -> {
+                        val mask = state.blurBrushMask
+                        if (mask != null) {
+                            com.veilframe.app.media.blur.ImageBlurEngine.applyBrushMaskBlur(result, state.blurType, state.blurRadius, mask)
+                        } else result
+                    }
+                    else -> result
+                }
+                // If brush strokes were painted on top of Background or Full blur, composite them on top
+                if (state.blurScope != com.veilframe.app.media.ImageBlurScope.BRUSH && state.blurBrushMask != null) {
+                    result = com.veilframe.app.media.blur.ImageBlurEngine.applyBrushMaskBlur(
+                        result,
+                        state.blurType,
+                        state.blurRadius,
+                        state.blurBrushMask!!
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Blur transform error: ${e.message}")
+            }
+        }
+
         // 3. Resize
         val targetWidth: Int
         val targetHeight: Int
@@ -225,61 +257,45 @@ object ImageTransformEngine {
         // 5. Color filter
         if (state.filter != "Default" && state.filter != "None") {
             try {
-                val filteredBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(filteredBmp)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                val colorMatrix = com.veilframe.app.media.preview.VideoColorFilterHelper.getColorMatrix(state.filter)
+                    ?: when (state.filter) {
+                        "Grayscale" -> ColorMatrix().apply { setSaturation(0f) }
+                        "Sepia" -> ColorMatrix(floatArrayOf(
+                            0.393f, 0.769f, 0.189f, 0f, 0f,
+                            0.349f, 0.686f, 0.168f, 0f, 0f,
+                            0.272f, 0.534f, 0.131f, 0f, 0f,
+                            0f, 0f, 0f, 1f, 0f
+                        ))
+                        "Cool" -> ColorMatrix(floatArrayOf(
+                            0.8f, 0f, 0f, 0f, 0f,
+                            0f, 0.9f, 0f, 0f, 0f,
+                            0f, 0f, 1.2f, 0f, 0f,
+                            0f, 0f, 0f, 1f, 0f
+                        ))
+                        "Warm" -> ColorMatrix(floatArrayOf(
+                            1.2f, 0f, 0f, 0f, 0f,
+                            0f, 1.0f, 0f, 0f, 0f,
+                            0f, 0f, 0.8f, 0f, 0f,
+                            0f, 0f, 0f, 1f, 0f
+                        ))
+                        "Vintage" -> ColorMatrix(floatArrayOf(
+                            0.9f, 0f, 0f, 0f, 10f,
+                            0f, 0.8f, 0f, 0f, 10f,
+                            0f, 0.6f, 0f, 0f, 20f,
+                            0f, 0f, 0f, 1f, 0f
+                        ))
+                        else -> null
+                    }
 
-                val colorMatrix = ColorMatrix()
-                when (state.filter) {
-                    "Grayscale" -> colorMatrix.setSaturation(0f)
-                    "Sepia" -> {
-                        val sepia = ColorMatrix(
-                            floatArrayOf(
-                                0.393f, 0.769f, 0.189f, 0f, 0f,
-                                0.349f, 0.686f, 0.168f, 0f, 0f,
-                                0.272f, 0.534f, 0.131f, 0f, 0f,
-                                0f, 0f, 0f, 1f, 0f
-                            )
-                        )
-                        colorMatrix.postConcat(sepia)
+                if (colorMatrix != null) {
+                    val filteredBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(filteredBmp)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        colorFilter = ColorMatrixColorFilter(colorMatrix)
                     }
-                    "Cool" -> {
-                        val cool = ColorMatrix(
-                            floatArrayOf(
-                                0.8f, 0f, 0f, 0f, 0f,
-                                0f, 0.9f, 0f, 0f, 0f,
-                                0f, 0f, 1.2f, 0f, 0f,
-                                0f, 0f, 0f, 1f, 0f
-                            )
-                        )
-                        colorMatrix.postConcat(cool)
-                    }
-                    "Warm" -> {
-                        val warm = ColorMatrix(
-                            floatArrayOf(
-                                1.2f, 0f, 0f, 0f, 0f,
-                                0f, 1.0f, 0f, 0f, 0f,
-                                0f, 0f, 0.8f, 0f, 0f,
-                                0f, 0f, 0f, 1f, 0f
-                            )
-                        )
-                        colorMatrix.postConcat(warm)
-                    }
-                    "Vintage" -> {
-                        val vintage = ColorMatrix(
-                            floatArrayOf(
-                                0.9f, 0f, 0f, 0f, 10f,
-                                0f, 0.8f, 0f, 0f, 10f,
-                                0f, 0.6f, 0f, 0f, 20f,
-                                0f, 0f, 0f, 1f, 0f
-                            )
-                        )
-                        colorMatrix.postConcat(vintage)
-                    }
+                    canvas.drawBitmap(result, 0f, 0f, paint)
+                    result = filteredBmp
                 }
-                paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
-                canvas.drawBitmap(result, 0f, 0f, paint)
-                result = filteredBmp
             } catch (e: Exception) {
                 Log.w(TAG, "Color filter error: ${e.message}")
             }

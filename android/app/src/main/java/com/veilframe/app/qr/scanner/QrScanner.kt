@@ -537,13 +537,22 @@ class QrScanner(
 
         /**
          * Synchronously decodes a QR code from a [Bitmap] (e.g. gallery pick).
-         * Multi-stage pipeline:
-         * 1. ML Kit primary pass with [enableAllPotentialBarcodes].
-         * 2. If candidate bounding box localized, crops ROI with quiet zone for ZXing.
-         * 3. Multi-resolution multi-binarizer fallback (Hybrid, GlobalHistogram, Invert).
+         * Multi-stage pipeline matching Scanner + Validator architecture:
+         * 1. WeChatQRCode PRIMARY with QrRecoveryEngine retries (original, smooth 512px, padded upscale, CLAHE+adaptive, gaussian bridge, perspective, invert).
+         * 2. ML Kit Barcode Scanning FALLBACK with [enableAllPotentialBarcodes] + ROI crops + contrast/invert retries.
+         * 3. Multi-resolution ZXing emergency fallback for gallery photos if both native engines miss.
          */
         fun decode(bitmap: Bitmap): String? {
-            // Stage 0: ML Kit primary attempt on static bitmap
+            // Stage 0: WeChatQRCode primary with staged preprocessing retries
+            try {
+                val wechatHit = com.veilframe.app.cv.qr.QrRecoveryEngine
+                    .recoverWithWeChat(bitmap)
+                    .detection
+                    ?.rawValue
+                if (!wechatHit.isNullOrEmpty()) return wechatHit
+            } catch (_: Throwable) {}
+
+            // Stage 1: Google ML Kit primary/fallback with ROI localization
             try {
                 val inputImage = InputImage.fromBitmap(bitmap, 0)
                 val options = BarcodeScannerOptions.Builder()

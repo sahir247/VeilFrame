@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.qr.model.QrFrame
@@ -20,18 +21,79 @@ import java.util.Locale
  */
 object AnimatedMediaHelper {
 
+    enum class MediaKind {
+        GIF,
+        WEBP,
+        VIDEO,
+        STATIC_IMAGE,
+    }
+
+    private val videoExtensions = listOf(".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp")
+
+    /**
+     * Determines media kind using MIME type, SAF display filename, URI path, and header bytes.
+     * Avoids misclassifying SAF document URIs whose MIME is missing or application/octet-stream.
+     */
+    fun detectMediaKind(context: Context, uri: Uri): MediaKind {
+        val cr = context.contentResolver
+        val mimeType = (cr.getType(uri) ?: "").lowercase(Locale.ROOT)
+        val displayName = try {
+            DocumentFile.fromSingleUri(context, uri)?.name?.lowercase(Locale.ROOT)
+        } catch (_: Exception) {
+            null
+        } ?: ""
+        val uriStr = uri.toString().lowercase(Locale.ROOT)
+        val candidates = listOf(displayName, uriStr)
+
+        if (mimeType == "image/gif" || candidates.any { it.endsWith(".gif") }) return MediaKind.GIF
+        if (mimeType == "image/webp" || candidates.any { it.endsWith(".webp") }) return MediaKind.WEBP
+        if (mimeType.startsWith("video/") || candidates.any { path -> videoExtensions.any { path.endsWith(it) } }) {
+            return MediaKind.VIDEO
+        }
+        if (mimeType.startsWith("image/")) return MediaKind.STATIC_IMAGE
+
+        return sniffHeaderKind(context, uri) ?: MediaKind.STATIC_IMAGE
+    }
+
+    private fun sniffHeaderKind(context: Context, uri: Uri): MediaKind? {
+        return try {
+            val header = ByteArray(12)
+            val read = context.contentResolver.openInputStream(uri)?.use { it.read(header) } ?: return null
+            if (read < 4) return null
+            val ascii4 = String(header, 0, 4, Charsets.US_ASCII)
+            if (read >= 6) {
+                val ascii6 = String(header, 0, 6, Charsets.US_ASCII)
+                if (ascii6 == "GIF87a" || ascii6 == "GIF89a") return MediaKind.GIF
+            }
+            if (read >= 12 && ascii4 == "RIFF" && String(header, 8, 4, Charsets.US_ASCII) == "WEBP") {
+                return MediaKind.WEBP
+            }
+            if (read >= 8 && String(header, 4, 4, Charsets.US_ASCII) == "ftyp") {
+                return MediaKind.VIDEO
+            }
+            // EBML container magic bytes (WebM / Matroska)
+            if (header[0] == 0x1A.toByte() && header[1] == 0x45.toByte() &&
+                header[2] == 0xDF.toByte() && header[3] == 0xA3.toByte()
+            ) {
+                return MediaKind.VIDEO
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     suspend fun extractFrames(
         context: Context,
         uri: Uri,
         maxFrames: Int = 120
     ): List<QrFrame> = withContext(Dispatchers.IO) {
+        val clampedMax = maxFrames.coerceIn(1, 600)
         val cr = context.contentResolver
-        val mimeType = cr.getType(uri) ?: ""
-        val uriStr = uri.toString().lowercase(Locale.ROOT)
-        val isGif = mimeType.equals("image/gif", ignoreCase = true) || uriStr.endsWith(".gif")
-        val isWebp = mimeType.equals("image/webp", ignoreCase = true) || uriStr.endsWith(".webp")
-        val isVideo = mimeType.startsWith("video/", ignoreCase = true) ||
-            uriStr.endsWith(".mp4") || uriStr.endsWith(".mov") || uriStr.endsWith(".webm") || uriStr.endsWith(".mkv")
+        val kind = detectMediaKind(context, uri)
+        val isGif = kind == MediaKind.GIF
+        val isWebp = kind == MediaKind.WEBP
+        val isVideo = kind == MediaKind.VIDEO
 
         if (!isGif && !isWebp && !isVideo) return@withContext emptyList()
 
@@ -57,9 +119,9 @@ object AnimatedMediaHelper {
             val videoFps = 15
             val videoDelayMs = (1000.0 / videoFps).toInt() // ~67ms per frame at 15 fps
             val ffmpegCmd = if (isGif || isWebp) {
-                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0\" -vframes $maxFrames \"$framePattern\""
+                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0\" -vframes $clampedMax \"$framePattern\""
             } else {
-                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r $videoFps -vframes $maxFrames \"$framePattern\""
+                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r $videoFps -vframes $clampedMax \"$framePattern\""
             }
 
             var extractedViaFFmpeg = false
@@ -102,9 +164,9 @@ object AnimatedMediaHelper {
                 try {
                     retriever.setDataSource(inputFile.absolutePath)
                     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-                    val count = 24.coerceAtMost(maxFrames)
-                    val stepMs = (durationMs / count).coerceIn(40L, 500L)
-                    for (i in 0 until count) {
+                    val targetCount = ((durationMs / 67L).toInt().coerceIn(12, clampedMax)).coerceAtMost(clampedMax)
+                    val stepMs = (durationMs / targetCount.coerceAtLeast(1)).coerceIn(33L, 500L)
+                    for (i in 0 until targetCount) {
                         val timeUs = i * stepMs * 1000L
                         val frameBmp = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                         if (frameBmp != null) {

@@ -436,11 +436,12 @@ object DeterministicSvgRasterizer {
                 val rx = el.getAttribute("rx").toFloatOrNull() ?: 0f
                 val ry = el.getAttribute("ry").toFloatOrNull() ?: rx
                 val opacity = (el.getAttribute("opacity").toFloatOrNull() ?: 1.0f) * inheritedOpacity
+                val fillOpacity = el.getAttribute("fill-opacity").toFloatOrNull() ?: 1.0f
 
                 val rawFill = el.getAttribute("fill")
                 val fill = if (rawFill.isNotEmpty()) rawFill else (overrideFill ?: "")
                 if (fill.isNotEmpty() && fill != "none") {
-                    configureFill(paint, fill, opacity, linearGradients, radialGradients)
+                    configureFill(paint, fill, opacity * fillOpacity, linearGradients, radialGradients)
                     if (rx > 0f || ry > 0f) {
                         canvas.drawRoundRect(x, y, x + w, y + h, rx, ry, paint)
                     } else {
@@ -452,15 +453,13 @@ object DeterministicSvgRasterizer {
                 val stroke = el.getAttribute("stroke")
                 val strokeW = el.getAttribute("stroke-width").toFloatOrNull() ?: 0f
                 if (stroke.isNotEmpty() && stroke != "none" && strokeW > 0f) {
-                    paint.style = Paint.Style.STROKE
-                    paint.color = parseColor(stroke) ?: Color.BLACK
-                    paint.strokeWidth = strokeW
-                    paint.alpha = ((Color.alpha(paint.color) / 255f) * opacity * 255).toInt().coerceIn(0, 255)
+                    applyStrokeAttributes(el, paint, parseColor(stroke) ?: Color.BLACK, strokeW, opacity)
                     if (rx > 0f || ry > 0f) {
                         canvas.drawRoundRect(x, y, x + w, y + h, rx, ry, paint)
                     } else {
                         canvas.drawRect(x, y, x + w, y + h, paint)
                     }
+                    paint.pathEffect = null
                 }
                 if (hasTransform) {
                     canvas.restoreToCount(transformCount)
@@ -471,11 +470,12 @@ object DeterministicSvgRasterizer {
                 val cy = el.getAttribute("cy").toFloatOrNull() ?: 0f
                 val r = el.getAttribute("r").toFloatOrNull() ?: 0f
                 val opacity = (el.getAttribute("opacity").toFloatOrNull() ?: 1.0f) * inheritedOpacity
+                val fillOpacity = el.getAttribute("fill-opacity").toFloatOrNull() ?: 1.0f
 
                 val rawFill = el.getAttribute("fill")
                 val fill = if (rawFill.isNotEmpty()) rawFill else (overrideFill ?: "")
                 if (fill.isNotEmpty() && fill != "none") {
-                    configureFill(paint, fill, opacity, linearGradients, radialGradients)
+                    configureFill(paint, fill, opacity * fillOpacity, linearGradients, radialGradients)
                     canvas.drawCircle(cx, cy, r, paint)
                     paint.shader = null
                 }
@@ -483,18 +483,7 @@ object DeterministicSvgRasterizer {
                 val stroke = el.getAttribute("stroke")
                 val strokeW = el.getAttribute("stroke-width").toFloatOrNull() ?: 0f
                 if (stroke.isNotEmpty() && stroke != "none" && strokeW > 0f) {
-                    paint.style = Paint.Style.STROKE
-                    paint.color = parseColor(stroke) ?: Color.BLACK
-                    paint.strokeWidth = strokeW
-                    paint.alpha = ((Color.alpha(paint.color) / 255f) * opacity * 255).toInt().coerceIn(0, 255)
-
-                    val dashAttr = el.getAttribute("stroke-dasharray")
-                    if (dashAttr.isNotEmpty()) {
-                        val intervals = dashAttr.split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }.toFloatArray()
-                        if (intervals.size >= 2) {
-                            paint.pathEffect = DashPathEffect(intervals, 0f)
-                        }
-                    }
+                    applyStrokeAttributes(el, paint, parseColor(stroke) ?: Color.BLACK, strokeW, opacity)
                     canvas.drawCircle(cx, cy, r, paint)
                     paint.pathEffect = null
                 }
@@ -508,22 +497,11 @@ object DeterministicSvgRasterizer {
                 val stroke = el.getAttribute("stroke")
                 val strokeW = el.getAttribute("stroke-width").toFloatOrNull() ?: 1f
 
-                paint.style = Paint.Style.STROKE
-                paint.color = parseColor(stroke) ?: Color.BLACK
-                paint.strokeWidth = strokeW
-                paint.alpha = ((Color.alpha(paint.color) / 255f) * opacity * 255).toInt().coerceIn(0, 255)
-                if (el.getAttribute("stroke-linecap") == "round") {
-                    paint.strokeCap = Paint.Cap.ROUND
+                if (stroke != "none" && strokeW > 0f) {
+                    applyStrokeAttributes(el, paint, parseColor(stroke) ?: Color.BLACK, strokeW, opacity)
+                    canvas.drawLine(x1, y1, x2, y2, paint)
+                    paint.pathEffect = null
                 }
-                val dashAttr = el.getAttribute("stroke-dasharray")
-                if (dashAttr.isNotEmpty()) {
-                    val intervals = dashAttr.split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }.toFloatArray()
-                    if (intervals.size >= 2) {
-                        paint.pathEffect = DashPathEffect(intervals, 0f)
-                    }
-                }
-                canvas.drawLine(x1, y1, x2, y2, paint)
-                paint.pathEffect = null
             }
             "polygon" -> {
                 val ptsStr = el.getAttribute("points").trim()
@@ -540,10 +518,11 @@ object DeterministicSvgRasterizer {
                         path.close()
 
                         val opacity = (el.getAttribute("opacity").toFloatOrNull() ?: 1.0f) * inheritedOpacity
+                        val fillOpacity = el.getAttribute("fill-opacity").toFloatOrNull() ?: 1.0f
                         val rawFill = el.getAttribute("fill")
                         val fill = if (rawFill.isNotEmpty()) rawFill else (overrideFill ?: "")
                         if (fill.isNotEmpty() && fill != "none") {
-                            configureFill(paint, fill, opacity, linearGradients, radialGradients)
+                            configureFill(paint, fill, opacity * fillOpacity, linearGradients, radialGradients)
                             canvas.drawPath(path, paint)
                             paint.shader = null
                         }
@@ -551,11 +530,9 @@ object DeterministicSvgRasterizer {
                         val stroke = el.getAttribute("stroke")
                         val strokeW = el.getAttribute("stroke-width").toFloatOrNull() ?: 0f
                         if (stroke.isNotEmpty() && stroke != "none" && strokeW > 0f) {
-                            paint.style = Paint.Style.STROKE
-                            paint.color = parseColor(stroke) ?: Color.BLACK
-                            paint.strokeWidth = strokeW
-                            paint.alpha = ((Color.alpha(paint.color) / 255f) * opacity * 255).toInt().coerceIn(0, 255)
+                            applyStrokeAttributes(el, paint, parseColor(stroke) ?: Color.BLACK, strokeW, opacity)
                             canvas.drawPath(path, paint)
+                            paint.pathEffect = null
                         }
                     }
                 }
@@ -576,11 +553,12 @@ object DeterministicSvgRasterizer {
                             canvas.clipPath(clipPaths[clipId]!!)
                         }
                         val opacity = (el.getAttribute("opacity").toFloatOrNull() ?: 1.0f) * inheritedOpacity
+                        val fillOpacity = el.getAttribute("fill-opacity").toFloatOrNull() ?: 1.0f
 
                         val rawFill = el.getAttribute("fill")
                         val fill = if (rawFill.isNotEmpty()) rawFill else (overrideFill ?: "")
                         if (fill.isNotEmpty() && fill != "none") {
-                            configureFill(paint, fill, opacity, linearGradients, radialGradients)
+                            configureFill(paint, fill, opacity * fillOpacity, linearGradients, radialGradients)
                             canvas.drawPath(path, paint)
                             paint.shader = null
                         }
@@ -588,11 +566,9 @@ object DeterministicSvgRasterizer {
                         val stroke = el.getAttribute("stroke")
                         val strokeW = el.getAttribute("stroke-width").toFloatOrNull() ?: 0f
                         if (stroke.isNotEmpty() && stroke != "none" && strokeW > 0f) {
-                            paint.style = Paint.Style.STROKE
-                            paint.color = parseColor(stroke) ?: Color.BLACK
-                            paint.strokeWidth = strokeW
-                            paint.alpha = ((Color.alpha(paint.color) / 255f) * opacity * 255).toInt().coerceIn(0, 255)
+                            applyStrokeAttributes(el, paint, parseColor(stroke) ?: Color.BLACK, strokeW, opacity)
                             canvas.drawPath(path, paint)
+                            paint.pathEffect = null
                         }
                         canvas.restoreToCount(count)
                     }
@@ -933,22 +909,112 @@ object DeterministicSvgRasterizer {
         }
     }
 
+    private fun applyStrokeAttributes(
+        el: Element,
+        paint: Paint,
+        strokeColor: Int,
+        strokeW: Float,
+        opacity: Float
+    ) {
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.color = strokeColor
+        paint.strokeWidth = strokeW
+        val strokeOpacity = el.getAttribute("stroke-opacity").toFloatOrNull() ?: 1.0f
+        paint.alpha = ((Color.alpha(strokeColor) / 255f) * strokeOpacity * opacity * 255f).toInt().coerceIn(0, 255)
+        paint.strokeCap = when (el.getAttribute("stroke-linecap").trim().lowercase(Locale.US)) {
+            "round" -> Paint.Cap.ROUND
+            "square" -> Paint.Cap.SQUARE
+            else -> Paint.Cap.BUTT
+        }
+        paint.strokeJoin = when (el.getAttribute("stroke-linejoin").trim().lowercase(Locale.US)) {
+            "round" -> Paint.Join.ROUND
+            "bevel" -> Paint.Join.BEVEL
+            else -> Paint.Join.MITER
+        }
+        val dashAttr = el.getAttribute("stroke-dasharray").trim()
+        if (dashAttr.isNotEmpty() && dashAttr != "none") {
+            val intervals = dashAttr.split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }.filter { it >= 0f }
+            paint.pathEffect = when {
+                intervals.size >= 2 -> DashPathEffect(intervals.toFloatArray(), 0f)
+                intervals.size == 1 && intervals[0] > 0f -> DashPathEffect(floatArrayOf(intervals[0], intervals[0]), 0f)
+                else -> null
+            }
+        } else {
+            paint.pathEffect = null
+        }
+    }
+
     private fun parseColor(colorStr: String?): Int? {
-        if (colorStr.isNullOrEmpty() || colorStr == "none") return null
+        if (colorStr.isNullOrBlank()) return null
+        val trimmed = colorStr.trim()
+        if (trimmed.equals("none", ignoreCase = true)) return null
         return try {
-            if (colorStr.startsWith("#")) {
-                Color.parseColor(colorStr)
-            } else when (colorStr.lowercase(Locale.US)) {
-                "black" -> Color.BLACK
-                "white" -> Color.WHITE
-                "red" -> Color.RED
-                "green" -> Color.GREEN
-                "blue" -> Color.BLUE
-                "transparent" -> Color.TRANSPARENT
-                else -> Color.parseColor(colorStr)
+            val lower = trimmed.lowercase(Locale.US)
+            when {
+                lower.startsWith("#") -> {
+                    val hex = lower.substring(1)
+                    when (hex.length) {
+                        3 -> {
+                            val expanded = buildString(6) {
+                                for (c in hex) {
+                                    append(c)
+                                    append(c)
+                                }
+                            }
+                            Color.parseColor("#$expanded")
+                        }
+                        4 -> {
+                            val r = "${hex[0]}${hex[0]}"
+                            val g = "${hex[1]}${hex[1]}"
+                            val b = "${hex[2]}${hex[2]}"
+                            val a = "${hex[3]}${hex[3]}"
+                            Color.parseColor("#$a$r$g$b")
+                        }
+                        else -> Color.parseColor(trimmed)
+                    }
+                }
+                lower.startsWith("rgba(") && lower.endsWith(")") -> {
+                    val parts = lower.substring(5, lower.length - 1).split(",").map { it.trim() }
+                    if (parts.size >= 4) {
+                        val r = parseRgbComponent(parts[0])
+                        val g = parseRgbComponent(parts[1])
+                        val b = parseRgbComponent(parts[2])
+                        val aRaw = parts[3].toFloatOrNull() ?: 1f
+                        val a = if (aRaw <= 1.0f) (aRaw * 255f).toInt() else aRaw.toInt()
+                        Color.argb(a.coerceIn(0, 255), r, g, b)
+                    } else null
+                }
+                lower.startsWith("rgb(") && lower.endsWith(")") -> {
+                    val parts = lower.substring(4, lower.length - 1).split(",").map { it.trim() }
+                    if (parts.size >= 3) {
+                        Color.rgb(
+                            parseRgbComponent(parts[0]),
+                            parseRgbComponent(parts[1]),
+                            parseRgbComponent(parts[2])
+                        )
+                    } else null
+                }
+                lower == "black" -> Color.BLACK
+                lower == "white" -> Color.WHITE
+                lower == "red" -> Color.RED
+                lower == "green" -> Color.GREEN
+                lower == "blue" -> Color.BLUE
+                lower == "gray" || lower == "grey" -> Color.GRAY
+                lower == "transparent" -> Color.TRANSPARENT
+                else -> Color.parseColor(trimmed)
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun parseRgbComponent(raw: String): Int {
+        return if (raw.endsWith("%")) {
+            val pct = raw.removeSuffix("%").toFloatOrNull() ?: 0f
+            ((pct / 100f) * 255f).toInt().coerceIn(0, 255)
+        } else {
+            (raw.toFloatOrNull()?.toInt() ?: 0).coerceIn(0, 255)
         }
     }
 }

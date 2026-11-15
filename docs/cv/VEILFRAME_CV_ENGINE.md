@@ -145,7 +145,7 @@ are never all run on every frame.
 4. ✅ Streamed noise estimation histogram (zero large JVM heap allocations)
 5. ✅ Grayscale `CV_8UC1` smart auto-crop compatibility
 6. ✅ WeChatQrEngine diagnostic health reporting contract
-7. ⬜ Full ONNX segmentation mask model integration (post-processing is implemented)
+7. ✅ On-device neural segmentation & multi-modal PII pipelines integrated via Tencent NCNN (`U^2-Net-P`, `MODNet`, `UltraFace`, `YOLOv8n`), LiteRT (`ColorOsMattingPlugin` Lift & Shift), WeChatQRCode, and ML Kit (zero ONNX dependencies)
 8. ⬜ Device-level 6 GB concurrent stress execution (physical device test)
 
 Video boundary stays as planned: FFmpeg owns demux/decode/encode; the CV engine
@@ -169,8 +169,8 @@ Wiring reality in VeilFrame v2.2.9:
   every entry point with a typed `NATIVE_UNAVAILABLE` failure.
 - **Telemetry:** every governed job appends to `cache/cv_runs.jsonl`
   (private, on-device, rotated at 512 KB; no network).
-- **Dormant (compiled, tested, not wired):** `SmartAutoCrop`, `NoiseReducer`,
-  `TemplateMatcher`, `QrRecoveryEngine`, and remainder of `cv/motion` (`FlowConsistency`,
-  `FlowInterpolator`, `MotionDetector`) — see `cv/motion/README.md` and ADR 0006 for the wiring contract.
+- **Wired Video Extensions (v2.3.0+):** `VideoReframeEngine` (Multi-Aspect AI Auto-Reframe), `VideoStabilizerEngine` (2-Pass `libvidstab` EIS + OpenCV trajectory estimator), and `VideoPiiRedactionEngine` (tracked multi-modal temporal FFmpeg redaction) are wired exclusively inside Video Studio (`VideoStudioController`, `MediaProcessor`).
+- **Wired Background Remover Matting (v2.3.0+):** `ColorOsMattingPlugin` (`RembgModel.COLOROS_LIFT_SHIFT` / `RembgMode.LIFT_AND_SHIFT` LiteRT GPU/XNNPACK matting) is wired exclusively inside Background Remover (`BackgroundRemoverController`), never in Video Studio.
+- **Dormant / Helper Primitives:** `TemplateMatcher`, `FlowConsistency`, `FlowInterpolator`, and `MotionDetector` — see `cv/motion/README.md` and ADR 0006 for the wiring contract.
 - **CI ratchet:** `android/scripts/check_cv_governance.sh` fails the build if a
   new consumer touches `cv.*` without CvRuntime/engine governance.

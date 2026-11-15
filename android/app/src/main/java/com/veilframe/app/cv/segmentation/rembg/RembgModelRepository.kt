@@ -24,23 +24,37 @@ class RembgModelRepository(
     fun isModelReady(model: RembgModel): Boolean {
         if (model.isBundled) return true
         val binFile = getModelFile(model)
+        val binReady = (binFile.exists() && binFile.length() >= model.minBytes) ||
+            (model == RembgModel.COLOROS_LIFT_SHIFT &&
+                File(context.filesDir, "models/lift_shift/image_matting_mobile.tflite").let { it.exists() && it.length() >= model.minBytes })
+        if (!binReady) return false
+        if (model.paramFileName.isEmpty()) return true
         val paramFile = getParamFile(model)
-        return binFile.exists() && binFile.length() >= model.minBytes &&
-            paramFile.exists() && paramFile.length() > 500
+        return paramFile.exists() && paramFile.length() > 500
     }
 
     fun getCachedSizeBytes(model: RembgModel): Long {
         if (model.isBundled) return model.estimatedSizeBytes
-        val bin = getModelFile(model).takeIf { it.exists() }?.length() ?: 0L
-        val param = getParamFile(model).takeIf { it.exists() }?.length() ?: 0L
+        var bin = getModelFile(model).takeIf { it.exists() }?.length() ?: 0L
+        if (bin == 0L && model == RembgModel.COLOROS_LIFT_SHIFT) {
+            bin = File(context.filesDir, "models/lift_shift/image_matting_mobile.tflite").takeIf { it.exists() }?.length() ?: 0L
+        }
+        val param = if (model.paramFileName.isNotEmpty()) {
+            getParamFile(model).takeIf { it.exists() }?.length() ?: 0L
+        } else 0L
         return bin + param
     }
 
     fun deleteModel(model: RembgModel): Boolean {
         if (model.isBundled) return false // Cannot delete bundled APK asset
         val f1 = getModelFile(model).let { it.exists() && it.delete() }
-        val f2 = getParamFile(model).let { it.exists() && it.delete() }
-        return f1 || f2
+        val f2 = if (model.paramFileName.isNotEmpty()) {
+            getParamFile(model).let { it.exists() && it.delete() }
+        } else false
+        val f3 = if (model == RembgModel.COLOROS_LIFT_SHIFT) {
+            File(context.filesDir, "models/lift_shift/image_matting_mobile.tflite").let { it.exists() && it.delete() }
+        } else false
+        return f1 || f2 || f3
     }
 
     fun clearAllModels() {

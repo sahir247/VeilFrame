@@ -1701,10 +1701,10 @@ class DocumentScannerController(
                         (62 * density).toInt(),
                         (82 * density).toInt()
                     )
-                    radius = 10 * density
-                    strokeWidth = (1 * density).toInt()
-                    strokeColor = activity.getColor(R.color.vf_surface_stroke)
-                    setCardBackgroundColor(activity.getColor(R.color.vf_surface))
+                    radius = 12 * density
+                    strokeWidth = 0
+                    cardElevation = 0f
+                    setCardBackgroundColor(activity.getColor(R.color.vf_container))
                     isClickable = true
                     isFocusable = true
                 }
@@ -1746,8 +1746,10 @@ class DocumentScannerController(
             if (holder is PageViewHolder) {
                 val page = session.pages[position]
                 val isSelected = (position == session.activePageIndex)
-                holder.card.strokeWidth = if (isSelected) (2.5f * density).toInt() else (1 * density).toInt()
-                holder.card.strokeColor = if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_surface_stroke)
+                holder.card.strokeWidth = if (isSelected) (2.5f * density).toInt() else 0
+                if (isSelected) {
+                    holder.card.strokeColor = activity.getColor(R.color.vf_primary)
+                }
                 holder.ivThumb.contentDescription = "Page ${position + 1}"
                 val thumbBmp = page.thumbnailBitmapCache ?: page.getDisplayBitmap(activity)
                 holder.ivThumb.setImageBitmap(thumbBmp)

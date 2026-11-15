@@ -55,6 +55,21 @@ enum class RembgModel(
         isRecommended = false,
         sha256 = "519656a49f07f535fb3132d95cd80d5651a19821c70c07db7b7364805e6a762b",
         paramSha256 = "6748834c44f53dce16a19f19bfcb55c21c823a49d0640e0ce0db5acf041c98d0",
+    ),
+    COLOROS_LIFT_SHIFT(
+        id = "coloros_lift_shift",
+        displayName = "Lift & Shift",
+        description = "High-speed hardware-accelerated neural subject separation (LiteRT)",
+        fileName = "image_matting_mobile.tflite",
+        paramFileName = "",
+        downloadUrl = "https://raw.githubusercontent.com/Sahir247/VeilFrame/main/models/lift_shift/image_matting_mobile.tflite",
+        minBytes = 8_000_000L,
+        estimatedSizeBytes = 8_409_160L,
+        inputWidth = 640,
+        inputHeight = 640,
+        isBundled = false,
+        isRecommended = true,
+        sha256 = "1bc680ab3774620253e2b7961a05d40ad5981d61922b376610963d0d77e4ea94",
     );
 
     val sizeMbFormatted: String

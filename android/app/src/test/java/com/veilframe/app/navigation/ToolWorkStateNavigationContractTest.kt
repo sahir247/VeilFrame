@@ -29,7 +29,7 @@ class ToolWorkStateNavigationContractTest {
         val bgRemoverControllerClass = com.veilframe.app.media.BackgroundRemoverController::class.java
         val docScannerControllerClass = com.veilframe.app.document.DocumentScannerController::class.java
         val toolExecutionControllerClass = com.veilframe.app.tools.ToolExecutionController::class.java
-        val qrStudioFragmentClass = com.veilframe.app.qr.ui.QrStudioFragment::class.java
+        val qrStudioControllerClass = com.veilframe.app.qr.ui.QrStudioController::class.java
 
         assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(upscaleControllerClass))
         assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(motionLabControllerClass))
@@ -38,7 +38,7 @@ class ToolWorkStateNavigationContractTest {
         assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(bgRemoverControllerClass))
         assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(docScannerControllerClass))
         assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(toolExecutionControllerClass))
-        assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(qrStudioFragmentClass))
+        assertTrue(ToolWorkStateContract::class.java.isAssignableFrom(qrStudioControllerClass))
     }
 
     @Test

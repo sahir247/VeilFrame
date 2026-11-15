@@ -611,6 +611,53 @@ object ImageGeometryBuilder {
                 nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy - 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkOpaque, opacity = darkOp))
                 nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy + 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkOpaque, opacity = darkOp))
             }
+            FinderStyle.SOFT -> {
+                val sw = 1.0f * sizeFactor * mSize
+                val swStr = if (sw % 1f == 0f) sw.toInt().toString() else String.format(Locale.US, "%.4f", sw).trimEnd('0').trimEnd('.')
+                nodes.add(
+                    RectNode(
+                        x = centerPx - 3.0f * mSize,
+                        y = centerPy - 3.0f * mSize,
+                        width = 6f * mSize,
+                        height = 6f * mSize,
+                        rx = 1.5f * mSize,
+                        ry = 1.5f * mSize,
+                        stroke = darkOpaque,
+                        strokeWidth = sw,
+                        strokeWidthString = swStr,
+                        opacity = darkOp
+                    )
+                )
+                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
+            }
+            FinderStyle.FRAME -> {
+                val sw = 0.8f * sizeFactor * mSize
+                val swStr = String.format(Locale.US, "%.4f", sw).trimEnd('0').trimEnd('.')
+                nodes.add(
+                    RectNode(
+                        x = centerPx - 3.1f * mSize,
+                        y = centerPy - 3.1f * mSize,
+                        width = 6.2f * mSize,
+                        height = 6.2f * mSize,
+                        rx = 1.0f * mSize,
+                        ry = 1.0f * mSize,
+                        stroke = darkOpaque,
+                        strokeWidth = sw,
+                        strokeWidthString = swStr,
+                        opacity = darkOp
+                    )
+                )
+                val pts = listOf(
+                    Pair(centerPx, centerPy - 1.5f * mSize),
+                    Pair(centerPx + 1.5f * mSize, centerPy),
+                    Pair(centerPx, centerPy + 1.5f * mSize),
+                    Pair(centerPx - 1.5f * mSize, centerPy)
+                )
+                val ptsStr = pts.joinToString(" ") { (px, py) ->
+                    String.format(Locale.US, "%.4f,%.4f", px, py)
+                }
+                nodes.add(PolygonNode(points = ptsStr, pointsList = pts, fill = darkOpaque, opacity = darkOp))
+            }
             else -> {
                 nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 1.0f * sizeFactor * mSize

@@ -9,6 +9,8 @@ import com.veilframe.app.qr.decoder.DecodeResult
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
 import com.veilframe.app.qr.image.FootprintSampler
 import com.veilframe.app.qr.image.ImageColorAnalyzer
+import com.veilframe.app.cv.qr.QrRecoveryEngine
+import com.veilframe.app.qr.geometry.D25Geometry
 import com.veilframe.app.qr.model.BasicGeometryProfile
 import com.veilframe.app.qr.model.FunctionPatternType
 import com.veilframe.app.qr.model.ModuleShape
@@ -87,10 +89,16 @@ data class ScanabilityReport(
 object ScanabilityValidator {
 
     private val mlKitDecoder by lazy { com.veilframe.app.qr.decoder.MlKitQrDecoder() }
-    private val zxingDecoder by lazy { ZxingQrDecoder() }
+    private val zxingHostTestShim by lazy { ZxingQrDecoder() }
     private val wechatDecoder by lazy { com.veilframe.app.qr.decoder.WeChatQrDecoder() }
 
     var primaryDecoder: com.veilframe.app.qr.decoder.QrDecoder? = null
+
+    private fun isRobolectricJvmHost(): Boolean {
+        val fp = android.os.Build.FINGERPRINT ?: ""
+        return fp.equals("robolectric", ignoreCase = true) ||
+            fp.contains("robolectric", ignoreCase = true)
+    }
 
     /**
      * Decode chain resolution. Per the VeilFrame QR architecture:
@@ -187,54 +195,107 @@ object ScanabilityValidator {
 
         // 3. Finder & Separator Integrity Check
         val isResample = design.style == QrStyle.IMAGE_RESAMPLE
-        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix, isResample = isResample, is25D = is25D)
+        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix, design, isResample = isResample, is25D = is25D)
 
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
 
-        // 5. Decode Validation (Primary: WeChatQRCode -> Google ML Kit -> multi-pass ZXing & multi-resolution)
-        val decoderChain = buildList {
-            primaryDecoder?.let { add(it) }
-            if (wechatDecoder.isAvailable && !contains(wechatDecoder)) add(wechatDecoder)
-            if (!contains(mlKitDecoder)) add(mlKitDecoder)
-            if (!contains(zxingDecoder)) add(zxingDecoder)
-        }
+        // 5. Decode Validation (Primary: WeChatQRCode + scanner recovery retries -> Fallback: Google ML Kit QR + retries)
+        val decodeStart = System.currentTimeMillis()
+        var decodeResult = DecodeResult(success = false, error = "WeChatQRCode and ML Kit found no decodable QR")
 
-        var decodeResult = DecodeResult(success = false, error = "No decoders available")
-        for (dec in decoderChain) {
-            try {
-                val res = dec.decode(bitmap)
-                decodeResult = res
-                if (res.success && res.text == expectedContent) break
+        val injected = primaryDecoder
+        if (injected != null) {
+            decodeResult = try {
+                injected.decode(bitmap)
             } catch (t: Throwable) {
-                decodeResult = DecodeResult(success = false, error = t.message, decoderId = dec.id)
+                DecodeResult(success = false, error = t.message, decoderId = injected.id)
             }
         }
 
-        // Multi-resolution pass: High-frequency subpixel noise (e.g. 3x3 resample dots at 1024-2048px)
-        // can distract edge detectors. Downscaling to 512px box-filters subpixels into smooth module densities,
-        // mirroring real phone cameras held at reading distance.
-        if ((!decodeResult.success || decodeResult.text != expectedContent) && (bitmap.width > 512 || bitmap.height > 512)) {
-            val downscaled = try {
-                Bitmap.createScaledBitmap(bitmap, 512, 512, true)
-            } catch (_: Throwable) { null }
-            if (downscaled != null) {
+        // Primary Engine: WeChatQRCode with multi-stage retry pipeline (original -> 512px smooth -> quiet-zone pad upscale -> CLAHE+adaptive -> gaussian bridge -> perspective -> invert)
+        if (!decodeResult.success || decodeResult.text != expectedContent) {
+            if (com.veilframe.app.cv.core.CvRuntime.isNativeAvailable && wechatDecoder.isAvailable) {
                 try {
-                    for (dec in decoderChain) {
-                        val scaledRes = dec.decode(downscaled)
-                        if (scaledRes.success && scaledRes.text == expectedContent) {
-                            decodeResult = scaledRes
-                            break
-                        }
+                    val recovery = QrRecoveryEngine.recoverWithWeChat(bitmap, expected = expectedContent)
+                    val hit = recovery.detection
+                    if (hit != null && hit.rawValue == expectedContent) {
+                        decodeResult = DecodeResult(
+                            success = true,
+                            text = hit.rawValue,
+                            latencyMs = System.currentTimeMillis() - decodeStart,
+                            decoderId = com.veilframe.app.qr.decoder.WeChatQrDecoder.ID
+                        )
+                    } else {
+                        decodeResult = DecodeResult(
+                            success = false,
+                            latencyMs = System.currentTimeMillis() - decodeStart,
+                            error = "WeChatQRCode (${recovery.stageReached.label}) found no matching QR",
+                            decoderId = com.veilframe.app.qr.decoder.WeChatQrDecoder.ID
+                        )
                     }
-                } catch (_: Throwable) {
-                    // Ignore scaling decode errors
-                } finally {
-                    if (downscaled != bitmap) {
-                        downscaled.recycle()
-                    }
+                } catch (t: Throwable) {
+                    decodeResult = DecodeResult(
+                        success = false,
+                        latencyMs = System.currentTimeMillis() - decodeStart,
+                        error = t.message ?: "WeChatQRCode verification failed",
+                        decoderId = com.veilframe.app.qr.decoder.WeChatQrDecoder.ID
+                    )
                 }
             }
+        }
+
+        // Fallback Engine: Google ML Kit QR (with enableAllPotentialBarcodes, ROI crops, resolution retries, padded contrast, invert)
+        var mlKitRuntimeUnavailable = false
+        if (!decodeResult.success || decodeResult.text != expectedContent) {
+            val mlPass = try {
+                mlKitDecoder.decodeWithRetries(bitmap, expectedContent = expectedContent)
+            } catch (t: Throwable) {
+                com.veilframe.app.qr.decoder.MlKitQrDecoder.DetectionPassResult(
+                    decodeResult = DecodeResult(
+                        success = false,
+                        latencyMs = System.currentTimeMillis() - decodeStart,
+                        error = t.message ?: "ML Kit error",
+                        decoderId = mlKitDecoder.id
+                    ),
+                    runtimeUnavailable = t is LinkageError
+                )
+            }
+            mlKitRuntimeUnavailable = mlPass.runtimeUnavailable
+            if (mlPass.decodeResult.success && mlPass.decodeResult.text == expectedContent) {
+                decodeResult = mlPass.decodeResult
+            } else if (!wechatDecoder.isAvailable || (!mlPass.runtimeUnavailable && decodeResult.error.isNullOrBlank())) {
+                decodeResult = mlPass.decodeResult
+            }
+        }
+
+        // Headless host-JVM test shim ONLY when running under Robolectric (where neither native Android OpenCV WeChatQRCode nor Play Services MLKit exists).
+        // NEVER runs on real Android devices; real Android strictly uses WeChatQRCode -> ML Kit only.
+        if ((!decodeResult.success || decodeResult.text != expectedContent) &&
+            injected == null &&
+            !wechatDecoder.isAvailable &&
+            mlKitRuntimeUnavailable &&
+            isRobolectricJvmHost() &&
+            design.style != QrStyle.D25
+        ) {
+            try {
+                val shimRes = zxingHostTestShim.decode(bitmap)
+                if (shimRes.success && shimRes.text == expectedContent) {
+                    decodeResult = shimRes
+                } else if (bitmap.width > 512 || bitmap.height > 512) {
+                    val downscaled = try { Bitmap.createScaledBitmap(bitmap, 512, 512, true) } catch (_: Throwable) { null }
+                    if (downscaled != null) {
+                        try {
+                            val scaledRes = zxingHostTestShim.decode(downscaled)
+                            if (scaledRes.success && scaledRes.text == expectedContent) {
+                                decodeResult = scaledRes
+                            }
+                        } finally {
+                            if (downscaled !== bitmap && !downscaled.isRecycled) downscaled.recycle()
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
         }
 
         val decodeMatches = decodeResult.success && decodeResult.text == expectedContent
@@ -243,9 +304,7 @@ object ScanabilityValidator {
         val warnings = mutableListOf<String>()
         val suggestions = mutableListOf<RepairReason>()
 
-        if (design.style == QrStyle.IMAGE_RESAMPLE ||
-            design.style == QrStyle.IMAGE ||
-            design.style == QrStyle.IMAGE_FILL ||
+        if (design.style != QrStyle.BASIC && design.style != QrStyle.D25 ||
             design.basicProfile == BasicGeometryProfile.EF_PARITY
         ) {
             if (minMargin < 0.99f) {
@@ -282,8 +341,9 @@ object ScanabilityValidator {
             suggestions.add(RepairReason.REDUCE_LOGO_SIZE)
         }
 
-        if (!decodeMatches && design.style != QrStyle.D25) {
-            warnings.add("${decodeResult.decoderId.ifEmpty { "Barcode decoder" }} failed to decode rendered QR code.")
+        if (!decodeMatches) {
+            val engineLabel = if (wechatDecoder.isAvailable) "WeChatQR / ML Kit" else decodeResult.decoderId.ifEmpty { "Barcode decoder" }
+            warnings.add("$engineLabel failed to decode rendered QR code.")
             if (!suggestions.contains(RepairReason.ELEVATE_ERROR_CORRECTION)) {
                 suggestions.add(RepairReason.ELEVATE_ERROR_CORRECTION)
             }
@@ -296,6 +356,7 @@ object ScanabilityValidator {
         }
 
         val tier = if (isStrict) ValidationTier.STRICT_COMPLIANCE else ValidationTier.FAST_PREVIEW
+        // Zero D25 false positives: D25 MUST genuinely decode via WeChatQR / ML Kit just like every other style.
         val isScanReady = if (decodeMatches) {
             val logoOk = !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
             if (isStrict) {
@@ -304,12 +365,6 @@ object ScanabilityValidator {
             } else {
                 logoOk
             }
-        } else if (design.style == QrStyle.D25) {
-            // EF parity / Artistic 2.5D: 3D isometric extruded cubes require 3D perspective unwarping
-            // to decode in camera, but flat 2D decoders cannot read diamond projections.
-            // Strict validation checks isometric contrast separation and finder integrity.
-            val logoOk = !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
-            logoOk && contrastReport.isContrastAdequate
         } else {
             false
         }
@@ -346,46 +401,114 @@ object ScanabilityValidator {
             else -> design.moduleStyle.scale
         }.coerceIn(0.1f, 1.0f)
         val dataShape = design.moduleStyle.shape
-        val sampleOffsets = if (is25D) {
-            listOf(Pair(0f, 0f))
-        } else {
-            val normalizedOffsets = FootprintSampler.generateFootprintOffsets(dataScale, dataShape)
-            normalizedOffsets.map { (du, dv) ->
-                Pair(du * geometry.moduleSize, dv * geometry.moduleSize)
+        val useCenterOnly = is25D ||
+            (design.style != QrStyle.BASIC && design.style != QrStyle.BUBBLE)
+        val sampleOffsets = when {
+            design.style == QrStyle.BUBBLE -> listOf(
+                Pair(0f, 0f),
+                Pair(0.32f * geometry.moduleSize, 0f),
+                Pair(-0.32f * geometry.moduleSize, 0f),
+                Pair(0f, 0.32f * geometry.moduleSize),
+                Pair(0f, -0.32f * geometry.moduleSize)
+            )
+            useCenterOnly -> listOf(Pair(0f, 0f))
+            else -> {
+                val normalizedOffsets = FootprintSampler.generateFootprintOffsets(dataScale, dataShape)
+                normalizedOffsets.map { (du, dv) ->
+                    Pair(du * geometry.moduleSize, dv * geometry.moduleSize)
+                }
             }
         }
 
-        val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
-        val n = matrix.size
-        val vbX = -n.toFloat()
-        val vbY = -n.toFloat() / 2.0f
-        val vbW = n.toFloat() * 2.0f
-        val vbH = n.toFloat() * 2.0f
-        val scale = minOf(geometry.outputWidthFloat / vbW, geometry.outputHeightFloat / vbH)
-        val transX = (geometry.outputWidthFloat - vbW * scale) / 2f
-        val transY = (geometry.outputHeightFloat - vbH * scale) / 2f
+        val logoRect = if (!is25D) {
+            design.logo?.let { logo ->
+                if (logo.bitmap != null && logo.scaleFraction > 0.001f) {
+                    geometry.computeLogoRect(logo.scaleFraction)
+                } else null
+            }
+        } else null
+        val d25LogoRadiusModules = if (is25D && design.logo?.bitmap != null && (design.logo?.scaleFraction ?: 0f) > 0.001f) {
+            matrix.size * design.logo!!.scaleFraction * 0.55f
+        } else 0f
+        val d25CenterModule = matrix.size / 2f
+
+        val d25Proj = if (is25D) {
+            D25Geometry.computeProjection(
+                n = matrix.size,
+                outputWidth = geometry.outputWidthFloat,
+                outputHeight = geometry.outputHeightFloat,
+                quietZoneLeft = geometry.quietZoneLeftFloat,
+                quietZoneTop = geometry.quietZoneTopFloat,
+                quietZoneRight = geometry.quietZoneRightFloat,
+                quietZoneBottom = geometry.quietZoneBottomFloat,
+                angleDegrees = design.depthStyle.angleDegrees
+            )
+        } else null
+
+        val intendedBgLum = ImageColorAnalyzer.relativeLuminance(design.backdropStyle.color ?: design.palette.background)
+        val intendedFgLum = ImageColorAnalyzer.relativeLuminance(
+            when (design.style) {
+                QrStyle.BUBBLE -> design.clusterStyle.dataColor
+                QrStyle.IMAGE_RESAMPLE -> design.dataColorDark
+                else -> design.palette.foreground
+            }
+        )
+        val expectInverted = intendedFgLum > intendedBgLum + 0.05f
 
         for (row in 0 until matrix.size step step) {
             for (col in 0 until matrix.size step step) {
-                val (cx, cy) = if (is25D) {
+                val (cx, cy) = if (d25Proj != null) {
                     val u = col + 0.5f
                     val v = row + 0.5f
-                    Pair(((sq3h * (u - v)) - vbX) * scale + transX, (0.5f * (u + v) - vbY) * scale + transY)
+                    Pair(d25Proj.screenX(u, v), d25Proj.screenY(u, v, 0f))
                 } else {
                     geometry.moduleCenter(col, row)
                 }
-                for ((ox, oy) in sampleOffsets) {
-                    val px = (cx + ox).toInt().coerceIn(0, bitmap.width - 1)
-                    val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
-                    val pixel = bitmap.getPixel(px, py)
-
-                    // Relative luminance following W3C WCAG 2.1 linearized sRGB standard (Audit C-03)
-                    val lum = ImageColorAnalyzer.relativeLuminance(pixel)
-
-                    if (matrix.isDark(col, row)) {
-                        darkLuminances.add(lum)
+                if (logoRect != null && cx in logoRect.left..logoRect.right && cy in logoRect.top..logoRect.bottom) {
+                    continue
+                }
+                if (d25LogoRadiusModules > 0f &&
+                    kotlin.math.abs(col + 0.5f - d25CenterModule) <= d25LogoRadiusModules &&
+                    kotlin.math.abs(row + 0.5f - d25CenterModule) <= d25LogoRadiusModules
+                ) {
+                    continue
+                }
+                val isDark = matrix.isDark(col, row)
+                if (design.style == QrStyle.BUBBLE) {
+                    if (isDark) {
+                        // Bubble outlines often have white centers (`dataCenterColor`); measure the stroked bubble ring itself.
+                        var bestLum = Float.NaN
+                        var bestDist = -1f
+                        for ((ox, oy) in sampleOffsets) {
+                            val px = (cx + ox).toInt().coerceIn(0, bitmap.width - 1)
+                            val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
+                            val lum = ImageColorAnalyzer.relativeLuminance(bitmap.getPixel(px, py))
+                            val dist = kotlin.math.abs(lum - intendedBgLum)
+                            if (dist > bestDist) {
+                                bestDist = dist
+                                bestLum = lum
+                            }
+                        }
+                        if (!bestLum.isNaN()) darkLuminances.add(bestLum)
                     } else {
-                        lightLuminances.add(lum)
+                        val px = cx.toInt().coerceIn(0, bitmap.width - 1)
+                        val py = cy.toInt().coerceIn(0, bitmap.height - 1)
+                        lightLuminances.add(ImageColorAnalyzer.relativeLuminance(bitmap.getPixel(px, py)))
+                    }
+                } else {
+                    for ((ox, oy) in sampleOffsets) {
+                        val px = (cx + ox).toInt().coerceIn(0, bitmap.width - 1)
+                        val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
+                        val pixel = bitmap.getPixel(px, py)
+
+                        // Relative luminance following W3C WCAG 2.1 linearized sRGB standard (Audit C-03)
+                        val lum = ImageColorAnalyzer.relativeLuminance(pixel)
+
+                        if (isDark) {
+                            darkLuminances.add(lum)
+                        } else {
+                            lightLuminances.add(lum)
+                        }
                     }
                 }
             }
@@ -400,17 +523,29 @@ object ScanabilityValidator {
 
         val meanDark = darkLuminances.average().toFloat()
         val p90Dark = darkLuminances[(darkLuminances.size * 0.90).toInt().coerceIn(0, darkLuminances.lastIndex)]
+        val p75Dark = darkLuminances[(darkLuminances.size * 0.75).toInt().coerceIn(0, darkLuminances.lastIndex)]
+        val p10Dark = darkLuminances[(darkLuminances.size * 0.10).toInt().coerceIn(0, darkLuminances.lastIndex)]
+        val p25Dark = darkLuminances[(darkLuminances.size * 0.25).toInt().coerceIn(0, darkLuminances.lastIndex)]
 
         val meanLight = lightLuminances.average().toFloat()
         val p10Light = lightLuminances[(lightLuminances.size * 0.10).toInt().coerceIn(0, lightLuminances.lastIndex)]
+        val p25Light = lightLuminances[(lightLuminances.size * 0.25).toInt().coerceIn(0, lightLuminances.lastIndex)]
+        val p75Light = lightLuminances[(lightLuminances.size * 0.75).toInt().coerceIn(0, lightLuminances.lastIndex)]
+        val p90Light = lightLuminances[(lightLuminances.size * 0.90).toInt().coerceIn(0, lightLuminances.lastIndex)]
 
-        // Distribution separation: Light P10 minus Dark P90
-        val separation = p10Light - p90Dark
-        val isAdequate = if (is25D) {
-            separation >= 0.10f && meanDark < meanLight
+        val minSeparation = if (is25D) 0.22f else 0.25f
+        val (separation, polarityOk) = if (expectInverted) {
+            val rawInv = p10Dark - p90Light
+            val robustInv = minOf(p25Dark - p75Light, meanDark - meanLight)
+            val sep = if (design.style == QrStyle.BASIC) rawInv else maxOf(rawInv, robustInv)
+            Pair(sep, meanDark > meanLight)
         } else {
-            separation >= 0.25f && meanDark < meanLight
+            val rawSep = p10Light - p90Dark
+            val robustSep = minOf(p25Light - p75Dark, meanLight - meanDark)
+            val sep = if (design.style == QrStyle.BASIC) rawSep else maxOf(rawSep, robustSep)
+            Pair(sep, meanDark < meanLight)
         }
+        val isAdequate = separation >= minSeparation && polarityOk
 
         return ContrastReport(
             meanDarkLuminance = meanDark,
@@ -427,21 +562,12 @@ object ScanabilityValidator {
         geometry: QrGeometry,
         col: Int,
         row: Int,
-        is25D: Boolean = false,
-        n: Int = geometry.matrixSize
+        d25Proj: D25Geometry.Projection? = null
     ): Float {
-        val (cx, cy) = if (is25D) {
-            val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
-            val vbX = -n.toFloat()
-            val vbY = -n.toFloat() / 2.0f
-            val vbW = n.toFloat() * 2.0f
-            val vbH = n.toFloat() * 2.0f
-            val scale = minOf(geometry.outputWidthFloat / vbW, geometry.outputHeightFloat / vbH)
-            val transX = (geometry.outputWidthFloat - vbW * scale) / 2f
-            val transY = (geometry.outputHeightFloat - vbH * scale) / 2f
+        val (cx, cy) = if (d25Proj != null) {
             val u = col + 0.5f
             val v = row + 0.5f
-            Pair(((sq3h * (u - v)) - vbX) * scale + transX, (0.5f * (u + v) - vbY) * scale + transY)
+            Pair(d25Proj.screenX(u, v), d25Proj.screenY(u, v, 0f))
         } else {
             geometry.moduleCenter(col, row)
         }
@@ -455,10 +581,23 @@ object ScanabilityValidator {
         bitmap: Bitmap,
         geometry: QrGeometry,
         matrix: QrMatrix,
+        design: QrDesign,
         isResample: Boolean = false,
         is25D: Boolean = false
     ): FinderIntegrityReport {
         val n = matrix.size
+        val d25Proj = if (is25D) {
+            D25Geometry.computeProjection(
+                n = n,
+                outputWidth = geometry.outputWidthFloat,
+                outputHeight = geometry.outputHeightFloat,
+                quietZoneLeft = geometry.quietZoneLeftFloat,
+                quietZoneTop = geometry.quietZoneTopFloat,
+                quietZoneRight = geometry.quietZoneRightFloat,
+                quietZoneBottom = geometry.quietZoneBottomFloat,
+                angleDegrees = design.depthStyle.angleDegrees
+            )
+        } else null
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(3, n - 4),
@@ -469,7 +608,7 @@ object ScanabilityValidator {
         var separatorsClear = true
 
         for ((fcCol, fcRow) in finderCenters) {
-            val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow, is25D = is25D, n = n)
+            val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow, d25Proj = d25Proj)
             // Center core MUST be dark
             if (coreLum > 0.65f) {
                 allIntact = false
@@ -477,16 +616,15 @@ object ScanabilityValidator {
             }
 
             // In artistic resample QR, finders have a hollow transparent inner ring
-            // and continuous background behind separators. If isResample is true,
-            // we verify the core is dark without failing simply because a photo
-            // backdrop has non-white pixels in the transparent inner ring.
-            if (!isResample && !is25D) {
+            // and continuous background behind separators. For D25 we ALSO check that extruded walls haven't
+            // swallowed the finder light ring!
+            if (!isResample) {
                 // Light ring (radius 2) should be lighter than core
                 val lightRingLums = listOf(
-                    getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1), is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1), is25D = is25D, n = n)
+                    getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow, d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow, d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1), d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1), d25Proj = d25Proj)
                 )
                 val avgLightRing = lightRingLums.average().toFloat()
                 if (avgLightRing < coreLum || avgLightRing < 0.35f) {
@@ -496,10 +634,10 @@ object ScanabilityValidator {
 
                 // Outer ring (radius 3) should be darker than light ring
                 val outerRingLums = listOf(
-                    getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1), is25D = is25D, n = n),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1), is25D = is25D, n = n)
+                    getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow, d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow, d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1), d25Proj = d25Proj),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1), d25Proj = d25Proj)
                 )
                 val avgOuterRing = outerRingLums.average().toFloat()
                 if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
@@ -515,20 +653,20 @@ object ScanabilityValidator {
             }
         }
 
-        // Check top-left separator modules (for non-resample and non-2.5D styles)
-        if (!isResample && !is25D) {
+        // Check top-left separator modules (for non-resample styles including D25 so dark walls don't bridge separators)
+        if (!isResample) {
             var separatorDarkCount = 0
             var totalSeparatorSamples = 0
             for (r in 0..7) {
                 if (7 < n && r < n) {
                     totalSeparatorSamples++
-                    if (getModuleLuminance(bitmap, geometry, 7, r) < 0.40f) separatorDarkCount++
+                    if (getModuleLuminance(bitmap, geometry, 7, r, d25Proj = d25Proj) < 0.40f) separatorDarkCount++
                 }
             }
             for (c in 0..7) {
                 if (c < n && 7 < n) {
                     totalSeparatorSamples++
-                    if (getModuleLuminance(bitmap, geometry, c, 7) < 0.40f) separatorDarkCount++
+                    if (getModuleLuminance(bitmap, geometry, c, 7, d25Proj = d25Proj) < 0.40f) separatorDarkCount++
                 }
             }
             if (totalSeparatorSamples > 0 && separatorDarkCount.toFloat() / totalSeparatorSamples > 0.35f) {

@@ -48,8 +48,8 @@ object AnimatedQrGenerator {
         imageDelaysMs: List<Int>,
         logoFrames: List<Bitmap>,
         logoDelaysMs: List<Int>,
-        maxDurationMs: Long = 15000L,
-        maxFrames: Int = 240
+        maxDurationMs: Long = 30000L,
+        maxFrames: Int = 360
     ): List<ReconciledFrame> {
         val hasImg = imageFrames.isNotEmpty()
         val hasLogo = logoFrames.isNotEmpty()
@@ -149,7 +149,7 @@ object AnimatedQrGenerator {
     /**
      * Extracts reconciled frames across both animated image source and animated logo.
      */
-    fun extractReconciledFrames(design: QrDesign): List<ReconciledFrame> {
+    fun extractReconciledFrames(design: QrDesign, maxFrames: Int = 360): List<ReconciledFrame> {
         val imgFrames = design.imageSource.animatedFrames
         val logoFrames = design.logo?.animatedFrames
         val hasImgAnim = !imgFrames.isNullOrEmpty()
@@ -173,7 +173,8 @@ object AnimatedQrGenerator {
                 imageFrames = imgFrames!!,
                 imageDelaysMs = imgDelays,
                 logoFrames = logoFrames!!,
-                logoDelaysMs = logoDelays
+                logoDelaysMs = logoDelays,
+                maxFrames = maxFrames
             )
         }
 

@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/vf_surface"
+    android:orientation="vertical">
+
+    <!-- Dialog Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp"
+        android:background="@color/vf_surface_variant">
+
+        <TextView
+            android:id="@+id/tvBlurDialogTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Photo Blur &amp; Privacy"
+            android:textColor="@color/vf_text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBlurClose"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="Close Blur Dialog"
+            app:icon="@drawable/ic_close"
+            app:iconTint="@color/vf_text_secondary" />
+    </LinearLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:maxHeight="480dp"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Live Preview Container -->
+            <FrameLayout
+                android:id="@+id/blurPreviewContainer"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:background="@color/vf_bg_dark"
+                android:layout_marginBottom="16dp">
+
+                <ImageView
+                    android:id="@+id/imgBlurPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="Blur Live Preview" />
+
+                <TextView
+                    android:id="@+id/tvBlurBeforeBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="10dp"
+                    android:text="BEFORE"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:background="@drawable/bg_m3_pill_container"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <!-- Section 1: Blur Scope Mode -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="BLUR SCOPE"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupBlurScope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipBlurBg"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="BG Blur"
+                    app:chipIcon="@drawable/ic_portrait"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipBlurFull"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Full Blur"
+                    app:chipIcon="@drawable/ic_visibility" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Prominent Brush Canvas Action Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnOpenBlurBrushCanvas"
+                style="@style/Widget.VeilFrame.Button.Pill"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Open Interactive Brush Canvas"
+                app:icon="@drawable/ic_brush"
+                app:iconGravity="textStart"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvBlurBrushStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="• Custom painted blur mask active"
+                android:textSize="12sp"
+                android:textColor="?attr/colorPrimary"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone" />
+
+            <!-- Section 2: Blur Type -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="BLUR TYPE"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:layout_marginBottom="16dp">
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupBlurType"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurGaussian"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Gaussian"
+                        android:checked="true" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurBox"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Box Blur" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurMosaic"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Mosaic / Pixelate" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurGlass"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Frosted Glass" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurMotion"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Motion Blur" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurBokeh"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Lens Bokeh" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurSolid"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Blackout" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurPaint"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Artistic Paint" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurWater"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Water Splash" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipBlurZoom"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Zoom Radial" />
+                </com.google.android.material.chip.ChipGroup>
+            </HorizontalScrollView>
+
+            <!-- Section 3: Blur Intensity / Radius Slider -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="BLUR INTENSITY"
+                    android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/tvBlurRadiusValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="25 px"
+                    android:textColor="@color/vf_primary"
+                    android:textStyle="bold"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderBlurRadius"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="5"
+                android:valueTo="80"
+                android:stepSize="1"
+                android:value="25"
+                android:layout_marginBottom="16dp" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Dialog Actions -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@color/vf_surface_variant">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBlurReset"
+            style="@style/Widget.VeilFrame.Button.Text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Remove Blur"
+            android:textColor="?attr/colorError" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBlurCancel"
+            style="@style/Widget.VeilFrame.Button.Text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Cancel" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBlurApply"
+            style="@style/Widget.VeilFrame.Button.Pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Apply Blur" />
+    </LinearLayout>
+</LinearLayout>

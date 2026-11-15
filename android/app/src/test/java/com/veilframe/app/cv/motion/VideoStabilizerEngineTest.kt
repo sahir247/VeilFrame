@@ -1,6 +1,9 @@
 package com.veilframe.app.cv.motion
 
+import com.veilframe.app.media.EisOptZoomMode
+import com.veilframe.app.media.EisPresetProfile
 import com.veilframe.app.media.VideoEditState
+import com.veilframe.app.media.VideoEisConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -359,5 +362,95 @@ class VideoStabilizerEngineTest {
         assertFalse("Reset must clear isStabilized", state.isStabilized)
         assertEquals(5, state.stabilizationMarginPercent)
         assertFalse("Reset state should not report transforms", state.hasVideoTransforms())
+    }
+
+    @Test
+    fun testBuildVidstabDetectAndTransformFiltersMatchTwoPassSpec() {
+        val trfPath = "/data/user/0/com.veilframe.app/cache/vf_stab_123.trf"
+        val handheld = EisPresetProfile.HANDHELD_WALK.createConfig()
+
+        val detect = VideoStabilizerEngine.buildVidstabDetectFilter(trfPath, handheld)
+        assertTrue(detect.contains("pad=ceil(iw/2)*2:ceil(ih/2)*2"))
+        assertTrue(detect.contains("vidstabdetect=stepsize=6:shakiness=5:accuracy=15:result="))
+        assertTrue(detect.contains("vf_stab_123.trf"))
+        assertFalse(detect.contains("min(540,ih)"))
+
+        val transform = VideoStabilizerEngine.buildVidstabTransformFilter(trfPath, handheld)
+        assertTrue(transform.contains("copy,vidstabtransform=input="))
+        assertTrue(transform.contains(":smoothing=20:zoom=0:crop=0:optalgo=gauss"))
+        assertTrue(transform.contains(":relative=1:optzoom=1:zoomspeed=0.25:interpol=bilinear:tripod=0"))
+        assertTrue(transform.contains(",unsharp=5:5:0.80:3:3:0.40"))
+    }
+
+    @Test
+    fun testVidstabTripodLockAnd540pAndClampingAndEscaping() {
+        val specialPath = "/tmp/my:dir'one,two/transforms.trf"
+        val escaped = VideoStabilizerEngine.escapeFfmpegFilterValue(specialPath)
+        assertEquals("/tmp/my\\:dir\\'one\\,two/transforms.trf", escaped)
+
+        val tripodCfg = EisPresetProfile.TRIPOD_LOCK.createConfig()
+        val tripodFilter = VideoStabilizerEngine.buildVidstabTransformFilter(specialPath, tripodCfg)
+        assertTrue("Tripod mode must zero smoothing and lock relative=0", tripodFilter.contains(":smoothing=0:"))
+        assertTrue(tripodFilter.contains(":relative=0:"))
+        assertTrue(tripodFilter.contains(":tripod=1"))
+        assertTrue(tripodFilter.contains(":interpol=bicubic:"))
+        assertTrue(tripodFilter.contains(":optalgo=opt:"))
+
+        val fast540Cfg = EisPresetProfile.FAST_540P.createConfig()
+        val detect540 = VideoStabilizerEngine.buildVidstabDetectFilter("/cache/a.trf", fast540Cfg)
+        val trans540 = VideoStabilizerEngine.buildVidstabTransformFilter("/cache/a.trf", fast540Cfg)
+        assertTrue(detect540.startsWith("scale=-2:'min(540,ih)',"))
+        assertTrue(trans540.startsWith("scale=-2:'min(540,ih)',"))
+
+        // Out-of-range manual values must clamp cleanly without producing illegal FFmpeg arguments
+        val extreme = VideoEisConfig(
+            presetProfile = EisPresetProfile.CUSTOM,
+            shakiness = 99,
+            accuracy = 99,
+            stepSize = 0,
+            smoothing = 200,
+            zoomPercent = 80,
+            cropBlackBorders = true,
+            optZoomMode = EisOptZoomMode.ADAPTIVE_DYNAMIC,
+            sharpenStrength = 0f
+        ).clamped()
+        assertEquals(10, extreme.shakiness)
+        assertEquals(15, extreme.accuracy)
+        assertEquals(1, extreme.stepSize)
+        assertEquals(30, extreme.smoothing)
+        assertEquals(30, extreme.zoomPercent)
+        val extremeFilter = VideoStabilizerEngine.buildVidstabTransformFilter("/cache/b.trf", extreme)
+        assertTrue(extremeFilter.contains(":crop=1:"))
+        assertTrue(extremeFilter.contains(":optzoom=2:"))
+        assertFalse("Zero sharpen strength omits unsharp filter", extremeFilter.contains("unsharp="))
+    }
+
+    @Test
+    fun testVideoEditStateEisConfigCopyAndReset() {
+        val state = VideoEditState()
+        val custom = EisPresetProfile.ACTION_SPORT.createConfig().copy(smoothing = 28, cropBlackBorders = true)
+        state.isStabilized = true
+        state.eisConfig = custom
+
+        val cloned = VideoEditState()
+        cloned.copyFrom(state)
+        assertEquals(EisPresetProfile.ACTION_SPORT, cloned.eisConfig.presetProfile)
+        assertEquals(28, cloned.eisConfig.smoothing)
+        assertTrue(cloned.eisConfig.cropBlackBorders)
+
+        cloned.reset(5000L)
+        assertFalse(cloned.isStabilized)
+        assertEquals(EisPresetProfile.HANDHELD_WALK, cloned.eisConfig.presetProfile)
+        assertEquals(20, cloned.eisConfig.smoothing)
+    }
+
+    @Test
+    fun test540pEisSkipsHigherResUpscaleButPreservesLowerResDownscale() {
+        val fast540 = EisPresetProfile.FAST_540P.createConfig()
+        assertTrue(com.veilframe.app.media.VideoProcessor.shouldSkipResolutionAfter540pEis("1080p", true, fast540))
+        assertTrue(com.veilframe.app.media.VideoProcessor.shouldSkipResolutionAfter540pEis("720p", true, fast540))
+        assertFalse(com.veilframe.app.media.VideoProcessor.shouldSkipResolutionAfter540pEis("480p", true, fast540))
+        assertFalse(com.veilframe.app.media.VideoProcessor.shouldSkipResolutionAfter540pEis("360p", true, fast540))
+        assertFalse(com.veilframe.app.media.VideoProcessor.shouldSkipResolutionAfter540pEis("1080p", false, fast540))
     }
 }

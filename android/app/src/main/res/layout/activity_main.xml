@@ -210,13 +210,13 @@
         android:layout="@layout/layout_image_upscaler" />
 
     <!-- ================================================================= -->
-    <!-- QR STUDIO — 8th tool (Fragment host)                              -->
+    <!-- QR STUDIO WORKSPACE (Artistic Vector & Offline Scanner)           -->
     <!-- ================================================================= -->
-    <FrameLayout
-        android:id="@+id/fragmentQrStudio"
+    <ViewStub
+        android:id="@+id/stubQrStudio"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone" />
+        android:layout="@layout/layout_qr_studio" />
 
     <!-- ================================================================= -->
     <!-- 8. TOOLS CATALOGUE WORKSPACE                                      -->
@@ -368,9 +368,8 @@
         android:layout_marginBottom="24dp"
         app:cardCornerRadius="28dp"
         app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/vf_surface"
-        app:strokeColor="@color/vf_surface_stroke"
-        app:strokeWidth="1dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+        app:strokeWidth="0dp"
         android:visibility="gone">
 
         <LinearLayout

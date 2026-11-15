@@ -124,11 +124,17 @@ class PiiNcnnEngine(
                     if (right > left && bottom > top) {
                         val piiClass = mapClassIndex(bestClassIdx, numClasses)
                         if (piiClass != null) {
+                            val specificLabel = if (numClasses > 5) {
+                                cocoPiiDetailLabel(bestClassIdx, piiClass)
+                            } else {
+                                piiClass.label
+                            }
                             candidates.add(
                                 PiiDetection(
                                     rect = RectF(left, top, right, bottom),
                                     piiClass = piiClass,
-                                    score = maxScore
+                                    score = maxScore,
+                                    label = specificLabel
                                 )
                             )
                         }
@@ -157,10 +163,26 @@ class PiiNcnnEngine(
                 when (classIdx) {
                     0 -> PiiClass.PERSON // COCO person (full human body)
                     2, 3, 5, 7 -> PiiClass.PLATE // car, motorcycle, bus, truck
+                    62, 63 -> PiiClass.SCREEN // tv/monitor, laptop screen
                     67 -> PiiClass.CARD // cell phone
                     73 -> PiiClass.CARD // book/document
                     else -> null // ignore non-PII classes
                 }
+            }
+        }
+
+        fun cocoPiiDetailLabel(classIdx: Int, mappedClass: PiiClass): String {
+            return when (classIdx) {
+                0 -> "Person"
+                2 -> "Car / Plate"
+                3 -> "Motorcycle / Plate"
+                5 -> "Bus / Plate"
+                7 -> "Truck / Plate"
+                62 -> "Monitor / TV Screen"
+                63 -> "Laptop Screen"
+                67 -> "Phone Screen"
+                73 -> "Book / Document"
+                else -> mappedClass.label
             }
         }
 
@@ -189,6 +211,108 @@ class PiiNcnnEngine(
                     )
                 )
             }
+        }
+
+        /**
+         * Dispatches redaction using the requested [PiiRedactionStyle].
+         */
+        fun applyRedaction(
+            source: Bitmap,
+            detections: List<PiiDetection>,
+            style: PiiRedactionStyle = PiiRedactionStyle.SOLID_BLACK
+        ): Bitmap {
+            if (detections.isEmpty()) return source
+            return when (style) {
+                PiiRedactionStyle.SOLID_BLACK -> applySolidRedaction(source, detections, Color.BLACK)
+                PiiRedactionStyle.SOLID_WHITE -> applySolidRedaction(source, detections, Color.WHITE)
+                PiiRedactionStyle.PIXELATE -> applyPixelateRedaction(source, detections)
+                PiiRedactionStyle.BLUR -> applyBlurRedaction(source, detections)
+            }
+        }
+
+        /**
+         * Applies coarse mosaic pixelation inside each detection ROI without touching outside pixels.
+         */
+        fun applyPixelateRedaction(
+            source: Bitmap,
+            detections: List<PiiDetection>,
+            blocksPerMinDim: Int = 10
+        ): Bitmap {
+            val mutable = if (source.isMutable) source else source.copy(Bitmap.Config.ARGB_8888, true)
+            val width = mutable.width
+            val height = mutable.height
+            val canvas = android.graphics.Canvas(mutable)
+            val paint = android.graphics.Paint().apply {
+                isFilterBitmap = false
+                isDither = false
+            }
+
+            for (det in detections) {
+                val left = Math.round(det.rect.left).coerceIn(0, width)
+                val top = Math.round(det.rect.top).coerceIn(0, height)
+                val right = Math.round(det.rect.right).coerceIn(0, width)
+                val bottom = Math.round(det.rect.bottom).coerceIn(0, height)
+                val blockW = right - left
+                val blockH = bottom - top
+                if (blockW <= 0 || blockH <= 0) continue
+
+                val targetW = blocksPerMinDim.coerceIn(2, blockW.coerceAtLeast(2))
+                val targetH = ((blocksPerMinDim.toFloat() * blockH / blockW.toFloat()).toInt()).coerceIn(2, blockH.coerceAtLeast(2))
+                var roiBmp: Bitmap? = null
+                var tinyBmp: Bitmap? = null
+                try {
+                    roiBmp = Bitmap.createBitmap(mutable, left, top, blockW, blockH)
+                    tinyBmp = Bitmap.createScaledBitmap(roiBmp, targetW, targetH, true)
+                    val dstRect = android.graphics.Rect(left, top, right, bottom)
+                    canvas.drawBitmap(tinyBmp, null, dstRect, paint)
+                } finally {
+                    if (tinyBmp != null && !tinyBmp.isRecycled) tinyBmp.recycle()
+                    if (roiBmp != null && !roiBmp.isRecycled) roiBmp.recycle()
+                }
+            }
+            return mutable
+        }
+
+        /**
+         * Applies smooth downscale/upscale visual blur inside each detection ROI.
+         */
+        fun applyBlurRedaction(
+            source: Bitmap,
+            detections: List<PiiDetection>,
+            blurPasses: Int = 2
+        ): Bitmap {
+            val mutable = if (source.isMutable) source else source.copy(Bitmap.Config.ARGB_8888, true)
+            val width = mutable.width
+            val height = mutable.height
+            val canvas = android.graphics.Canvas(mutable)
+            val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+            for (det in detections) {
+                val left = Math.round(det.rect.left).coerceIn(0, width)
+                val top = Math.round(det.rect.top).coerceIn(0, height)
+                val right = Math.round(det.rect.right).coerceIn(0, width)
+                val bottom = Math.round(det.rect.bottom).coerceIn(0, height)
+                val blockW = right - left
+                val blockH = bottom - top
+                if (blockW <= 0 || blockH <= 0) continue
+
+                val sampleW = (blockW / 12).coerceIn(2, blockW)
+                val sampleH = (blockH / 12).coerceIn(2, blockH)
+                var work = Bitmap.createBitmap(mutable, left, top, blockW, blockH)
+                try {
+                    repeat(blurPasses.coerceIn(1, 3)) {
+                        val down = Bitmap.createScaledBitmap(work, sampleW, sampleH, true)
+                        val up = Bitmap.createScaledBitmap(down, blockW, blockH, true)
+                        down.recycle()
+                        if (!work.isRecycled) work.recycle()
+                        work = up
+                    }
+                    canvas.drawBitmap(work, left.toFloat(), top.toFloat(), paint)
+                } finally {
+                    if (!work.isRecycled) work.recycle()
+                }
+            }
+            return mutable
         }
 
         /**
@@ -292,12 +416,18 @@ class PiiNcnnEngine(
             detections: List<PiiDetection>,
             imageWidth: Int,
             imageHeight: Int,
-            timestamp: Long = System.currentTimeMillis()
+            timestamp: Long = System.currentTimeMillis(),
+            style: PiiRedactionStyle = PiiRedactionStyle.SOLID_BLACK
         ): JSONObject {
             val root = JSONObject()
             root.put("version", "1.0.0")
             root.put("timestamp", timestamp)
-            root.put("layer", "Layer_C_Isolated_Solid_Redaction")
+            root.put(
+                "layer",
+                if (style.isForensicLayerC) "Layer_C_Isolated_Solid_Redaction"
+                else "Layer_B_Visual_Obfuscation_${style.name}"
+            )
+            root.put("redactionStyle", style.name)
             root.put("imageWidth", imageWidth)
             root.put("imageHeight", imageHeight)
             val boxes = JSONArray()
@@ -456,7 +586,8 @@ class PiiNcnnEngine(
                             PiiDetection(
                                 rect = RectF(minOf(x1, x2), minOf(y1, y2), maxOf(x1, x2), maxOf(y1, y2)),
                                 piiClass = mappedClass,
-                                score = score
+                                score = score,
+                                label = cocoPiiDetailLabel(clsId, mappedClass)
                             )
                         )
                     }
@@ -638,15 +769,27 @@ object CocoClassMetadata {
 }
 
 /**
+ * Redaction rendering styles supported across Photo & Video PII redaction.
+ */
+enum class PiiRedactionStyle(val label: String, val isForensicLayerC: Boolean) {
+    SOLID_BLACK("Solid Black (Forensic)", true),
+    SOLID_WHITE("Solid White (Document)", true),
+    PIXELATE("Pixelate (Mosaic)", false),
+    BLUR("Soft Blur", false)
+}
+
+/**
  * Standard PII classification categories.
  */
 enum class PiiClass(val label: String, val category: String) {
     FACE("Face", "Biometric"),
     PERSON("Person (Full Body)", "Human"),
-    PLATE("License Plate", "Identifier"),
+    PLATE("Vehicle / License Plate", "Identifier"),
     SIGNATURE("Signature", "Legal"),
-    CARD("Credit Card / ID", "Financial"),
-    BARCODE("Barcode/QR", "Data")
+    CARD("Phone / ID / Document", "Financial"),
+    BARCODE("Barcode / QR Code", "Data"),
+    SCREEN("Screen / Laptop", "Device"),
+    TEXT_PII("Sensitive Text (Email/Phone/ID)", "Text")
 }
 
 /**

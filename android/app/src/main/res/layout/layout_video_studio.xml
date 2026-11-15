@@ -19,113 +19,82 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingTop="12dp">
 
         <!-- ============================================================= -->
-        <!-- 1. APP BAR (2 Horizontal Levels: Menu + Title/Subtitle + Fav)  -->
+        <!-- 1. APP BAR (Open Header)                                      -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnVidStudioMenu"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Navigation Menu"
+                app:icon="@drawable/ic_menu"
+                app:iconTint="@color/vf_primary" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp">
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:orientation="vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVidStudioMenu"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                <TextView
+                    android:id="@+id/tvVidStudioTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:contentDescription="Navigation Menu"
-                    app:icon="@drawable/ic_menu"
-                    app:iconTint="@color/vf_primary" />
+                    android:text="Video Studio"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.04" />
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvVidStudioTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Video Studio"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
-
-                    <TextView
-                        android:id="@+id/tvVidStudioSubtitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Visual Video Studio &amp; Compressor"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-                    android:id="@+id/btnVidStudioFavorite"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                <TextView
+                    android:id="@+id/tvVidStudioSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:contentDescription="Favorite Action"
-                    app:icon="@drawable/ic_favorite" />
+                    android:text="Visual Video Studio &amp; Compressor"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 2. FILES CARD (Container / Card with Empty and Selected state) -->
+        <!-- 2. FILES SECTION (Heading + Subtle Tonal Band)                -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardVidFiles"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <!-- Files Header: Title + Clear All -->
+                <!-- Files Header: Section Title + Clear All -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Files"
-                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:text="Files" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidClearAll"
@@ -140,6 +109,19 @@
                         android:enabled="false" />
                 </LinearLayout>
 
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Featured"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
+
                 <!-- Empty State -->
                 <LinearLayout
                     android:id="@+id/layoutVidEmptyState"
@@ -147,8 +129,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
-                    android:paddingTop="24dp"
-                    android:paddingBottom="24dp"
+                    android:paddingTop="20dp"
+                    android:paddingBottom="20dp"
                     android:visibility="visible">
 
                     <ImageView
@@ -279,8 +261,9 @@
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:cardBackgroundColor="?attr/colorSurfaceVariant"
-                        app:cardCornerRadius="8dp"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+                        app:cardCornerRadius="14dp"
+                        app:cardElevation="0dp"
                         app:strokeWidth="0dp">
 
                         <LinearLayout
@@ -340,27 +323,19 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 3. LIVE PREVIEW & VISUAL TIMELINE TRIMMER CARD                 -->
+        <!-- 3. LIVE PREVIEW & VISUAL TIMELINE TRIMMER (Heading + Canvas)  -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardVidLivePreview"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <!-- Section Header: Live Preview + Reset -->
                 <LinearLayout
@@ -368,15 +343,15 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Live preview"
-                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:text="Live Preview" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidResetPreview"
@@ -392,6 +367,20 @@
                         app:iconTint="@color/vf_text_secondary"
                         app:iconSize="14dp" />
                 </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Canvas"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    app:cardCornerRadius="22dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                 <!-- Real Video Player Container Frame -->
                 <FrameLayout
@@ -703,14 +692,14 @@
                         app:iconSize="16dp" />
                 </LinearLayout>
 
-                <!-- Smart Auto-Reframe (9:16) AI Tool Button -->
+                <!-- Smart AI Auto-Reframe Tool Button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnVidAutoReframe"
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    android:text="Smart Auto-Reframe (9:16)"
+                    android:text="Smart AI Auto-Reframe"
                     android:maxLines="1"
                     android:singleLine="true"
                     android:ellipsize="end"
@@ -719,19 +708,35 @@
                     app:iconTint="@color/vf_primary"
                     app:iconSize="18dp" />
 
-                <!-- Electronic Image Stabilization (EIS) Tool Button -->
+                <!-- Electronic Image Stabilization (2-Pass Pro EIS) Tool Button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnVidStabilize"
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    android:text="Stabilize Footage (EIS)"
+                    android:layout_marginBottom="8dp"
+                    android:text="Stabilize Footage"
                     android:maxLines="1"
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:enabled="false"
                     app:icon="@drawable/ic_focus_ring"
+                    app:iconTint="@color/vf_primary"
+                    app:iconSize="18dp" />
+
+                <!-- AI Multi-Modal Video PII Redaction Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnVidPiiRedact"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:text="Auto-Redact PII (AI)"
+                    android:maxLines="1"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:enabled="false"
+                    app:icon="@drawable/ic_shield_video"
                     app:iconTint="@color/vf_primary"
                     app:iconSize="18dp" />
 
@@ -816,42 +821,34 @@
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 3B. EDIT SUMMARY CARD                                         -->
+        <!-- 3B. EDIT SUMMARY SECTION (Heading + Tonal Card)               -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardVidEditSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="8dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="EDIT SUMMARY"
-                        android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                        android:text="Edit Summary" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidResetAllEdits"
@@ -864,6 +861,19 @@
                         android:singleLine="true"
                         android:ellipsize="end" />
                 </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                 <TextView
                     android:id="@+id/tvVidSummaryEmpty"
@@ -943,38 +953,50 @@
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvVidSummaryPii"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Privacy    Auto-Redacted"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 4. OUTPUT CARD (Target Size, Format, Codec, Quality, Res, Audio, Dest) -->
+        <!-- 4. OUTPUT SECTION (Heading + Tonal Card)                      -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardVidOutput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <TextView
+                    style="@style/Widget.VeilFrame.SectionHeading"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Output Settings"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.04"
-                    android:layout_marginBottom="12dp" />
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:text="Output Settings" />
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="16dp">
 
                 <!-- Target Size & Platform Presets -->
                 <TextView
@@ -1001,7 +1023,7 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetAuto"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Auto (CRF)"
@@ -1009,77 +1031,77 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetWhatsapp"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="WhatsApp Status" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetInstagram"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Instagram Story" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetTikTok"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="TikTok (72 MB)" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetYouTubeShorts"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="YouTube Shorts" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetTwitter"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Twitter / X" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetTelegram"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Telegram HD" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetDiscord"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Discord (25 MB)" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetNitro"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Discord Nitro (50 MB)" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetEmail"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Email (8 MB)" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetWeb"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Web (10 MB)" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetCustom"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Custom MB" />
@@ -1113,7 +1135,7 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipStatusResHd"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="HD 720p (1900k)"
@@ -1121,7 +1143,7 @@
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipStatusResFhd"
-                            style="@style/Widget.Material3.Chip.Filter"
+                            style="@style/Widget.VeilFrame.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="FHD 1080p (3800k)" />
@@ -1134,9 +1156,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         app:cardBackgroundColor="@color/vf_status_info_bg"
-                        app:cardCornerRadius="8dp"
-                        app:strokeColor="@color/vf_status_info"
-                        app:strokeWidth="1dp">
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1169,7 +1191,7 @@
                 <!-- Custom MB Input Field -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/tilVidCustomTargetMb"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
@@ -1205,7 +1227,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidMp4"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="MP4"
@@ -1213,21 +1235,21 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidMkv"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="MKV" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidWebm"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="WebM" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidGif"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="GIF" />
@@ -1253,7 +1275,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidCodecH264"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="H.264"
@@ -1261,21 +1283,21 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidCodecH265"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="H.265" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidCodecVp9"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="VP9" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidCodecCopy"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Stream Copy" />
@@ -1301,7 +1323,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidSpeedSlow"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Slow (Max Quality, Smaller Size)"
@@ -1309,14 +1331,14 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidSpeedMedium"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Medium (Balanced)" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidSpeedFast"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Fast (Quick Export)" />
@@ -1342,7 +1364,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidPixFmtYuv420p"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="YUV420p (Max Compatibility)"
@@ -1350,7 +1372,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidPixFmtAuto"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Auto (Source Format)" />
@@ -1414,7 +1436,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidResOriginal"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Original"
@@ -1422,28 +1444,28 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidRes1080p"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="1080p" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidRes720p"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="720p" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidRes480p"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="480p" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidRes360p"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="360p" />
@@ -1469,7 +1491,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidAudioKeep"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Keep"
@@ -1477,7 +1499,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipVidAudioRemove"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Remove" />
@@ -1499,8 +1521,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant"
-                    app:cardCornerRadius="8dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="0dp">
 
                     <LinearLayout
@@ -1545,7 +1568,7 @@
 
                 <!-- Output Filename -->
                 <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="Output Filename">
@@ -1557,8 +1580,9 @@
                         android:textSize="13sp"
                         android:text="compressed_video.mp4" />
                 </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
         <!-- 5. PRIMARY EXECUTION ACTION (Dynamic single dominant action)   -->
@@ -1568,6 +1592,7 @@
             style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginBottom="12dp"
             android:text="Select video"
             android:maxLines="1"
@@ -1581,6 +1606,7 @@
             android:id="@+id/layoutVidProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -1607,6 +1633,7 @@
             android:id="@+id/layoutVidResultActions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:orientation="horizontal"
             android:layout_marginTop="8dp"
             android:visibility="gone">
@@ -1652,9 +1679,8 @@
         android:layout_marginBottom="24dp"
         app:cardCornerRadius="28dp"
         app:cardElevation="8dp"
-        app:cardBackgroundColor="?attr/colorSurfaceContainer"
-        app:strokeColor="@color/vf_surface_stroke"
-        app:strokeWidth="1dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+        app:strokeWidth="0dp"
         android:visibility="gone">
 
         <LinearLayout

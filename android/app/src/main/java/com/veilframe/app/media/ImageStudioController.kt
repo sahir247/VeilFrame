@@ -3,6 +3,7 @@ package com.veilframe.app.media
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -25,6 +26,11 @@ import kotlinx.coroutines.withContext
 import com.veilframe.app.privacy.PiiNcnnEngine
 import com.veilframe.app.privacy.PiiDetection
 import com.veilframe.app.privacy.PiiClass
+import com.veilframe.app.privacy.PiiMultiModalDetector
+import com.veilframe.app.privacy.PiiRedactionDialog
+import com.veilframe.app.privacy.PiiRedactableItem
+import com.veilframe.app.privacy.PiiRedactionStyle
+import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -63,8 +69,7 @@ class ImageStudioController(
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
     private val onShareFileRequest: (File, String) -> Unit,
-    private val onNavigateHome: () -> Unit,
-    private val onOpenModelManager: () -> Unit = {}
+    private val onNavigateHome: () -> Unit
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     // Authoritative state
     val editState = ImageEditState()
@@ -126,7 +131,6 @@ class ImageStudioController(
 
     fun initWorkspace() {
         binding.btnImgStudioMenu.setOnClickListener { onNavigateHome() }
-        binding.btnImgStudioFavorite.setOnClickListener { onOpenModelManager() }
         binding.btnSelectImage.setOnClickListener { onPickImageRequest() }
         binding.btnImgAddMore.setOnClickListener { onAddMoreImageRequest() }
         binding.btnImgClearAll.setOnClickListener { clear() }
@@ -249,6 +253,7 @@ class ImageStudioController(
         binding.toolColorFilter.setOnClickListener { dialogController.showColorFilterDialog(binding.toolColorFilter) }
         binding.toolExif.setOnClickListener { dialogController.showExifDialog(binding.toolExif) }
         binding.toolText.setOnClickListener { dialogController.showTextWatermarkDialog(binding.toolText) }
+        binding.toolBlur.setOnClickListener { dialogController.showBlurDialog(binding.toolBlur) }
         binding.toolPiiRedact.setOnClickListener { runAutoPiiRedaction() }
 
         // Execute / cancel compression
@@ -298,6 +303,7 @@ class ImageStudioController(
             binding.toolColorFilter,
             binding.toolExif,
             binding.toolText,
+            binding.toolBlur,
             binding.toolPiiRedact,
             binding.btnImgExecute,
             binding.btnFloatingExecute,
@@ -435,6 +441,8 @@ class ImageStudioController(
                 binding.toolExif.alpha = 1.0f
                 binding.toolText.isEnabled = true
                 binding.toolText.alpha = 1.0f
+                binding.toolBlur.isEnabled = true
+                binding.toolBlur.alpha = 1.0f
                 binding.toolPiiRedact.isEnabled = true
                 binding.toolPiiRedact.alpha = 1.0f
                 binding.btnImgExecute.isEnabled = true
@@ -717,9 +725,17 @@ class ImageStudioController(
 
             if (editState.piiDetections.isNotEmpty()) {
                 binding.tvImgSummaryPii.visibility = View.VISIBLE
-                binding.tvImgSummaryPii.text = "• AI Redact: ${editState.piiDetections.size} PII targets (Solid Layer C)"
+                binding.tvImgSummaryPii.text = "• AI Redact: ${editState.piiDetections.size} PII targets (${editState.piiRedactionStyle.label})"
             } else {
                 binding.tvImgSummaryPii.visibility = View.GONE
+            }
+
+            if (editState.blurScope != ImageBlurScope.NONE) {
+                binding.tvImgSummaryBlur.visibility = View.VISIBLE
+                val brushInfo = if (editState.blurScope == ImageBlurScope.BRUSH) " (Custom Painted Mask)" else ""
+                binding.tvImgSummaryBlur.text = "• Blur: ${editState.blurScope.label} • ${editState.blurType.label} (r=${editState.blurRadius})$brushInfo"
+            } else {
+                binding.tvImgSummaryBlur.visibility = View.GONE
             }
         }
         syncFloatingDockState()
@@ -744,10 +760,10 @@ class ImageStudioController(
     }
 
     /**
-     * Executes automated AI PII detection using the YOLOv8-ONNX engine on Dispatchers.Default.
-     * Applies Layer C (Isolated Solid Redaction) masks and verifies QualityGate Contract 4 compliance.
+     * Executes multi-modal on-device AI PII detection across NCNN (UltraFace RFB-320 faces,
+     * YOLOv8n vehicles/plates/screens/documents/people), WeChatQR/ML Kit barcodes, and ML Kit OCR text.
      */
-    fun runAutoPiiRedaction(confThreshold: Float = 0.40f) {
+    fun runAutoPiiRedaction(confThreshold: Float = 0.38f) {
         val item = currentItem ?: run {
             Toast.makeText(activity, "Please select an image first", Toast.LENGTH_SHORT).show()
             return
@@ -757,47 +773,61 @@ class ImageStudioController(
             return
         }
 
-        binding.layoutImgProgress.visibility = View.VISIBLE
-        binding.tvImgProgressStatus.text = "Scanning for PII (Faces, Plates, Signatures, Cards, QR)..."
+        val progressDialog = M3ExpressiveProgressDialog(activity)
+        progressDialog.show(
+            title = "AI PII Redaction Scan",
+            initialStatus = "Scanning faces, plates, screens, barcodes & text…",
+            isIndeterminate = true,
+            cancelable = true,
+            onCancel = {
+                piiJob?.cancel()
+                piiJob = null
+            }
+        )
 
         val gen = activeGeneration
         piiJob?.cancel()
         piiJob = scope.launch(Dispatchers.Default) {
             val engine = getOrInitPiiEngine()
-            if (engine == null || activeGeneration != gen) {
-                withContext(Dispatchers.Main) {
-                    binding.layoutImgProgress.visibility = View.GONE
-                    if (activeGeneration == gen) {
-                        Toast.makeText(activity, "PII Detection Engine unavailable", Toast.LENGTH_LONG).show()
-                    }
-                }
-                return@launch
-            }
-
             try {
-                // Run inference on preview bitmap, scaling detection targets to full-res original dimensions
-                val detections = engine.detect(
+                // Run multi-modal inference on preview bitmap, scaling bounding boxes to original dimensions
+                val detections = PiiMultiModalDetector.detectAll(
+                    context = activity,
+                    ncnnEngine = engine,
                     bitmap = sourceBmp,
                     targetWidth = item.origWidth,
                     targetHeight = item.origHeight,
-                    confThreshold = confThreshold
+                    confThreshold = confThreshold,
+                    includeNcnn = (engine != null),
+                    includeBarcodes = true,
+                    includeOcrText = true
                 )
 
                 withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
                     if (activeGeneration != gen) return@withContext
-                    binding.layoutImgProgress.visibility = View.GONE
 
                     if (detections.isEmpty()) {
-                        Toast.makeText(activity, "No PII detected (0 targets found)", Toast.LENGTH_SHORT).show()
+                        if (editState.piiDetections.isNotEmpty()) {
+                            editState.piiDetections = emptyList()
+                            refreshPreview()
+                            Toast.makeText(activity, "No PII targets detected; cleared prior redactions", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(activity, "No PII detected (0 targets found)", Toast.LENGTH_SHORT).show()
+                        }
                         return@withContext
                     }
 
                     showPiiRedactionSelectionDialog(detections, item)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                withContext(Dispatchers.Main) { progressDialog.dismiss() }
+                throw e
             } catch (e: Exception) {
                 Log.e("VeilFrame.ImageStudio", "PII detection failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    binding.layoutImgProgress.visibility = View.GONE
+                    progressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
                     Toast.makeText(activity, "PII detection error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -808,64 +838,75 @@ class ImageStudioController(
         detections: List<PiiDetection>,
         item: StudioImageItem
     ) {
-        val distinctClasses = detections.map { it.piiClass }.distinct().sortedBy { it.ordinal }
-        val labels = distinctClasses.map { piiClass ->
-            val count = detections.count { it.piiClass == piiClass }
-            "${piiClass.label} ($count detected)"
-        }.toTypedArray()
-
-        // Face, Plate, Card, Barcode default checked. Person (full human body) defaults to UNCHECKED so face is precisely redacted!
-        val checkedStates = BooleanArray(distinctClasses.size) { idx ->
-            distinctClasses[idx] != PiiClass.PERSON
+        val items = detections.mapIndexed { idx, det ->
+            val subtext = "Confidence: ${(det.score * 100).toInt()}% • Box: [${det.rect.left.toInt()}, ${det.rect.top.toInt()}, ${det.rect.right.toInt()}, ${det.rect.bottom.toInt()}]"
+            PiiRedactableItem(
+                id = "pii_$idx",
+                piiClass = det.piiClass,
+                label = det.label,
+                subtext = subtext,
+                defaultChecked = (det.piiClass != PiiClass.PERSON)
+            )
         }
 
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-            .setTitle("Detected Sensitive Targets (${detections.size})")
-            .setMultiChoiceItems(labels, checkedStates) { _, which, isChecked ->
-                checkedStates[which] = isChecked
-            }
-            .setPositiveButton("Redact Selected") { _, _ ->
-                val chosenClasses = distinctClasses.filterIndexed { index, _ -> checkedStates[index] }.toSet()
-                val selectedDetections = detections.filter { it.piiClass in chosenClasses }
-
+        PiiRedactionDialog.showItemSelectionDialog(
+            context = activity,
+            title = "Detected Sensitive Targets (${detections.size})",
+            subtitle = "Multi-modal scan: UltraFace, YOLOv8n objects/screens, QR/barcodes & sensitive OCR text. Select individual items to redact.",
+            items = items,
+            availableStyles = PiiRedactionStyle.entries,
+            initialStyle = editState.piiRedactionStyle,
+            hasActiveRedactions = editState.piiDetections.isNotEmpty(),
+            onApply = { chosenIds, chosenStyle ->
+                val selectedDetections = detections.filterIndexed { idx, _ -> "pii_$idx" in chosenIds }
                 if (selectedDetections.isEmpty()) {
-                    Toast.makeText(activity, "No categories selected for redaction", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+                    Toast.makeText(activity, "No targets selected for redaction", Toast.LENGTH_SHORT).show()
+                    return@showItemSelectionDialog
                 }
 
-                // Save detections into editState
                 editState.piiDetections = selectedDetections
-
-                // Refresh preview pipeline with Layer C Solid Redaction applied
+                editState.piiRedactionStyle = chosenStyle
                 refreshPreview()
 
-                // QualityGate verification on current live preview
-                val previewRendered = renderLivePreview(editState)
-                val isCompliant = if (previewRendered != null) {
-                    val scaledDets = PiiNcnnEngine.scaleDetections(
-                        selectedDetections,
-                        item.origWidth,
-                        item.origHeight,
-                        previewRendered.width,
-                        previewRendered.height
-                    )
-                    PiiNcnnEngine.verifyZeroResidualSignals(previewRendered, scaledDets)
-                } else false
+                val statusSuffix = if (chosenStyle.isForensicLayerC) {
+                    val previewRendered = renderLivePreview(editState)
+                    val expectedFill = if (chosenStyle == PiiRedactionStyle.SOLID_WHITE) Color.WHITE else Color.BLACK
+                    val isCompliant = if (previewRendered != null) {
+                        val scaledDets = PiiNcnnEngine.scaleDetections(
+                            selectedDetections,
+                            item.origWidth,
+                            item.origHeight,
+                            previewRendered.width,
+                            previewRendered.height
+                        )
+                        PiiNcnnEngine.verifyZeroResidualSignals(previewRendered, scaledDets, expectedFill)
+                    } else false
+                    if (isCompliant) "QualityGate Contract 4: PASSED (Zero Leakage)" else "QualityGate Contract 4: FAILED (Residual Signal Leakage Detected)"
+                } else {
+                    "Layer B Visual Obfuscation (${chosenStyle.label})"
+                }
 
                 val summary = selectedDetections.groupBy { it.label }.map { "${it.key}: ${it.value.size}" }.joinToString(", ")
-                val toastMsg = "Redacted ${selectedDetections.size} targets ($summary)\nQualityGate Contract 4: ${if (isCompliant) "PASSED (Zero Leakage)" else "VERIFIED"}"
-                Toast.makeText(activity, toastMsg, Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    activity,
+                    "Redacted ${selectedDetections.size} targets ($summary)\n$statusSuffix",
+                    Toast.LENGTH_LONG
+                ).show()
 
-                // Export structured manifest for audit log
                 val manifestJson = PiiNcnnEngine.exportRedactionManifest(
                     detections = selectedDetections,
                     imageWidth = item.origWidth,
-                    imageHeight = item.origHeight
+                    imageHeight = item.origHeight,
+                    style = chosenStyle
                 )
                 Log.i("VeilFrame.PiiRedaction", "Privacy Manifest Generated:\n$manifestJson")
+            },
+            onClear = {
+                editState.piiDetections = emptyList()
+                refreshPreview()
+                Toast.makeText(activity, "AI PII redactions cleared", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        )
     }
 
     fun release() {
@@ -938,7 +979,6 @@ class ImageStudioController(
 
                     val itemEditState = if (itemsToProcess.size > 1 && item != currentItem) {
                         item.editState.copy(
-                            piiDetections = emptyList(),
                             cropAspect = if (editState.cropAspect == "Free") "Free" else editState.cropAspect,
                             filter = editState.filter,
                             bgType = editState.bgType,
@@ -1044,7 +1084,7 @@ class ImageStudioController(
 
                         floatingDockController.transitionTo(
                             FloatingActionState.COMPLETED,
-                            actionTitle = "Save Result",
+                            actionTitle = "Save",
                             secondaryTitle = "Share"
                         )
                         if (destUri != null && exportedCount > 0) {
@@ -1102,9 +1142,12 @@ class ImageStudioController(
         binding.toolExif.alpha = 0.5f
         binding.toolText.isEnabled = false
         binding.toolText.alpha = 0.5f
+        binding.toolBlur.isEnabled = false
+        binding.toolBlur.alpha = 0.5f
         binding.toolPiiRedact.isEnabled = false
         binding.toolPiiRedact.alpha = 0.5f
         binding.tvImgSummaryPii.visibility = View.GONE
+        binding.tvImgSummaryBlur.visibility = View.GONE
 
         binding.imgFileThumb.setImageDrawable(null)
         binding.imgBeforePreview.setImageDrawable(null)
@@ -1201,7 +1244,7 @@ class ImageStudioController(
         if (hasResult) {
             floatingDockController.transitionTo(
                 FloatingActionState.COMPLETED,
-                actionTitle = "Save Image",
+                actionTitle = "Save",
                 actionIcon = R.drawable.ic_action_save,
                 secondaryTitle = "Share",
                 secondaryIcon = R.drawable.ic_action_share

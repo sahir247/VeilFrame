@@ -259,11 +259,13 @@ class PdfPageThumbnailAdapter(
                 binding.cardPageThumbnail.setOnLongClickListener(null)
             }
 
+            val strokeDp = context.resources.displayMetrics.density
             if (isSelected) {
+                binding.cardPageThumbnail.strokeWidth = (2f * strokeDp).toInt()
                 binding.cardPageThumbnail.strokeColor = ContextCompat.getColor(context, R.color.vf_primary)
                 binding.cardPageThumbnail.setCardBackgroundColor(ContextCompat.getColor(context, R.color.vf_container_high))
             } else {
-                binding.cardPageThumbnail.strokeColor = ContextCompat.getColor(context, R.color.vf_surface_variant)
+                binding.cardPageThumbnail.strokeWidth = 0
                 binding.cardPageThumbnail.setCardBackgroundColor(ContextCompat.getColor(context, R.color.vf_container))
             }
 

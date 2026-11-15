@@ -100,9 +100,10 @@ class BackgroundRemoverControllerTest {
     @Test
     fun `test RembgMode enum covers all required modes`() {
         val modes = BackgroundRemoverController.RembgMode.values()
-        assertEquals(3, modes.size)
+        assertEquals(4, modes.size)
         assertNotNull(BackgroundRemoverController.RembgMode.valueOf("HYBRID"))
         assertNotNull(BackgroundRemoverController.RembgMode.valueOf("U2NETP"))
         assertNotNull(BackgroundRemoverController.RembgMode.valueOf("MODNET"))
+        assertNotNull(BackgroundRemoverController.RembgMode.valueOf("LIFT_AND_SHIFT"))
     }
 }

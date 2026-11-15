@@ -1,6 +1,7 @@
 package com.veilframe.app.media.rife
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -12,13 +13,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Manages physical storage, first-run download, and lifecycle of RIFE v4 AI models.
- * Downloaded on first run in Motion Lab (context.filesDir/models/rife-v4).
+ * Manages physical storage, downloads, active selection, and lifecycle of modern RIFE v4 AI models (v4.0 - v4.26).
+ * Legacy RIFE v2.4 is completely excluded.
  */
 class RifeModelManager(private val context: Context) {
 
     companion object {
         private const val TAG = "VeilFrame.RifeModel"
+        private const val PREFS_NAME = "veilframe_rife_prefs"
         private const val CONNECT_TIMEOUT_MS = 20_000
         private const val READ_TIMEOUT_MS = 60_000
 
@@ -36,6 +38,7 @@ class RifeModelManager(private val context: Context) {
             "objects.githubusercontent.com",
             "cdn.jsdelivr.net",
             "jsdelivr.net",
+            "jsdelivr.com",
             "huggingface.co",
             "hf.co",
             "amazonaws.com"
@@ -45,6 +48,7 @@ class RifeModelManager(private val context: Context) {
             ".github.com",
             ".githubusercontent.com",
             ".jsdelivr.net",
+            ".jsdelivr.com",
             ".huggingface.co",
             ".hf.co",
             ".amazonaws.com"
@@ -69,8 +73,65 @@ class RifeModelManager(private val context: Context) {
         }
     }
 
+    private val prefs: SharedPreferences by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    /**
+     * Resolves the physical directory for a specific model spec across internal files or external storage.
+     */
+    fun getModelDir(spec: RifeModelSpec): File {
+        val internalDir = File(context.filesDir, "models/${spec.id}")
+        if (File(internalDir, "flownet.param").exists()) return internalDir
+
+        val externalDir = context.getExternalFilesDir("models")?.let { File(it, spec.id) }
+        if (externalDir != null && File(externalDir, "flownet.param").exists()) return externalDir
+
+        // Legacy baseline path compatibility (context.filesDir/models/rife-v4)
+        if (spec.id == RifeModelRegistry.RIFE_V4_0.id) {
+            val legacyDir = File(context.filesDir, "models/rife-v4")
+            if (File(legacyDir, "flownet.param").exists()) return legacyDir
+        }
+
+        return internalDir.also { it.mkdirs() }
+    }
+
+    fun isModelDownloaded(spec: RifeModelSpec): Boolean {
+        val internalDir = File(context.filesDir, "models/${spec.id}")
+        val externalDir = context.getExternalFilesDir("models")?.let { File(it, spec.id) }
+        val legacyDir = if (spec.id == RifeModelRegistry.RIFE_V4_0.id) File(context.filesDir, "models/rife-v4") else null
+
+        fun isValidDir(d: File?): Boolean {
+            if (d == null || !d.exists()) return false
+            val p = File(d, "flownet.param")
+            val b = File(d, "flownet.bin")
+            return p.exists() && p.length() > 500 && b.exists() && b.length() >= 4_000_000L
+        }
+
+        return isValidDir(internalDir) || isValidDir(externalDir) || isValidDir(legacyDir)
+    }
+
+    fun getSelectedModel(): RifeModelSpec {
+        val savedId = prefs.getString(RifeModelRegistry.PREF_SELECTED_MODEL_ID, null)
+        if (savedId != null) {
+            return RifeModelRegistry.findById(savedId)
+        }
+        // Auto-select first available downloaded model, or default to RIFE_V4_25
+        for (m in RifeModelRegistry.ALL_MODELS) {
+            if (isModelDownloaded(m)) return m
+        }
+        return RifeModelRegistry.RIFE_V4_25
+    }
+
+    fun setSelectedModel(spec: RifeModelSpec) {
+        prefs.edit().putString(RifeModelRegistry.PREF_SELECTED_MODEL_ID, spec.id).apply()
+    }
+
+    /**
+     * Physical directory of currently active model.
+     */
     val modelDir: File
-        get() = File(context.filesDir, "models/rife-v4").also { it.mkdirs() }
+        get() = getModelDir(getSelectedModel())
 
     val paramFile: File
         get() = File(modelDir, "flownet.param")
@@ -78,75 +139,194 @@ class RifeModelManager(private val context: Context) {
     val binFile: File
         get() = File(modelDir, "flownet.bin")
 
+    val requiredPadding: Int
+        get() = getSelectedModel().requiredPadding
+
+    /**
+     * Checks whether the currently active model is ready for inference.
+     * If not ready, checks if any valid model is downloaded.
+     */
     fun isModelReady(): Boolean {
-        return paramFile.exists() && paramFile.length() > 500 &&
-            binFile.exists() && binFile.length() >= 10_000_000L
+        if (isModelDownloaded(getSelectedModel())) return true
+        return RifeModelRegistry.ALL_MODELS.any { isModelDownloaded(it) }
     }
 
-    suspend fun ensureModelDownloaded(
-        onProgress: (progressPct: Int, message: String) -> Unit = { _, _ -> }
-    ): Result<File> = withContext(Dispatchers.IO) {
-        if (isModelReady()) {
-            return@withContext Result.success(modelDir)
+    /**
+     * Returns total disk space used by all downloaded RIFE models in bytes.
+     */
+    fun getTotalStorageUsedBytes(): Long {
+        var total = 0L
+        for (m in RifeModelRegistry.ALL_MODELS) {
+            val internalDir = File(context.filesDir, "models/${m.id}")
+            val externalDir = context.getExternalFilesDir("models")?.let { File(it, m.id) }
+            val legacyDir = if (m.id == RifeModelRegistry.RIFE_V4_0.id) File(context.filesDir, "models/rife-v4") else null
+
+            val dirs = listOfNotNull(internalDir, externalDir, legacyDir).filter { it.exists() }
+            for (d in dirs) {
+                val p = File(d, "flownet.param")
+                val b = File(d, "flownet.bin")
+                if (p.exists()) total += p.length()
+                if (b.exists()) total += b.length()
+            }
+        }
+        return total
+    }
+
+    /**
+     * Delete model files to reclaim storage.
+     * Cleans up both internal app storage, external storage, and legacy directories.
+     */
+    fun deleteModel(spec: RifeModelSpec): Boolean {
+        var anyDeleted = false
+
+        // 1. Internal models directory
+        val internalDir = File(context.filesDir, "models/${spec.id}")
+        if (internalDir.exists()) {
+            if (internalDir.deleteRecursively()) anyDeleted = true
         }
 
+        // 2. External models directory
+        context.getExternalFilesDir("models")?.let { parent ->
+            val externalDir = File(parent, spec.id)
+            if (externalDir.exists()) {
+                if (externalDir.deleteRecursively()) anyDeleted = true
+            }
+        }
+
+        // 3. Legacy baseline directory if applicable
+        if (spec.id == RifeModelRegistry.RIFE_V4_0.id) {
+            val legacyDir = File(context.filesDir, "models/rife-v4")
+            if (legacyDir.exists()) {
+                if (legacyDir.deleteRecursively()) anyDeleted = true
+            }
+        }
+
+        // 4. Also clean up any lingering tmp models if writable
+        val tmpDir = File("/data/local/tmp/rife_models/${spec.id}")
+        if (tmpDir.exists()) {
+            runCatching { tmpDir.deleteRecursively() }
+        }
+
+        // 5. If this was the active model, fall back to another downloaded model or clear preference
+        val currentSelected = prefs.getString(RifeModelRegistry.PREF_SELECTED_MODEL_ID, null)
+        if (currentSelected == spec.id) {
+            val nextAvailable = RifeModelRegistry.ALL_MODELS.firstOrNull { it.id != spec.id && isModelDownloaded(it) }
+            if (nextAvailable != null) {
+                setSelectedModel(nextAvailable)
+            } else {
+                prefs.edit().remove(RifeModelRegistry.PREF_SELECTED_MODEL_ID).apply()
+            }
+        }
+
+        return anyDeleted || !isModelDownloaded(spec)
+    }
+
+    /**
+     * Downloads the specified model with resilient fallback mirrors (Primary -> CDN -> Raw GitHub)
+     * and real-time progress callbacks.
+     */
+    suspend fun downloadModel(
+        spec: RifeModelSpec,
+        forceRedownload: Boolean = false,
+        onProgress: (progressPct: Int, message: String) -> Unit = { _, _ -> }
+    ): Result<File> = withContext(Dispatchers.IO) {
+        val targetDir = File(context.filesDir, "models/${spec.id}").also { it.mkdirs() }
+        val paramF = File(targetDir, "flownet.param")
+        val binF = File(targetDir, "flownet.bin")
+
+        if (!forceRedownload && isModelDownloaded(spec)) {
+            return@withContext Result.success(getModelDir(spec))
+        }
+
+        // Clean up partial or forced redownload files
+        if (forceRedownload) {
+            paramF.delete()
+            binF.delete()
+        }
+        File(targetDir, "flownet.param.tmp").delete()
+        File(targetDir, "flownet.bin.tmp").delete()
+
         try {
-            onProgress(5, "Downloading RIFE AI model configuration…")
+            onProgress(5, "Downloading ${spec.displayName} configuration…")
+            val primaryParamUrl = spec.paramCdnUrl ?: spec.paramUrl
             val paramSuccess = runCatching {
-                downloadSingle(PARAM_URL, paramFile) { _, _ -> }
+                downloadSingle(primaryParamUrl, paramF) { _, _ -> }
             }.recoverCatching { e ->
-                Log.w(TAG, "Primary param download failed, trying CDN: ${e.message}")
-                downloadSingle(PARAM_CDN_URL, paramFile) { _, _ -> }
+                Log.w(TAG, "Primary param download failed, trying raw GitHub: ${e.message}")
+                downloadSingle(spec.paramUrl, paramF) { _, _ -> }
             }.recoverCatching { e ->
-                Log.w(TAG, "CDN param download failed, trying fallback: ${e.message}")
-                downloadSingle(PARAM_FALLBACK_URL, paramFile) { _, _ -> }
+                if (spec.paramFallbackUrl != null) {
+                    Log.w(TAG, "Raw param download failed, trying fallback: ${e.message}")
+                    downloadSingle(spec.paramFallbackUrl, paramF) { _, _ -> }
+                } else throw e
             }.isSuccess
 
-            if (!paramSuccess || !paramFile.exists() || paramFile.length() < 500) {
-                throw IOException("Failed to download RIFE parameter file")
+            if (!paramSuccess || !paramF.exists() || paramF.length() < 500) {
+                throw IOException("Failed to download ${spec.displayName} parameter file")
             }
 
-            onProgress(15, "Downloading RIFE AI neural weights (~10 MB)…")
-            val estimatedTotalBytes = 10_340_416L
+            onProgress(15, "Downloading ${spec.displayName} neural weights (${spec.sizeFormatted})…")
+            val estimatedTotalBytes = spec.estimatedBytes
             var lastUpdateMs = 0L
             var lastReportedPct = -1
             val progressCallback: (Long, Long) -> Unit = { downloaded, total ->
                 val now = System.currentTimeMillis()
                 val effectiveTotal = if (total > 0) total else estimatedTotalBytes
                 val pct = (15 + ((downloaded * 80) / effectiveTotal).toInt()).coerceIn(15, 95)
-                if (now - lastUpdateMs >= 250L || pct - lastReportedPct >= 2 || pct >= 95) {
+                if (now - lastUpdateMs >= 150L || pct - lastReportedPct >= 2 || pct >= 95) {
                     lastUpdateMs = now
                     lastReportedPct = pct
                     val dlMb = downloaded / (1024 * 1024)
                     val totalMb = (effectiveTotal / (1024 * 1024)).coerceAtLeast(1)
-                    onProgress(pct, "Downloading RIFE AI weights: ${dlMb}MB / ${totalMb}MB…")
+                    onProgress(pct, "Downloading ${spec.shortBadge} weights: ${dlMb}MB / ${totalMb}MB…")
                 }
             }
 
+            val primaryBinUrl = spec.binCdnUrl ?: spec.binUrl
             val binSuccess = runCatching {
-                downloadSingle(BIN_URL, binFile, progressCallback)
+                downloadSingle(primaryBinUrl, binF, progressCallback)
             }.recoverCatching { e ->
-                Log.w(TAG, "Primary bin download failed, trying CDN: ${e.message}")
-                downloadSingle(BIN_CDN_URL, binFile, progressCallback)
+                Log.w(TAG, "Primary bin download failed, trying raw GitHub: ${e.message}")
+                downloadSingle(spec.binUrl, binF, progressCallback)
             }.recoverCatching { e ->
-                Log.w(TAG, "CDN bin download failed, trying fallback: ${e.message}")
-                downloadSingle(BIN_FALLBACK_URL, binFile, progressCallback)
+                if (spec.binFallbackUrl != null) {
+                    Log.w(TAG, "Raw bin download failed, trying fallback: ${e.message}")
+                    downloadSingle(spec.binFallbackUrl, binF, progressCallback)
+                } else throw e
             }.isSuccess
 
-            if (!binSuccess || !isModelReady()) {
-                paramFile.delete()
-                binFile.delete()
-                throw IllegalStateException("RIFE model files are incomplete after download")
+            if (!binSuccess || !isModelDownloaded(spec)) {
+                paramF.delete()
+                binF.delete()
+                throw IllegalStateException("Model files for ${spec.displayName} are incomplete after download")
             }
 
-            onProgress(100, "RIFE v4 AI model ready!")
-            Result.success(modelDir)
+            onProgress(100, "${spec.displayName} ready!")
+            setSelectedModel(spec)
+            Result.success(targetDir)
         } catch (t: Throwable) {
-            Log.e(TAG, "RIFE model download failed: ${t.message}", t)
-            paramFile.delete()
-            binFile.delete()
+            Log.e(TAG, "Download failed for ${spec.displayName}: ${t.message}", t)
+            paramF.delete()
+            binF.delete()
             Result.failure(t)
         }
+    }
+
+    suspend fun ensureModelDownloaded(
+        onProgress: (progressPct: Int, message: String) -> Unit = { _, _ -> }
+    ): Result<File> = withContext(Dispatchers.IO) {
+        val selected = getSelectedModel()
+        if (isModelDownloaded(selected)) {
+            return@withContext Result.success(getModelDir(selected))
+        }
+        // If an alternative model is downloaded, automatically switch to it if needed
+        val available = RifeModelRegistry.ALL_MODELS.firstOrNull { isModelDownloaded(it) }
+        if (available != null) {
+            setSelectedModel(available)
+            return@withContext Result.success(getModelDir(available))
+        }
+        // Otherwise download the selected model
+        return@withContext downloadModel(selected, forceRedownload = false, onProgress = onProgress)
     }
 
     private suspend fun downloadSingle(
@@ -162,7 +342,10 @@ class RifeModelManager(private val context: Context) {
         var redirectCount = 0
         var connection: HttpURLConnection? = null
 
-        val tempFile = File(destFile.parentFile, "${destFile.name}.tmp")
+        val parentDir = destFile.parentFile ?: throw IOException("Invalid destination file parent")
+        if (!parentDir.exists()) parentDir.mkdirs()
+
+        val tempFile = File(parentDir, "${destFile.name}.tmp")
         if (tempFile.exists()) tempFile.delete()
 
         try {
@@ -206,7 +389,7 @@ class RifeModelManager(private val context: Context) {
 
             conn.inputStream.use { input ->
                 FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(32768)
+                    val buffer = ByteArray(65536)
                     var bytesRead: Int
                     var totalDownloaded = 0L
 
@@ -217,6 +400,7 @@ class RifeModelManager(private val context: Context) {
                         onFileProgress(totalDownloaded, totalBytes)
                     }
                     output.flush()
+                    try { output.fd.sync() } catch (_: Exception) {}
                 }
             }
 

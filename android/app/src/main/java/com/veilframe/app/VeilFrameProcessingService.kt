@@ -519,19 +519,20 @@ class VeilFrameProcessingService : Service() {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
                 if (rifeManager.isModelReady()) {
                     val attemptGpu = !RifeNcnnNative.isEmulator()
+                    val requiredPadding = rifeManager.requiredPadding
                     useRife = if (attemptGpu) {
                         try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true)
+                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true, padding = requiredPadding)
                         } catch (t: Throwable) {
                             Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
                             try {
-                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
                             } catch (_: Throwable) { false }
                         }
                     } else {
                         Log.i(TAG, "Android Emulator detected: defaulting RIFE to CPU OpenMP mode for stability")
                         try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false)
+                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
                         } catch (_: Throwable) { false }
                     }
                 } else {
@@ -552,8 +553,24 @@ class VeilFrameProcessingService : Service() {
             val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
 
             fun loadRifeBitmap(file: File): Bitmap? {
+                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
+                val origW = boundsOpts.outWidth
+                val origH = boundsOpts.outHeight
+                if (origW <= 0 || origH <= 0) return null
+
+                // For mobile GPU thermal & VRAM stability, clamp RIFE neural synthesis max dimension to 1920 (1080p).
+                // Videos at 1080p (1920x1080) or 720p run at 100% native resolution.
+                // 4K UHD (3840x2160) is scaled 2x to 1080p (1920x1080) via fast hardware DCT downsampling.
+                var sampleSize = 1
+                val maxDim = maxOf(origW, origH)
+                if (maxDim > 1920) {
+                    sampleSize = 2
+                }
+
                 val opts = BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inSampleSize = sampleSize
                 }
                 val raw = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
                 return if (raw.config != Bitmap.Config.ARGB_8888) {
@@ -566,6 +583,7 @@ class VeilFrameProcessingService : Service() {
             }
 
             var outIdx = 0
+            var degradedFrameCount = 0
             var prevBmp: Bitmap? = if (useRife) loadRifeBitmap(frames[0]) else null
             var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
 
@@ -622,20 +640,38 @@ class VeilFrameProcessingService : Service() {
                                     synthBmp.recycle()
                                     interpolatedSuccessfully = true
                                 } else {
-                                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                                    outFile.outputStream().use { fos ->
-                                        prevBmp!!.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                                    }
-                                    interpolatedSuccessfully = true
+                                    Log.w(TAG, "RIFE returned null for frame $i (t=$t); attempting optical flow fallback")
                                 }
                             }
 
-                            if (!interpolatedSuccessfully && synthOptions != null && prevMat != null && curMat != null) {
-                                val result = FrameSynthesizer.synthesize(prevMat, curMat, t, synthOptions)
-                                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), result.frame)
-                                result.frame.release()
-                                result.confidence.release()
-                                result.fallbackMask.release()
+                            if (!interpolatedSuccessfully && synthOptions != null) {
+                                val matA = prevMat ?: prevBmp?.let { bmp ->
+                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
+                                }
+                                val matB = curMat ?: curBmp?.let { bmp ->
+                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
+                                }
+                                if (matA != null && matB != null && !matA.empty() && !matB.empty()) {
+                                    val result = FrameSynthesizer.synthesize(matA, matB, t, synthOptions)
+                                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), result.frame)
+                                    result.frame.release()
+                                    result.confidence.release()
+                                    result.fallbackMask.release()
+                                    interpolatedSuccessfully = true
+                                }
+                                if (prevMat == null) matA?.release()
+                                if (curMat == null) matB?.release()
+                            }
+
+                            if (!interpolatedSuccessfully) {
+                                // Transparently record degraded fallback frame rather than claiming successful interpolation
+                                degradedFrameCount++
+                                Log.w(TAG, "Frame interpolation failed for frame $i at t=$t; writing degraded duplicate fallback")
+                                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                                outFile.outputStream().use { fos ->
+                                    prevBmp?.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                                        ?: prevMat?.let { m -> Imgcodecs.imwrite(outFile.absolutePath, m) }
+                                }
                             }
                         }
                     } finally {
@@ -664,6 +700,10 @@ class VeilFrameProcessingService : Service() {
                 } else {
                     prevMat?.release()
                 }
+            }
+
+            if (degradedFrameCount > 0) {
+                Log.w(TAG, "Frame synthesis completed with $degradedFrameCount degraded fallback frames")
             }
 
             val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)

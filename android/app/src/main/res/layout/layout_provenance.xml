@@ -36,39 +36,36 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:paddingTop="14dp"
+                android:paddingBottom="24dp">
 
-                <!-- Target File Card -->
+                <!-- Target File Section -->
+                <TextView
+                    style="@style/Widget.VeilFrame.SectionHeading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:text="Selected Artifact" />
+
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.Material3.CardView.Filled"
+                    style="@style/Widget.VeilFrame.Card.Featured"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/vf_surface_stroke">
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginBottom="20dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="SELECTED ARTIFACT"
-                            android:textColor="@color/vf_secondary"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.08" />
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                         <TextView
                             android:id="@+id/tvProvenanceFileName"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
                             android:text="No file selected"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="15sp"
@@ -85,55 +82,51 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Hash Verification Card -->
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.Material3.CardView.Filled"
+                <!-- Hash Verification Section -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/vf_surface_stroke">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="SHA-256 Checksum" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnProvenanceCopyHash"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:enabled="false"
+                        android:text="Copy"
+                        app:icon="@drawable/ic_action_copy"
+                        app:iconSize="14dp" />
+                </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginBottom="20dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="SHA-256 CHECKSUM"
-                                android:textColor="@color/vf_secondary"
-                                android:textSize="11sp"
-                                android:textStyle="bold"
-                                android:letterSpacing="0.08" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnProvenanceCopyHash"
-                                style="@style/Widget.VeilFrame.Button.Quiet"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:enabled="false"
-                                android:text="Copy"
-                                app:icon="@drawable/ic_action_copy"
-                                app:iconSize="14dp" />
-                        </LinearLayout>
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                         <TextView
                             android:id="@+id/tvProvenanceSha256"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
                             android:fontFamily="monospace"
                             android:text="—"
                             android:textColor="@color/vf_text_primary"
@@ -141,37 +134,33 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Ed25519 Signature & Manifest Card -->
+                <!-- Ed25519 Signature & Manifest Section -->
+                <TextView
+                    style="@style/Widget.VeilFrame.SectionHeading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:text="Ed25519 Manifest Audit" />
+
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.Material3.CardView.Filled"
+                    style="@style/Widget.VeilFrame.Card.Section"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/vf_surface_stroke">
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginBottom="20dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="ED25519 MANIFEST AUDIT"
-                            android:textColor="@color/vf_secondary"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.08" />
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                         <TextView
                             android:id="@+id/tvProvenanceEd25519Status"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
                             android:text="No manifest audited"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="14sp"
@@ -189,15 +178,16 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Signature Status Card -->
+                <!-- Signature Status Strip (Borderless Tonal Banner) -->
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.Material3.CardView.Filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
                     app:cardCornerRadius="16dp"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="@color/vf_surface_stroke">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -244,22 +234,18 @@
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
 
-        <!-- Bottom Action Dock -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Material3.CardView.Filled"
+        <!-- Bottom Action Dock (Tonal Bar without Border) -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="0dp"
-            app:cardElevation="4dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke">
+            android:background="?attr/colorSurfaceContainer"
+            android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:padding="12dp">
+                android:padding="14dp">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnProvenanceSelectFile"
@@ -269,6 +255,6 @@
                     app:icon="@drawable/ic_file_pick"
                     app:iconSize="18dp" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
     </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

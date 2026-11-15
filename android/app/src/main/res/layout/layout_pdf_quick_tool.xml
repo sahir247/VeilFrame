@@ -61,9 +61,10 @@
                     android:layout_height="wrap_content"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="16dp"
-                    app:strokeColor="@color/vf_surface_variant"
-                    app:strokeWidth="1dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
                     android:layout_marginBottom="16dp">
 
                     <LinearLayout
@@ -276,7 +277,7 @@
 
                         <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/tilCustomMergeOrder"
-                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:hint="Custom Page Sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)"
@@ -382,7 +383,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilSplitRanges"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
@@ -589,7 +590,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilLockPassword"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
@@ -699,7 +700,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilRotatePages"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="Pages to Rotate (leave blank for all)"
@@ -812,7 +813,7 @@
 
                             <com.google.android.material.textfield.TextInputLayout
                                 android:id="@+id/tilCustomPageOrder"
-                                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                                style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:hint="Custom Page Sequence (e.g. 3, 4, 2, 1, 5 or 3&gt;4&gt;2&gt;1&gt;5)"
@@ -1064,9 +1065,10 @@
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="match_parent"
                         android:layout_height="180dp"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp"
                         android:layout_marginBottom="12dp">
 
                         <com.veilframe.app.pdf.ui.SignaturePadView
@@ -1137,6 +1139,44 @@
                                 android:text="Color Wheel..." />
                         </com.google.android.material.chip.ChipGroup>
                     </HorizontalScrollView>
+
+                    <!-- Stroke Thickness Slider -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="4dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="STROKE THICKNESS"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:id="@+id/tvSignStrokeThicknessVal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Medium (4.0 dp)"
+                            android:textStyle="bold"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderSignStrokeThickness"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="1.0"
+                        android:valueTo="12.0"
+                        android:value="4.0"
+                        android:stepSize="0.5"
+                        android:layout_marginBottom="8dp" />
 
                     <!-- Opacity Slider -->
                     <LinearLayout
@@ -1277,7 +1317,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilSignCustomPage"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="Target Page Number"
@@ -1298,9 +1338,10 @@
                         style="@style/Widget.Material3.CardView.Filled"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                         app:cardCornerRadius="16dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp"
                         android:layout_marginTop="4dp"
                         android:layout_marginBottom="12dp">
 
@@ -1420,7 +1461,7 @@
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
@@ -1432,7 +1473,7 @@
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
@@ -1444,7 +1485,7 @@
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
@@ -1475,7 +1516,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilSourceInput"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="HTML Code (e.g. &lt;h1&gt;Document Title&lt;/h1&gt;)">
@@ -1517,79 +1558,11 @@
                     <!-- Visual Page Sheet Preview Card -->
                     <com.google.android.material.card.MaterialCardView
                         android:id="@+id/cardDocVisualPreview"
+                        style="@style/Widget.VeilFrame.Card.Canvas"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
-                        app:cardCornerRadius="12dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp"
-                        app:cardBackgroundColor="@color/vf_surface">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:padding="12dp">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:layout_marginBottom="8dp">
-
-                                <TextView
-                                    android:id="@+id/tvDocVisualBadge"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="PAGE 1 VISUAL PREVIEW"
-                                    android:textColor="@color/vf_secondary"
-                                    android:textSize="10sp"
-                                    android:textStyle="bold"
-                                    android:letterSpacing="0.08" />
-
-                                <TextView
-                                    android:id="@+id/tvDocVisualPageSize"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="A4 Document"
-                                    android:textColor="@color/vf_text_secondary"
-                                    android:textSize="11sp" />
-                            </LinearLayout>
-
-                            <FrameLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="320dp"
-                                android:background="@color/vf_container_low"
-                                android:clipChildren="true"
-                                android:padding="10dp">
-
-                                <ImageView
-                                    android:id="@+id/ivDocVisualPreview"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="match_parent"
-                                    android:scaleType="fitCenter"
-                                    android:background="#FFFFFF"
-                                    android:contentDescription="Document visual page preview" />
-
-                                <ProgressBar
-                                    android:id="@+id/pbDocVisualLoading"
-                                    android:layout_width="32dp"
-                                    android:layout_height="32dp"
-                                    android:layout_gravity="center"
-                                    android:visibility="gone" />
-                            </FrameLayout>
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        app:cardCornerRadius="12dp"
-                        app:strokeColor="@color/vf_surface_variant"
-                        app:strokeWidth="1dp"
-                        app:cardBackgroundColor="@color/vf_surface">
+                        app:cardCornerRadius="18dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1597,27 +1570,92 @@
                             android:orientation="vertical"
                             android:padding="14dp">
 
-                            <TextView
-                                android:id="@+id/tvDocPreviewSummary"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:textColor="@color/vf_accent_green"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:layout_marginBottom="8dp" />
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
 
                             <TextView
-                                android:id="@+id/tvDocPreviewContent"
-                                android:layout_width="match_parent"
+                                android:id="@+id/tvDocVisualBadge"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:maxLines="15"
-                                android:ellipsize="end"
-                                android:textColor="@color/vf_text_primary"
-                                android:textSize="12sp"
-                                android:lineSpacingExtra="3dp"
-                                android:fontFamily="sans-serif"
-                                android:background="@drawable/bg_pdf_code_box"
-                                android:padding="10dp" />
+                                android:layout_weight="1"
+                                android:text="PAGE 1 VISUAL PREVIEW"
+                                android:textColor="@color/vf_secondary"
+                                android:textSize="10sp"
+                                android:textStyle="bold"
+                                android:letterSpacing="0.08" />
+
+                            <TextView
+                                android:id="@+id/tvDocVisualPageSize"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="A4 Document"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="320dp"
+                            android:background="@color/vf_container_low"
+                            android:clipChildren="true"
+                            android:padding="10dp">
+
+                            <ImageView
+                                android:id="@+id/ivDocVisualPreview"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:scaleType="fitCenter"
+                                android:background="#FFFFFF"
+                                android:contentDescription="Document visual page preview" />
+
+                            <ProgressBar
+                                android:id="@+id/pbDocVisualLoading"
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:visibility="gone" />
+                        </FrameLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        style="@style/Widget.VeilFrame.Card.Section"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        app:cardCornerRadius="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                        <TextView
+                            android:id="@+id/tvDocPreviewSummary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:id="@+id/tvDocPreviewContent"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:maxLines="15"
+                            android:ellipsize="end"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="3dp"
+                            android:fontFamily="sans-serif"
+                            android:background="@drawable/bg_pdf_code_box"
+                            android:padding="10dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>

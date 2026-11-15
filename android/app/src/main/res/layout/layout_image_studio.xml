@@ -19,113 +19,82 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingTop="12dp">
 
         <!-- ============================================================= -->
-        <!-- 1. APP BAR (2 Horizontal Levels: Menu + Title/Subtitle + Fav)  -->
+        <!-- 1. APP BAR (Open Header)                                      -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnImgStudioMenu"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Navigation Menu"
+                app:icon="@drawable/ic_menu"
+                app:iconTint="@color/vf_primary" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp">
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:orientation="vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnImgStudioMenu"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                <TextView
+                    android:id="@+id/tvImgStudioTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:contentDescription="Navigation Menu"
-                    app:icon="@drawable/ic_menu"
-                    app:iconTint="@color/vf_primary" />
+                    android:text="Image Studio"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.04" />
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvImgStudioTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Image Studio"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
-
-                    <TextView
-                        android:id="@+id/tvImgStudioSubtitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Image Studio &amp; Compression"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-                    android:id="@+id/btnImgStudioFavorite"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                <TextView
+                    android:id="@+id/tvImgStudioSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:contentDescription="Favorite Action"
-                    app:icon="@drawable/ic_favorite" />
+                    android:text="Image Studio &amp; Compression"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 2. FILES CARD (Container / Card with Empty and Selected state) -->
+        <!-- 2. FILES SECTION (Heading + Subtle Tonal Band)                -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardImgFiles"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <!-- Files Header: Title + Clear All -->
+                <!-- Files Header: Section Title + Clear All -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Files"
-                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:text="Files" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnImgClearAll"
@@ -140,6 +109,19 @@
                         android:enabled="false" />
                 </LinearLayout>
 
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Featured"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
+
                 <!-- Empty State (Deliberately occupies vertical space) -->
                 <LinearLayout
                     android:id="@+id/layoutImgEmptyState"
@@ -147,8 +129,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:gravity="center"
-                    android:paddingTop="24dp"
-                    android:paddingBottom="24dp"
+                    android:paddingTop="20dp"
+                    android:paddingBottom="20dp"
                     android:visibility="visible">
 
                     <ImageView
@@ -279,8 +261,9 @@
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:cardBackgroundColor="?attr/colorSurfaceVariant"
-                        app:cardCornerRadius="8dp"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+                        app:cardCornerRadius="14dp"
+                        app:cardElevation="0dp"
                         app:strokeWidth="0dp">
 
                         <LinearLayout
@@ -340,27 +323,19 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 3. LIVE PREVIEW CARD (Editing Tools Grid + Before/After)       -->
+        <!-- 3. LIVE PREVIEW SECTION (Heading + Canvas Card)               -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardImgLivePreview"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <!-- Section Header: Live Preview + Reset -->
                 <LinearLayout
@@ -368,15 +343,15 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Live Preview"
-                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:text="Live Preview" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnImgResetPreview"
@@ -392,6 +367,20 @@
                         app:iconTint="@color/vf_text_secondary"
                         app:iconSize="14dp" />
                 </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Canvas"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    app:cardCornerRadius="22dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                 <!-- Responsive Editing Tools Grid (Row 1: Crop, Resize, Rotate) -->
                 <LinearLayout
@@ -543,7 +532,7 @@
                         app:iconSize="16dp" />
                 </LinearLayout>
 
-                <!-- Responsive Editing Tools Grid (Row 3: AI PII Auto-Redactor) -->
+                <!-- Responsive Editing Tools Grid (Row 3: Blur & AI PII Auto-Redactor) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -551,17 +540,41 @@
                     android:layout_marginBottom="16dp">
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/toolPiiRedact"
+                        android:id="@+id/toolBlur"
                         style="@style/Widget.VeilFrame.Button.Action"
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
                         android:minWidth="0dp"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
                         android:insetLeft="0dp"
                         android:insetRight="0dp"
-                        app:iconPadding="8dp"
-                        android:text="Auto-Detect PII (AI Redact)"
+                        app:iconPadding="4dp"
+                        android:text="Blur"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:enabled="false"
+                        app:icon="@drawable/ic_blur"
+                        app:iconTint="@color/vf_primary"
+                        app:iconSize="16dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/toolPiiRedact"
+                        style="@style/Widget.VeilFrame.Button.Action"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:minWidth="0dp"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        app:iconPadding="4dp"
+                        android:text="AI Redact"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
@@ -683,42 +696,34 @@
                             android:visibility="gone" />
                     </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 3B. EDIT SUMMARY CARD                                         -->
+        <!-- 3B. EDIT SUMMARY SECTION (Heading + Tonal Card)               -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardImgEditSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="8dp">
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="6dp">
 
                     <TextView
+                        style="@style/Widget.VeilFrame.SectionHeading"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="EDIT SUMMARY"
-                        android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                        android:text="Edit Summary" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnImgResetAllEdits"
@@ -731,6 +736,19 @@
                         android:singleLine="true"
                         android:ellipsize="end" />
                 </LinearLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="14dp">
 
                 <TextView
                     android:id="@+id/tvImgSummaryEmpty"
@@ -801,38 +819,51 @@
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryBlur"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Blur       None"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
-        <!-- 4. OUTPUT CARD (Format, Quality, Destination, Filename)        -->
+        <!-- 4. OUTPUT SECTION (Heading + Tonal Card)                      -->
         <!-- ============================================================= -->
-        <com.google.android.material.card.MaterialCardView
+        <LinearLayout
             android:id="@+id/cardImgOutput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="12dp"
-            app:strokeColor="@color/vf_surface_stroke"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            android:layout_marginBottom="20dp"
+            android:orientation="vertical">
 
                 <TextView
+                    style="@style/Widget.VeilFrame.SectionHeading"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Output Settings"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.04"
-                    android:layout_marginBottom="12dp" />
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:text="Output Settings" />
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.VeilFrame.Card.Section"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="16dp">
 
                 <!-- Format Selection -->
                 <TextView
@@ -854,7 +885,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgJpg"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="JPG"
@@ -862,56 +893,56 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgPng"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="PNG" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgWebp"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="WebP" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgHeif"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="HEIF" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgHeic"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="HEIC" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgAvif"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="AVIF" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgBmp"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="BMP" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgTiff"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="TIFF" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipImgGif"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="GIF" />
@@ -937,7 +968,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipGoalPercent"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Quality (%)"
@@ -945,7 +976,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipGoalTargetSize"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.VeilFrame.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Target Size (KB)" />
@@ -1046,21 +1077,21 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chipTarget50k"
-                                style="@style/Widget.Material3.Chip.Filter"
+                                style="@style/Widget.VeilFrame.Chip.Filter"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="50 KB" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chipTarget100k"
-                                style="@style/Widget.Material3.Chip.Filter"
+                                style="@style/Widget.VeilFrame.Chip.Filter"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="100 KB" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chipTarget250k"
-                                style="@style/Widget.Material3.Chip.Filter"
+                                style="@style/Widget.VeilFrame.Chip.Filter"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="250 KB"
@@ -1068,14 +1099,14 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chipTarget500k"
-                                style="@style/Widget.Material3.Chip.Filter"
+                                style="@style/Widget.VeilFrame.Chip.Filter"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="500 KB" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chipTarget1m"
-                                style="@style/Widget.Material3.Chip.Filter"
+                                style="@style/Widget.VeilFrame.Chip.Filter"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="1 MB" />
@@ -1110,8 +1141,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant"
-                    app:cardCornerRadius="8dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="0dp">
 
                     <LinearLayout
@@ -1156,7 +1188,7 @@
 
                 <!-- Output Filename -->
                 <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.VeilFrame.TextInputLayout.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="Output Filename">
@@ -1168,8 +1200,9 @@
                         android:textSize="13sp"
                         android:text="compressed_image.jpg" />
                 </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
 
         <!-- ============================================================= -->
         <!-- 5. PRIMARY EXECUTION ACTION (Dynamic single dominant action)   -->
@@ -1179,6 +1212,7 @@
             style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginBottom="12dp"
             android:text="Select image"
             android:maxLines="1"
@@ -1192,6 +1226,7 @@
             android:id="@+id/layoutImgProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -1218,6 +1253,7 @@
             android:id="@+id/layoutImgResultActions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:orientation="horizontal"
             android:layout_marginTop="8dp"
             android:visibility="gone">
@@ -1229,7 +1265,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:text="Save Image"
+                android:text="Save"
                 android:maxLines="1"
                 android:singleLine="true"
                 android:ellipsize="end"
@@ -1263,9 +1299,8 @@
         android:layout_marginBottom="24dp"
         app:cardCornerRadius="28dp"
         app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/vf_surface"
-        app:strokeColor="@color/vf_surface_stroke"
-        app:strokeWidth="1dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
+        app:strokeWidth="0dp"
         android:visibility="gone">
 
         <LinearLayout

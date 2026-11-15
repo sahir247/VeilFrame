@@ -46,9 +46,12 @@ class LineRenderer : QrRenderer {
         val ox = geometry.offsetX
         val oy = geometry.offsetY
 
-        val posColor = design.lineStyle.positionColor
-            ?: design.eyeStyle.outerColor
+        val posOuterColor = design.eyeStyle.outerColor
+            ?: design.lineStyle.positionColor
             ?: design.palette.foreground
+        val posInnerColor = design.eyeStyle.innerColor
+            ?: design.lineStyle.positionColor
+            ?: posOuterColor
         val posStyle = if (design.lineStyle.positionStyle != FinderStyle.CLASSIC) {
             design.lineStyle.positionStyle
         } else {
@@ -87,7 +90,8 @@ class LineRenderer : QrRenderer {
                     offsetY = oy,
                     style = posStyle,
                     size = posSize,
-                    color = posColor
+                    color = posOuterColor,
+                    innerColor = posInnerColor
                 )
             )
         }

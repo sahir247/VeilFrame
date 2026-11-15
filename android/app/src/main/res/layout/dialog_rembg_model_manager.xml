@@ -41,6 +41,7 @@
     <com.veilframe.app.ui.MaxHeightNestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?android:attr/colorBackground"
         android:maxHeight="540dp"
         android:fillViewport="true">
 
@@ -52,19 +53,18 @@
 
             <!-- Storage Summary Card -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.VeilFrame.Card.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface_variant"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                android:layout_marginBottom="18dp"
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="12dp">
 
                     <TextView
                         android:id="@+id/tvModelStorageSummary"
@@ -88,25 +88,20 @@
 
             <!-- SECTION HEADER: AI NEURAL MODELS -->
             <TextView
+                style="@style/Widget.VeilFrame.SectionHeading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="DOWNLOADABLE AI MODELS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06"
+                android:text="Downloadable AI Models"
                 android:layout_marginBottom="8dp" />
 
             <!-- MODEL 1: BiRefNet Lite (Recommended) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardModelBiRefNet"
+                style="@style/Widget.VeilFrame.Card.Featured"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -245,13 +240,11 @@
             <!-- MODEL 2: ISNet General -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardModelIsNet"
+                style="@style/Widget.VeilFrame.Card.Featured"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -366,17 +359,15 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- MODEL 3: (Hidden) -->
+            <!-- MODEL 3: ColorOS Lift & Shift (Downloadable) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardModelU2Net"
+                style="@style/Widget.VeilFrame.Card.Featured"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:visibility="gone"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                android:visibility="visible"
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -399,7 +390,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="U2Net Human"
+                                android:text="Lift &amp; Shift (ColorOS)"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -408,7 +399,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="~176 MB • Optimized for human portraits"
+                                android:text="8.4 MB • Snapdragon 8 Gen 5 neural subject separation"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -483,7 +474,7 @@
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Download (~176 MB)"
+                            android:text="Download (8.4 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
                             app:iconTint="@color/vf_primary" />

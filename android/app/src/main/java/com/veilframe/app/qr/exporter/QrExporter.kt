@@ -271,20 +271,45 @@ object QrExporter {
         val targetContent = if (!expectedContent.isNullOrBlank()) {
             expectedContent
         } else {
-            val decoded = try {
-                val intArray = IntArray(rasterBmp.width * rasterBmp.height)
-                rasterBmp.getPixels(intArray, 0, rasterBmp.width, 0, 0, rasterBmp.width, rasterBmp.height)
-                val source = com.google.zxing.RGBLuminanceSource(rasterBmp.width, rasterBmp.height, intArray)
-                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
-                com.google.zxing.MultiFormatReader().decode(binaryBitmap)?.text ?: ""
-            } catch (_: Throwable) {
-                ""
+            var decodedText = ""
+            val wechat = com.veilframe.app.qr.decoder.WeChatQrDecoder()
+            if (com.veilframe.app.cv.core.CvRuntime.isNativeAvailable && wechat.isAvailable) {
+                try {
+                    val rec = com.veilframe.app.cv.qr.QrRecoveryEngine.recoverWithWeChat(
+                        bitmap = rasterBmp,
+                        expected = null
+                    )
+                    val hitText = rec.detection?.rawValue
+                    if (!hitText.isNullOrBlank()) {
+                        decodedText = hitText
+                    }
+                } catch (_: Throwable) {}
             }
-            if (decoded.isEmpty()) {
+            if (decodedText.isEmpty()) {
+                val mlPass = try {
+                    com.veilframe.app.qr.decoder.MlKitQrDecoder().decodeWithRetries(rasterBmp, expectedContent = null)
+                } catch (_: Throwable) {
+                    null
+                }
+                if (mlPass != null && mlPass.decodeResult.success && !mlPass.decodeResult.text.isNullOrBlank()) {
+                    decodedText = mlPass.decodeResult.text
+                } else if (!wechat.isAvailable && (mlPass == null || mlPass.runtimeUnavailable)) {
+                    decodedText = try {
+                        val intArray = IntArray(rasterBmp.width * rasterBmp.height)
+                        rasterBmp.getPixels(intArray, 0, rasterBmp.width, 0, 0, rasterBmp.width, rasterBmp.height)
+                        val source = com.google.zxing.RGBLuminanceSource(rasterBmp.width, rasterBmp.height, intArray)
+                        val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                        com.google.zxing.MultiFormatReader().decode(binaryBitmap)?.text ?: ""
+                    } catch (_: Throwable) {
+                        ""
+                    }
+                }
+            }
+            if (decodedText.isEmpty()) {
                 rasterBmp.recycle()
-                return QrError.Validation.ScanabilityFailed("Rasterized vector SVG could not be decoded by barcode reader")
+                return QrError.Validation.ScanabilityFailed("Rasterized vector SVG could not be decoded by WeChatQR / ML Kit")
             }
-            decoded
+            decodedText
         }
 
         val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(

@@ -1,12 +1,17 @@
 package com.veilframe.app.ui.motion
 
-import android.content.Context
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.graphics.Outline
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
+import android.view.animation.PathInterpolator
 import androidx.core.view.isVisible
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.transition.Fade
@@ -18,19 +23,60 @@ import androidx.transition.TransitionSet
 import kotlin.math.abs
 
 /**
- * Orchestrates top-level screen and overlay transitions using native standard Android transitions.
- *
- * Capabilities:
- * 1. Home <-> Tool screen transitions (native slide + fade transitions via TransitionManager).
- * 2. Dedicated slide-over Settings overlay (native slide transition + swipe-to-dismiss gesture).
- * 3. Reduced motion accessibility check for all transitions.
+ * Orchestrates stacked-page screen transitions and Settings overlay motion, aligned with
+ * Android 17 / OxygenOS stacked card physics (`coui_open_slide_*` / `coui_close_slide_*`).
  */
 object NavigationMotionController {
 
     private const val SETTINGS_DURATION_MS = 280L
+    private const val STACK_DURATION_MS = 350L
+
+    // Exact Settings.apk PathInterpolators for stacked push/pop card choreography
+    private val OPEN_ENTER_INTERP = PathInterpolator(0.3f, 0.1f, 0.3f, 1.0f)
+    private val OPEN_EXIT_INTERP = PathInterpolator(0.3f, 0.15f, 0.3f, 1.0f)
+    private val CLOSE_ENTER_INTERP = PathInterpolator(0.3f, 0.26f, 0.4f, 1.0f)
+    private val CLOSE_EXIT_INTERP = PathInterpolator(0.25f, 0.1f, 0.3f, 1.0f)
+
+    private var activeStackAnimator: ValueAnimator? = null
+
+    data class PopStartState(
+        val topTranslationX: Float = 0f,
+        val topScale: Float = 1f,
+        val topCornerRadius: Float = 0f,
+        val underTranslationX: Float = Float.NaN,
+        val underScale: Float = 0.94f,
+        val underAlpha: Float = 0.55f,
+        val exitDirectionSign: Float = 1f
+    )
+
+    private class CardOutlineProvider(var radius: Float = 0f) : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+            val w = view.width
+            val h = view.height
+            if (w > 0 && h > 0) {
+                outline.setRoundRect(0, 0, w, h, radius.coerceAtLeast(0f))
+            } else {
+                outline.setEmpty()
+            }
+        }
+    }
+
+    private fun resetViewTransform(view: View) {
+        view.animate().cancel()
+        view.translationX = 0f
+        view.translationY = 0f
+        view.translationZ = 0f
+        view.elevation = 0f
+        view.scaleX = 1f
+        view.scaleY = 1f
+        view.alpha = 1f
+        view.clipToOutline = false
+        view.outlineProvider = ViewOutlineProvider.BACKGROUND
+    }
 
     /**
-     * Navigates from Home screen to a Tool container using standard Android Transitions.
+     * Pushes [toolView] on top of [homeView] (any outgoing screen) using opaque stacked card
+     * translation over a dimmed, subtle parallax-shifted underlying page.
      */
     fun showTool(
         homeView: View,
@@ -42,68 +88,129 @@ object NavigationMotionController {
         val context = toolView.context
         val parent = (homeView.parent as? ViewGroup) ?: (toolView.parent as? ViewGroup)
 
-        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
+        activeStackAnimator?.cancel()
+        activeStackAnimator = null
+
+        if (parent == null || ExpressiveMotion.isReducedMotion(context) || homeView === toolView) {
             homeView.isVisible = false
+            resetViewTransform(homeView)
             toolbarHome?.isVisible = false
             bottomNav?.isVisible = false
+            resetViewTransform(toolView)
             toolView.isVisible = true
-            toolView.alpha = 1f
-            toolView.translationX = 0f
-            toolView.translationZ = 0f
             onComplete?.invoke()
             return
         }
 
-        // Reset manual transforms
-        homeView.animate().cancel()
-        toolView.animate().cancel()
+        TransitionManager.endTransitions(parent)
+        resetViewTransform(homeView)
+        resetViewTransform(toolView)
         toolbarHome?.animate()?.cancel()
         bottomNav?.animate()?.cancel()
-        homeView.translationX = 0f
-        toolView.translationX = 0f
-        toolView.translationZ = 0f
 
-        val transition = TransitionSet().apply {
-            ordering = TransitionSet.ORDERING_TOGETHER
-            addTransition(Fade(Fade.OUT).addTarget(homeView))
-            toolbarHome?.let { addTransition(Fade(Fade.OUT).addTarget(it)) }
-            bottomNav?.let { addTransition(Slide(Gravity.BOTTOM).addTarget(it)) }
-            addTransition(Fade(Fade.IN).addTarget(toolView))
-            addTransition(Slide(Gravity.END).addTarget(toolView))
-            duration = 240L
-            interpolator = FastOutSlowInInterpolator()
-            addListener(object : TransitionListenerAdapter() {
-                override fun onTransitionEnd(transition: Transition) {
-                    onComplete?.invoke()
-                }
-            })
+        val width = (parent.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).toFloat()
+        val density = context.resources.displayMetrics.density
+        val outline = CardOutlineProvider(16f * density)
+
+        homeView.isVisible = true
+        homeView.elevation = 0f
+        homeView.translationZ = 0f
+
+        toolView.isVisible = true
+        toolView.alpha = 1f
+        toolView.elevation = 16f * density
+        toolView.translationZ = 16f * density
+        toolView.translationX = width
+        toolView.outlineProvider = outline
+        toolView.clipToOutline = true
+
+        toolbarHome?.let { tb ->
+            if (tb.isVisible) {
+                tb.animate().alpha(0f).setDuration(160L).withEndAction {
+                    tb.isVisible = false
+                    tb.alpha = 1f
+                }.start()
+            }
+        }
+        bottomNav?.let { nav ->
+            if (nav.isVisible) {
+                nav.animate().translationY(nav.height.toFloat().coerceAtLeast(64f * density)).alpha(0f).setDuration(180L).withEndAction {
+                    nav.isVisible = false
+                    nav.translationY = 0f
+                    nav.alpha = 1f
+                }.start()
+            }
         }
 
-        TransitionManager.beginDelayedTransition(parent, transition)
-        homeView.isVisible = false
-        toolbarHome?.isVisible = false
-        bottomNav?.isVisible = false
-        toolView.isVisible = true
+        var finished = false
+        fun finishPush() {
+            if (finished) return
+            finished = true
+            activeStackAnimator = null
+            toolbarHome?.animate()?.cancel()
+            toolbarHome?.isVisible = false
+            toolbarHome?.alpha = 1f
+            bottomNav?.animate()?.cancel()
+            bottomNav?.isVisible = false
+            bottomNav?.translationY = 0f
+            bottomNav?.alpha = 1f
+            homeView.isVisible = false
+            resetViewTransform(homeView)
+            resetViewTransform(toolView)
+            toolView.isVisible = true
+            onComplete?.invoke()
+        }
+
+        val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = STACK_DURATION_MS
+            interpolator = null
+            addUpdateListener { va ->
+                val raw = va.animatedFraction
+                val tEnter = OPEN_ENTER_INTERP.getInterpolation(raw)
+                val tExit = OPEN_EXIT_INTERP.getInterpolation(raw)
+
+                toolView.translationX = width * (1f - tEnter)
+                outline.radius = (1f - tEnter) * 16f * density
+                toolView.invalidateOutline()
+
+                homeView.translationX = -width * 0.18f * tExit
+                val underScale = 1f - 0.06f * tExit
+                homeView.scaleX = underScale
+                homeView.scaleY = underScale
+                homeView.alpha = 1f - 0.45f * tExit
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) = finishPush()
+                override fun onAnimationCancel(animation: Animator) = finishPush()
+            })
+        }
+        activeStackAnimator = anim
+        anim.start()
     }
 
     /**
-     * Navigates from a Tool container back to Home using standard Android Transitions.
+     * Pops [toolView] off top of [homeView] (any destination screen) as a solid stacked card,
+     * optionally continuing seamlessly from a predictive-back swipe [popStart].
      */
     fun hideTool(
         homeView: View,
         toolView: View,
         toolbarHome: View? = null,
         bottomNav: View? = null,
+        popStart: PopStartState? = null,
         onComplete: (() -> Unit)? = null
     ) {
         val context = homeView.context
         val parent = (homeView.parent as? ViewGroup) ?: (toolView.parent as? ViewGroup)
 
-        if (parent == null || ExpressiveMotion.isReducedMotion(context)) {
+        activeStackAnimator?.cancel()
+        activeStackAnimator = null
+
+        if (parent == null || ExpressiveMotion.isReducedMotion(context) || homeView === toolView) {
             toolView.isVisible = false
+            resetViewTransform(toolView)
+            resetViewTransform(homeView)
             homeView.isVisible = true
-            homeView.alpha = 1f
-            homeView.translationX = 0f
             toolbarHome?.isVisible = true
             toolbarHome?.alpha = 1f
             bottomNav?.isVisible = true
@@ -113,37 +220,107 @@ object NavigationMotionController {
             return
         }
 
+        TransitionManager.endTransitions(parent)
         homeView.animate().cancel()
         toolView.animate().cancel()
         toolbarHome?.animate()?.cancel()
         bottomNav?.animate()?.cancel()
-        homeView.translationX = 0f
-        toolView.translationX = 0f
-        toolView.translationZ = 0f
 
-        val transition = TransitionSet().apply {
-            ordering = TransitionSet.ORDERING_TOGETHER
-            addTransition(Fade(Fade.OUT).addTarget(toolView))
-            addTransition(Slide(Gravity.END).addTarget(toolView))
-            addTransition(Fade(Fade.IN).addTarget(homeView))
-            toolbarHome?.let { addTransition(Fade(Fade.IN).addTarget(it)) }
-            bottomNav?.let { addTransition(Slide(Gravity.BOTTOM).addTarget(it)) }
-            duration = 200L
-            interpolator = FastOutSlowInInterpolator()
-            addListener(object : TransitionListenerAdapter() {
-                override fun onTransitionEnd(transition: Transition) {
-                    toolbarHome?.isVisible = true
-                    bottomNav?.isVisible = true
-                    onComplete?.invoke()
-                }
-            })
+        val width = (parent.width.takeIf { it > 0 } ?: context.resources.displayMetrics.widthPixels).toFloat()
+        val density = context.resources.displayMetrics.density
+
+        val startTopTx = popStart?.topTranslationX ?: 0f
+        val startTopScale = popStart?.topScale ?: 1f
+        val startRadius = popStart?.topCornerRadius ?: (16f * density)
+        val sign = popStart?.exitDirectionSign ?: 1f
+        val endTopTx = sign * width
+
+        val defaultUnderTx = -sign * width * 0.18f
+        val startUnderTx = if (popStart != null && !popStart.underTranslationX.isNaN()) popStart.underTranslationX else defaultUnderTx
+        val startUnderScale = popStart?.underScale ?: 0.94f
+        val startUnderAlpha = popStart?.underAlpha ?: 0.55f
+
+        val outline = CardOutlineProvider(startRadius)
+        homeView.isVisible = true
+        homeView.elevation = 0f
+        homeView.translationZ = 0f
+        homeView.translationX = startUnderTx
+        homeView.scaleX = startUnderScale
+        homeView.scaleY = startUnderScale
+        homeView.alpha = startUnderAlpha
+
+        toolView.isVisible = true
+        toolView.alpha = 1f
+        toolView.elevation = 16f * density
+        toolView.translationZ = 16f * density
+        toolView.translationX = startTopTx
+        toolView.scaleX = startTopScale
+        toolView.scaleY = startTopScale
+        toolView.outlineProvider = outline
+        toolView.clipToOutline = true
+
+        toolbarHome?.let { tb ->
+            tb.isVisible = true
+            tb.alpha = 0f
+            tb.animate().alpha(1f).setDuration(240L).start()
+        }
+        bottomNav?.let { nav ->
+            nav.isVisible = true
+            nav.alpha = 0f
+            nav.translationY = 24f * density
+            nav.animate().translationY(0f).alpha(1f).setDuration(240L).start()
         }
 
-        TransitionManager.beginDelayedTransition(parent, transition)
-        toolView.isVisible = false
-        homeView.isVisible = true
-        toolbarHome?.isVisible = true
-        bottomNav?.isVisible = true
+        val remainingFraction = (1f - (abs(startTopTx) / width.coerceAtLeast(1f))).coerceIn(0.35f, 1f)
+        val animDuration = (STACK_DURATION_MS * remainingFraction).toLong().coerceIn(190L, STACK_DURATION_MS)
+
+        var finished = false
+        fun finishPop() {
+            if (finished) return
+            finished = true
+            activeStackAnimator = null
+            toolbarHome?.animate()?.cancel()
+            bottomNav?.animate()?.cancel()
+            toolView.isVisible = false
+            resetViewTransform(toolView)
+            resetViewTransform(homeView)
+            homeView.isVisible = true
+            toolbarHome?.isVisible = true
+            toolbarHome?.alpha = 1f
+            bottomNav?.isVisible = true
+            bottomNav?.alpha = 1f
+            bottomNav?.translationY = 0f
+            onComplete?.invoke()
+        }
+
+        val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = animDuration
+            interpolator = null
+            addUpdateListener { va ->
+                val raw = va.animatedFraction
+                val tEnter = CLOSE_ENTER_INTERP.getInterpolation(raw)
+                val tExit = CLOSE_EXIT_INTERP.getInterpolation(raw)
+
+                toolView.translationX = startTopTx + (endTopTx - startTopTx) * tExit
+                val topScale = startTopScale + (0.96f - startTopScale) * tExit
+                toolView.scaleX = topScale
+                toolView.scaleY = topScale
+                outline.radius = startRadius.coerceAtLeast(16f * density)
+                toolView.invalidateOutline()
+
+                homeView.translationX = startUnderTx * (1f - tEnter)
+                val underScale = startUnderScale + (1f - startUnderScale) * tEnter
+                homeView.scaleX = underScale
+                homeView.scaleY = underScale
+                homeView.alpha = startUnderAlpha + (1f - startUnderAlpha) * tEnter
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) = finishPop()
+                override fun onAnimationCancel(animation: Animator) = finishPop()
+            })
+        }
+        activeStackAnimator = anim
+        anim.start()
     }
 
     /**

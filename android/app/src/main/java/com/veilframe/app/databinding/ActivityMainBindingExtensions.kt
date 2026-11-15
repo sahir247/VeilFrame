@@ -93,7 +93,7 @@ inline val ActivityMainBinding.cardPrivacyPulse: MaterialCardView
 inline val ActivityMainBinding.scrollTool: NestedScrollView
     get() = layoutToolWorkflow.scrollTool
 
-inline val ActivityMainBinding.cardTargetSelection: MaterialCardView
+inline val ActivityMainBinding.cardTargetSelection: LinearLayout
     get() = layoutToolWorkflow.cardTargetSelection
 
 inline val ActivityMainBinding.cardToolHeader: LinearLayout
@@ -126,7 +126,7 @@ inline val ActivityMainBinding.btnChangeTarget: MaterialButton
 inline val ActivityMainBinding.btnClearTarget: MaterialButton
     get() = layoutToolWorkflow.btnClearTarget
 
-inline val ActivityMainBinding.cardConfiguration: MaterialCardView
+inline val ActivityMainBinding.cardConfiguration: LinearLayout
     get() = layoutToolWorkflow.cardConfiguration
 
 inline val ActivityMainBinding.tvParamHeader: TextView
@@ -213,7 +213,7 @@ inline val ActivityMainBinding.etBundleCustomDepth: TextInputEditText
 inline val ActivityMainBinding.btnBundleDepthIncrement: MaterialButton
     get() = layoutToolWorkflow.btnBundleDepthIncrement
 
-inline val ActivityMainBinding.cardPrivacySummary: MaterialCardView
+inline val ActivityMainBinding.cardPrivacySummary: LinearLayout
     get() = layoutToolWorkflow.cardPrivacySummary
 
 inline val ActivityMainBinding.tvPrivacyProfileBadge: TextView
@@ -228,7 +228,7 @@ inline val ActivityMainBinding.tvPrivacyImpact2: TextView
 inline val ActivityMainBinding.tvPrivacyImpact3: TextView
     get() = layoutToolWorkflow.tvPrivacyImpact3
 
-inline val ActivityMainBinding.cardTelemetry: MaterialCardView
+inline val ActivityMainBinding.cardTelemetry: LinearLayout
     get() = layoutToolWorkflow.cardTelemetry
 
 inline val ActivityMainBinding.tvPhaseBadge: TextView

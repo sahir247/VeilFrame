@@ -37,8 +37,15 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.cv.motion.ReframeTarget
+import com.veilframe.app.cv.motion.VideoPiiRedactionEngine
 import com.veilframe.app.cv.motion.VideoReframeEngine
+import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiNcnnEngine
+import com.veilframe.app.privacy.PiiRedactionDialog
+import com.veilframe.app.privacy.PiiRedactableItem
+import com.veilframe.app.privacy.PiiRedactionStyle
+import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -88,6 +95,8 @@ class VideoStudioController(
     private var activeFFmpegSessionId: Long = -1L
 
     private var compressionJob: Job? = null
+    private var piiScanJob: Job? = null
+    private var reframeJob: Job? = null
     private var isScrubbing: Boolean = false
     private var activeGeneration: Long = 0L
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
@@ -488,6 +497,7 @@ class VideoStudioController(
         binding.toolVidAudio.setOnClickListener { showAudioDialog(binding.toolVidAudio) }
         binding.btnVidAutoReframe.setOnClickListener { applySmartAutoReframe() }
         binding.btnVidStabilize.setOnClickListener { toggleStabilization() }
+        binding.btnVidPiiRedact.setOnClickListener { runVideoPiiRedaction() }
 
         // Compression execution
         binding.btnVidExecute.setOnClickListener { handleExecute() }
@@ -552,7 +562,8 @@ class VideoStudioController(
             binding.btnPlayerReplay,
             binding.btnPlayerMute,
             binding.btnVidAutoReframe,
-            binding.btnVidStabilize
+            binding.btnVidStabilize,
+            binding.btnVidPiiRedact
         )
         interactiveControls.forEach { v ->
             ExpressiveMotion.applyTouchBounce(v)
@@ -809,9 +820,13 @@ class VideoStudioController(
                 binding.toolVidAspect.alpha = 1.0f
                 binding.btnVidAutoReframe.isEnabled = true
                 binding.btnVidAutoReframe.alpha = 1.0f
+                updateReframeButtonState()
                 binding.btnVidStabilize.isEnabled = true
                 binding.btnVidStabilize.alpha = 1.0f
                 updateStabilizeButtonState()
+                binding.btnVidPiiRedact.isEnabled = true
+                binding.btnVidPiiRedact.alpha = 1.0f
+                updatePiiButtonState()
                 val isGif = outputConfig.outputMode == VideoOutputMode.GIF
                 binding.toolVidAudio.isEnabled = !isGif
                 binding.toolVidAudio.alpha = if (isGif) 0.38f else 1.0f
@@ -837,6 +852,10 @@ class VideoStudioController(
     fun selectMediaIndex(index: Int) {
         if (index !in selectedMediaList.indices) return
         activeGeneration++
+        reframeJob?.cancel()
+        reframeJob = null
+        piiScanJob?.cancel()
+        piiScanJob = null
         compressionJob?.cancel()
         compressionJob = null
         lastResultFile = null
@@ -889,6 +908,9 @@ class VideoStudioController(
 
         applyAspectRatioPreview()
         applyColorProfile(editState.colorProfile)
+        updateReframeButtonState()
+        updateStabilizeButtonState()
+        updatePiiButtonState()
         updateNavigationUi()
         refreshStats()
         updateEditSummary()
@@ -965,69 +987,41 @@ class VideoStudioController(
         container.post {
             val containerW = container.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
             val containerH = container.height.takeIf { it > 0 } ?: (240 * activity.resources.displayMetrics.density).toInt()
+            val containerAspect = containerW.toFloat() / containerH.toFloat()
 
-            when (editState.aspect) {
-                "9:16 (Reel / Shorts / TikTok)", "9:16", "Smart Auto-Reframe (9:16)" -> {
-                    val h = containerH
-                    val w = (h.toFloat() * 9f / 16f).toInt().coerceAtMost(containerW)
-                    params.width = w
-                    params.height = h
-                    params.gravity = Gravity.CENTER
-                }
-                "1:1 (Square Feed)", "1:1" -> {
-                    val dim = minOf(containerW, containerH)
-                    params.width = dim
-                    params.height = dim
-                    params.gravity = Gravity.CENTER
-                }
-                "16:9 (Landscape YouTube)", "16:9" -> {
-                    val w = containerW
-                    val h = (w.toFloat() * 9f / 16f).toInt().coerceAtMost(containerH)
-                    params.width = w
-                    params.height = h
-                    params.gravity = Gravity.CENTER
-                }
-                "4:3 (Classic)", "4:3 (Standard)", "4:3" -> {
-                    val h = containerH
-                    val w = (h.toFloat() * 4f / 3f).toInt().coerceAtMost(containerW)
-                    params.width = w
-                    params.height = h
-                    params.gravity = Gravity.CENTER
-                }
-                "3:4 (Portrait)", "3:4" -> {
-                    val h = containerH
-                    val w = (h.toFloat() * 3f / 4f).toInt().coerceAtMost(containerW)
-                    params.width = w
-                    params.height = h
-                    params.gravity = Gravity.CENTER
-                }
-                "Custom Crop" -> {
-                    val factor = 1.0f - (editState.customCropPercent / 100f).coerceIn(0f, 0.8f)
-                    val vidW = editState.originalWidth.takeIf { it > 0 } ?: currentItem?.width ?: 0
-                    val vidH = editState.originalHeight.takeIf { it > 0 } ?: currentItem?.height ?: 0
-                    if (vidW > 0 && vidH > 0) {
-                        val videoAspect = vidW.toFloat() / vidH.toFloat()
-                        val containerAspect = containerW.toFloat() / containerH.toFloat()
-                        val (baseW, baseH) = if (videoAspect > containerAspect) {
-                            containerW to ((containerW / videoAspect).toInt().coerceAtMost(containerH))
-                        } else {
-                            ((containerH * videoAspect).toInt().coerceAtMost(containerW)) to containerH
-                        }
-                        params.width = (baseW * factor).toInt().coerceAtLeast(100)
-                        params.height = (baseH * factor).toInt().coerceAtLeast(100)
+            if (editState.aspect == "Custom Crop") {
+                val factor = 1.0f - (editState.customCropPercent / 100f).coerceIn(0f, 0.8f)
+                val vidW = editState.originalWidth.takeIf { it > 0 } ?: currentItem?.width ?: 0
+                val vidH = editState.originalHeight.takeIf { it > 0 } ?: currentItem?.height ?: 0
+                if (vidW > 0 && vidH > 0) {
+                    val videoAspect = vidW.toFloat() / vidH.toFloat()
+                    val (baseW, baseH) = if (videoAspect > containerAspect) {
+                        containerW to ((containerW / videoAspect).toInt().coerceAtMost(containerH))
                     } else {
-                        params.width = (containerW * factor).toInt().coerceAtLeast(100)
-                        params.height = (containerH * factor).toInt().coerceAtLeast(100)
+                        ((containerH * videoAspect).toInt().coerceAtMost(containerW)) to containerH
                     }
-                    params.gravity = Gravity.CENTER
+                    params.width = (baseW * factor).toInt().coerceAtLeast(100)
+                    params.height = (baseH * factor).toInt().coerceAtMost(containerH).coerceAtLeast(100)
+                } else {
+                    params.width = (containerW * factor).toInt().coerceAtLeast(100)
+                    params.height = (containerH * factor).toInt().coerceAtLeast(100)
                 }
-                else -> {
-                    // "Original" aspect ratio: maintain natural video proportions without altering or stretching
+            } else {
+                val ratioSpec = AspectSpec.fromString(editState.aspect)
+                if (ratioSpec is AspectSpec.Ratio) {
+                    val targetRatio = ratioSpec.aspect
+                    if (containerAspect > targetRatio) {
+                        params.height = containerH
+                        params.width = (containerH * targetRatio).toInt().coerceAtMost(containerW)
+                    } else {
+                        params.width = containerW
+                        params.height = (containerW / targetRatio).toInt().coerceAtMost(containerH)
+                    }
+                } else {
                     val vidW = editState.originalWidth.takeIf { it > 0 } ?: currentItem?.width ?: 0
                     val vidH = editState.originalHeight.takeIf { it > 0 } ?: currentItem?.height ?: 0
                     if (vidW > 0 && vidH > 0) {
                         val videoAspect = vidW.toFloat() / vidH.toFloat()
-                        val containerAspect = containerW.toFloat() / containerH.toFloat()
                         if (videoAspect > containerAspect) {
                             params.width = containerW
                             params.height = (containerW / videoAspect).toInt().coerceAtMost(containerH)
@@ -1039,9 +1033,9 @@ class VideoStudioController(
                         params.width = FrameLayout.LayoutParams.MATCH_PARENT
                         params.height = FrameLayout.LayoutParams.MATCH_PARENT
                     }
-                    params.gravity = Gravity.CENTER
                 }
             }
+            params.gravity = Gravity.CENTER
             viewport.layoutParams = params
 
             // Live preview rotation and mirror orientation
@@ -1332,9 +1326,10 @@ class VideoStudioController(
 
             if (editState.aspect != "Original") {
                 binding.tvVidSummaryAspect.visibility = View.VISIBLE
-                val cropInfo = when (editState.aspect) {
-                    "Custom Crop" -> " (${editState.customCropPercent}%)"
-                    "Smart Auto-Reframe (9:16)" -> if (editState.dynamicCropFilter != null) " (Dynamic AI Trajectory)" else " (AI Tracking)"
+                val cropInfo = when {
+                    editState.aspect == "Custom Crop" -> " (${editState.customCropPercent}%)"
+                    editState.aspect.startsWith("Smart Auto-Reframe") ->
+                        if (editState.dynamicCropFilter != null) " (Dynamic AI Trajectory)" else " (AI Tracking)"
                     else -> ""
                 }
                 binding.tvVidSummaryAspect.text = "• Aspect: ${editState.aspect}$cropInfo"
@@ -1375,9 +1370,17 @@ class VideoStudioController(
 
             if (editState.isStabilized) {
                 binding.tvVidSummaryStabilization.visibility = View.VISIBLE
-                binding.tvVidSummaryStabilization.text = "• Stabilization: Active (FFmpeg Deshake + ${editState.stabilizationMarginPercent}% Zoom)"
+                binding.tvVidSummaryStabilization.text = "• Stabilization: 2-Pass EIS (${editState.eisConfig.shortSummary()})"
             } else {
                 binding.tvVidSummaryStabilization.visibility = View.GONE
+            }
+
+            if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
+                binding.tvVidSummaryPii.visibility = View.VISIBLE
+                val bakedTag = if (editState.isPiiBaked) " (Preview Updated)" else ""
+                binding.tvVidSummaryPii.text = "• AI PII Redact: ${editState.piiRedactionSummary.ifBlank { "Active" }}$bakedTag"
+            } else {
+                binding.tvVidSummaryPii.visibility = View.GONE
             }
         }
         syncFloatingDockState()
@@ -1417,7 +1420,9 @@ class VideoStudioController(
         applyColorProfile("Original")
         updateUiForOutputMode()
         updateOutputFilenameExtension()
+        updateReframeButtonState()
         updateStabilizeButtonState()
+        updatePiiButtonState()
         applyAspectRatioPreview()
         refreshStats()
         updateEditSummary()
@@ -1429,6 +1434,14 @@ class VideoStudioController(
     }
 
     fun release() {
+        reframeJob?.cancel()
+        reframeJob = null
+        stabilizationJob?.cancel()
+        stabilizationJob = null
+        videoRedactionJob?.cancel()
+        videoRedactionJob = null
+        piiScanJob?.cancel()
+        piiScanJob = null
         compressionJob?.cancel()
         compressionJob = null
         if (activeFFmpegSessionId >= 0L) {
@@ -1493,6 +1506,7 @@ class VideoStudioController(
                 var exportedCount = 0
                 val total = itemsToProcess.size
                 var lastSavedFile: File? = null
+                var lastProcessedTrimMs = editState.trimmedDurationMs
                 var totalOriginalBytes = 0L
                 var totalCompressedBytes = 0L
                 val destUri = safManager.videoDestinationUri
@@ -1534,15 +1548,21 @@ class VideoStudioController(
                             if (editState.audioMode != AudioMode.KEEP && audioMode == AudioMode.KEEP) {
                                 audioMode = editState.audioMode
                             }
+                            if (editState.isStabilized && !isStabilized) {
+                                isStabilized = true
+                                eisConfig = editState.eisConfig
+                                stabilizationMarginPercent = editState.stabilizationMarginPercent
+                            }
                         }
                     }
 
-                    val totalDurSec = (itemEditState.trimmedDurationSeconds / itemEditState.speed).coerceAtLeast(1.0)
                     val outFilename = if (total == 1) "$base.$ext" else "${base}_${idx + 1}.$ext"
                     val outFile = File(outDir, outFilename)
 
                     withContext(Dispatchers.Main) {
-                        binding.tvVidProgressStatus.text = "Encoding [${idx + 1}/$total]: ${item.displayName}…"
+                        if (generation == activeGeneration) {
+                            binding.tvVidProgressStatus.text = "Encoding [${idx + 1}/$total]: ${item.displayName}…"
+                        }
                     }
 
                     val result = MediaProcessor.video.process(
@@ -1550,25 +1570,27 @@ class VideoStudioController(
                         outFile = outFile,
                         editState = itemEditState,
                         outputConfig = outputConfig,
-                        onStatistics = { encMs ->
+                        onSessionId = { id -> activeFFmpegSessionId = id },
+                        onProgressPhase = { phaseLabel, encMs, pct ->
                             val encSec = encMs / 1000.0
-                            val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)
                             VideoStudioForegroundService.updateProgress(
                                 activity,
-                                "[${idx + 1}/$total] ${item.displayName}",
+                                "[${idx + 1}/$total] $phaseLabel • ${item.displayName}",
                                 pct
                             )
                             scope.launch(Dispatchers.Main) {
-                                binding.tvVidProgressStatus.text =
-                                    "[${idx + 1}/$total] ${item.displayName} • ${String.format(Locale.US, "%.1f", encSec)}s / ${String.format(Locale.US, "%.1f", totalDurSec)}s ($pct%)"
+                                if (generation == activeGeneration) {
+                                    binding.tvVidProgressStatus.text =
+                                        "[${idx + 1}/$total] $phaseLabel • ${item.displayName} • ${String.format(Locale.US, "%.1f", encSec)}s ($pct%)"
+                                }
                             }
-                        },
-                        onSessionId = { id -> activeFFmpegSessionId = id }
+                        }
                     )
 
                     if (result.success && outFile.exists() && outFile.length() > 0L) {
                         successCount++
                         lastSavedFile = outFile
+                        lastProcessedTrimMs = itemEditState.trimmedDurationMs
                         totalOriginalBytes += item.originalBytes
                         totalCompressedBytes += outFile.length()
 
@@ -1603,8 +1625,7 @@ class VideoStudioController(
                             lastSavedFile.absolutePath
                         )
                         lastResultFile = lastSavedFile
-                        val durTrimmed = editState.trimmedDurationMs
-                        binding.tvVidAfterStats.text = "${formatBytes(lastSavedFile.length())} • ${formatDuration(durTrimmed)} • ${outputConfig.format}"
+                        binding.tvVidAfterStats.text = "${formatBytes(lastSavedFile.length())} • ${formatDuration(lastProcessedTrimMs)} • ${outputConfig.format}"
                         val ratio = if (totalOriginalBytes > 0) {
                             (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
@@ -1688,11 +1709,18 @@ class VideoStudioController(
     fun clear() {
         activeGeneration++
         loadToken.incrementAndGet()
-        selectedMediaList.forEach { it.thumbnailBitmap?.recycle() }
+        reframeJob?.cancel()
+        reframeJob = null
+        piiScanJob?.cancel()
+        piiScanJob = null
+        cancelProcessing()
+        selectedMediaList.forEach {
+            it.copyJob?.cancel()
+            it.thumbnailBitmap?.recycle()
+        }
         selectedMediaList.clear()
         currentMediaIndex = 0
         lastResultFile = null
-        cancelProcessing()
 
         playerController.clearMedia()
         binding.videoTextureView.visibility = View.GONE
@@ -1730,6 +1758,10 @@ class VideoStudioController(
         binding.toolVidAspect.alpha = 0.38f
         binding.btnVidAutoReframe.isEnabled = false
         binding.btnVidAutoReframe.alpha = 0.38f
+        binding.btnVidStabilize.isEnabled = false
+        binding.btnVidStabilize.alpha = 0.38f
+        binding.btnVidPiiRedact.isEnabled = false
+        binding.btnVidPiiRedact.alpha = 0.38f
         binding.toolVidAudio.isEnabled = false
         binding.toolVidAudio.alpha = 0.38f
 
@@ -1752,6 +1784,9 @@ class VideoStudioController(
         binding.btnFloatingExecute.alpha = 1.0f
 
         editState.reset()
+        updateReframeButtonState()
+        updateStabilizeButtonState()
+        updatePiiButtonState()
         applyAspectRatioPreview()
         updateEditSummary()
         if (::floatingDockController.isInitialized) {
@@ -2167,14 +2202,14 @@ class VideoStudioController(
         var draftFlipH = editState.flipH
         var draftFlipV = editState.flipV
 
-        when (draftAspect) {
-            "Smart Auto-Reframe (9:16)" -> dialogBinding.chipAspectAutoReframe.isChecked = true
-            "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
-            "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
-            "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
-            "4:3 (Standard)", "4:3 (Classic)", "4:3" -> dialogBinding.chipAspect43.isChecked = true
-            "3:4 (Portrait)", "3:4" -> dialogBinding.chipAspect34.isChecked = true
-            "Custom Crop" -> {
+        when {
+            draftAspect.startsWith("Smart Auto-Reframe") -> dialogBinding.chipAspectAutoReframe.isChecked = true
+            draftAspect == "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
+            draftAspect == "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
+            draftAspect == "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
+            draftAspect in listOf("4:3 (Standard)", "4:3 (Classic)", "4:3") -> dialogBinding.chipAspect43.isChecked = true
+            draftAspect in listOf("3:4 (Portrait)", "3:4") -> dialogBinding.chipAspect34.isChecked = true
+            draftAspect == "Custom Crop" -> {
                 dialogBinding.chipAspectCustom.isChecked = true
                 dialogBinding.layoutVideoCustomCrop.visibility = View.VISIBLE
             }
@@ -2223,20 +2258,27 @@ class VideoStudioController(
         dialogBinding.chipFlipV.setOnCheckedChangeListener { _, isChecked -> draftFlipV = isChecked }
 
         dialogBinding.btnVideoAspectApply.setOnClickListener {
-            editState.aspect = draftAspect
-            editState.customCropPercent = if (draftAspect == "Custom Crop") draftCustomCrop else 0
-            editState.rotationAngle = draftRotation
-            editState.flipH = draftFlipH
-            editState.flipV = draftFlipV
-            if (draftAspect == "Smart Auto-Reframe (9:16)") {
-                applySmartAutoReframe()
+            val autoReframeLabel = dialogBinding.chipAspectAutoReframe.text.toString()
+            if (draftAspect == autoReframeLabel || draftAspect.startsWith("Smart Auto-Reframe")) {
+                editState.customCropPercent = 0
+                editState.rotationAngle = draftRotation
+                editState.flipH = draftFlipH
+                editState.flipV = draftFlipV
+                dialog.dismiss()
+                applySmartAutoReframe(originView)
             } else {
+                editState.aspect = draftAspect
+                editState.customCropPercent = if (draftAspect == "Custom Crop") draftCustomCrop else 0
+                editState.rotationAngle = draftRotation
+                editState.flipH = draftFlipH
+                editState.flipV = draftFlipV
                 editState.dynamicCropFilter = null
+                updateReframeButtonState()
                 applyAspectRatioPreview()
                 refreshStats()
                 updateEditSummary()
+                dialog.dismiss()
             }
-            dialog.dismiss()
         }
 
         dialogBinding.btnVideoAspectReset.setOnClickListener {
@@ -2269,11 +2311,40 @@ class VideoStudioController(
             return
         }
 
-        // CV Governance native availability check
-        val isNative = CvRuntime.isNativeAvailable
-        Log.d(TAG, "Initiating Smart Auto-Reframe (9:16) [CvRuntime native: $isNative]")
+        val srcW = item.width.takeIf { it > 0 } ?: 1920
+        val srcH = item.height.takeIf { it > 0 } ?: 1080
+        VideoReframeDialog.show(
+            context = activity,
+            sourceWidth = srcW,
+            sourceHeight = srcH,
+            currentAspectLabel = editState.aspect,
+            hasActiveReframe = editState.aspect.startsWith("Smart Auto-Reframe"),
+            onSelectTarget = { target ->
+                executeSmartAutoReframe(item, target)
+            },
+            onClearReframe = {
+                reframeJob?.cancel()
+                editState.aspect = "Original"
+                editState.dynamicCropFilter = null
+                currentItem?.editState?.copyFrom(editState)
+                updateReframeButtonState()
+                applyAspectRatioPreview()
+                refreshStats()
+                updateEditSummary()
+                Toast.makeText(activity, "Smart Auto-Reframe cleared", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
-        editState.aspect = "Smart Auto-Reframe (9:16)"
+    private fun executeSmartAutoReframe(item: StudioVideoItem, target: ReframeTarget) {
+        val isNative = CvRuntime.isNativeAvailable
+        Log.d(TAG, "Initiating Smart Auto-Reframe (${target.ratioLabel}) [CvRuntime native: $isNative]")
+
+        val gen = activeGeneration
+        editState.aspect = "Smart Auto-Reframe (${target.ratioLabel})"
+        editState.dynamicCropFilter = null
+        currentItem?.editState?.copyFrom(editState)
+        updateReframeButtonState()
         applyAspectRatioPreview()
         refreshStats()
         updateEditSummary()
@@ -2281,44 +2352,72 @@ class VideoStudioController(
             floatingDockController.onEditApplied()
         }
 
-        scope.launch(Dispatchers.IO) {
+        reframeJob?.cancel()
+        binding.layoutVidProgress.visibility = View.VISIBLE
+        binding.tvVidProgressStatus.text = "Analyzing subject trajectory for ${target.ratioLabel} Auto-Reframe…"
+
+        reframeJob = scope.launch(Dispatchers.IO) {
             try {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Analyzing video trajectory for Smart Auto-Reframe...", Toast.LENGTH_SHORT).show()
+                if (item.copyJob?.isActive == true) item.copyJob?.join()
+                if (!item.file.exists() || item.file.length() == 0L) {
+                    copyUriToFile(item.uri, item.file)
                 }
+
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(item.file.absolutePath)
                     val pii = getOrInitPiiEngine()
-                    val reframeEngine = VideoReframeEngine(piiEngine = pii, targetAspect = 9f / 16f)
-                    val durationMs = item.durationMs.coerceAtLeast(1000L)
+                    val reframeEngine = VideoReframeEngine(piiEngine = pii, targetAspect = target.aspect)
+                    val startMs = editState.trimStartMs.coerceAtLeast(0L)
+                    val endMs = editState.trimEndMs.takeIf { it > startMs } ?: item.durationMs
+                    val spanMs = (endMs - startMs).coerceAtLeast(1000L)
                     val trajectory = reframeEngine.generateTrajectoryFromRetriever(
                         retriever = retriever,
-                        durationMs = durationMs,
+                        durationMs = spanMs,
                         fps = 30.0,
-                        sampleIntervalMs = 500L
+                        sampleIntervalMs = 500L,
+                        startMs = startMs
                     )
-                    if (trajectory.isNotEmpty()) {
+                    if (trajectory.isNotEmpty() && isActive && activeGeneration == gen) {
                         val cropFilter = VideoReframeEngine.generateFfmpegCropFilter(
                             trajectory = trajectory,
                             origW = item.width.takeIf { it > 0 } ?: 1920,
                             origH = item.height.takeIf { it > 0 } ?: 1080,
-                            targetAspect = 9f / 16f
+                            targetAspect = target.aspect
                         )
                         editState.dynamicCropFilter = cropFilter
-                        Log.i(TAG, "Smart Auto-Reframe dynamic crop filter ready: $cropFilter")
+                        currentItem?.editState?.copyFrom(editState)
+                        Log.i(TAG, "Smart Auto-Reframe (${target.ratioLabel}) dynamic crop ready: $cropFilter")
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(activity, "Smart Auto-Reframe (9:16) trajectory ready", Toast.LENGTH_SHORT).show()
+                            if (activeGeneration != gen) return@withContext
+                            binding.layoutVidProgress.visibility = View.GONE
+                            updateReframeButtonState()
                             updateEditSummary()
+                            Toast.makeText(activity, "Smart Auto-Reframe (${target.ratioLabel}) trajectory ready", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } finally {
                     retriever.release()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Trajectory generation failed, defaulting to static 9:16 framing", e)
-                editState.dynamicCropFilter = null
+                Log.w(TAG, "Trajectory generation failed, falling back to static ${target.ratioLabel} crop", e)
+                withContext(Dispatchers.Main) {
+                    if (activeGeneration != gen) return@withContext
+                    binding.layoutVidProgress.visibility = View.GONE
+                    editState.dynamicCropFilter = null
+                    updateEditSummary()
+                }
             }
+        }
+    }
+
+    private fun updateReframeButtonState() {
+        if (editState.aspect.startsWith("Smart Auto-Reframe")) {
+            binding.btnVidAutoReframe.setIconResource(R.drawable.ic_check_circle)
+            binding.btnVidAutoReframe.text = "${editState.aspect} • Edit"
+        } else {
+            binding.btnVidAutoReframe.setIconResource(R.drawable.ic_aspect_ratio)
+            binding.btnVidAutoReframe.text = "Smart AI Auto-Reframe"
         }
     }
 
@@ -2328,32 +2427,410 @@ class VideoStudioController(
             return
         }
 
-        // CV Governance native availability check
-        val isNative = CvRuntime.isNativeAvailable
-        Log.d(TAG, "Toggling Video Stabilization [CvRuntime native: $isNative]")
+        Log.d(TAG, "Opening Pro 2-Pass EIS dialog (FFmpeg libvidstab)")
 
-        editState.isStabilized = !editState.isStabilized
-        updateStabilizeButtonState()
-        refreshStats()
-        updateEditSummary()
-        if (::floatingDockController.isInitialized) {
-            floatingDockController.onEditApplied()
+        VideoEisDialog.show(
+            context = activity,
+            initialConfig = editState.eisConfig,
+            isCurrentlyEnabled = editState.isStabilized,
+            videoFile = item.file,
+            onApply = { config ->
+                executeImmediateStabilization(item, config)
+            },
+            onDisable = {
+                editState.isStabilized = false
+                editState.isStabilizationBaked = false
+                currentItem?.editState?.copyFrom(editState)
+                updateStabilizeButtonState()
+                refreshStats()
+                updateEditSummary()
+                Toast.makeText(activity, "Stabilization disabled", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    private var stabilizationJob: Job? = null
+
+    private fun executeImmediateStabilization(item: StudioVideoItem, config: VideoEisConfig) {
+        if (stabilizationJob?.isActive == true) {
+            stabilizationJob?.cancel()
+            Toast.makeText(activity, "Cancelled previous stabilization job", Toast.LENGTH_SHORT).show()
+            return
         }
-        val msg = if (editState.isStabilized) {
-            "Video Stabilization enabled (FFmpeg Deshake + ${editState.stabilizationMarginPercent}% border zoom)"
-        } else {
-            "Stabilization disabled"
+
+        val gen = activeGeneration
+        val progressDialog = M3ExpressiveProgressDialog(activity)
+        progressDialog.show(
+            title = "Video EIS Stabilization",
+            initialStatus = "Step 1/2: Analyzing camera motion (vidstabdetect)...",
+            isIndeterminate = false,
+            cancelable = true,
+            onCancel = {
+                stabilizationJob?.cancel()
+                stabilizationJob = null
+                val sid = activeFFmpegSessionId
+                if (sid >= 0L) {
+                    FFmpegKit.cancel(sid)
+                }
+            }
+        )
+
+        val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
+
+        stabilizationJob = scope.launch(Dispatchers.IO) {
+            try {
+                if (!item.file.exists() || item.file.length() == 0L) {
+                    copyUriToFile(item.uri, item.file)
+                }
+
+                val result = MediaProcessor.video.stabilizeVideoStandalone(
+                    srcFile = item.file,
+                    outFile = tempStabilizedFile,
+                    eisConfig = config,
+                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onProgressPhase = { phaseLabel, _, pct ->
+                        if (activeGeneration != gen) return@stabilizeVideoStandalone
+                        launch(Dispatchers.Main) {
+                            if (progressDialog.isShowing) {
+                                progressDialog.updateProgress(pct, "$phaseLabel ($pct%)")
+                            }
+                        }
+                    }
+                )
+
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
+
+                    if (result.success && tempStabilizedFile.exists() && tempStabilizedFile.length() > 0L) {
+                        VideoEisComparisonDialog.show(
+                            context = activity,
+                            originalFile = item.file,
+                            stabilizedFile = tempStabilizedFile,
+                            config = config,
+                            onAccept = {
+                                val updatedItem = item.copy(
+                                    file = tempStabilizedFile,
+                                    originalBytes = tempStabilizedFile.length()
+                                )
+                                selectedMediaList[currentMediaIndex] = updatedItem
+                                editState.isStabilized = true
+                                editState.isStabilizationBaked = true
+                                editState.eisConfig = config
+                                editState.stabilizationMarginPercent = config.zoomPercent.coerceAtLeast(0)
+                                updatedItem.editState.copyFrom(editState)
+
+                                playerController.setDataSource(Uri.fromFile(tempStabilizedFile))
+                                updateStabilizeButtonState()
+                                refreshStats()
+                                updateEditSummary()
+                                if (::floatingDockController.isInitialized) {
+                                    floatingDockController.onEditApplied()
+                                }
+                                Toast.makeText(activity, "Stabilized footage applied to workspace!", Toast.LENGTH_SHORT).show()
+                            },
+                            onDiscard = {
+                                if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
+                                Toast.makeText(activity, "Stabilized footage discarded", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    } else {
+                        if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
+                        Toast.makeText(
+                            activity,
+                            "Stabilization failed: ${result.error ?: "Unknown error"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Immediate stabilization error", e)
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
+                    if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
+                    Toast.makeText(activity, "Stabilization failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
-        Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateStabilizeButtonState() {
         if (editState.isStabilized) {
             binding.btnVidStabilize.setIconResource(R.drawable.ic_check_circle)
-            binding.btnVidStabilize.text = "Stabilized (Deshake + ${editState.stabilizationMarginPercent}% Zoom)"
+            binding.btnVidStabilize.text = "EIS: ${editState.eisConfig.shortSummary()}"
         } else {
             binding.btnVidStabilize.setIconResource(R.drawable.ic_focus_ring)
-            binding.btnVidStabilize.text = "Stabilize (Deshake + Zoom)"
+            binding.btnVidStabilize.text = "Stabilize Footage"
+        }
+    }
+
+    /**
+     * Scans video keyframes using [VideoPiiRedactionEngine] (UltraFace, YOLOv8n objects/screens,
+     * WeChatQR + ML Kit barcodes, and ML Kit OCR text) and generates tracked temporal FFmpeg filters.
+     */
+    fun runVideoPiiRedaction() {
+        val item = currentItem ?: run {
+            Toast.makeText(activity, "Please select a video first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (piiScanJob?.isActive == true) {
+            piiScanJob?.cancel()
+            Toast.makeText(activity, "Cancelled AI video PII scan", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val gen = activeGeneration
+        val scanProgressDialog = M3ExpressiveProgressDialog(activity)
+        scanProgressDialog.show(
+            title = "AI Video PII Scanning",
+            initialStatus = "Scanning video keyframes for faces, text, screens, plates & barcodes…",
+            isIndeterminate = false,
+            cancelable = true,
+            onCancel = {
+                piiScanJob?.cancel()
+                piiScanJob = null
+            }
+        )
+
+        piiScanJob = scope.launch(Dispatchers.IO) {
+            try {
+                if (item.copyJob?.isActive == true) item.copyJob?.join()
+                if (!item.file.exists() || item.file.length() == 0L) {
+                    copyUriToFile(item.uri, item.file)
+                }
+
+                val retriever = MediaMetadataRetriever()
+                val scanResult = try {
+                    retriever.setDataSource(item.file.absolutePath)
+                    val trimEnd = editState.trimEndMs.takeIf { it > editState.trimStartMs } ?: item.durationMs
+                    VideoPiiRedactionEngine.scanVideo(
+                        context = activity,
+                        retriever = retriever,
+                        piiEngine = getOrInitPiiEngine(),
+                        trimStartMs = editState.trimStartMs,
+                        trimEndMs = trimEnd,
+                        fallbackWidth = item.width,
+                        fallbackHeight = item.height,
+                        includeOcrText = true,
+                        isCancelled = { activeGeneration != gen || !isActive },
+                        onProgress = { sampled, total ->
+                            scope.launch(Dispatchers.Main) {
+                                if (activeGeneration == gen && scanProgressDialog.isShowing) {
+                                    val pct = if (total > 0) ((sampled.toFloat() / total) * 100).toInt().coerceIn(0, 100) else 0
+                                    scanProgressDialog.updateProgress(pct, "Scanning keyframe $sampled of $total ($pct%)")
+                                }
+                            }
+                        }
+                    )
+                } finally {
+                    retriever.release()
+                }
+
+                withContext(Dispatchers.Main) {
+                    scanProgressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
+
+                    if (scanResult.regions.isEmpty()) {
+                        if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
+                            editState.piiRedactionFilter = null
+                            editState.piiRedactionSummary = ""
+                            editState.isPiiBaked = false
+                            currentItem?.editState?.copyFrom(editState)
+                            updatePiiButtonState()
+                            refreshStats()
+                            updateEditSummary()
+                            Toast.makeText(activity, "No PII targets detected; cleared prior video redactions", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(activity, "No PII detected across ${scanResult.sampledFrames} keyframes", Toast.LENGTH_SHORT).show()
+                        }
+                        return@withContext
+                    }
+
+                    val items = scanResult.regions.mapIndexed { idx, region ->
+                        val timeSpan = String.format(Locale.US, "%.1fs - %.1fs", region.startSec, region.endSec)
+                        PiiRedactableItem(
+                            id = "vid_pii_$idx",
+                            piiClass = region.piiClass,
+                            label = region.label,
+                            subtext = "$timeSpan • Box: [${region.rect.left.toInt()}, ${region.rect.top.toInt()}, ${region.rect.right.toInt()}, ${region.rect.bottom.toInt()}]",
+                            defaultChecked = (region.piiClass != PiiClass.PERSON)
+                        )
+                    }
+
+                    PiiRedactionDialog.showItemSelectionDialog(
+                        context = activity,
+                        title = "Detected Video PII (${scanResult.trackCount} tracks)",
+                        subtitle = "Scanned ${scanResult.sampledFrames} keyframes. Select sensitive targets to redact from preview & video.",
+                        items = items,
+                        availableStyles = listOf(
+                            PiiRedactionStyle.BLUR,
+                            PiiRedactionStyle.SOLID_BLACK,
+                            PiiRedactionStyle.SOLID_WHITE
+                        ),
+                        initialStyle = PiiRedactionStyle.BLUR,
+                        hasActiveRedactions = !editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked,
+                        onApply = { chosenIds, chosenStyle ->
+                            val selectedRegions = scanResult.regions.filterIndexed { idx, _ -> "vid_pii_$idx" in chosenIds }
+                            if (selectedRegions.isEmpty()) {
+                                Toast.makeText(activity, "No targets selected for redaction", Toast.LENGTH_SHORT).show()
+                                return@showItemSelectionDialog
+                            }
+                            val filterChain = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+                                regions = selectedRegions,
+                                frameW = scanResult.frameWidth,
+                                frameH = scanResult.frameHeight,
+                                style = chosenStyle
+                            )
+                            if (filterChain.isNullOrBlank()) {
+                                Toast.makeText(activity, "No valid temporal regions generated", Toast.LENGTH_SHORT).show()
+                                return@showItemSelectionDialog
+                            }
+
+                            executeImmediateVideoPiiRedaction(
+                                item = item,
+                                filterChain = filterChain,
+                                style = chosenStyle,
+                                targetCount = selectedRegions.size
+                            )
+                        },
+                        onClear = {
+                            editState.piiRedactionFilter = null
+                            editState.piiRedactionSummary = ""
+                            editState.isPiiBaked = false
+                            currentItem?.editState?.copyFrom(editState)
+                            updatePiiButtonState()
+                            refreshStats()
+                            updateEditSummary()
+                            Toast.makeText(activity, "Video PII redaction cleared", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Video PII scan failed: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    scanProgressDialog.dismiss()
+                    Toast.makeText(activity, "Video PII scan failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private var videoRedactionJob: Job? = null
+
+    /**
+     * Standalone Video PII Redaction execution:
+     * Immediately applies the temporal redaction filters via FFmpegKit with Material 3 Expressive
+     * progress feedback, replaces the preview player's data source with the redacted video,
+     * and updates workspace state.
+     */
+    private fun executeImmediateVideoPiiRedaction(
+        item: StudioVideoItem,
+        filterChain: String,
+        style: PiiRedactionStyle,
+        targetCount: Int
+    ) {
+        if (videoRedactionJob?.isActive == true) {
+            videoRedactionJob?.cancel()
+            Toast.makeText(activity, "Cancelled previous redaction job", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val gen = activeGeneration
+        val progressDialog = M3ExpressiveProgressDialog(activity)
+        progressDialog.show(
+            title = "AI Video PII Redaction",
+            initialStatus = "Redacting $targetCount targets (${style.label})…",
+            isIndeterminate = false,
+            cancelable = true,
+            onCancel = {
+                videoRedactionJob?.cancel()
+                videoRedactionJob = null
+                val sid = activeFFmpegSessionId
+                if (sid >= 0L) {
+                    FFmpegKit.cancel(sid)
+                }
+            }
+        )
+
+        val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
+
+        videoRedactionJob = scope.launch(Dispatchers.IO) {
+            try {
+                if (!item.file.exists() || item.file.length() == 0L) {
+                    copyUriToFile(item.uri, item.file)
+                }
+
+                val result = MediaProcessor.video.redactVideoStandalone(
+                    srcFile = item.file,
+                    outFile = tempRedactedFile,
+                    filterChain = filterChain,
+                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onProgress = { phaseLabel, _, pct ->
+                        if (activeGeneration != gen) return@redactVideoStandalone
+                        launch(Dispatchers.Main) {
+                            if (progressDialog.isShowing) {
+                                progressDialog.updateProgress(pct, "$phaseLabel ($pct%)")
+                            }
+                        }
+                    }
+                )
+
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
+
+                    if (result.success && tempRedactedFile.exists() && tempRedactedFile.length() > 0L) {
+                        val updatedItem = item.copy(
+                            file = tempRedactedFile,
+                            originalBytes = tempRedactedFile.length()
+                        )
+                        selectedMediaList[currentMediaIndex] = updatedItem
+                        editState.isPiiBaked = true
+                        editState.piiRedactionFilter = null // Baked directly into preview & base video!
+                        editState.piiRedactionSummary = "$targetCount target(s) • ${style.label}"
+                        updatedItem.editState.copyFrom(editState)
+
+                        // Immediately replace video preview with the redacted video!
+                        playerController.setDataSource(Uri.fromFile(tempRedactedFile))
+                        playerController.seekTo(0)
+                        playerController.play()
+
+                        updatePiiButtonState()
+                        refreshStats()
+                        updateEditSummary()
+                        if (::floatingDockController.isInitialized) {
+                            floatingDockController.onEditApplied()
+                        }
+                        Toast.makeText(activity, "Video redacted successfully! Preview updated.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        if (tempRedactedFile.exists()) tempRedactedFile.delete()
+                        Toast.makeText(
+                            activity,
+                            "Video redaction failed: ${result.error ?: "Unknown error"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Immediate video redaction error", e)
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    if (activeGeneration != gen) return@withContext
+                    if (tempRedactedFile.exists()) tempRedactedFile.delete()
+                    Toast.makeText(activity, "Video redaction failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun updatePiiButtonState() {
+        if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
+            binding.btnVidPiiRedact.setIconResource(R.drawable.ic_check_circle)
+            binding.btnVidPiiRedact.text = "PII Redacted • Edit / Clear"
+        } else {
+            binding.btnVidPiiRedact.setIconResource(R.drawable.ic_shield_video)
+            binding.btnVidPiiRedact.text = "Auto-Redact PII (AI)"
         }
     }
 

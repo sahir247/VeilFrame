@@ -36,15 +36,18 @@ object D25Geometry {
         val vbX: Float,
         val vbY: Float,
         val vbW: Float = 0f,
-        val vbH: Float = 0f
+        val vbH: Float = 0f,
+        val xCoeff: Float = SQ3H,
+        val yCoeff: Float = 0.5f,
+        val zCoeff: Float = 1.0f
     ) {
         fun screenX(u: Float, v: Float): Float {
-            val isoX = SQ3H * (u - v)
+            val isoX = xCoeff * (u - v)
             return (isoX - vbX) * scale + transX
         }
 
         fun screenY(u: Float, v: Float, z: Float): Float {
-            val isoY = 0.5f * (u + v) + z
+            val isoY = yCoeff * (u + v) + z * zCoeff
             return (isoY - vbY) * scale + transY
         }
     }
@@ -56,12 +59,19 @@ object D25Geometry {
         quietZoneLeft: Float = 0f,
         quietZoneTop: Float = 0f,
         quietZoneRight: Float = 0f,
-        quietZoneBottom: Float = 0f
+        quietZoneBottom: Float = 0f,
+        angleDegrees: Float = 45f
     ): Projection {
+        val ratio = (angleDegrees.coerceIn(15f, 75f) / 45f)
+        val yCoeff = 0.5f * ratio
+        val xCoeff = if (angleDegrees == 45f) SQ3H else SQ3H * (1.12f - 0.12f * ratio)
+        val zCoeff = if (angleDegrees == 45f) 1.0f else (1.15f - 0.15f * ratio).coerceIn(0.6f, 1.3f)
+        val extraV = if (angleDegrees == 45f) 1.0f else maxOf(1.0f, ratio)
+
         val vbX = -(n + quietZoneLeft)
-        val vbY = -(n / 2f + quietZoneTop)
+        val vbY = -(n / 2f * extraV + quietZoneTop)
         val vbW = (2 * n + quietZoneLeft + quietZoneRight)
-        val vbH = (2 * n + quietZoneTop + quietZoneBottom)
+        val vbH = (2 * n * extraV + quietZoneTop + quietZoneBottom)
 
         val scaleX = outputWidth / vbW
         val scaleY = outputHeight / vbH
@@ -69,7 +79,7 @@ object D25Geometry {
         val transX = (outputWidth - vbW * scale) / 2f
         val transY = (outputHeight - vbH * scale) / 2f
 
-        return Projection(scale, transX, transY, vbX, vbY, vbW, vbH)
+        return Projection(scale, transX, transY, vbX, vbY, vbW, vbH, xCoeff, yCoeff, zCoeff)
     }
 
     fun computeProjection(
@@ -149,7 +159,8 @@ object D25Geometry {
             quietZoneLeft = geometry.quietZoneLeftFloat,
             quietZoneTop = geometry.quietZoneTopFloat,
             quietZoneRight = geometry.quietZoneRightFloat,
-            quietZoneBottom = geometry.quietZoneBottomFloat
+            quietZoneBottom = geometry.quietZoneBottomFloat,
+            angleDegrees = design.depthStyle.angleDegrees
         )
 
         val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -256,7 +267,8 @@ object D25Geometry {
             quietZoneLeft = geometry.quietZoneLeftFloat,
             quietZoneTop = geometry.quietZoneTopFloat,
             quietZoneRight = geometry.quietZoneRightFloat,
-            quietZoneBottom = geometry.quietZoneBottomFloat
+            quietZoneBottom = geometry.quietZoneBottomFloat,
+            angleDegrees = design.depthStyle.angleDegrees
         )
         val nodes = mutableListOf<QrGeometryNode>()
 

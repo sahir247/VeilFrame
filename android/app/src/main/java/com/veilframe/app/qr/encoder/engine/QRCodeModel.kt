@@ -14,9 +14,13 @@ class QRCodeModel(
     val errorCorrectLevel: VeilCorrectionLevel,
     val needTypeTable: Boolean = true,
     val explicitMaskPattern: VeilMaskPattern? = null,
-    val writeEci: Boolean = false
+    val writeEci: Boolean = false,
+    val minTypeNumber: Int = 1
 ) {
-    val typeNumber: Int = QRCodeType.typeNumber(data.size, errorCorrectLevel, hasEci = writeEci)
+    val typeNumber: Int = maxOf(
+        minTypeNumber.coerceIn(1, 40),
+        QRCodeType.typeNumber(data.size, errorCorrectLevel, hasEci = writeEci)
+    )
     val moduleCount: Int = typeNumber * 4 + 17
 
     private var modules: Array<Array<Boolean?>> = Array(moduleCount) { arrayOfNulls(moduleCount) }

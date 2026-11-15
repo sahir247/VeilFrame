@@ -388,9 +388,10 @@
                     android:layout_margin="4dp"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="12dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:strokeWidth="1dp">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -421,9 +422,10 @@
                     android:layout_margin="4dp"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="12dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:strokeWidth="1dp">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -454,9 +456,10 @@
                     android:layout_margin="4dp"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="12dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:strokeWidth="1dp">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -487,9 +490,10 @@
                     android:layout_margin="4dp"
                     android:clickable="true"
                     android:focusable="true"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
                     app:cardCornerRadius="12dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:strokeWidth="1dp">
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -623,9 +627,10 @@
                 android:layout_marginTop="8dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardCornerRadius="14dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp">
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -688,86 +693,84 @@
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardSettingsUpdates"
-                style="@style/Widget.Material3.CardView.Filled"
+                style="@style/Widget.VeilFrame.Card.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                app:cardCornerRadius="14dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp">
+                app:cardCornerRadius="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="14dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="VeilFrame Mobile"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSettingsUpdateStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Installed: v2.3.0 • Local Engine"
+                    android:textColor="@color/vf_text_secondary"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSettingsRepairApp"
+                        style="@style/Widget.VeilFrame.Button.Utility"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="VeilFrame Mobile"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="Repair"
+                        android:textColor="@color/vf_accent_amber"
+                        app:strokeColor="@color/vf_accent_amber"
+                        app:icon="@drawable/ic_reset"
+                        app:iconSize="13dp"
+                        app:iconTint="@color/vf_accent_amber" />
 
-                    <TextView
-                        android:id="@+id/tvSettingsUpdateStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Installed: v2.3.0 • Local Engine"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="12sp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSettingsCheckUpdates"
+                        style="@style/Widget.VeilFrame.Button.Utility"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:paddingTop="0dp"
+                        android:paddingBottom="0dp"
+                        android:minHeight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:textSize="12sp"
+                        android:text="Update"
+                        android:textColor="@color/vf_primary"
+                        app:icon="@drawable/ic_system_update"
+                        app:iconSize="14dp"
+                        app:iconTint="@color/vf_primary" />
+                </LinearLayout>
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnSettingsRepairApp"
-                            style="@style/Widget.VeilFrame.Button.Utility"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginEnd="6dp"
-                            android:text="Repair"
-                            android:textColor="@color/vf_accent_amber"
-                            app:strokeColor="@color/vf_accent_amber"
-                            app:icon="@drawable/ic_reset"
-                            app:iconSize="13dp"
-                            app:iconTint="@color/vf_accent_amber" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btnSettingsCheckUpdates"
-                            style="@style/Widget.VeilFrame.Button.Utility"
-                            android:layout_width="0dp"
-                            android:layout_height="36dp"
-                            android:layout_weight="1"
-                            android:layout_marginStart="6dp"
-                            android:paddingTop="0dp"
-                            android:paddingBottom="0dp"
-                            android:minHeight="0dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:textSize="12sp"
-                            android:text="Update"
-                            android:textColor="@color/vf_primary"
-                            app:icon="@drawable/ic_system_update"
-                            app:iconSize="14dp"
-                            app:iconTint="@color/vf_primary" />
-                    </LinearLayout>
-
-                    <com.google.android.material.progressindicator.LinearProgressIndicator
-                        android:id="@+id/progressSettingsUpdateCheck"
-                        style="@style/Widget.VeilFrame.Progress.Wavy"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:indeterminate="true"
-                        android:visibility="gone"
-                        app:indicatorColor="@color/vf_accent_green" />
+                <com.google.android.material.progressindicator.LinearProgressIndicator
+                    android:id="@+id/progressSettingsUpdateCheck"
+                    style="@style/Widget.VeilFrame.Progress.Wavy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:indeterminate="true"
+                    android:visibility="gone"
+                    app:indicatorColor="@color/vf_accent_green" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -804,12 +807,12 @@
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardSettingsWhatsNew"
-                style="@style/Widget.Material3.CardView.Filled"
+                style="@style/Widget.VeilFrame.Card.Section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:visibility="gone"
-                app:cardCornerRadius="12dp">
+                app:cardCornerRadius="16dp">
 
                 <TextView
                     android:id="@+id/tvSettingsWhatsNewContent"

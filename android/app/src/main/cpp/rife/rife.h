@@ -11,7 +11,7 @@
 class RIFE
 {
 public:
-    RIFE(int gpuid, bool tta_mode = false, bool tta_temporal_mode = false, bool uhd_mode = false, int num_threads = 1, bool rife_v2 = false, bool rife_v4 = false);
+    RIFE(int gpuid, bool tta_mode = false, bool tta_temporal_mode = false, bool uhd_mode = false, int num_threads = 1, bool rife_v2 = false, bool rife_v4 = false, int padding = 32);
     ~RIFE();
 
 #if _WIN32
@@ -19,6 +19,9 @@ public:
 #else
     int load(const std::string& modeldir);
 #endif
+
+    void set_padding(int p);
+    int get_padding() const;
 
     int process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;
 
@@ -49,6 +52,7 @@ private:
     int num_threads;
     bool rife_v2;
     bool rife_v4;
+    int padding;
 };
 
 #endif // RIFE_H

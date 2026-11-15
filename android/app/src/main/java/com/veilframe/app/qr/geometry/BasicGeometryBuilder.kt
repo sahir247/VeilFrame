@@ -391,7 +391,8 @@ object BasicGeometryBuilder {
         design: QrDesign,
         profile: BasicGeometryProfile
     ) {
-        val posColor = design.eyeStyle.outerColor ?: design.palette.foreground
+        val posOuterColor = design.eyeStyle.outerColor ?: design.palette.foreground
+        val posInnerColor = design.eyeStyle.innerColor ?: design.palette.foreground
         val posStyle = design.eyeStyle.style
         val posSize = design.positionSize
         val bgColor = design.backdropStyle.color ?: design.palette.background
@@ -410,8 +411,9 @@ object BasicGeometryBuilder {
                     offsetY = oy,
                     style = posStyle,
                     size = posSize,
-                    color = posColor,
-                    bgColor = bgColor
+                    color = posOuterColor,
+                    bgColor = bgColor,
+                    innerColor = posInnerColor
                 )
             )
         }

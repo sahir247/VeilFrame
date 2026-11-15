@@ -113,6 +113,8 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var motionLabController: MotionLabController
     internal lateinit var imageQualityController: ImageQualityController
     internal lateinit var provenanceController: ProvenanceController
+    internal lateinit var qrStudioController: com.veilframe.app.qr.ui.QrStudioController
+    val isQrStudioControllerInitialized: Boolean get() = ::qrStudioController.isInitialized
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
     val isPdfSignatureControllerInitialized: Boolean get() = ::pdfSignatureController.isInitialized
@@ -219,8 +221,7 @@ class MainActivity : AppCompatActivity() {
                 binding.layoutImageStudio.root,
                 binding.layoutVideoStudio.root,
                 binding.layoutMarkdownViewer.root,
-                binding.layoutImageQuality.root,
-                binding.fragmentQrStudio
+                binding.layoutImageQuality.root
             ).forEach { root ->
                 com.veilframe.app.ui.insets.WorkspaceInsets.apply(
                     root = root,
@@ -403,7 +404,8 @@ class MainActivity : AppCompatActivity() {
             onPdfExtractPagesInflated = { pdfSuiteCoordinator.initPdfExtractPages(it) },
             onPdfFlattenInflated = { pdfSuiteCoordinator.initPdfFlatten(it) },
             onPdfImpositionInflated = { pdfSuiteCoordinator.initPdfImposition(it) },
-            onPdfQuickToolInflated = { pdfSuiteCoordinator.initPdfQuickTool(it) }
+            onPdfQuickToolInflated = { pdfSuiteCoordinator.initPdfQuickTool(it) },
+            onQrStudioInflated = { qrBinding -> initQrStudio(qrBinding) }
         )
 
         navigationController = MainNavigationController(
@@ -584,10 +586,6 @@ class MainActivity : AppCompatActivity() {
             },
             onNavigateHome = {
                 navigationController.navigateBackFromWorkspace()
-            },
-            onOpenModelManager = {
-                workspaceHost.getOrInflateImageUpscaler()
-                imageUpscalerController.showModelManagerDialog()
             }
         )
 
@@ -995,6 +993,18 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Image Upscaler workspace.")
     }
 
+    private fun initQrStudio(qrBinding: com.veilframe.app.databinding.LayoutQrStudioBinding) {
+        val vm = androidx.lifecycle.ViewModelProvider(this)[com.veilframe.app.qr.ui.QrStudioViewModel::class.java]
+        qrStudioController = com.veilframe.app.qr.ui.QrStudioController(
+            activity = this,
+            binding = qrBinding,
+            vm = vm,
+            onNavigateBack = {
+                navigationController.navigateBackFromWorkspace()
+            }
+        )
+    }
+
     fun openQrStudio() {
         if (!canNavigate()) return
         clearBackTimer()
@@ -1003,12 +1013,8 @@ class MainActivity : AppCompatActivity() {
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
+        workspaceHost.getOrInflateQrStudio()
         navigationController.showQrStudioScreen()
-        if (supportFragmentManager.findFragmentById(R.id.fragmentQrStudio) == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.fragmentQrStudio, com.veilframe.app.qr.ui.QrStudioFragment())
-                .commit()
-        }
         consoleLogController.log("[UI] Opened QR Studio workspace.")
     }
 
@@ -1327,6 +1333,7 @@ class MainActivity : AppCompatActivity() {
 
     internal fun openSettingsOverlay(animate: Boolean = true, restoreScrollY: Int? = null) {
         settingsOverlayCoordinator.open(animate, restoreScrollY)
+        navigationController.updateBackCallbackState()
     }
 
     private fun seamlessRecreateSettings(restoreScrollY: Int? = null) {
@@ -1345,6 +1352,7 @@ class MainActivity : AppCompatActivity() {
 
     internal fun closeSettingsOverlay(animate: Boolean = true) {
         settingsOverlayCoordinator.close(animate)
+        navigationController.updateBackCallbackState()
     }
 
     private fun openWebUrl(url: String) {
@@ -1608,7 +1616,7 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.IMAGE_UPSCALER -> if (::imageUpscalerController.isInitialized) imageUpscalerController else null
             com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> if (::backgroundRemoverController.isInitialized) backgroundRemoverController else null
             com.veilframe.app.navigation.ScreenState.MOTION_LAB -> if (::motionLabController.isInitialized) motionLabController else null
-            com.veilframe.app.navigation.ScreenState.QR_STUDIO -> supportFragmentManager.findFragmentById(R.id.fragmentQrStudio) as? com.veilframe.app.navigation.ToolWorkStateContract
+            com.veilframe.app.navigation.ScreenState.QR_STUDIO -> if (::qrStudioController.isInitialized) qrStudioController else null
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_ENTRY,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_CAMERA,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_PAGES,
@@ -1628,6 +1636,65 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun handleToolBackPressed(screen: com.veilframe.app.navigation.ScreenState = navigationController.currentScreen): Boolean {
+        return when (screen) {
+            com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> {
+                if (::backgroundRemoverController.isInitialized && backgroundRemoverController.handleBackPressed()) {
+                    true
+                } else {
+                    false
+                }
+            }
+            com.veilframe.app.navigation.ScreenState.QR_STUDIO -> {
+                if (::qrStudioController.isInitialized && qrStudioController.handleBackPressed()) {
+                    true
+                } else {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun canHandleInnerToolBack(): Boolean {
+        if (navigationController.currentScreen == com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER) {
+            if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isRefineMode) {
+                return true
+            }
+        }
+        if (navigationController.currentScreen == com.veilframe.app.navigation.ScreenState.QR_STUDIO) {
+            if (::qrStudioController.isInitialized && qrStudioController.canHandleInnerBack()) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fun getInnerToolPredictiveView(): View? {
+        if (navigationController.currentScreen == com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER) {
+            if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isRefineMode) {
+                return backgroundRemoverController.getRefineDockView()
+            }
+        }
+        return null
+    }
+
+    fun handleInnerToolBackProgressed(progress: Float, edge: Int) {
+        if (navigationController.currentScreen == com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER) {
+            if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isRefineMode) {
+                backgroundRemoverController.handlePredictiveBackProgress(progress, edge)
+            }
+        }
+    }
+
+    fun handleInnerToolBackCancelled() {
+        if (navigationController.currentScreen == com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER) {
+            if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isRefineMode) {
+                backgroundRemoverController.handlePredictiveBackCancelled()
+            }
+        }
+    }
+
     fun hasActiveProcessing(): Boolean {
         if (getActiveToolWorkContract()?.isProcessing == true) return true
         if (::videoStudioController.isInitialized && videoStudioController.isProcessing) return true
@@ -1635,6 +1702,7 @@ class MainActivity : AppCompatActivity() {
         if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) return true
         if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) return true
         if (::motionLabController.isInitialized && motionLabController.isProcessing) return true
+        if (::qrStudioController.isInitialized && qrStudioController.isProcessing) return true
         if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) return true
         if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) return true
         if (::pdfSignatureController.isInitialized && pdfSignatureController.isProcessing) return true
