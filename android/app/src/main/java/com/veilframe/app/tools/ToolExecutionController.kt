@@ -691,9 +691,10 @@ class ToolExecutionController(
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • PRNU & Metadata Purified"
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Image processed; camera PRNU not independently verified"
 
-                    onLog("[OK] Image purified successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[OK] Image processing completed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[PRNU] Camera sensor fingerprint removal was not independently verified.")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true
