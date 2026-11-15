@@ -28,9 +28,9 @@ class PrnuSanitizerEngineTest {
         val standard = PrnuSanitizerEngine.DefenseMode.STANDARD_FUSED_REMAP
         assertEquals("Standard (Fused Remap)", standard.displayName)
         assertTrue(
-    "Standard mode description must reflect the implemented fused coarse-grid remap",
-    standard.description.contains("Fused coarse-grid remap")
-)
+            "Standard mode description must reflect the implemented fused coarse-grid remap",
+            standard.description.contains("Fused coarse-grid remap")
+        )
 
         val highSuppression = PrnuSanitizerEngine.DefenseMode.HIGH_SUPPRESSION
         assertEquals("High Suppression", highSuppression.displayName)
