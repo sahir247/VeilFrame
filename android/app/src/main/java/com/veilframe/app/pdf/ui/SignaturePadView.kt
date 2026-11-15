@@ -311,7 +311,8 @@ class SignaturePadView @JvmOverloads constructor(
             // Natural ink pen physics: faster movement yields thinner strokes, slower yields thicker strokes
             val targetWidth = (maxStrokeWidth / (1f + smoothedVelocity * 0.75f)).coerceIn(minStrokeWidth, maxStrokeWidth)
             val startWidth = lastComputedWidth
-            val endWidth = (lastComputedWidth * 0.35f) + (targetWidth * 0.65f)
+            // Damp per-sample velocity noise; width changes should be gradual.
+            val endWidth = (lastComputedWidth * 0.80f) + (targetWidth * 0.20f)
             lastComputedWidth = endWidth
 
             val seg = InkElement.BezierSegment(
@@ -354,66 +355,23 @@ class SignaturePadView @JvmOverloads constructor(
                 val startW = element.startWidth * scale
                 val endW = element.endWidth * scale
 
-                // For uniform width segments, draw a native smooth anti-aliased Bézier curve
-                val widthDiff = Math.abs(endW - startW)
-                if (widthDiff < 0.6f * scale) {
-                    val path = Path().apply {
-                        moveTo(startX, startY)
-                        quadTo(cpX, cpY, endX, endY)
-                    }
-                    val strokeP = Paint(fillPaint).apply {
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                        strokeWidth = (startW + endW) / 2f
-                    }
-                    canvas.drawPath(path, strokeP)
-                    return
+                // Use Android's native anti-aliased stroked quadratic path for every segment.
+                // The previous variable-width ribbon independently sampled tangent normals for
+                // each short segment. Near low-speed/near-zero tangents those normals flip or
+                // amplify tiny coordinate changes; at larger widths this creates paired waves
+                // along both edges. Adjacent segments already share endpoints and widths, so a
+                // rounded native stroke gives continuous joins without a hand-built polygon mesh.
+                val path = Path().apply {
+                    moveTo(startX, startY)
+                    quadTo(cpX, cpY, endX, endY)
                 }
-
-                // For variable-width tapered ink strokes: extrude a smooth closed polygon ribbon
-                // along the analytical Bézier tangent normals.
-                val steps = 20
-                val leftPoints = ArrayList<PointF>(steps + 1)
-                val rightPoints = ArrayList<PointF>(steps + 1)
-
-                for (i in 0..steps) {
-                    val t = i / steps.toFloat()
-                    val oneMinusT = 1f - t
-
-                    // B(t) position
-                    val x = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * cpX) + (t * t * endX)
-                    val y = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * cpY) + (t * t * endY)
-
-                    // B'(t) tangent derivative
-                    val dx = 2f * oneMinusT * (cpX - startX) + 2f * t * (endX - cpX)
-                    val dy = 2f * oneMinusT * (cpY - startY) + 2f * t * (endY - cpY)
-
-                    val len = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(0.0001f)
-                    val nx = -dy / len
-                    val ny = dx / len
-
-                    val halfW = (startW + (endW - startW) * t) / 2f
-                    leftPoints.add(PointF(x + nx * halfW, y + ny * halfW))
-                    rightPoints.add(PointF(x - nx * halfW, y - ny * halfW))
+                val strokeP = Paint(fillPaint).apply {
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    strokeWidth = ((startW + endW) / 2f).coerceAtLeast(0.5f * scale)
                 }
-
-                val ribbon = Path()
-                if (leftPoints.isNotEmpty()) {
-                    ribbon.moveTo(leftPoints[0].x, leftPoints[0].y)
-                    for (i in 1 until leftPoints.size) {
-                        ribbon.lineTo(leftPoints[i].x, leftPoints[i].y)
-                    }
-                    for (i in rightPoints.size - 1 downTo 0) {
-                        ribbon.lineTo(rightPoints[i].x, rightPoints[i].y)
-                    }
-                    ribbon.close()
-                }
-
-                canvas.drawPath(ribbon, fillPaint)
-                // Draw rounded caps at endpoints to guarantee buttery smooth segment joins
-                canvas.drawCircle(startX, startY, startW / 2f, fillPaint)
-                canvas.drawCircle(endX, endY, endW / 2f, fillPaint)
+                canvas.drawPath(path, strokeP)
             }
         }
     }
