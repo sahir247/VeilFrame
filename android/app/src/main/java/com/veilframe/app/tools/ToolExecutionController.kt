@@ -325,6 +325,9 @@ class ToolExecutionController(
                     if (ok.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) {
                         metadataOnlyFallbackCount++
                     }
+                } else {
+                    // FFmpeg may leave a partial file after both the primary and fallback passes fail.
+                    outputFile.delete()
                 }
             }
 
