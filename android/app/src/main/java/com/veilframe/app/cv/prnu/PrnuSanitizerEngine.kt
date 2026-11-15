@@ -82,7 +82,11 @@ object PrnuSanitizerEngine {
     )
 
     /**
-     * Sanitizes an image file end-to-end according to the selected defense mode.
+     * Writes a transformed image according to the selected mode.
+     *
+     * The Boolean reports file-generation success only. It does NOT mean that camera PRNU
+     * removal, camera unlinkability, or resistance to attribution was independently verified.
+     * Use [sanitizeImageFileDetailed] when the caller needs the diagnostic/result fields.
      */
     fun sanitizeImageFile(
         context: Context,
@@ -709,9 +713,14 @@ object PrnuSanitizerEngine {
     )
 
     /**
-     * On-Device Self-Audit Loop (Doc 4 Line 162).
-     * Compares pre- and post-sanitization sPCE and 6-strip block peaks locally.
-     * Evaluates a bounded center ROI (default 512x512) to keep native FFT memory < 16 MB.
+     * Computes a bounded single-image high-pass residual decorrelation diagnostic.
+     *
+     * The "baseline" is the source image residual correlated with itself, not an independently
+     * estimated camera fingerprint. Consequently this function always returns
+     * verifiedSecure=false and isConclusive=false. Its thresholds are heuristic diagnostics
+     * only; they cannot validate PRNU removal or camera unlinkability.
+     *
+     * Evaluates a bounded center ROI (default 512x512) to limit native FFT memory.
      */
     fun auditSanitization(
         originalMat: Mat,
