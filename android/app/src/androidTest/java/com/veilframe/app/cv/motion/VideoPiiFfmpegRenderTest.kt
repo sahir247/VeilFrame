@@ -58,6 +58,7 @@ class VideoPiiFfmpegRenderTest {
 
             for (style in listOf(
                 PiiRedactionStyle.SOLID_BLACK,
+                PiiRedactionStyle.SOLID_WHITE,
                 PiiRedactionStyle.BLUR,
                 PiiRedactionStyle.PIXELATE
             )) {
@@ -83,9 +84,15 @@ class VideoPiiFfmpegRenderTest {
                 val rendered = decodeFrame(output)
                 assertNotNull("$style output must decode", rendered)
                 val variance = lumaVariance(rendered!!, 80, 60, 240, 180)
-                if (style == PiiRedactionStyle.SOLID_BLACK) {
+                if (style == PiiRedactionStyle.SOLID_BLACK || style == PiiRedactionStyle.SOLID_WHITE) {
                     val center = rendered.getPixel(160, 120)
-                    assertTrue("Solid black redaction must black out the ROI", (center ushr 24) > 0 && (center and 0x00FFFFFF) < 0x00030303)
+                    val rgb = center and 0x00FFFFFF
+                    val isExpectedFill = if (style == PiiRedactionStyle.SOLID_BLACK) {
+                        rgb < 0x00030303
+                    } else {
+                        rgb > 0x00FCFCFC
+                    }
+                    assertTrue("$style must fill the ROI with the selected solid color", (center ushr 24) > 0 && isExpectedFill)
                 } else {
                     assertTrue(
                         "$style should reduce high-frequency ROI variation (source=$baselineVariance output=$variance)",
