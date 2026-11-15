@@ -35,6 +35,18 @@ static std::vector<unsigned char> g_rgb0;
 static std::vector<unsigned char> g_rgb1;
 static std::vector<unsigned char> g_rgb_out;
 
+static void clear_rife_bitmap_refs(JNIEnv* env) {
+    if (g_bitmapClass) {
+        env->DeleteGlobalRef(g_bitmapClass);
+        g_bitmapClass = nullptr;
+    }
+    g_createBitmapMethod = nullptr;
+    if (g_argbConfig) {
+        env->DeleteGlobalRef(g_argbConfig);
+        g_argbConfig = nullptr;
+    }
+}
+
 static jboolean do_rife_native_init(
     JNIEnv* env,
     jstring modelDir,
@@ -127,42 +139,53 @@ static jboolean do_rife_native_init(
             return JNI_FALSE;
         }
 
-        // Cache JNI reflection targets globally
+        // Cache JNI reflection targets globally. Never issue another JNI lookup while
+        // an exception is pending, and do not publish the RIFE instance on partial setup.
         if (!g_bitmapClass) {
-            jclass bCls = env->FindClass("android/graphics/Bitmap");
-            if (bCls) {
-                g_bitmapClass = (jclass)env->NewGlobalRef(bCls);
-                g_createBitmapMethod = env->GetStaticMethodID(
-                    g_bitmapClass, "createBitmap",
-                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
-                );
+            jclass localBitmapClass = env->FindClass("android/graphics/Bitmap");
+            if (localBitmapClass) {
+                g_bitmapClass = static_cast<jclass>(env->NewGlobalRef(localBitmapClass));
+                env->DeleteLocalRef(localBitmapClass);
             }
         }
+        if (!env->ExceptionCheck() && g_bitmapClass && !g_createBitmapMethod) {
+            g_createBitmapMethod = env->GetStaticMethodID(
+                g_bitmapClass, "createBitmap",
+                "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+            );
+        }
+        if (env->ExceptionCheck()) {
+            LOGE("Failed to resolve Bitmap.createBitmap JNI method");
+            env->ExceptionClear();
+            clear_rife_bitmap_refs(env);
+            candidate.reset();
+            g_rife_gpuid = -1;
+            local_gpu_lease.reset();
+            return JNI_FALSE;
+        }
+
         if (!g_argbConfig) {
-            jclass cCls = env->FindClass("android/graphics/Bitmap$Config");
-            if (cCls) {
-                jfieldID argbField = env->GetStaticFieldID(cCls, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
-                if (argbField) {
-                    jobject cfg = env->GetStaticObjectField(cCls, argbField);
-                    if (cfg) {
-                        g_argbConfig = env->NewGlobalRef(cfg);
+            jclass localConfigClass = env->FindClass("android/graphics/Bitmap$Config");
+            if (localConfigClass) {
+                jfieldID argbField = env->GetStaticFieldID(
+                    localConfigClass, "ARGB_8888",
+                    "Landroid/graphics/Bitmap$Config;"
+                );
+                if (!env->ExceptionCheck() && argbField) {
+                    jobject localConfig = env->GetStaticObjectField(localConfigClass, argbField);
+                    if (localConfig) {
+                        g_argbConfig = env->NewGlobalRef(localConfig);
+                        env->DeleteLocalRef(localConfig);
                     }
                 }
+                env->DeleteLocalRef(localConfigClass);
             }
         }
 
-        if (!g_bitmapClass || !g_createBitmapMethod || !g_argbConfig || env->ExceptionCheck()) {
+        if (env->ExceptionCheck() || !g_bitmapClass || !g_createBitmapMethod || !g_argbConfig) {
             LOGE("Failed to initialize required Bitmap JNI references");
             if (env->ExceptionCheck()) env->ExceptionClear();
-            if (g_bitmapClass) {
-                env->DeleteGlobalRef(g_bitmapClass);
-                g_bitmapClass = nullptr;
-                g_createBitmapMethod = nullptr;
-            }
-            if (g_argbConfig) {
-                env->DeleteGlobalRef(g_argbConfig);
-                g_argbConfig = nullptr;
-            }
+            clear_rife_bitmap_refs(env);
             candidate.reset();
             g_rife_gpuid = -1;
             local_gpu_lease.reset();
