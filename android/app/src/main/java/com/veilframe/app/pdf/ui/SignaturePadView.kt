@@ -365,13 +365,13 @@ class SignaturePadView @JvmOverloads constructor(
                     moveTo(startX, startY)
                     quadTo(cpX, cpY, endX, endY)
                 }
-                val strokeP = Paint(fillPaint).apply {
-                    style = Paint.Style.STROKE
-                    strokeCap = Paint.Cap.ROUND
-                    strokeJoin = Paint.Join.ROUND
-                    strokeWidth = ((startW + endW) / 2f).coerceAtLeast(0.5f * scale)
-                }
-                canvas.drawPath(path, strokeP)
+                // Reuse the supplied paint instead of allocating one for every touch sample.
+                fillPaint.style = Paint.Style.STROKE
+                fillPaint.strokeCap = Paint.Cap.ROUND
+                fillPaint.strokeJoin = Paint.Join.ROUND
+                fillPaint.strokeWidth = ((startW + endW) / 2f).coerceAtLeast(0.5f * scale)
+                canvas.drawPath(path, fillPaint)
+                fillPaint.style = Paint.Style.FILL
             }
         }
     }
