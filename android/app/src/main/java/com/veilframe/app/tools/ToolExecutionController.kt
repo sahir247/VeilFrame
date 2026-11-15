@@ -294,7 +294,11 @@ class ToolExecutionController(
                     3 -> "webm"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
                 }
-                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+                val relativeInput = inputFile.relativeTo(stagingDir)
+                val relativeOutput = File(relativeInput.parent ?: File(""), "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+                val outputFile = File(outputBatchDir, relativeOutput.path).apply {
+                    parentFile?.mkdirs()
+                }
 
                 withContext(Dispatchers.Main) {
                     val percent = ((idx * 100) / candidateFiles.size)
@@ -332,9 +336,10 @@ class ToolExecutionController(
                 return
             }
 
+            val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
             val finalFile: File
-            if (successCount == 1) {
-                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
+            if (actualOutputs.size == 1) {
+                val singleFile = actualOutputs.first()
                 finalFile = File(activity.cacheDir, singleFile.name)
                 singleFile.copyTo(finalFile, overwrite = true)
                 outputBatchDir.deleteRecursively()
