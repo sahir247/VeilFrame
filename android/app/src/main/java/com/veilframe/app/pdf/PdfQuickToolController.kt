@@ -863,7 +863,7 @@ class PdfQuickToolController(
     }
 
     private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
-        val selectedName = selectedName
+        val selectedName = primaryDocName
         scope.launch(Dispatchers.IO) {
             val lower = selectedName.lowercase()
             var summary = "Office Document"
