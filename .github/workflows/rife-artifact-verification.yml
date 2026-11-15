@@ -1,0 +1,32 @@
+name: RIFE model artifact verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - android/app/src/main/java/com/veilframe/app/media/rife/RifeModelRegistry.kt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-rife-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and hash every registered model artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/Sahir247/VeilFrame/v2.3.1/models/rife"
+          for model in rife-v4.25 rife-v4.26 rife-v4.22-lite rife-v4.15-lite; do
+            mkdir -p "/tmp/rife/$model"
+            for file in flownet.param flownet.bin; do
+              url="$base/$model/$file"
+              echo "FETCH $url"
+              curl --fail --location --silent --show-error --retry 3 "$url" -o "/tmp/rife/$model/$file"
+              printf 'SIZE %s %s ' "$model" "$file"
+              wc -c < "/tmp/rife/$model/$file"
+              sha256sum "/tmp/rife/$model/$file"
+            done
+          done
