@@ -2632,7 +2632,13 @@ class VideoStudioController(
                     if (activeGeneration != gen) return@withContext
 
                     if (scanResult.regions.isEmpty()) {
-                        if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
+                        if (scanResult.isScanDegraded) {
+                            val failedList = if (scanResult.failedEngines.isNotEmpty()) {
+                                " (${scanResult.failedEngines.keys.joinToString(", ")})"
+                            } else ""
+                            val decodeInfo = if (scanResult.failedFrameExtractions > 0) " (${scanResult.failedFrameExtractions} frames failed decode)" else ""
+                            Toast.makeText(activity, "Video PII scan degraded$failedList$decodeInfo. 0 targets confirmed.", Toast.LENGTH_LONG).show()
+                        } else if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
                             editState.piiRedactionFilter = null
                             editState.piiRedactionSummary = ""
                             editState.isPiiBaked = false
@@ -2641,6 +2647,8 @@ class VideoStudioController(
                             refreshStats()
                             updateEditSummary()
                             Toast.makeText(activity, "No PII targets detected; cleared prior video redactions", Toast.LENGTH_SHORT).show()
+                        } else if (scanResult.isSamplingCapped) {
+                            Toast.makeText(activity, "Sparse sampling (~${scanResult.actualSampleIntervalMs}ms step). No PII detected across ${scanResult.sampledFrames} keyframes.", Toast.LENGTH_LONG).show()
                         } else {
                             Toast.makeText(activity, "No PII detected across ${scanResult.sampledFrames} keyframes", Toast.LENGTH_SHORT).show()
                         }
@@ -2664,11 +2672,12 @@ class VideoStudioController(
                         subtitle = "Scanned ${scanResult.sampledFrames} keyframes. Select sensitive targets to redact from preview & video.",
                         items = items,
                         availableStyles = listOf(
-                            PiiRedactionStyle.BLUR,
                             PiiRedactionStyle.SOLID_BLACK,
-                            PiiRedactionStyle.SOLID_WHITE
+                            PiiRedactionStyle.SOLID_WHITE,
+                            PiiRedactionStyle.BLUR,
+                            PiiRedactionStyle.PIXELATE
                         ),
-                        initialStyle = PiiRedactionStyle.BLUR,
+                        initialStyle = PiiRedactionStyle.SOLID_BLACK,
                         hasActiveRedactions = !editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked,
                         onApply = { chosenIds, chosenStyle ->
                             val selectedRegions = scanResult.regions.filterIndexed { idx, _ -> "vid_pii_$idx" in chosenIds }

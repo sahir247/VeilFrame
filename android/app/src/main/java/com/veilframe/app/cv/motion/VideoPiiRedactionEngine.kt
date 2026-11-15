@@ -43,7 +43,15 @@ data class VideoPiiScanResult(
     val frameHeight: Int,
     val detectedCounts: Map<PiiClass, Int>,
     val trackCount: Int = 0,
-    val sampledFrames: Int = 0
+    val sampledFrames: Int = 0,
+    val attemptedFrames: Int = 0,
+    val failedFrameExtractions: Int = 0,
+    val failedEngines: Map<String, String> = emptyMap(),
+    val successfulEngines: Set<String> = emptySet(),
+    val isScanDegraded: Boolean = false,
+    val isSamplingCapped: Boolean = false,
+    val actualSampleIntervalMs: Long = 0L,
+    val isCancelled: Boolean = false
 )
 
 /**
@@ -57,7 +65,7 @@ data class VideoPiiScanResult(
 object VideoPiiRedactionEngine {
 
     private const val MIN_SAMPLE_FRAMES = 6
-    private const val MAX_SAMPLE_FRAMES = 48
+    private const val MAX_SAMPLE_FRAMES = 120
     private const val TARGET_SAMPLE_STEP_MS = 350L
     private const val MAX_ANALYSIS_EDGE_PX = 1280
     private const val BOX_MARGIN_RATIO = 0.12f
@@ -90,6 +98,9 @@ object VideoPiiRedactionEngine {
         val observationsByFrame = mutableListOf<Pair<Double, List<PiiDetection>>>()
         val counts = linkedMapOf<PiiClass, Int>()
         var sampledCount = 0
+        var failedFrameCount = 0
+        val failedEnginesAggregate = mutableMapOf<String, String>()
+        val successfulEnginesAggregate = mutableSetOf<String>()
 
         for (i in 0 until sampleCount) {
             if (isCancelled()) break
@@ -100,6 +111,7 @@ object VideoPiiRedactionEngine {
                 null
             }
             if (rawBmp == null) {
+                failedFrameCount++
                 onProgress?.invoke(i + 1, sampleCount)
                 continue
             }
@@ -111,7 +123,7 @@ object VideoPiiRedactionEngine {
                 sampledCount++
 
                 analysisBmp = downsampleForAnalysis(rawBmp, MAX_ANALYSIS_EDGE_PX)
-                val detections = PiiMultiModalDetector.detectAll(
+                val summary = PiiMultiModalDetector.detectAllSummary(
                     context = context,
                     ncnnEngine = piiEngine,
                     bitmap = analysisBmp,
@@ -123,6 +135,10 @@ object VideoPiiRedactionEngine {
                     includeOcrText = includeOcrText
                 )
 
+                failedEnginesAggregate.putAll(summary.failedEngines)
+                successfulEnginesAggregate.addAll(summary.successfulEngines)
+
+                val detections = summary.detections
                 val relTimeSec = ((timestampMs / 1000.0) - relativeOffsetSec).coerceIn(0.0, durationSec)
                 observationsByFrame += relTimeSec to detections
                 for (det in detections) {
@@ -147,13 +163,25 @@ object VideoPiiRedactionEngine {
             sampleStepSec = (stepMs / 1000.0).coerceAtLeast(0.1)
         )
 
+        val wasCancelled = isCancelled()
+        val isScanDegraded = failedEnginesAggregate.isNotEmpty() || (failedFrameCount > 0 && sampledCount == 0)
+        val isSamplingCapped = stepMs > 600.0
+
         return VideoPiiScanResult(
             regions = trackResult.first,
             frameWidth = frameW,
             frameHeight = frameH,
             detectedCounts = counts,
             trackCount = trackResult.second,
-            sampledFrames = sampledCount
+            sampledFrames = sampledCount,
+            attemptedFrames = sampleCount,
+            failedFrameExtractions = failedFrameCount,
+            failedEngines = failedEnginesAggregate,
+            successfulEngines = successfulEnginesAggregate,
+            isScanDegraded = isScanDegraded,
+            isSamplingCapped = isSamplingCapped,
+            actualSampleIntervalMs = kotlin.math.round(stepMs).toLong(),
+            isCancelled = wasCancelled
         )
     }
 
@@ -443,54 +471,93 @@ object VideoPiiRedactionEngine {
 
     /**
      * Converts selected timed bounding boxes into valid inline FFmpeg `-vf` filter strings.
-     * Supports Solid Black, Solid White, Blur (`delogo`), and Pixelate/Mosaic.
+     * Supports Solid Black, Solid White, Gaussian/Box Blur (`avgblur`), and Pixelate/Mosaic.
      */
     fun generateFfmpegRedactionFilters(
         regions: List<TimedPiiRegion>,
         frameW: Int,
         frameH: Int,
-        style: PiiRedactionStyle = PiiRedactionStyle.BLUR,
+        style: PiiRedactionStyle = PiiRedactionStyle.SOLID_BLACK,
         maxFilters: Int = DEFAULT_MAX_FILTERS
     ): String? {
         if (regions.isEmpty() || frameW < 8 || frameH < 8) return null
         val safeBudget = maxFilters.coerceAtLeast(1)
         val bounded = compressToFilterBudget(regions, safeBudget)
-        val filters = bounded.mapNotNull { r ->
-            val rawX = r.rect.left.roundToInt()
-            val rawY = r.rect.top.roundToInt()
-            val rawRight = r.rect.right.roundToInt()
-            val rawBottom = r.rect.bottom.roundToInt()
-            val start = max(0.0, r.startSec)
-            val end = max(start + 0.04, r.endSec)
+        if (bounded.isEmpty()) return null
 
-            when (style) {
-                PiiRedactionStyle.SOLID_BLACK, PiiRedactionStyle.SOLID_WHITE -> {
-                    val x = rawX.coerceIn(0, frameW - 2)
-                    val y = rawY.coerceIn(0, frameH - 2)
-                    val w = (rawRight - x).coerceIn(2, frameW - x)
-                    val h = (rawBottom - y).coerceIn(2, frameH - y)
-                    val colorName = if (style == PiiRedactionStyle.SOLID_WHITE) "white" else "black"
+        return when (style) {
+            PiiRedactionStyle.SOLID_BLACK, PiiRedactionStyle.SOLID_WHITE -> {
+                val colorName = if (style == PiiRedactionStyle.SOLID_WHITE) "white" else "black"
+                val filters = bounded.map { r ->
+                    val x = r.rect.left.roundToInt().coerceIn(0, frameW - 2)
+                    val y = r.rect.top.roundToInt().coerceIn(0, frameH - 2)
+                    val w = (r.rect.right.roundToInt() - x).coerceIn(2, frameW - x)
+                    val h = (r.rect.bottom.roundToInt() - y).coerceIn(2, frameH - y)
+                    val start = max(0.0, r.startSec)
+                    val end = max(start + 0.04, r.endSec)
                     String.format(
                         Locale.US,
                         "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill:enable='between(t,%.2f,%.2f)'",
                         x, y, w, h, colorName, start, end
                     )
                 }
-                PiiRedactionStyle.BLUR, PiiRedactionStyle.PIXELATE -> {
-                    // FFmpeg delogo requires: 1 <= x, 1 <= y, x + w < frameW, y + h < frameH, w >= 4, h >= 4
-                    val x = rawX.coerceIn(1, frameW - 6)
-                    val y = rawY.coerceIn(1, frameH - 6)
-                    val w = (rawRight - x).coerceIn(4, (frameW - 1) - x)
-                    val h = (rawBottom - y).coerceIn(4, (frameH - 1) - y)
-                    String.format(
-                        Locale.US,
-                        "delogo=x=%d:y=%d:w=%d:h=%d:enable='between(t,%.2f,%.2f)'",
-                        x, y, w, h, start, end
-                    )
-                }
+                filters.joinToString(",")
+            }
+            PiiRedactionStyle.BLUR -> {
+                buildComplexRedactionGraph(bounded, frameW, frameH, isPixelate = false)
+            }
+            PiiRedactionStyle.PIXELATE -> {
+                buildComplexRedactionGraph(bounded, frameW, frameH, isPixelate = true)
             }
         }
-        return if (filters.isEmpty()) null else filters.joinToString(",")
+    }
+
+    private fun buildComplexRedactionGraph(
+        regions: List<TimedPiiRegion>,
+        frameW: Int,
+        frameH: Int,
+        isPixelate: Boolean
+    ): String {
+        val sb = StringBuilder()
+        var currentInputPad = "0:v"
+
+        for (i in regions.indices) {
+            val r = regions[i]
+            val x = r.rect.left.roundToInt().coerceIn(0, frameW - 4)
+            val y = r.rect.top.roundToInt().coerceIn(0, frameH - 4)
+            val w = (r.rect.right.roundToInt() - x).coerceIn(4, frameW - x)
+            val h = (r.rect.bottom.roundToInt() - y).coerceIn(4, frameH - y)
+            val start = max(0.0, r.startSec)
+            val end = max(start + 0.04, r.endSec)
+
+            val basePad = "v_b$i"
+            val cropPad = "v_c$i"
+            val procPad = "v_p$i"
+            val outPad = if (i == regions.size - 1) "v_out" else "v_s$i"
+
+            sb.append("[$currentInputPad]split=2[$basePad][$cropPad];")
+
+            if (isPixelate) {
+                val downW = max(2, w / 10)
+                val downH = max(2, h / 10)
+                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y,scale=$downW:$downH:flags=neighbor,scale=$w:$h:flags=neighbor[$procPad];")
+            } else {
+                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y,avgblur=sizeX=16:sizeY=16[$procPad];")
+            }
+
+            sb.append(String.format(
+                Locale.US,
+                "[%s][%s]overlay=x=%d:y=%d:enable='between(t,%.2f,%.2f)'[%s]",
+                basePad, procPad, x, y, start, end, outPad
+            ))
+
+            if (i < regions.size - 1) {
+                sb.append(";")
+            }
+            currentInputPad = outPad
+        }
+
+        return sb.toString()
     }
 
     private fun predictNextRect(track: List<TimedPiiObservation>, dtSec: Double): RectF {

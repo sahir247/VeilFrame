@@ -111,13 +111,45 @@ class PrnuSanitizerEngineTest {
             postSpce = 0.53,
             post6StripMaxSpce = 6.88,
             stripSpces = listOf(-0.07, 0.0, 6.88, 0.36, -1.28, 0.0),
-            verifiedSecure = true
+            verifiedSecure = true,
+            isConclusive = true
         )
         assertTrue(auditResult.verifiedSecure)
+        assertTrue(auditResult.isConclusive)
         assertEquals(6, auditResult.stripSpces.size)
         assertTrue(auditResult.baselineSpce > 50.0)
         assertTrue(kotlin.math.abs(auditResult.postSpce) < 5.0)
         assertTrue(auditResult.post6StripMaxSpce < 8.0)
+    }
+
+    @Test
+    fun testAuditSanitizationInconclusiveOnLowBaselineEnergy() {
+        // A smooth or blank image produces near-zero baseline energy (|sPCE| < 15.0).
+        // It must be marked inconclusive and must NEVER be certified as verifiedSecure.
+        val lowBaselineResult = PrnuSanitizerEngine.SelfAuditResult(
+            baselineSpce = 2.4, // Near zero energy
+            postSpce = 0.1,
+            post6StripMaxSpce = 0.5,
+            stripSpces = listOf(0.1, 0.2, 0.1, 0.5, 0.0, 0.1),
+            verifiedSecure = false,
+            isConclusive = false
+        )
+        assertFalse("Audit with near-zero baseline must not be marked verifiedSecure", lowBaselineResult.verifiedSecure)
+        assertFalse("Audit with near-zero baseline must be marked inconclusive", lowBaselineResult.isConclusive)
+    }
+
+    @Test
+    fun testAuditSanitizationInconclusiveOnNonFiniteValues() {
+        val nanResult = PrnuSanitizerEngine.SelfAuditResult(
+            baselineSpce = Double.NaN,
+            postSpce = 0.0,
+            post6StripMaxSpce = 0.0,
+            stripSpces = emptyList(),
+            verifiedSecure = false,
+            isConclusive = false
+        )
+        assertFalse(nanResult.verifiedSecure)
+        assertFalse(nanResult.isConclusive)
     }
 
     @Test

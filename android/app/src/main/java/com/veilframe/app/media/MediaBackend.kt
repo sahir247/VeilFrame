@@ -52,6 +52,25 @@ interface IMediaBackend {
         sanitizeIcc = true
     )
 
+    fun cleanImageWithDefenseDetailed(
+        inputPath: String,
+        outputPath: String,
+        defenseMode: String = "stealth",
+        stripExif: Boolean = true,
+        quality: Int = 90,
+        targetExtension: String? = null,
+        onMilestone: ((String) -> Unit)? = null
+    ): PrnuSanitizerEngine.PrnuSanitizationResult = PrnuSanitizerEngine.PrnuSanitizationResult(
+        isSuccess = cleanImage(inputPath, outputPath, stripExif, quality, targetExtension),
+        outputFile = File(outputPath).takeIf { it.exists() },
+        neuralStageExecuted = false,
+        geometricStageExecuted = false,
+        isAuditPassed = false,
+        isConclusive = false,
+        measuredPce = 0.0,
+        measuredMaxStrip = 0.0
+    )
+
     fun getBackendDiagnostics(): String
 }
 
@@ -136,9 +155,41 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         targetExtension: String?,
         onMilestone: ((String) -> Unit)?
     ): Boolean {
+        return cleanImageWithDefenseDetailed(
+            inputPath = inputPath,
+            outputPath = outputPath,
+            defenseMode = defenseMode,
+            stripExif = stripExif,
+            quality = quality,
+            targetExtension = targetExtension,
+            onMilestone = onMilestone
+        ).isSuccess
+    }
+
+    override fun cleanImageWithDefenseDetailed(
+        inputPath: String,
+        outputPath: String,
+        defenseMode: String,
+        stripExif: Boolean,
+        quality: Int,
+        targetExtension: String?,
+        onMilestone: ((String) -> Unit)?
+    ): PrnuSanitizerEngine.PrnuSanitizationResult {
         if (!CvRuntime.isNativeAvailable && !CvRuntime.initialize()) {
             Log.w(tag, "CvRuntime native unavailable; falling back to cleanImage")
-            return cleanImage(inputPath, outputPath, stripExif, quality, targetExtension)
+            val ok = cleanImage(inputPath, outputPath, stripExif, quality, targetExtension)
+            val outFile = File(outputPath)
+            return PrnuSanitizerEngine.PrnuSanitizationResult(
+                isSuccess = ok,
+                outputFile = if (ok && outFile.exists()) outFile else null,
+                neuralStageExecuted = false,
+                geometricStageExecuted = false,
+                isAuditPassed = false,
+                isConclusive = false,
+                measuredPce = 0.0,
+                measuredMaxStrip = 0.0,
+                errorMessage = if (!ok) "CvRuntime native unavailable and fallback encoding failed" else null
+            )
         }
         val mode = when (defenseMode.lowercase()) {
             "stealth", "hybrid", "2-stage", "stealth (2-stage hybrid)", "stealth (2-stage)" ->
@@ -156,7 +207,7 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         }
         val inFile = File(inputPath)
         val outFile = File(outputPath)
-        return PrnuSanitizerEngine.sanitizeImageFile(
+        return PrnuSanitizerEngine.sanitizeImageFileDetailed(
             context = context,
             inputFile = inFile,
             outputFile = outFile,

@@ -22,6 +22,15 @@ static ncnn::Net* g_veilnet = nullptr;
 static veilframe::GpuInstanceLease g_veilnet_gpu_lease;
 static bool g_is_gpu = false;
 
+static void cleanup_veilnet_locked() {
+    if (g_veilnet != nullptr) {
+        delete g_veilnet;
+        g_veilnet = nullptr;
+    }
+    g_veilnet_gpu_lease.reset();
+    g_is_gpu = false;
+}
+
 static inline int reflect_coord(int p, int len) {
     if (len <= 1) return 0;
     while (p < 0 || p >= len) {
@@ -44,25 +53,20 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeInit(
     jstring binPath,
     jboolean useGpu
 ) {
+    std::lock_guard<std::mutex> lock(g_veilnet_mutex);
     try {
-        std::lock_guard<std::mutex> lock(g_veilnet_mutex);
-
-        if (g_veilnet != nullptr) {
-            delete g_veilnet;
-            g_veilnet = nullptr;
-            g_veilnet_gpu_lease.reset();
-            g_is_gpu = false;
-        }
+        cleanup_veilnet_locked();
 
         g_veilnet = new ncnn::Net();
 
         if (useGpu) {
             g_veilnet_gpu_lease = veilframe::GpuInstanceLease(true);
-            if (g_veilnet_gpu_lease.is_acquired()) {
+            if (g_veilnet_gpu_lease.is_acquired() && ncnn::get_gpu_count() > 0) {
                 g_veilnet->opt.use_vulkan_compute = true;
                 g_is_gpu = true;
                 LOGI("VeilNet-Nano using Vulkan GPU compute acceleration");
             } else {
+                g_veilnet_gpu_lease.reset();
                 LOGW("Vulkan GPU compute unavailable; falling back to CPU");
                 g_veilnet->opt.use_vulkan_compute = false;
                 g_is_gpu = false;
@@ -86,8 +90,7 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeInit(
 
         if (!pPath || !bPath) {
             LOGE("paramPath or binPath is null");
-            delete g_veilnet;
-            g_veilnet = nullptr;
+            cleanup_veilnet_locked();
             return JNI_FALSE;
         }
 
@@ -98,8 +101,7 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeInit(
             AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
             if (!mgr) {
                 LOGE("Failed to get AAssetManager from Java object");
-                delete g_veilnet;
-                g_veilnet = nullptr;
+                cleanup_veilnet_locked();
                 return JNI_FALSE;
             }
             ret_param = g_veilnet->load_param(mgr, pPath);
@@ -111,8 +113,7 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeInit(
 
         if (ret_param != 0 || ret_bin != 0) {
             LOGE("Failed to load VeilNet-Nano NCNN model: param_ret=%d, bin_ret=%d", ret_param, ret_bin);
-            delete g_veilnet;
-            g_veilnet = nullptr;
+            cleanup_veilnet_locked();
             return JNI_FALSE;
         }
 
@@ -120,17 +121,11 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeInit(
         return JNI_TRUE;
     } catch (const std::exception& e) {
         LOGE("Exception in VeilNet nativeInit: %s", e.what());
-        if (g_veilnet) {
-            delete g_veilnet;
-            g_veilnet = nullptr;
-        }
+        cleanup_veilnet_locked();
         return JNI_FALSE;
     } catch (...) {
         LOGE("Unknown exception in VeilNet nativeInit");
-        if (g_veilnet) {
-            delete g_veilnet;
-            g_veilnet = nullptr;
-        }
+        cleanup_veilnet_locked();
         return JNI_FALSE;
     }
 }
@@ -248,8 +243,9 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativePurifyBitmap(
 
                 ncnn::Mat out;
                 int ret = ex.extract("out0", out);
-                if (ret != 0 || out.empty()) {
-                    LOGE("VeilNet extractor error on tile (%d, %d)", x0, y0);
+                if (ret != 0 || out.empty() || out.c != 3 || out.w != tileW || out.h != tileH) {
+                    LOGE("VeilNet extractor error or invalid output tensor on tile (%d, %d): ret=%d, empty=%d, c=%d, w=%d, h=%d",
+                         x0, y0, ret, out.empty() ? 1 : 0, out.c, out.w, out.h);
                     return JNI_FALSE;
                 }
 
@@ -257,6 +253,10 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativePurifyBitmap(
                 const float* outR = out.channel(0);
                 const float* outG = out.channel(1);
                 const float* outB = out.channel(2);
+                if (!outR || !outG || !outB) {
+                    LOGE("VeilNet output tensor channels are null on tile (%d, %d)", x0, y0);
+                    return JNI_FALSE;
+                }
 
                 for (int cy = 0; cy < coreH; ++cy) {
                     const int ty = cy + hSize;
@@ -299,12 +299,7 @@ Java_com_veilframe_app_cv_prnu_ncnn_VeilNetNanoNative_nativeRelease(
 ) {
     try {
         std::lock_guard<std::mutex> lock(g_veilnet_mutex);
-        if (g_veilnet) {
-            delete g_veilnet;
-            g_veilnet = nullptr;
-        }
-        g_veilnet_gpu_lease.reset();
-        g_is_gpu = false;
+        cleanup_veilnet_locked();
         LOGI("VeilNet-Nano released");
     } catch (...) {
         LOGE("Exception in nativeRelease");

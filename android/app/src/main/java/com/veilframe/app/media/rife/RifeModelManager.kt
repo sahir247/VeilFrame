@@ -149,8 +149,27 @@ class RifeModelManager(private val context: Context) {
 
     /**
      * Strict trust boundary check immediately before native inference.
+     * Computes fresh SHA-256 digests directly from disk to prevent same-metadata cache bypass.
      */
-    fun verifyModelIntegrity(spec: RifeModelSpec): Boolean {
+    fun verifyModelIntegrity(spec: RifeModelSpec, forceFreshDigest: Boolean = true): Boolean {
+        val dir = getModelDir(spec)
+        val p = File(dir, "flownet.param")
+        val b = File(dir, "flownet.bin")
+        if (!p.exists() || !b.exists() || !p.isFile || !b.isFile) return false
+        if (p.length() < 500L || p.length() > spec.maxParamBytes) return false
+        if (b.length() < 4_000_000L || b.length() > spec.maxBinBytes) return false
+
+        if (forceFreshDigest) {
+            val pHash = computeFileSha256(p) ?: return false
+            val bHash = computeFileSha256(b) ?: return false
+            val ok = pHash.equals(spec.paramSha256, ignoreCase = true) &&
+                    bHash.equals(spec.binSha256, ignoreCase = true)
+            if (ok) {
+                verifiedChecksumCache[FileValidationKey(p.absolutePath, p.lastModified(), p.length())] = true
+                verifiedChecksumCache[FileValidationKey(b.absolutePath, b.lastModified(), b.length())] = true
+            }
+            return ok
+        }
         return isModelDownloaded(spec, verifyChecksums = true)
     }
 

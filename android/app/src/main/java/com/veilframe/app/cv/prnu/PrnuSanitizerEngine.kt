@@ -72,6 +72,7 @@ object PrnuSanitizerEngine {
         val isAuditPassed: Boolean,
         val measuredPce: Double,
         val measuredMaxStrip: Double,
+        val isConclusive: Boolean = true,
         val errorMessage: String? = null
     )
 
@@ -272,13 +273,38 @@ object PrnuSanitizerEngine {
                 } else false
             } catch (_: Throwable) { false }
 
-            val auditTargetMat = if (readOk && !exportedMat.empty()) exportedMat else remappedMat
-            val auditResult = auditSanitization(originalMat, auditTargetMat)
+            val isExportCreated = outputFile.exists() && outputFile.length() > 0L
+
+            if (!readOk || exportedMat.empty()) {
+                Log.w(TAG, "Exported image could not be decoded from disk: ${outputFile.absolutePath}")
+                onMilestone?.invoke("[PRNU] Export verification unavailable: artifact could not be decoded from disk.")
+                return PrnuSanitizationResult(
+                    isSuccess = isExportCreated,
+                    outputFile = if (isExportCreated) outputFile else null,
+                    neuralStageExecuted = neuralStageExecuted,
+                    geometricStageExecuted = true,
+                    isAuditPassed = false,
+                    isConclusive = false,
+                    measuredPce = 0.0,
+                    measuredMaxStrip = 0.0,
+                    errorMessage = if (!isExportCreated) "Output file was not created" else "Exported artifact could not be decoded for audit verification"
+                )
+            }
+
+            val auditResult = auditSanitization(originalMat, exportedMat)
             if (auditResult.verifiedSecure) {
                 onMilestone?.invoke(
-                    "[PRNU] Empirical verification: |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). Sensor correlation attenuated below detection threshold.".format(
+                    "[PRNU] Empirical verification: baseline |sPCE| = %.2f, post |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). Sensor correlation attenuated below detection threshold.".format(
+                        auditResult.baselineSpce,
                         kotlin.math.abs(auditResult.postSpce),
                         auditResult.post6StripMaxSpce
+                    )
+                )
+            } else if (!auditResult.isConclusive) {
+                Log.w(TAG, "PRNU audit inconclusive: baselineSpce=${auditResult.baselineSpce} (< 15.0)")
+                onMilestone?.invoke(
+                    "[PRNU] Audit inconclusive: baseline signal (%.2f) too smooth or low-energy for sensor fingerprint verification.".format(
+                        auditResult.baselineSpce
                     )
                 )
             } else {
@@ -291,13 +317,13 @@ object PrnuSanitizerEngine {
                 )
             }
 
-            val isSuccess = outputFile.exists() && outputFile.length() > 0L
             return PrnuSanitizationResult(
-                isSuccess = isSuccess,
-                outputFile = if (isSuccess) outputFile else null,
+                isSuccess = isExportCreated,
+                outputFile = if (isExportCreated) outputFile else null,
                 neuralStageExecuted = neuralStageExecuted,
                 geometricStageExecuted = true,
                 isAuditPassed = auditResult.verifiedSecure,
+                isConclusive = auditResult.isConclusive,
                 measuredPce = auditResult.postSpce,
                 measuredMaxStrip = auditResult.post6StripMaxSpce,
                 errorMessage = null
@@ -672,7 +698,8 @@ object PrnuSanitizerEngine {
         val postSpce: Double,
         val post6StripMaxSpce: Double,
         val stripSpces: List<Double>,
-        val verifiedSecure: Boolean
+        val verifiedSecure: Boolean,
+        val isConclusive: Boolean = true
     )
 
     /**
@@ -729,14 +756,23 @@ object PrnuSanitizerEngine {
             }
 
             val maxStripSpce = stripSpces.maxOfOrNull { kotlin.math.abs(it) } ?: 0.0
-            val verifiedSecure = kotlin.math.abs(postSpce) < 5.0 && maxStripSpce < 8.0
+
+            // Baseline signal validity: require measurable high-pass PRNU energy (sPCE >= 15.0)
+            // and finite numerical values. Smooth or synthetic images without PRNU baseline cannot claim verified security.
+            val isConclusive = baselineSpce.isFinite() &&
+                    postSpce.isFinite() &&
+                    maxStripSpce.isFinite() &&
+                    baselineSpce >= 15.0
+
+            val verifiedSecure = isConclusive && kotlin.math.abs(postSpce) < 5.0 && maxStripSpce < 8.0
 
             return SelfAuditResult(
                 baselineSpce = baselineSpce,
                 postSpce = postSpce,
                 post6StripMaxSpce = maxStripSpce,
                 stripSpces = stripSpces,
-                verifiedSecure = verifiedSecure
+                verifiedSecure = verifiedSecure,
+                isConclusive = isConclusive
             )
         } finally {
             mats.forEach {

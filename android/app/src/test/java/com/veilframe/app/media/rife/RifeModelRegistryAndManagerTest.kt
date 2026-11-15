@@ -143,4 +143,25 @@ class RifeModelRegistryAndManagerTest {
         modelDir.delete()
         RifeModelManager.invalidateChecksumCache()
     }
+
+    @Test
+    fun testFreshDigestRejectsSameMetadataTampering() {
+        val manager = RifeModelManager(context)
+        val model = RifeModelRegistry.RIFE_V4_26
+        val modelDir = File(context.filesDir, "models/${model.id}").apply { mkdirs() }
+        val paramF = File(modelDir, "flownet.param")
+        val binF = File(modelDir, "flownet.bin")
+
+        // Write files with exact same length but tampered bytes
+        paramF.writeBytes(ByteArray(2000) { 0x12.toByte() })
+        binF.writeBytes(ByteArray(5_000_000) { 0x34.toByte() })
+
+        // Direct fresh digest check must fail
+        assertFalse("Fresh digest verification must reject tampered param/bin", manager.verifyModelIntegrity(model, forceFreshDigest = true))
+
+        paramF.delete()
+        binF.delete()
+        modelDir.delete()
+        RifeModelManager.invalidateChecksumCache()
+    }
 }

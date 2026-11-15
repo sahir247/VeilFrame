@@ -73,10 +73,11 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
         net->opt.workspace_allocator = &g_matting_workspace_allocator;
 
         veilframe::GpuInstanceLease local_lease;
-        if (useGpu && ncnn::get_gpu_count() > 0) {
-            if (local_lease.acquire()) {
+        if (useGpu) {
+            if (local_lease.acquire() && ncnn::get_gpu_count() > 0) {
                 net->opt.use_vulkan_compute = true;
             } else {
+                local_lease.reset();
                 net->opt.use_vulkan_compute = false;
             }
         } else {

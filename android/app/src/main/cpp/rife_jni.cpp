@@ -22,6 +22,7 @@ static RIFE* g_rife = nullptr;
 static int g_rife_gpuid = -1;
 static veilframe::GpuInstanceLease g_rife_gpu_lease;
 static std::string g_rife_model_dir;
+static int g_rife_padding = 32;
 
 // Cached global references for zero reflection overhead per frame
 static jclass g_bitmapClass = nullptr;
@@ -98,12 +99,14 @@ static jboolean do_rife_native_init(
 
         // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4, padding
         int init_padding = padding > 0 ? padding : 32;
+        g_rife_padding = init_padding;
         g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding);
 
         int ret = g_rife->load(dir_str);
         if (ret != 0 && g_rife_gpuid >= 0) {
             LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
             delete g_rife;
+            g_rife = nullptr;
             g_rife_gpuid = -1;
             local_gpu_lease.reset();
             g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding);
@@ -294,13 +297,28 @@ Java_com_veilframe_app_media_rife_RifeNcnnNative_nativeInterpolate(
         if (ret != 0 && g_rife_gpuid >= 0 && !g_rife_model_dir.empty()) {
             LOGI("RIFE GPU process failed (%d), dynamically recovering via CPU OpenMP", ret);
             delete g_rife;
+            g_rife = nullptr;
             g_rife_gpuid = -1;
             g_rife_gpu_lease.reset();
             int cpu_threads = std::max(2, ncnn::get_big_cpu_count());
             if (cpu_threads > 4) cpu_threads = 4;
-            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true);
-            if (g_rife->load(g_rife_model_dir) == 0) {
-                ret = g_rife->process(in0, in1, timestep, outimage);
+            try {
+                g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true, g_rife_padding);
+                if (g_rife->load(g_rife_model_dir) == 0) {
+                    ret = g_rife->process(in0, in1, timestep, outimage);
+                } else {
+                    LOGE("Failed to reload RIFE model on CPU fallback");
+                    delete g_rife;
+                    g_rife = nullptr;
+                }
+            } catch (const std::exception& e) {
+                LOGE("Exception in RIFE CPU fallback: %s", e.what());
+                delete g_rife;
+                g_rife = nullptr;
+            } catch (...) {
+                LOGE("Unknown exception in RIFE CPU fallback");
+                delete g_rife;
+                g_rife = nullptr;
             }
         }
 

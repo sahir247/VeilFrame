@@ -524,16 +524,15 @@ class PiiNcnnEngineTest {
         assertEquals(0.0, merged[0].startSec, 0.001)
         assertEquals(2.0, merged[0].endSec, 0.001)
 
-        val delogoChain = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+        val blurChain = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
             regions = merged,
             frameW = 1920,
             frameH = 1080,
             style = PiiRedactionStyle.BLUR
         )
-        assertNotNull(delogoChain)
-        assertTrue(delogoChain!!.contains("delogo=x="))
-        // Clamped strictly inside 1920x1080 bounds for full-frame delogo
-        assertTrue(delogoChain.contains("delogo=x=1:y=1:w=1918:h=1078"))
+        assertNotNull(blurChain)
+        assertTrue(blurChain!!.contains("avgblur=sizeX=16:sizeY=16"))
+        assertTrue(blurChain.contains("crop=w=1920:h=1080:x=0:y=0"))
 
         val drawboxChain = com.veilframe.app.cv.motion.VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
             regions = merged,

@@ -516,7 +516,7 @@ class ToolExecutionController(
 
                 val ok = withContext(Dispatchers.IO) {
                     if (effectiveDefense != "metadata") {
-                        backend.cleanImageWithDefense(
+                        val res = backend.cleanImageWithDefenseDetailed(
                             inputFile.absolutePath,
                             outputFile.absolutePath,
                             defenseMode = effectiveDefense,
@@ -527,6 +527,16 @@ class ToolExecutionController(
                                 activity.runOnUiThread { onLog(milestone) }
                             }
                         )
+                        if (!res.isAuditPassed && res.isSuccess) {
+                            activity.runOnUiThread {
+                                if (!res.isConclusive) {
+                                    onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
+                                } else {
+                                    onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                                }
+                            }
+                        }
+                        res.isSuccess
                     } else {
                         backend.cleanImage(
                             inputFile.absolutePath,
@@ -627,7 +637,7 @@ class ToolExecutionController(
 
             val processed = withContext(Dispatchers.IO) {
                 if (effectiveDefense != "metadata") {
-                    backend.cleanImageWithDefense(
+                    val res = backend.cleanImageWithDefenseDetailed(
                         tempInput.absolutePath,
                         outputFile.absolutePath,
                         defenseMode = effectiveDefense,
@@ -638,6 +648,16 @@ class ToolExecutionController(
                             activity.runOnUiThread { onLog(milestone) }
                         }
                     )
+                    if (!res.isAuditPassed && res.isSuccess) {
+                        activity.runOnUiThread {
+                            if (!res.isConclusive) {
+                                onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
+                            } else {
+                                onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                            }
+                        }
+                    }
+                    res.isSuccess
                 } else {
                     backend.cleanImage(
                         tempInput.absolutePath,

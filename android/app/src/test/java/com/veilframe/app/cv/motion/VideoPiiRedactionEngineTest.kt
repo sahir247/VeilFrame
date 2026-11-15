@@ -19,7 +19,7 @@ import org.robolectric.RobolectricTestRunner
  * 2. Transient detector gap bridging across short frame dropouts.
  * 3. Stationary track coalescing to keep FFmpeg filter graphs compact.
  * 4. Budget compression without silently dropping late-video PII detections.
- * 5. FFmpeg drawbox/delogo parameter clamping and multi-class PII isolation.
+ * 5. FFmpeg drawbox/avgblur/pixelate parameter clamping and multi-class PII isolation.
  */
 @RunWith(RobolectricTestRunner::class)
 class VideoPiiRedactionEngineTest {
@@ -141,7 +141,7 @@ class VideoPiiRedactionEngineTest {
 
     @Test
     fun testGenerateFfmpegRedactionFiltersBoundsClampingAndStyles() {
-        // Edge-touching box near frame border to exercise delogo 1px inset & drawbox bounds
+        // Edge-touching box near frame border to exercise padding, clipping & bounds
         val edgeRegion = TimedPiiRegion(
             startSec = 0.0,
             endSec = 2.5,
@@ -157,8 +157,19 @@ class VideoPiiRedactionEngineTest {
             style = PiiRedactionStyle.BLUR
         )
         assertNotNull(blurFilter)
-        assertTrue(blurFilter!!.startsWith("delogo=x=1:y=1:w=1918:h=1078"))
-        assertTrue(blurFilter.contains("enable='between(t,0.00,2.50)'"))
+        assertTrue("Blur filter must use genuine avgblur rather than delogo: $blurFilter", blurFilter!!.contains("avgblur=sizeX=16:sizeY=16"))
+        assertTrue("Blur filter must crop bounded region: $blurFilter", blurFilter.contains("crop=w=1920:h=1080:x=0:y=0"))
+        assertTrue("Blur filter must overlay with temporal enable: $blurFilter", blurFilter.contains("enable='between(t,0.00,2.50)'"))
+
+        val pixelateFilter = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+            regions = listOf(edgeRegion),
+            frameW = 1920,
+            frameH = 1080,
+            style = PiiRedactionStyle.PIXELATE
+        )
+        assertNotNull(pixelateFilter)
+        assertTrue("Pixelate filter must use nearest-neighbor down/up scale mosaic: $pixelateFilter", pixelateFilter!!.contains("flags=neighbor"))
+        assertTrue("Pixelate filter must overlay with temporal enable: $pixelateFilter", pixelateFilter.contains("enable='between(t,0.00,2.50)'"))
 
         val blackFilter = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
             regions = listOf(edgeRegion),
@@ -167,6 +178,7 @@ class VideoPiiRedactionEngineTest {
             style = PiiRedactionStyle.SOLID_BLACK
         )
         assertTrue(blackFilter!!.startsWith("drawbox=x=0:y=0:w=1920:h=1080:color=black:t=fill"))
+        assertTrue(blackFilter.contains("enable='between(t,0.00,2.50)'"))
 
         val whiteFilter = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
             regions = listOf(edgeRegion),

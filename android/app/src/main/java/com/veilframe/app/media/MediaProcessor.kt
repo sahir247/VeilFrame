@@ -599,6 +599,7 @@ object VideoProcessor {
             d
         } catch (_: Throwable) { 1000L }
 
+        val isComplex = filterChain.contains("[") && filterChain.contains("]")
         val cmd = mutableListOf<String>().apply {
             add("-y")
             add("-nostdin")
@@ -606,7 +607,13 @@ object VideoProcessor {
             add("-i"); add(srcFile.absolutePath)
             add("-map_metadata"); add("-1")
             add("-map_chapters"); add("-1")
-            add("-vf"); add(filterChain)
+            if (isComplex) {
+                add("-filter_complex"); add(filterChain)
+                add("-map"); add("[v_out]")
+                add("-map"); add("0:a?")
+            } else {
+                add("-vf"); add(filterChain)
+            }
             add("-c:v"); add("libx264")
             add("-preset"); add("fast")
             add("-crf"); add("18")
