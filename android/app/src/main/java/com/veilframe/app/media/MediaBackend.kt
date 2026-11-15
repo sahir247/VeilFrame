@@ -24,6 +24,22 @@ interface IMediaBackend {
         reencodeBitstream: Boolean = false
     ): Boolean
 
+    fun cleanVideoDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        val ok = cleanVideo(inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream)
+        return com.veilframe.app.privacy.VideoSanitizationResult(
+            if (ok) com.veilframe.app.privacy.VideoSanitizationStatus.FULL_SANITIZATION
+            else com.veilframe.app.privacy.VideoSanitizationStatus.FAILED
+        )
+    }
+
     fun cleanImage(
         inputPath: String,
         outputPath: String,
@@ -115,6 +131,20 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
             crf = crf,
             stripExif = stripExif,
             reencodeBitstream = reencodeBitstream
+        )
+    }
+
+    override fun cleanVideoDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String,
+        scrubAudio: Boolean,
+        crf: Int?,
+        stripExif: Boolean,
+        reencodeBitstream: Boolean
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        return VideoMetadataSanitizer.cleanVideoDetailed(
+            inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream
         )
     }
 
