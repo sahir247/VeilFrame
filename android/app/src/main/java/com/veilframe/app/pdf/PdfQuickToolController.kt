@@ -2066,7 +2066,6 @@ class PdfQuickToolController(
             setPadding(dp(20), dp(8), dp(20), dp(8))
         }
         val valueReaders = linkedMapOf<String, () -> com.veilframe.app.pdf.operations.FieldValue>()
-        val fieldLabels = mutableListOf<String>()
 
         for (field in analysis.fields) {
             val label = android.widget.TextView(activity).apply {
@@ -2119,7 +2118,7 @@ class PdfQuickToolController(
                                 isEnabled = !field.isReadOnly
                                 isChecked = option == field.selectedOption
                                 tag = option
-                            }.also(group::addView)
+                            }.also { radioButton -> group.addView(radioButton) }
                         }
                         container.addView(group)
                         if (!field.isReadOnly) valueReaders[field.name] = {
@@ -2170,7 +2169,6 @@ class PdfQuickToolController(
                     })
                 }
             }
-            fieldLabels.add(field.name)
         }
 
         val flatten = android.widget.CheckBox(activity).apply {
