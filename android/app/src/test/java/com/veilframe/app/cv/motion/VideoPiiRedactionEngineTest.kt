@@ -25,6 +25,57 @@ import org.robolectric.RobolectricTestRunner
 class VideoPiiRedactionEngineTest {
 
     @Test
+    fun testAnyFrameOrDetectorFailureMakesScanIncomplete() {
+        assertTrue(
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 119,
+                failedFrameExtractions = 1,
+                failedEngines = emptyMap(),
+                cancelled = false
+            )
+        )
+        assertTrue(
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 120,
+                failedFrameExtractions = 0,
+                failedEngines = mapOf("OCR" to "timeout"),
+                cancelled = false
+            )
+        )
+        assertTrue(
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 20,
+                failedFrameExtractions = 0,
+                failedEngines = emptyMap(),
+                cancelled = true
+            )
+        )
+        assertFalse(
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 120,
+                failedFrameExtractions = 0,
+                failedEngines = emptyMap(),
+                cancelled = false
+            )
+        )
+        assertTrue(
+            "A frame-cap-limited long-video scan is incomplete even when all sampled frames succeed",
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 120,
+                failedFrameExtractions = 0,
+                failedEngines = emptyMap(),
+                cancelled = false,
+                samplingCapped = true
+            )
+        )
+    }
+
+    @Test
     fun testMovingTargetSubdividesWithSweptCoverage() {
         // Face moves rapidly from x=100..220 at t=0.0s to x=900..1020 at t=1.2s
         val frames = listOf(

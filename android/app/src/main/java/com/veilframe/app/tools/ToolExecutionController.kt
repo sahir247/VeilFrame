@@ -529,11 +529,16 @@ class ToolExecutionController(
                         )
                         if (!res.isAuditPassed && res.isSuccess) {
                             activity.runOnUiThread {
-                                if (!res.isConclusive) {
-                                    onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
+                                val heuristic = if (res.residualHeuristicPassed) {
+                                    " Single-image residual heuristic crossed its threshold."
                                 } else {
-                                    onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                                    " Single-image residual heuristic did not establish suppression."
                                 }
+                                onLog(
+                                    "[PRNU] Output file was created, but camera PRNU removal was NOT verified: no independent multi-image camera reference is used." +
+                                        heuristic +
+                                        " Residual sPCE=${res.measuredPce}; max strip=${res.measuredMaxStrip}."
+                                )
                             }
                         }
                         res.isSuccess
@@ -686,9 +691,10 @@ class ToolExecutionController(
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • PRNU & Metadata Purified"
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Image processed; camera PRNU not independently verified"
 
-                    onLog("[OK] Image purified successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[OK] Image processing completed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[PRNU] Camera sensor fingerprint removal was not independently verified.")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true

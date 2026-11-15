@@ -2631,13 +2631,19 @@ class VideoStudioController(
                     scanProgressDialog.dismiss()
                     if (activeGeneration != gen) return@withContext
 
+                    if (scanResult.isCancelled) {
+                        Toast.makeText(activity, "Video PII scan cancelled. Results are incomplete; existing redactions were kept.", Toast.LENGTH_LONG).show()
+                        return@withContext
+                    }
+
                     if (scanResult.regions.isEmpty()) {
                         if (scanResult.isScanDegraded) {
                             val failedList = if (scanResult.failedEngines.isNotEmpty()) {
                                 " (${scanResult.failedEngines.keys.joinToString(", ")})"
                             } else ""
                             val decodeInfo = if (scanResult.failedFrameExtractions > 0) " (${scanResult.failedFrameExtractions} frames failed decode)" else ""
-                            Toast.makeText(activity, "Video PII scan degraded$failedList$decodeInfo. 0 targets confirmed.", Toast.LENGTH_LONG).show()
+                            val samplingInfo = if (scanResult.isSamplingCapped) " (sparse sampling: ~${scanResult.actualSampleIntervalMs} ms interval)" else ""
+                            Toast.makeText(activity, "Video PII scan incomplete$failedList$decodeInfo$samplingInfo. 0 targets confirmed; existing redactions were kept.", Toast.LENGTH_LONG).show()
                         } else if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
                             editState.piiRedactionFilter = null
                             editState.piiRedactionSummary = ""
@@ -2666,10 +2672,27 @@ class VideoStudioController(
                         )
                     }
 
+                    val scanCaveats = buildList {
+                        if (scanResult.isScanDegraded) {
+                            add("INCOMPLETE SCAN")
+                            if (scanResult.failedFrameExtractions > 0) add("${scanResult.failedFrameExtractions} frame decode failures")
+                            if (scanResult.failedEngines.isNotEmpty()) add("detectors unavailable: ${scanResult.failedEngines.keys.joinToString(", ")}")
+                        }
+                        if (scanResult.isSamplingCapped) {
+                            add("sparse sampling: ~${scanResult.actualSampleIntervalMs} ms between keyframes")
+                        }
+                    }
+                    val scanSubtitle = buildString {
+                        append("Scanned ${scanResult.sampledFrames}/${scanResult.attemptedFrames} keyframes. ")
+                        append("Short-lived PII between sampled frames may be missed. ")
+                        append("Select detected targets to redact.")
+                        if (scanCaveats.isNotEmpty()) append(" WARNING: ${scanCaveats.joinToString("; ")}.")
+                    }
+
                     PiiRedactionDialog.showItemSelectionDialog(
                         context = activity,
                         title = "Detected Video PII (${scanResult.trackCount} tracks)",
-                        subtitle = "Scanned ${scanResult.sampledFrames} keyframes. Select sensitive targets to redact from preview & video.",
+                        subtitle = scanSubtitle,
                         items = items,
                         availableStyles = listOf(
                             PiiRedactionStyle.SOLID_BLACK,

@@ -58,9 +58,10 @@ data class VideoPiiScanResult(
  * Tracked temporal multi-modal PII scanner & FFmpeg filter builder.
  *
  * Leverages [PiiMultiModalDetector] ([PiiNcnnEngine] UltraFace + YOLOv8n, WeChatQR + ML Kit barcodes,
- * and ML Kit OCR + `PiiTextClassifier`) across dense adaptive keyframes, associates moving detections
- * into motion-aware tracks, bridges transient detector dropouts linearly, and emits swept bounding-box
- * intervals so moving PII targets stay continuously masked throughout the video without dropping late intervals.
+ * and ML Kit OCR + `PiiTextClassifier`) across bounded, uniformly spaced keyframes, associates moving
+ * detections into motion-aware tracks, bridges short detector dropouts, and emits swept bounding-box
+ * intervals to protect targets between observed keyframes. Sampling is not exhaustive: the 120-frame
+ * ceiling can leave long gaps, so capped scans are explicitly marked incomplete.
  */
 object VideoPiiRedactionEngine {
 
@@ -164,8 +165,20 @@ object VideoPiiRedactionEngine {
         )
 
         val wasCancelled = isCancelled()
-        val isScanDegraded = failedEnginesAggregate.isNotEmpty() || (failedFrameCount > 0 && sampledCount == 0)
-        val isSamplingCapped = stepMs > 600.0
+        // The 120-frame ceiling expands the interval on longer clips. A capped scan is
+        // incomplete coverage even when all sampled frames and detectors succeeded.
+        val isSamplingCapped = sampleCount == MAX_SAMPLE_FRAMES &&
+                spanMs > TARGET_SAMPLE_STEP_MS * (MAX_SAMPLE_FRAMES - 1)
+        // Any missing frame, detector failure, cancellation, or capped sampling makes the
+        // result partial. A partial scan must never clear prior redactions or imply "clean".
+        val isScanDegraded = isScanIncomplete(
+            attemptedFrames = sampleCount,
+            sampledFrames = sampledCount,
+            failedFrameExtractions = failedFrameCount,
+            failedEngines = failedEnginesAggregate,
+            cancelled = wasCancelled,
+            samplingCapped = isSamplingCapped
+        )
 
         return VideoPiiScanResult(
             regions = trackResult.first,
@@ -184,6 +197,24 @@ object VideoPiiRedactionEngine {
             isCancelled = wasCancelled
         )
     }
+
+    /**
+     * A scan is incomplete if any requested frame was unavailable, any detector failed,
+     * or cancellation stopped the requested pass. This is intentionally conservative:
+     * partial negative results must never be treated as a clean scan.
+     */
+    internal fun isScanIncomplete(
+        attemptedFrames: Int,
+        sampledFrames: Int,
+        failedFrameExtractions: Int,
+        failedEngines: Map<String, String>,
+        cancelled: Boolean,
+        samplingCapped: Boolean = false
+    ): Boolean = cancelled ||
+            samplingCapped ||
+            failedFrameExtractions > 0 ||
+            failedEngines.isNotEmpty() ||
+            sampledFrames < attemptedFrames
 
     /**
      * Associates multi-frame detections into continuous identity tracks, linearly bridges

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <memory>
 
 #define TAG "VeilFrame.RifeNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -34,6 +35,18 @@ static std::vector<unsigned char> g_rgb0;
 static std::vector<unsigned char> g_rgb1;
 static std::vector<unsigned char> g_rgb_out;
 
+static void clear_rife_bitmap_refs(JNIEnv* env) {
+    if (g_bitmapClass) {
+        env->DeleteGlobalRef(g_bitmapClass);
+        g_bitmapClass = nullptr;
+    }
+    g_createBitmapMethod = nullptr;
+    if (g_argbConfig) {
+        env->DeleteGlobalRef(g_argbConfig);
+        g_argbConfig = nullptr;
+    }
+}
+
 static jboolean do_rife_native_init(
     JNIEnv* env,
     jstring modelDir,
@@ -48,6 +61,8 @@ static jboolean do_rife_native_init(
             g_rife = nullptr;
         }
         g_rife_gpu_lease.reset();
+        g_rife_gpuid = -1;
+        g_rife_model_dir.clear();
 
         if (!modelDir) {
             LOGE("RIFE modelDir is null");
@@ -100,64 +115,113 @@ static jboolean do_rife_native_init(
         // Construct RIFE v4 instance: gpuid, tta, tta_temporal, uhd, num_threads, rife_v2, rife_v4, padding
         int init_padding = padding > 0 ? padding : 32;
         g_rife_padding = init_padding;
-        g_rife = new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding);
+        // Keep the candidate private until both model loading and JNI setup succeed.
+        // If any constructor/load/JNI operation throws, unique_ptr releases it and the
+        // globally visible engine remains null rather than partially initialized.
+        std::unique_ptr<RIFE> candidate(
+            new RIFE(g_rife_gpuid, false, false, false, cpu_threads, false, true, init_padding)
+        );
 
-        int ret = g_rife->load(dir_str);
+        int ret = candidate->load(dir_str);
         if (ret != 0 && g_rife_gpuid >= 0) {
             LOGI("RIFE GPU load failed (ret=%d), falling back to CPU OpenMP (%d threads)", ret, cpu_threads);
-            delete g_rife;
-            g_rife = nullptr;
+            candidate.reset();
             g_rife_gpuid = -1;
             local_gpu_lease.reset();
-            g_rife = new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding);
-            ret = g_rife->load(dir_str);
+            candidate.reset(new RIFE(-1, false, false, false, cpu_threads, false, true, init_padding));
+            ret = candidate->load(dir_str);
         }
         if (ret != 0) {
             LOGE("Failed to load RIFE v4 model from %s (ret=%d)", dir_str.c_str(), ret);
-            delete g_rife;
-            g_rife = nullptr;
+            candidate.reset();
+            g_rife_gpuid = -1;
             local_gpu_lease.reset();
             return JNI_FALSE;
         }
 
+        // Cache JNI reflection targets globally. Never issue another JNI lookup while
+        // an exception is pending, and do not publish the RIFE instance on partial setup.
+        if (!g_bitmapClass) {
+            jclass localBitmapClass = env->FindClass("android/graphics/Bitmap");
+            if (localBitmapClass) {
+                g_bitmapClass = static_cast<jclass>(env->NewGlobalRef(localBitmapClass));
+                env->DeleteLocalRef(localBitmapClass);
+            }
+        }
+        if (!env->ExceptionCheck() && g_bitmapClass && !g_createBitmapMethod) {
+            g_createBitmapMethod = env->GetStaticMethodID(
+                g_bitmapClass, "createBitmap",
+                "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
+            );
+        }
+        if (env->ExceptionCheck()) {
+            LOGE("Failed to resolve Bitmap.createBitmap JNI method");
+            env->ExceptionClear();
+            clear_rife_bitmap_refs(env);
+            candidate.reset();
+            g_rife_gpuid = -1;
+            local_gpu_lease.reset();
+            return JNI_FALSE;
+        }
+
+        if (!g_argbConfig) {
+            jclass localConfigClass = env->FindClass("android/graphics/Bitmap$Config");
+            if (localConfigClass) {
+                jfieldID argbField = env->GetStaticFieldID(
+                    localConfigClass, "ARGB_8888",
+                    "Landroid/graphics/Bitmap$Config;"
+                );
+                if (!env->ExceptionCheck() && argbField) {
+                    jobject localConfig = env->GetStaticObjectField(localConfigClass, argbField);
+                    if (localConfig) {
+                        g_argbConfig = env->NewGlobalRef(localConfig);
+                        env->DeleteLocalRef(localConfig);
+                    }
+                }
+                env->DeleteLocalRef(localConfigClass);
+            }
+        }
+
+        if (env->ExceptionCheck() || !g_bitmapClass || !g_createBitmapMethod || !g_argbConfig) {
+            LOGE("Failed to initialize required Bitmap JNI references");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            clear_rife_bitmap_refs(env);
+            candidate.reset();
+            g_rife_gpuid = -1;
+            local_gpu_lease.reset();
+            return JNI_FALSE;
+        }
+
+        const int loadedPadding = candidate->get_padding();
+        // Transfer the lease while candidate still owns the model. If lease transfer fails,
+        // stack unwinding destroys candidate and the engine is never published globally.
         if (g_rife_gpuid >= 0) {
             g_rife_gpu_lease = std::move(local_gpu_lease);
         }
-
-        // Cache JNI reflection targets globally
-        if (!g_bitmapClass) {
-            jclass bCls = env->FindClass("android/graphics/Bitmap");
-            if (bCls) {
-                g_bitmapClass = (jclass)env->NewGlobalRef(bCls);
-                g_createBitmapMethod = env->GetStaticMethodID(
-                    g_bitmapClass, "createBitmap",
-                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;"
-                );
-            }
-        }
-        if (!g_argbConfig) {
-            jclass cCls = env->FindClass("android/graphics/Bitmap$Config");
-            if (cCls) {
-                jfieldID argbField = env->GetStaticFieldID(cCls, "ARGB_8888", "Landroid/graphics/Bitmap$Config;");
-                if (argbField) {
-                    jobject cfg = env->GetStaticObjectField(cCls, argbField);
-                    if (cfg) {
-                        g_argbConfig = env->NewGlobalRef(cfg);
-                    }
-                }
-            }
-        }
+        g_rife = candidate.release();
 
         LOGI("RIFE v4 engine initialized successfully (GPU: %d, threads: %d, padding: %d)",
-             g_rife_gpuid, cpu_threads, g_rife->get_padding());
+             g_rife_gpuid, cpu_threads, loadedPadding);
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Out of memory in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (const std::exception& e) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Exception in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (...) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Unknown exception in RIFE nativeInit");
         return JNI_FALSE;
     }
