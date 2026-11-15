@@ -62,6 +62,17 @@ class VideoPiiRedactionEngineTest {
                 cancelled = false
             )
         )
+        assertTrue(
+            "A frame-cap-limited long-video scan is incomplete even when all sampled frames succeed",
+            VideoPiiRedactionEngine.isScanIncomplete(
+                attemptedFrames = 120,
+                sampledFrames = 120,
+                failedFrameExtractions = 0,
+                failedEngines = emptyMap(),
+                cancelled = false,
+                samplingCapped = true
+            )
+        )
     }
 
     @Test
