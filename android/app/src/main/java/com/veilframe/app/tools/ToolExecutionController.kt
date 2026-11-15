@@ -287,6 +287,7 @@ class ToolExecutionController(
             }
 
             var successCount = 0
+            var metadataOnlyFallbackCount = 0
             candidateFiles.forEachIndexed { idx, inputFile ->
                 val targetExt = when (formatIndex) {
                     1 -> "mp4"
@@ -309,7 +310,7 @@ class ToolExecutionController(
                 }
 
                 val ok = withContext(Dispatchers.IO) {
-                    backend.cleanVideo(
+                    backend.cleanVideoDetailed(
                         inputFile.absolutePath,
                         outputFile.absolutePath,
                         noiseLevel = noiseLevel,
@@ -319,8 +320,11 @@ class ToolExecutionController(
                         reencodeBitstream = reencodeBitstream
                     )
                 }
-                if (ok && outputFile.exists() && outputFile.length() > 0) {
+                if (ok.isSuccess && outputFile.exists() && outputFile.length() > 0) {
                     successCount++
+                    if (ok.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) {
+                        metadataOnlyFallbackCount++
+                    }
                 }
             }
 
@@ -361,9 +365,9 @@ class ToolExecutionController(
 
                 binding.cardResultSummary.visibility = View.VISIBLE
                 binding.tvResultTitle.text = finalFile.name
-                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos sanitized"
+                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos processed; $metadataOnlyFallbackCount metadata-only fallback(s)"
 
-                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos sanitized successfully.")
+                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos processed; $metadataOnlyFallbackCount used metadata-only fallback (no temporal noise filter).")
                 onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
                 sessionManager.updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
@@ -399,11 +403,11 @@ class ToolExecutionController(
 
             withContext(Dispatchers.Main) {
                 sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
-                onLog("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
+                onLog("[RUN] Applying requested video processing ($noiseLevel) and metadata stripping...")
             }
 
             val processed = withContext(Dispatchers.IO) {
-                backend.cleanVideo(
+                backend.cleanVideoDetailed(
                     tempInput.absolutePath,
                     outputFile.absolutePath,
                     noiseLevel = noiseLevel,
@@ -416,13 +420,13 @@ class ToolExecutionController(
 
             tempInput.delete()
 
-            if (processed && outputFile.exists() && outputFile.length() > 0) {
+            if (processed.isSuccess && outputFile.exists() && outputFile.length() > 0) {
                 state.lastGeneratedFile = outputFile
                 state.progressPercent = 100
                 state.progressDetailsText = "100% complete"
 
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.COMPLETE, "Video ready: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    sessionManager.updateJobState(JobState.COMPLETE, if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "Metadata-only fallback: ${outputFile.name}" else "Video processed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
                     binding.progressIndicator.isIndeterminate = false
                     binding.progressIndicator.progress = 100
                     binding.tvProgressDetails.text = "100% complete"
