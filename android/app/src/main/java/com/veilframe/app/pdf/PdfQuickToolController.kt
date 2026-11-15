@@ -422,7 +422,9 @@ class PdfQuickToolController(
             onPageSelectionChanged = { _ -> }
         ).apply {
             onPageOrderChanged = { order ->
-                if (activeMode == QuickMode.REORDER) {
+                // Do not rewrite the EditText during every drag frame; it forces layout
+                // passes while RecyclerView is animating the moved tile.
+                if (activeMode == QuickMode.REORDER && binding.chipReorderManual.isChecked) {
                     binding.etCustomPageOrder.setText(order.joinToString(" > "))
                 }
             }
@@ -452,11 +454,13 @@ class PdfQuickToolController(
                 if (activeMode != QuickMode.REORDER) return false
                 val from = viewHolder.bindingAdapterPosition
                 val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION || from == to) return false
                 rotateThumbnailAdapter?.moveItem(from, to)
                 return true
             }
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
-            override fun isLongPressDragEnabled(): Boolean = (activeMode == QuickMode.REORDER)
+            // Drag is initiated only from the visible handle, not from arbitrary card taps.
+            override fun isLongPressDragEnabled(): Boolean = false
 
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
@@ -481,6 +485,9 @@ class PdfQuickToolController(
                     .setDuration(120)
                     .start()
                 viewHolder.itemView.elevation = 0f
+                if (activeMode == QuickMode.REORDER) {
+                    binding.etCustomPageOrder.setText(rotateThumbnailAdapter?.getPageOrder()?.joinToString(" > ").orEmpty())
+                }
             }
         }
         rotateItemTouchHelper = ItemTouchHelper(callback).also {
