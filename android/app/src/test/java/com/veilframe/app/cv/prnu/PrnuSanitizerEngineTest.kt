@@ -111,11 +111,13 @@ class PrnuSanitizerEngineTest {
             postSpce = 0.53,
             post6StripMaxSpce = 6.88,
             stripSpces = listOf(-0.07, 0.0, 6.88, 0.36, -1.28, 0.0),
-            verifiedSecure = true,
-            isConclusive = true
+            verifiedSecure = false,
+            residualHeuristicPassed = true,
+            isConclusive = false
         )
-        assertTrue(auditResult.verifiedSecure)
-        assertTrue(auditResult.isConclusive)
+        assertFalse("A single-image residual comparison must never certify PRNU removal", auditResult.verifiedSecure)
+        assertTrue("The residual threshold may be reported only as a heuristic", auditResult.residualHeuristicPassed)
+        assertFalse("No independent camera fingerprint reference was supplied", auditResult.isConclusive)
         assertEquals(6, auditResult.stripSpces.size)
         assertTrue(auditResult.baselineSpce > 50.0)
         assertTrue(kotlin.math.abs(auditResult.postSpce) < 5.0)
