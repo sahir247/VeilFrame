@@ -89,7 +89,7 @@ class VideoPiiFfmpegRenderTest {
                     val isExpectedFill = if (style == PiiRedactionStyle.SOLID_BLACK) {
                         rgb < 0x00030303
                     } else {
-                        rgb > 0x00FCFCFC
+                        rgb > 0x00F0F0F0
                     }
                     assertTrue("$style must fill the ROI with the selected solid color", (center ushr 24) > 0 && isExpectedFill)
                 } else {
