@@ -12,7 +12,7 @@ import com.arthenica.ffmpegkit.ReturnCode
  *
  * Uses direct argument arrays exclusively — zero shell string concatenation or escaping.
  */
-enum class VideoSanitizationStatus { FULL_SANITIZATION, METADATA_ONLY_FALLBACK, FAILED }
+enum class VideoSanitizationStatus { TRANSCODED, METADATA_ONLY_FALLBACK, FAILED }
 
 data class VideoSanitizationResult(
     val status: VideoSanitizationStatus,
@@ -232,7 +232,7 @@ object VideoMetadataSanitizer {
             val session = FFmpegKit.executeWithArguments(primaryArgs.toTypedArray())
             if (ReturnCode.isSuccess(session.returnCode)) {
                 Log.i(TAG, "Video transcode completed: $outputPath")
-                VideoSanitizationResult(VideoSanitizationStatus.FULL_SANITIZATION)
+                VideoSanitizationResult(VideoSanitizationStatus.TRANSCODED)
             } else {
                 Log.w(TAG, "Primary transcode failed with code ${session.returnCode}; trying metadata-only fallback.")
                 val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
