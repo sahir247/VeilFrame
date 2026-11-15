@@ -58,9 +58,10 @@ data class VideoPiiScanResult(
  * Tracked temporal multi-modal PII scanner & FFmpeg filter builder.
  *
  * Leverages [PiiMultiModalDetector] ([PiiNcnnEngine] UltraFace + YOLOv8n, WeChatQR + ML Kit barcodes,
- * and ML Kit OCR + `PiiTextClassifier`) across dense adaptive keyframes, associates moving detections
- * into motion-aware tracks, bridges transient detector dropouts linearly, and emits swept bounding-box
- * intervals so moving PII targets stay continuously masked throughout the video without dropping late intervals.
+ * and ML Kit OCR + `PiiTextClassifier`) across bounded, uniformly spaced keyframes, associates moving
+ * detections into motion-aware tracks, bridges short detector dropouts, and emits swept bounding-box
+ * intervals to protect targets between observed keyframes. Sampling is not exhaustive: the 120-frame
+ * ceiling can leave long gaps, so capped scans are explicitly marked incomplete.
  */
 object VideoPiiRedactionEngine {
 
