@@ -250,12 +250,7 @@ class PdfPageThumbnailAdapter(
                 binding.ivDragHandle.visibility = View.VISIBLE
                 binding.ivDragHandle.setOnTouchListener { v, event ->
                     when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            v.parent?.requestDisallowInterceptTouchEvent(true)
-                            onStartDragListener?.invoke(this)
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                            v.parent?.requestDisallowInterceptTouchEvent(false)
+                        MotionEvent.ACTION_DOWN -> onStartDragListener?.invoke(this)
                     }
                     true
                 }
