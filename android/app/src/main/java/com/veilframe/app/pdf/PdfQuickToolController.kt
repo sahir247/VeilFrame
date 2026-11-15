@@ -892,7 +892,9 @@ class PdfQuickToolController(
     }
 
     private fun inspectAndPreviewOfficeDoc(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        val generation = documentLoadGeneration
+        documentLoadJob?.cancel()
+        documentLoadJob = scope.launch(Dispatchers.IO) {
             val lower = primaryDocName.lowercase()
             var summary = "Office Document"
             var previewText = ""
@@ -1047,6 +1049,10 @@ class PdfQuickToolController(
             }
 
             withContext(Dispatchers.Main) {
+                if (generation != documentLoadGeneration || selectedUris.firstOrNull() != uri || activeMode != QuickMode.DOC_TO_PDF) {
+                    previewBitmap?.recycle()
+                    return@withContext
+                }
                 binding.tvQuickToolDocMeta.text = metaText
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.tvDocPreviewSummary.text = summary
