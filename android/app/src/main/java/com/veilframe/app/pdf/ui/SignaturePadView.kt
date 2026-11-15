@@ -354,66 +354,22 @@ class SignaturePadView @JvmOverloads constructor(
                 val startW = element.startWidth * scale
                 val endW = element.endWidth * scale
 
-                // For uniform width segments, draw a native smooth anti-aliased Bézier curve
-                val widthDiff = Math.abs(endW - startW)
-                if (widthDiff < 0.6f * scale) {
-                    val path = Path().apply {
-                        moveTo(startX, startY)
-                        quadTo(cpX, cpY, endX, endY)
-                    }
-                    val strokeP = Paint(fillPaint).apply {
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                        strokeWidth = (startW + endW) / 2f
-                    }
-                    canvas.drawPath(path, strokeP)
-                    return
+                // Render each interpolated segment with Android's native stroked Path.
+                // The previous per-segment polygon ribbon computed independent normals and
+                // joined 20 straight samples; at larger widths those polygon edges exposed
+                // small normal/mesh discontinuities as parallel waves.
+                val path = Path().apply {
+                    moveTo(startX, startY)
+                    quadTo(cpX, cpY, endX, endY)
                 }
-
-                // For variable-width tapered ink strokes: extrude a smooth closed polygon ribbon
-                // along the analytical Bézier tangent normals.
-                val steps = 20
-                val leftPoints = ArrayList<PointF>(steps + 1)
-                val rightPoints = ArrayList<PointF>(steps + 1)
-
-                for (i in 0..steps) {
-                    val t = i / steps.toFloat()
-                    val oneMinusT = 1f - t
-
-                    // B(t) position
-                    val x = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * cpX) + (t * t * endX)
-                    val y = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * cpY) + (t * t * endY)
-
-                    // B'(t) tangent derivative
-                    val dx = 2f * oneMinusT * (cpX - startX) + 2f * t * (endX - cpX)
-                    val dy = 2f * oneMinusT * (cpY - startY) + 2f * t * (endY - cpY)
-
-                    val len = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(0.0001f)
-                    val nx = -dy / len
-                    val ny = dx / len
-
-                    val halfW = (startW + (endW - startW) * t) / 2f
-                    leftPoints.add(PointF(x + nx * halfW, y + ny * halfW))
-                    rightPoints.add(PointF(x - nx * halfW, y - ny * halfW))
+                val strokePaint = Paint(fillPaint).apply {
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    strokeWidth = ((startW + endW) / 2f).coerceAtLeast(1f)
                 }
+                canvas.drawPath(path, strokePaint)
 
-                val ribbon = Path()
-                if (leftPoints.isNotEmpty()) {
-                    ribbon.moveTo(leftPoints[0].x, leftPoints[0].y)
-                    for (i in 1 until leftPoints.size) {
-                        ribbon.lineTo(leftPoints[i].x, leftPoints[i].y)
-                    }
-                    for (i in rightPoints.size - 1 downTo 0) {
-                        ribbon.lineTo(rightPoints[i].x, rightPoints[i].y)
-                    }
-                    ribbon.close()
-                }
-
-                canvas.drawPath(ribbon, fillPaint)
-                // Draw rounded caps at endpoints to guarantee buttery smooth segment joins
-                canvas.drawCircle(startX, startY, startW / 2f, fillPaint)
-                canvas.drawCircle(endX, endY, endW / 2f, fillPaint)
             }
         }
     }
