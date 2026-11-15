@@ -324,7 +324,7 @@ class RifeModelManager(private val context: Context) {
                 maxBytes = spec.maxParamBytes
             ) { _, _ -> }.getOrElse { throw IOException("Failed to download ${spec.displayName} parameter file: ${it.message}", it) }
 
-            if (!paramSuccess || !paramF.exists() || paramF.length() < 500) {
+            if (!paramF.exists() || paramF.length() < 500) {
                 throw IOException("Failed to download ${spec.displayName} parameter file")
             }
 
@@ -353,7 +353,7 @@ class RifeModelManager(private val context: Context) {
                 onFileProgress = progressCallback
             ).getOrElse { throw IOException("Failed to download ${spec.displayName} neural weights: ${it.message}", it) }
 
-            if (!binSuccess || !isModelDownloaded(spec)) {
+            if (!isModelDownloaded(spec)) {
                 paramF.delete()
                 binF.delete()
                 throw IllegalStateException("Model files for ${spec.displayName} are incomplete after download")
