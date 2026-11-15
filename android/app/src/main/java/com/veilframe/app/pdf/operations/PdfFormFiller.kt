@@ -10,6 +10,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDField
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDListBox
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDRadioButton
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -185,6 +186,9 @@ class PdfFormFiller {
                 fillableFields = fillableCount
             )
             
+        } catch (e: CancellationException) {
+            document?.close()
+            throw e
         } catch (e: IOException) {
             document?.close()
             FormAnalysisResult(
@@ -295,6 +299,9 @@ class PdfFormFiller {
                 fieldsUpdated = fieldsUpdated
             )
             
+        } catch (e: CancellationException) {
+            document?.close()
+            throw e
         } catch (e: IOException) {
             document?.close()
             FormFillResult(
@@ -370,6 +377,8 @@ class PdfFormFiller {
             val output = ByteArrayOutputStream()
             document.save(output)
             FormFillExportResult(FormFillResult(true, updated), output.toByteArray())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             FormFillExportResult(
                 FormFillResult(false, 0, e.message ?: "Failed to fill PDF form")
