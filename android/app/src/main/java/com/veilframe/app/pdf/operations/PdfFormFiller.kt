@@ -254,7 +254,7 @@ class PdfFormFiller {
             }
             
             // Ensure appearances are generated
-            acroForm.setNeedAppearances(true)
+            acroForm.setNeedAppearances(false)
             
             var fieldsUpdated = 0
             val entries = fieldValues.entries.toList()
@@ -362,7 +362,7 @@ class PdfFormFiller {
             }
 
             // Ask PDFBox to maintain usable widget appearances for viewers.
-            acroForm.setNeedAppearances(true)
+            acroForm.setNeedAppearances(false)
             if (flatten) acroForm.flatten()
 
             val output = ByteArrayOutputStream()
