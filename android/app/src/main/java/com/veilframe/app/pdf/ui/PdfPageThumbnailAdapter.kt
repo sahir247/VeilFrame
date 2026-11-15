@@ -82,9 +82,6 @@ class PdfPageThumbnailAdapter(
         val item = pageOrder.removeAt(fromPosition)
         pageOrder.add(toPosition, item)
         notifyItemMoved(fromPosition, toPosition)
-        val start = minOf(fromPosition, toPosition)
-        val count = kotlin.math.abs(fromPosition - toPosition) + 1
-        notifyItemRangeChanged(start, count)
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
@@ -209,10 +206,16 @@ class PdfPageThumbnailAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var renderJob: Job? = null
+        private var bindGeneration: Long = 0L
 
         fun bind(pageNumber: Int) {
             renderJob?.cancel()
-            val uri = pdfUri ?: return
+            val generation = ++bindGeneration
+            val uri = pdfUri ?: run {
+                binding.ivPageThumbnail.setImageDrawable(null)
+                binding.pbThumbLoading.visibility = View.GONE
+                return
+            }
 
             val currentPos = bindingAdapterPosition
             val isReordered = pageOrder != (1..totalPages).toList()
@@ -241,11 +244,18 @@ class PdfPageThumbnailAdapter(
                 binding.cbPageSelected.visibility = View.GONE
                 binding.ivDragHandle.visibility = View.VISIBLE
                 binding.ivDragHandle.setOnTouchListener { v, event ->
-                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                        v.parent?.requestDisallowInterceptTouchEvent(true)
-                        onStartDragListener?.invoke(this)
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                            onStartDragListener?.invoke(this)
+                            true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> true
                     }
-                    false
                 }
                 binding.cardPageThumbnail.setOnLongClickListener {
                     binding.root.parent?.requestDisallowInterceptTouchEvent(true)
@@ -325,6 +335,11 @@ class PdfPageThumbnailAdapter(
             renderJob = scope.launch(Dispatchers.IO) {
                 val bmp = thumbnailLoader.loadPageThumbnail(uri, pageNumber - 1)
                 withContext(Dispatchers.Main) {
+                    val currentPosition = bindingAdapterPosition
+                    val stillBoundToSamePage = generation == bindGeneration &&
+                        currentPosition != RecyclerView.NO_POSITION &&
+                        pdfUri == uri && pageOrder.getOrNull(currentPosition) == pageNumber
+                    if (!stillBoundToSamePage) return@withContext
                     binding.pbThumbLoading.visibility = View.GONE
                     if (bmp != null) {
                         binding.ivPageThumbnail.setImageBitmap(bmp)
