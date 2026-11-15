@@ -259,11 +259,7 @@ class PdfPageThumbnailAdapter(
                     }
                     true
                 }
-                binding.cardPageThumbnail.setOnLongClickListener {
-                    binding.root.parent?.requestDisallowInterceptTouchEvent(true)
-                    onStartDragListener?.invoke(this)
-                    true
-                }
+                // Drag is intentionally initiated only from the explicit handle.
             } else {
                 binding.cbPageSelected.visibility = View.VISIBLE
                 binding.ivDragHandle.visibility = View.GONE
