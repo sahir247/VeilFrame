@@ -148,6 +148,20 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         )
     }
 
+    suspend fun cleanVideoCancellableDetailed(
+        inputPath: String,
+        outputPath: String,
+        noiseLevel: String = "medium",
+        scrubAudio: Boolean = true,
+        crf: Int? = null,
+        stripExif: Boolean = true,
+        reencodeBitstream: Boolean = false
+    ): com.veilframe.app.privacy.VideoSanitizationResult {
+        return VideoMetadataSanitizer.cleanVideoCancellableDetailed(
+            inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream
+        )
+    }
+
     override fun cleanImage(
         inputPath: String,
         outputPath: String,
