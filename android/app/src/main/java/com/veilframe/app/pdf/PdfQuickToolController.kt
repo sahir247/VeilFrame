@@ -120,6 +120,21 @@ class PdfQuickToolController(
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
+    private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
+
+    private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
+        val job = scope.launch(Dispatchers.IO, block = block)
+        transientJobs.add(job)
+        job.invokeOnCompletion { transientJobs.remove(job) }
+        return job
+    }
+
+    private fun cancelTransientJobs() {
+        synchronized(transientJobs) {
+            transientJobs.toList().forEach { it.cancel() }
+            transientJobs.clear()
+        }
+    }
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -156,6 +171,7 @@ class PdfQuickToolController(
         selectionGeneration++
         activeJob?.cancel()
         activeJob = null
+        cancelTransientJobs()
         selectedUris.clear()
         primaryDocName = "document.pdf"
         primaryDocPages = 1
@@ -718,7 +734,7 @@ class PdfQuickToolController(
         }
         val generation = selectionGeneration
         val sourceUris = selectedUris.toList()
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val mergeItems = sourceUris.mapIndexed { idx, uri ->
                 val mime = activity.contentResolver.getType(uri) ?: ""
                 val isImg = mime.startsWith("image/") ||
@@ -792,6 +808,7 @@ class PdfQuickToolController(
         val generation = selectionGeneration
         activeJob?.cancel()
         activeJob = null
+        cancelTransientJobs()
         isSaved = false
         splitThumbnailAdapter?.clear()
         rotateThumbnailAdapter?.clear()
@@ -821,7 +838,7 @@ class PdfQuickToolController(
                 inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     try {
                         val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
                             PDDocument.load(stream).use { doc -> doc.numberOfPages }
@@ -854,7 +871,7 @@ class PdfQuickToolController(
 
             // If metadata mode, inspect immediately
             if (activeMode == QuickMode.METADATA) {
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     val metaResult = metadataManager.readMetadata(activity, uri)
                     val meta = metaResult.getOrNull()
                     withContext(Dispatchers.Main) {
@@ -875,7 +892,7 @@ class PdfQuickToolController(
 
     private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
         val selectedName = primaryDocName
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val lower = selectedName.lowercase()
             var summary = "Office Document"
             var previewText = ""
@@ -1538,7 +1555,7 @@ class PdfQuickToolController(
         }
 
         binding.pbSignPreviewLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
             withContext(Dispatchers.Main) {
                 if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
@@ -1734,7 +1751,7 @@ class PdfQuickToolController(
             .setView(til)
             .setPositiveButton("Save") { _, _ ->
                 val name = editText.text?.toString()?.trim().orEmpty()
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     pdfSigner.saveSignatureBitmap(bitmap, name)
                     withContext(Dispatchers.Main) {
                         Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
@@ -1971,7 +1988,7 @@ class PdfQuickToolController(
         binding.btnSignCanvasSave.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
 
-        activeJob = scope.launch(Dispatchers.IO) {
+        activeJob = launchTransient {
             try {
                 val outStream = ByteArrayOutputStream()
                 val base = primaryDocName.removeSuffix(".pdf")
@@ -2007,13 +2024,18 @@ class PdfQuickToolController(
 
         binding.btnStripAllMetadata.setOnClickListener {
             val uri = selectedUris.firstOrNull() ?: return@setOnClickListener
-            scope.launch(Dispatchers.IO) {
+            val generation = selectionGeneration
+            val sourceName = primaryDocName
+            launchTransient {
                 val out = ByteArrayOutputStream()
                 val res = metadataManager.removeMetadata(activity, uri, out)
                 withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri ||
+                        activeMode != QuickMode.METADATA
+                    ) return@withContext
                     if (res.isSuccess) {
                         isSaved = true
-                        val exportName = "${primaryDocName.removeSuffix(".pdf")}_sanitized.pdf"
+                        val exportName = "${sourceName.removeSuffix(".pdf")}_sanitized.pdf"
                         onSaveFileRequest(out.toByteArray(), exportName)
                     } else {
                         Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
@@ -2039,7 +2061,7 @@ class PdfQuickToolController(
         val origText = binding.btnQuickToolExecute.text.toString()
         binding.btnQuickToolExecute.text = "Processing..."
 
-        activeJob = scope.launch(Dispatchers.IO) {
+        activeJob = launchTransient {
             try {
                 val outStream = ByteArrayOutputStream()
                 val base = primaryDocName.removeSuffix(".pdf")
@@ -2474,7 +2496,7 @@ class PdfQuickToolController(
         isExecuting = true
         binding.btnQuickToolExecute.isEnabled = false
         binding.btnQuickToolExecute.text = "Inspecting form..."
-        activeJob = scope.launch(Dispatchers.IO) {
+        activeJob = launchTransient {
             val analysis = pdfFormFiller.analyzeForm(activity, uri)
             withContext(Dispatchers.Main) {
                 isExecuting = false
@@ -2707,7 +2729,7 @@ class PdfQuickToolController(
                 binding.btnQuickToolExecute.isEnabled = false
                 binding.btnQuickToolExecute.text = "Applying form values..."
                 val outputName = "${primaryDocName.substringBeforeLast('.', primaryDocName)}_filled.pdf"
-                activeJob = scope.launch(Dispatchers.IO) {
+                activeJob = launchTransient {
                     val output = ByteArrayOutputStream()
                     val result = pdfFormFiller.fillFormToStream(
                         context = activity,
@@ -2867,13 +2889,18 @@ class PdfQuickToolController(
         val ivPreview = dialogView.findViewById<ImageView>(R.id.ivPreviewFullPage)
         val pbLoading = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
 
+        val generation = selectionGeneration
         tvTitle.text = "Page ${pageIndex + 1} Preview"
         btnClose.setOnClickListener { dialog.dismiss() }
 
         pbLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || !dialog.isShowing) {
+                    highResBitmap?.recycle()
+                    return@withContext
+                }
                 pbLoading.visibility = View.GONE
                 if (highResBitmap != null) {
                     ivPreview.setImageBitmap(highResBitmap)
