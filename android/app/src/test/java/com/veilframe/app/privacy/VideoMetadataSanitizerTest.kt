@@ -8,6 +8,38 @@ import org.junit.Test
 class VideoMetadataSanitizerTest {
 
     @Test
+    fun `low noise preset emits exactly one video codec argument for mp4 and webm`() {
+        listOf(
+            "/tmp/output.mp4" to "libx264",
+            "/tmp/output.webm" to "libvpx-vp9"
+        ).forEach { (output, codec) ->
+            val args = VideoMetadataSanitizer.buildArguments(
+                inputPath = "/tmp/input.mp4",
+                outputPath = output,
+                noiseLevel = "low"
+            )
+            val codecIndex = args.indexOf("-c:v")
+            assertTrue("Video codec option must exist", codecIndex >= 0)
+            assertEquals(codec, args[codecIndex + 1])
+            assertEquals("Codec must appear exactly once", 1, args.count { it == codec })
+            assertEquals(output, args.last())
+        }
+    }
+
+    @Test
+    fun `fallback respects disabled metadata stripping`() {
+        val args = VideoMetadataSanitizer.buildFallbackArguments(
+            inputPath = "/tmp/input.mp4",
+            outputPath = "/tmp/output.mp4",
+            scrubAudio = false,
+            stripExif = false
+        )
+        assertFalse(args.contains("-map_metadata"))
+        assertFalse(args.contains("-map_chapters"))
+        assertFalse(args.contains("-an"))
+    }
+
+    @Test
     fun `test buildArguments strips metadata chapters and scrubs audio for mp4`() {
         val input = "/storage/emulated/0/DCIM/Camera/My Video (test's & special).mp4"
         val output = "/storage/emulated/0/Download/clean.mp4"
