@@ -294,7 +294,10 @@ class ToolExecutionController(
                     3 -> "webm"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
                 }
-                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+                val relativeParent = inputFile.relativeTo(stagingDir).parentFile
+                val outputParent = relativeParent?.let { File(outputBatchDir, it.path) } ?: outputBatchDir
+                outputParent.mkdirs()
+                val outputFile = File(outputParent, "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
 
                 withContext(Dispatchers.Main) {
                     val percent = ((idx * 100) / candidateFiles.size)
@@ -334,7 +337,7 @@ class ToolExecutionController(
 
             val finalFile: File
             if (successCount == 1) {
-                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
+                val singleFile = outputBatchDir.walkTopDown().firstOrNull { it.isFile } ?: outputBatchDir
                 finalFile = File(activity.cacheDir, singleFile.name)
                 singleFile.copyTo(finalFile, overwrite = true)
                 outputBatchDir.deleteRecursively()
@@ -394,7 +397,7 @@ class ToolExecutionController(
 
             withContext(Dispatchers.Main) {
                 sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
-                onLog("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
+                onLog("[RUN] Applying temporal noise processing ($noiseLevel) and requested metadata stripping. Camera PRNU removal is not independently verified.")
             }
 
             val processed = withContext(Dispatchers.IO) {
@@ -424,9 +427,9 @@ class ToolExecutionController(
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Processed; metadata and camera PRNU not independently verified"
 
-                    onLog("[OK] Video sanitized successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog("[OK] Video output created: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())}). Metadata and camera PRNU removal were not independently verified; a reduced fallback may omit temporal noise processing.")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true
