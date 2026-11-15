@@ -106,7 +106,6 @@ object VideoMetadataSanitizer {
                 }
                 cmd.add("-c:v")
                 cmd.add(vCodec)
-                cmd.add(vCodec)
                 if (isWebm) {
                     cmd.add("-b:v")
                     cmd.add("0")
@@ -148,17 +147,20 @@ object VideoMetadataSanitizer {
     fun buildFallbackArguments(
         inputPath: String,
         outputPath: String,
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        stripExif: Boolean = true
     ): List<String> {
         val isWebm = outputPath.endsWith(".webm", ignoreCase = true)
         val cmd = mutableListOf<String>()
         cmd.add("-y")
         cmd.add("-i")
         cmd.add(inputPath)
-        cmd.add("-map_metadata")
-        cmd.add("-1")
-        cmd.add("-map_chapters")
-        cmd.add("-1")
+        if (stripExif) {
+            cmd.add("-map_metadata")
+            cmd.add("-1")
+            cmd.add("-map_chapters")
+            cmd.add("-1")
+        }
 
         if (isWebm) {
             cmd.add("-c:v")
@@ -218,13 +220,13 @@ object VideoMetadataSanitizer {
                 Log.i(TAG, "Video cleaned successfully with FFmpegKit: $outputPath")
                 true
             } else {
-                Log.w(TAG, "Primary transcode pass exited with code $returnCode. Retrying stream-copy fallback pass (container metadata scrub only, without noise dithering)...")
-                val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
+                Log.w(TAG, "Primary transcode pass exited with code $returnCode. Retrying reduced-guarantee stream-copy fallback (noise filtering is skipped)...")
+                val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio, stripExif)
                 Log.d(TAG, "Executing fallback sanitization with arguments: $fallbackArgs")
                 val fallbackSession = FFmpegKit.executeWithArguments(fallbackArgs.toTypedArray())
                 val fallbackSuccess = ReturnCode.isSuccess(fallbackSession.returnCode)
                 if (fallbackSuccess) {
-                    Log.i(TAG, "Video sanitized via stream-copy fallback (metadata scrubbed)")
+                    Log.w(TAG, "Reduced-guarantee fallback completed; requested noise filtering was not applied")
                 }
                 fallbackSuccess
             }
