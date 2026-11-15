@@ -255,25 +255,16 @@ class PdfPageThumbnailAdapter(
             if (isReorderMode) {
                 binding.cbPageSelected.visibility = View.GONE
                 binding.ivDragHandle.visibility = View.VISIBLE
-                binding.ivDragHandle.setOnTouchListener { v, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            v.parent?.requestDisallowInterceptTouchEvent(true)
-                            onStartDragListener?.invoke(this)
-                            true
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            v.parent?.requestDisallowInterceptTouchEvent(false)
-                            true
-                        }
-                        else -> true
+                // Let RecyclerView/ItemTouchHelper continue receiving the gesture after
+                // startDrag; consuming DOWN or disallowing parent interception prevents the
+                // helper from tracking the subsequent movement reliably.
+                binding.ivDragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        onStartDragListener?.invoke(this)
                     }
+                    false
                 }
-                binding.cardPageThumbnail.setOnLongClickListener {
-                    binding.root.parent?.requestDisallowInterceptTouchEvent(true)
-                    onStartDragListener?.invoke(this)
-                    true
-                }
+                binding.cardPageThumbnail.setOnLongClickListener(null)
             } else {
                 binding.cbPageSelected.visibility = View.VISIBLE
                 binding.ivDragHandle.visibility = View.GONE
