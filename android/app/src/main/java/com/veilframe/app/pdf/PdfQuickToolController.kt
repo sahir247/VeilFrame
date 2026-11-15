@@ -2590,40 +2590,78 @@ class PdfQuickToolController(
                     }
                 }
                 is com.veilframe.app.pdf.operations.FormField.ComboBoxField -> {
-                    val spinner = android.widget.Spinner(activity)
-                    val options = field.options
-                    spinner.adapter = android.widget.ArrayAdapter(
-                        activity, android.R.layout.simple_spinner_item, options
-                    ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-                    val selected = field.selectedValue?.let { options.indexOf(it) } ?: -1
-                    if (selected >= 0) spinner.setSelection(selected)
-                    spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
-                    content.addView(spinner)
-                    if (!field.isReadOnly) {
-                        readers[field.name] = {
-                            com.veilframe.app.pdf.operations.FieldValue.Combo(
-                                options.getOrNull(spinner.selectedItemPosition) ?: field.selectedValue.orEmpty()
-                            )
+                    if (field.isEditable) {
+                        val edit = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                            setText(field.selectedValue.orEmpty())
+                            isEnabled = !field.isReadOnly
+                            isSingleLine = true
                         }
-                        if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
+                        content.addView(edit, LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        ))
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.Combo(edit.text?.toString().orEmpty())
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { !edit.text.isNullOrBlank() })
+                        }
+                    } else {
+                        val spinner = android.widget.Spinner(activity)
+                        val options = field.options
+                        spinner.adapter = android.widget.ArrayAdapter(
+                            activity, android.R.layout.simple_spinner_item, options
+                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                        val selected = field.selectedValue?.let { options.indexOf(it) } ?: -1
+                        if (selected >= 0) spinner.setSelection(selected)
+                        spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
+                        content.addView(spinner)
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.Combo(
+                                    options.getOrNull(spinner.selectedItemPosition) ?: field.selectedValue.orEmpty()
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
+                        }
                     }
                 }
                 is com.veilframe.app.pdf.operations.FormField.ListBoxField -> {
-                    val checks = field.options.map { option ->
-                        android.widget.CheckBox(activity).apply {
-                            text = option
-                            isChecked = option in field.selectedValues
-                            isEnabled = !field.isReadOnly
-                            content.addView(this)
+                    if (field.isMultiSelect) {
+                        val checks = field.options.map { option ->
+                            android.widget.CheckBox(activity).apply {
+                                text = option
+                                isChecked = option in field.selectedValues
+                                isEnabled = !field.isReadOnly
+                                content.addView(this)
+                            }
                         }
-                    }
-                    if (!field.isReadOnly) {
-                        readers[field.name] = {
-                            com.veilframe.app.pdf.operations.FieldValue.ListValue(
-                                checks.filter { it.isChecked }.map { it.text.toString() }
-                            )
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
+                                    checks.filter { it.isChecked }.map { it.text.toString() }
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { checks.any { it.isChecked } })
                         }
-                        if (field.isRequired) requiredChecks.add(field.name to { checks.any { it.isChecked } })
+                    } else {
+                        val spinner = android.widget.Spinner(activity)
+                        spinner.adapter = android.widget.ArrayAdapter(
+                            activity, android.R.layout.simple_spinner_item, field.options
+                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                        val selected = field.selectedValues.firstOrNull()?.let { field.options.indexOf(it) } ?: -1
+                        if (selected >= 0) spinner.setSelection(selected)
+                        spinner.isEnabled = !field.isReadOnly && field.options.isNotEmpty()
+                        content.addView(spinner)
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
+                                    listOfNotNull(field.options.getOrNull(spinner.selectedItemPosition))
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to {
+                                spinner.selectedItemPosition >= 0 && field.options.isNotEmpty()
+                            })
+                        }
                     }
                 }
                 is com.veilframe.app.pdf.operations.FormField.UnknownField -> Unit
