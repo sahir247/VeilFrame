@@ -2,6 +2,7 @@ package com.veilframe.app.media
 
 import android.content.Context
 import android.util.Log
+import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.prnu.PrnuSanitizerEngine
 import com.veilframe.app.privacy.ImageMetadataSanitizer
 import com.veilframe.app.privacy.VideoMetadataSanitizer
@@ -135,6 +136,10 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         targetExtension: String?,
         onMilestone: ((String) -> Unit)?
     ): Boolean {
+        if (!CvRuntime.isNativeAvailable && !CvRuntime.initialize()) {
+            Log.w(tag, "CvRuntime native unavailable; falling back to cleanImage")
+            return cleanImage(inputPath, outputPath, stripExif, quality, targetExtension)
+        }
         val mode = when (defenseMode.lowercase()) {
             "stealth", "hybrid", "2-stage", "stealth (2-stage hybrid)", "stealth (2-stage)" ->
                 PrnuSanitizerEngine.DefenseMode.STEALTH_HYBRID
