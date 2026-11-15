@@ -118,6 +118,7 @@ class PdfQuickToolController(
     private var primaryDocPages: Int = 1
     private var isExecuting: Boolean = false
     private var isSaved: Boolean = false
+    private var isSourceReady: Boolean = false
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
     private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
@@ -177,6 +178,8 @@ class PdfQuickToolController(
         primaryDocPages = 1
         isExecuting = false
         isSaved = false
+        isSourceReady = false
+        binding.btnSignCanvasSave.isEnabled = true
         splitThumbnailAdapter?.clear()
         rotateThumbnailAdapter?.clear()
         thumbnailLoader.clearCache()
@@ -809,12 +812,24 @@ class PdfQuickToolController(
         activeJob?.cancel()
         activeJob = null
         cancelTransientJobs()
+        isExecuting = false
+        isSourceReady = false
+        binding.btnQuickToolExecute.isEnabled = true
+        binding.btnQuickToolExecute.text = activeMode.buttonText
+        binding.btnSignCanvasSave.isEnabled = true
+        binding.pdfSignCanvasView.reset()
+        binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+        binding.ivSignPagePreview.setImageDrawable(null)
+        binding.pbSignPreviewLoading.visibility = View.GONE
+        primaryDocPages = 1
         isSaved = false
         splitThumbnailAdapter?.clear()
         rotateThumbnailAdapter?.clear()
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
             selectedUris.addAll(uris)
+            isSourceReady = selectedUris.isNotEmpty()
+            binding.btnQuickToolExecute.isEnabled = isSourceReady
             updateMultiFileList()
             binding.containerQuickToolEmptyState.visibility = View.GONE
             binding.btnPdfQuickToolReset.visibility = View.VISIBLE
@@ -830,6 +845,8 @@ class PdfQuickToolController(
             binding.tvQuickToolDocName.text = primaryDocName
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
+                isSourceReady = true
+                binding.btnQuickToolExecute.isEnabled = true
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
@@ -846,6 +863,8 @@ class PdfQuickToolController(
                         withContext(Dispatchers.Main) {
                             if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                             primaryDocPages = pageCount
+                            isSourceReady = pageCount > 0
+                            binding.btnQuickToolExecute.isEnabled = isSourceReady
                             binding.tvQuickToolDocMeta.text = "$pageCount pages total"
                             when (activeMode) {
                                 QuickMode.SPLIT -> splitThumbnailAdapter?.setDocument(uri, pageCount, (1..pageCount).toSet())
@@ -862,6 +881,8 @@ class PdfQuickToolController(
                     } catch (_: Exception) {
                         withContext(Dispatchers.Main) {
                             if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                isSourceReady = false
+                                binding.btnQuickToolExecute.isEnabled = false
                                 binding.tvQuickToolDocMeta.text = "Unable to read page count"
                             }
                         }
@@ -1051,6 +1072,8 @@ class PdfQuickToolController(
                     previewBitmap?.recycle()
                     return@withContext
                 }
+                isSourceReady = true
+                binding.btnQuickToolExecute.isEnabled = true
                 binding.tvQuickToolDocMeta.text = metaText
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.tvDocPreviewSummary.text = summary
@@ -2045,6 +2068,10 @@ class PdfQuickToolController(
     }
 
     private fun executeActiveOperation() {
+        if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
+            Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (activeMode == QuickMode.FILL_FORMS) {
             openFillFormEditor()
             return
