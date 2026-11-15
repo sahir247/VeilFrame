@@ -2782,7 +2782,13 @@ class PdfQuickToolController(
             .setView(dialogView)
             .create()
         pagePreviewDialog = dialog
-        dialog.setOnDismissListener { if (pagePreviewDialog === dialog) pagePreviewDialog = null }
+        dialog.setOnDismissListener {
+            if (pagePreviewDialog === dialog) {
+                pagePreviewDialog = null
+                pagePreviewJob?.cancel()
+                pagePreviewJob = null
+            }
+        }
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
