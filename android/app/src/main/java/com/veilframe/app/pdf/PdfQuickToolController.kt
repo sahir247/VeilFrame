@@ -125,6 +125,8 @@ class PdfQuickToolController(
     private var documentLoadGeneration: Long = 0L
     private var formAnalysis: com.veilframe.app.pdf.operations.FormAnalysisResult? = null
     private var formEditorDialog: AlertDialog? = null
+    private var pagePreviewDialog: AlertDialog? = null
+    private var pagePreviewJob: Job? = null
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -171,6 +173,10 @@ class PdfQuickToolController(
         formAnalysis = null
         formEditorDialog?.dismiss()
         formEditorDialog = null
+        pagePreviewJob?.cancel()
+        pagePreviewJob = null
+        pagePreviewDialog?.dismiss()
+        pagePreviewDialog = null
         isExecuting = false
         isSaved = false
         rotateItemTouchHelper?.attachToRecyclerView(null)
@@ -815,8 +821,12 @@ class PdfQuickToolController(
             binding.containerQuickToolEmptyState.visibility = View.GONE
             binding.btnPdfQuickToolReset.visibility = View.VISIBLE
         } else {
+            formEditorDialog?.dismiss()
             selectedUris.clear()
             selectedUris.add(uris.first())
+            primaryDocPages = 0
+            splitThumbnailAdapter?.clear()
+            rotateThumbnailAdapter?.clear()
             val uri = uris.first()
             primaryDocName = queryDocumentName(uri)
 
@@ -2762,9 +2772,13 @@ class PdfQuickToolController(
 
     private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_pdf_page_preview, null)
+        pagePreviewDialog?.dismiss()
+        pagePreviewJob?.cancel()
         val dialog = AlertDialog.Builder(activity)
             .setView(dialogView)
             .create()
+        pagePreviewDialog = dialog
+        dialog.setOnDismissListener { if (pagePreviewDialog === dialog) pagePreviewDialog = null }
 
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
@@ -2777,9 +2791,10 @@ class PdfQuickToolController(
         btnClose.setOnClickListener { dialog.dismiss() }
 
         pbLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        pagePreviewJob = scope.launch(Dispatchers.IO) {
             val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
             withContext(Dispatchers.Main) {
+                if (pagePreviewDialog !== dialog || !dialog.isShowing) return@withContext
                 pbLoading.visibility = View.GONE
                 if (highResBitmap != null) {
                     ivPreview.setImageBitmap(highResBitmap)
