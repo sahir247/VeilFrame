@@ -2130,10 +2130,29 @@ class PdfQuickToolController(
                 is com.veilframe.app.pdf.operations.FormField.ComboBoxField -> {
                     if (field.isReadOnly) {
                         container.addView(android.widget.TextView(activity).apply { text = field.selectedValue.orEmpty() })
+                    } else if (field.isEditable) {
+                        val edit = android.widget.EditText(activity).apply {
+                            setText(field.selectedValue.orEmpty())
+                            textSize = 15f
+                            hint = "Enter or choose a value"
+                        }
+                        val optionsButton = android.widget.Button(activity).apply {
+                            text = "Choose from ${field.options.size} options"
+                            isEnabled = field.options.isNotEmpty()
+                            setOnClickListener {
+                                val choices = field.options.toTypedArray()
+                                androidx.appcompat.app.AlertDialog.Builder(activity)
+                                    .setTitle(field.name)
+                                    .setItems(choices) { _, which -> edit.setText(choices[which]) }
+                                    .show()
+                            }
+                        }
+                        container.addView(edit, android.widget.LinearLayout.LayoutParams(-1, -2))
+                        container.addView(optionsButton)
+                        valueReaders[field.name] = { com.veilframe.app.pdf.operations.FieldValue.Combo(edit.text?.toString().orEmpty()) }
                     } else {
                         val spinner = android.widget.Spinner(activity)
                         val options = field.options.toMutableList()
-                        if (field.isEditable && field.selectedValue != null && field.selectedValue !in options) options.add(0, field.selectedValue)
                         spinner.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, options)
                         val selectedIndex = options.indexOf(field.selectedValue).coerceAtLeast(0)
                         if (options.isNotEmpty()) spinner.setSelection(selectedIndex)
