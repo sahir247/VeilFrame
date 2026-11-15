@@ -201,12 +201,25 @@ class PdfPageThumbnailAdapter(
         holder.bind(pageNumber)
     }
 
+    override fun onViewRecycled(holder: ThumbnailViewHolder) {
+        holder.release()
+        super.onViewRecycled(holder)
+    }
+
     inner class ThumbnailViewHolder(
         private val binding: ItemPdfPageThumbnailBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var renderJob: Job? = null
         private var bindGeneration: Long = 0L
+
+        fun release() {
+            bindGeneration++
+            renderJob?.cancel()
+            renderJob = null
+            binding.ivPageThumbnail.setImageDrawable(null)
+            binding.pbThumbLoading.visibility = View.GONE
+        }
 
         fun bind(pageNumber: Int) {
             renderJob?.cancel()
