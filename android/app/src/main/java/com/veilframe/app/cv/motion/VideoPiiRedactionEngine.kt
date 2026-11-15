@@ -166,10 +166,13 @@ object VideoPiiRedactionEngine {
         val wasCancelled = isCancelled()
         // Any missing frame or detector failure makes the result partial. A partial scan
         // must never be presented as a clean "no PII" result or clear prior redactions.
-        val isScanDegraded = wasCancelled ||
-                failedFrameCount > 0 ||
-                failedEnginesAggregate.isNotEmpty() ||
-                sampledCount < sampleCount
+        val isScanDegraded = isScanIncomplete(
+            attemptedFrames = sampleCount,
+            sampledFrames = sampledCount,
+            failedFrameExtractions = failedFrameCount,
+            failedEngines = failedEnginesAggregate,
+            cancelled = wasCancelled
+        )
         // The 120-frame ceiling expands the interval on longer clips. Report it even if
         // detections were found; detections do not make unsampled time safe.
         val isSamplingCapped = sampleCount == MAX_SAMPLE_FRAMES &&
@@ -192,6 +195,22 @@ object VideoPiiRedactionEngine {
             isCancelled = wasCancelled
         )
     }
+
+    /**
+     * A scan is incomplete if any requested frame was unavailable, any detector failed,
+     * or cancellation stopped the requested pass. This is intentionally conservative:
+     * partial negative results must never be treated as a clean scan.
+     */
+    internal fun isScanIncomplete(
+        attemptedFrames: Int,
+        sampledFrames: Int,
+        failedFrameExtractions: Int,
+        failedEngines: Map<String, String>,
+        cancelled: Boolean
+    ): Boolean = cancelled ||
+            failedFrameExtractions > 0 ||
+            failedEngines.isNotEmpty() ||
+            sampledFrames < attemptedFrames
 
     /**
      * Associates multi-frame detections into continuous identity tracks, linearly bridges
