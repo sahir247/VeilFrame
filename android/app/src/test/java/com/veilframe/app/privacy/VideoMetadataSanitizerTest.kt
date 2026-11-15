@@ -74,6 +74,22 @@ class VideoMetadataSanitizerTest {
     }
 
     @Test
+    fun `low noise preset emits exactly one video codec option for mp4 and webm`() {
+        for (output in listOf("/tmp/out.mp4", "/tmp/out.webm")) {
+            val args = VideoMetadataSanitizer.buildArguments(
+                inputPath = "/tmp/input.mp4",
+                outputPath = output,
+                noiseLevel = "low"
+            )
+            val codecIndex = args.indexOf("-c:v")
+            assertTrue(codecIndex >= 0)
+            assertEquals(if (output.endsWith(".webm")) "libvpx-vp9" else "libx264", args[codecIndex + 1])
+            assertEquals("The codec must appear only as the value of -c:v", 1, args.count { it == "libx264" || it == "libvpx-vp9" })
+            assertEquals(output, args.last())
+        }
+    }
+
+    @Test
     fun `test buildArguments handles space and special characters safely as individual tokens`() {
         val weirdPath = "/storage/emulated/0/Weird Dir/name with \"quotes\" & 'apostrophes'; rm -rf.mp4"
         val outputPath = "/storage/emulated/0/Clean Dir/out.mp4"
