@@ -433,9 +433,9 @@ class ToolExecutionController(
 
                     binding.cardResultSummary.visibility = View.VISIBLE
                     binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+                    binding.tvResultDetails.text = if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata-only fallback; temporal noise filter not applied" else "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Video transcoded; camera PRNU removal not independently verified"
 
-                    onLog("[OK] Video sanitized successfully: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                    onLog(if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "[WARN] Metadata-only fallback completed; requested temporal noise filter was not applied." else "[OK] Video transcode completed; camera PRNU removal was not independently verified.")
                     onLog("[EXPORT] Output ready for saving or sharing.")
                     sessionManager.updatePrimaryActionDock(state)
                     binding.btnExportResult.isEnabled = true
