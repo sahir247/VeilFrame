@@ -8,7 +8,6 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiRedactionStyle
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,8 +52,8 @@ class VideoPiiFfmpegRenderTest {
             )
 
             val original = decodeFrame(source)
-            assertNotNull("Generated source video must decode", original)
-            val baselineVariance = lumaVariance(original!!, 80, 60, 240, 180)
+                ?: throw AssertionError("Generated source video must decode")
+            val baselineVariance = lumaVariance(original, 80, 60, 240, 180)
 
             for (style in listOf(
                 PiiRedactionStyle.SOLID_BLACK,
@@ -70,7 +69,7 @@ class VideoPiiFfmpegRenderTest {
                 )
                 assertNotNull("Filter graph missing for $style", filter)
                 val output = File(dir, "${style.name.lowercase()}.mp4")
-                val args = if (style == PiiRedactionStyle.SOLID_BLACK) {
+                val args = if (style == PiiRedactionStyle.SOLID_BLACK || style == PiiRedactionStyle.SOLID_WHITE) {
                     arrayOf("-y", "-i", source.absolutePath, "-vf", filter!!, "-an", "-c:v", "mpeg4", output.absolutePath)
                 } else {
                     arrayOf("-y", "-i", source.absolutePath, "-filter_complex", filter!!, "-map", "[v_out]", "-an", "-c:v", "mpeg4", output.absolutePath)
@@ -82,8 +81,8 @@ class VideoPiiFfmpegRenderTest {
                 )
 
                 val rendered = decodeFrame(output)
-                assertNotNull("$style output must decode", rendered)
-                val variance = lumaVariance(rendered!!, 80, 60, 240, 180)
+                    ?: throw AssertionError("$style output must decode")
+                val variance = lumaVariance(rendered, 80, 60, 240, 180)
                 if (style == PiiRedactionStyle.SOLID_BLACK || style == PiiRedactionStyle.SOLID_WHITE) {
                     val center = rendered.getPixel(160, 120)
                     val rgb = center and 0x00FFFFFF
