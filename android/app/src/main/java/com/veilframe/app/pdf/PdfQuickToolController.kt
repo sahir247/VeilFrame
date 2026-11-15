@@ -127,6 +127,8 @@ class PdfQuickToolController(
     private var formEditorDialog: AlertDialog? = null
     private var pagePreviewDialog: AlertDialog? = null
     private var pagePreviewJob: Job? = null
+    private var mergePreparationJob: Job? = null
+    private var signPreviewJob: Job? = null
     private var isFormExporting: Boolean = false
 
     private val pdfMerger by lazy { PdfMerger() }
@@ -177,6 +179,10 @@ class PdfQuickToolController(
         formEditorDialog = null
         pagePreviewJob?.cancel()
         pagePreviewJob = null
+        mergePreparationJob?.cancel()
+        mergePreparationJob = null
+        signPreviewJob?.cancel()
+        signPreviewJob = null
         pagePreviewDialog?.dismiss()
         pagePreviewDialog = null
         isExecuting = false
@@ -743,11 +749,15 @@ class PdfQuickToolController(
 
     private fun refreshMergePageItems() {
         if (selectedUris.isEmpty()) {
+            mergePreparationJob?.cancel()
             mergePageAdapter?.setItems(emptyList())
             return
         }
-        scope.launch(Dispatchers.IO) {
-            val mergeItems = selectedUris.mapIndexed { idx, uri ->
+        mergePreparationJob?.cancel()
+        val selectedSnapshot = selectedUris.toList()
+        val generation = documentLoadGeneration
+        mergePreparationJob = scope.launch(Dispatchers.IO) {
+            val mergeItems = selectedSnapshot.mapIndexed { idx, uri ->
                 val mime = activity.contentResolver.getType(uri) ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
@@ -773,7 +783,10 @@ class PdfQuickToolController(
             }
             val pageItems = pdfMerger.buildPageItems(mergeItems)
             withContext(Dispatchers.Main) {
-                mergePageAdapter?.setItems(pageItems)
+                if (generation == documentLoadGeneration && selectedUris == selectedSnapshot &&
+                    (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF)) {
+                    mergePageAdapter?.setItems(pageItems)
+                }
             }
         }
     }
@@ -812,6 +825,8 @@ class PdfQuickToolController(
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
         documentLoadJob?.cancel()
+        mergePreparationJob?.cancel()
+        signPreviewJob?.cancel()
         val loadGeneration = ++documentLoadGeneration
         formAnalysisJob?.cancel()
         formAnalysis = null
@@ -1557,10 +1572,12 @@ class PdfQuickToolController(
             else -> (primaryDocPages - 1).coerceAtLeast(0)
         }
 
+        signPreviewJob?.cancel()
         binding.pbSignPreviewLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        signPreviewJob = scope.launch(Dispatchers.IO) {
             val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
             withContext(Dispatchers.Main) {
+                if (selectedUris.firstOrNull() != uri || activeMode != QuickMode.SIGN) return@withContext
                 binding.pbSignPreviewLoading.visibility = View.GONE
                 if (bmp != null) {
                     binding.ivSignPagePreview.setImageBitmap(bmp)
