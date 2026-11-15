@@ -35,7 +35,7 @@ interface IMediaBackend {
     ): com.veilframe.app.privacy.VideoSanitizationResult {
         val ok = cleanVideo(inputPath, outputPath, noiseLevel, scrubAudio, crf, stripExif, reencodeBitstream)
         return com.veilframe.app.privacy.VideoSanitizationResult(
-            if (ok) com.veilframe.app.privacy.VideoSanitizationStatus.FULL_SANITIZATION
+            if (ok) com.veilframe.app.privacy.VideoSanitizationStatus.TRANSCODED
             else com.veilframe.app.privacy.VideoSanitizationStatus.FAILED
         )
     }
