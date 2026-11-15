@@ -529,11 +529,16 @@ class ToolExecutionController(
                         )
                         if (!res.isAuditPassed && res.isSuccess) {
                             activity.runOnUiThread {
-                                if (!res.isConclusive) {
-                                    onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
+                                val heuristic = if (res.residualHeuristicPassed) {
+                                    " Single-image residual heuristic crossed its threshold."
                                 } else {
-                                    onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                                    " Single-image residual heuristic did not establish suppression."
                                 }
+                                onLog(
+                                    "[PRNU] Output file was created, but camera PRNU removal was NOT verified: no independent multi-image camera reference is used." +
+                                        heuristic +
+                                        " Residual sPCE=${res.measuredPce}; max strip=${res.measuredMaxStrip}."
+                                )
                             }
                         }
                         res.isSuccess
