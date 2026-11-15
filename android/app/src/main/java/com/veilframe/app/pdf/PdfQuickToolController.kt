@@ -119,6 +119,8 @@ class PdfQuickToolController(
     private var isExecuting: Boolean = false
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
+    private var selectionLoadJob: Job? = null
+    private var selectionGeneration: Long = 0L
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -152,8 +154,15 @@ class PdfQuickToolController(
     override val isProcessing: Boolean get() = isExecuting
 
     override fun discardAndReleaseAllResources() {
+        selectionGeneration++
+        selectionLoadJob?.cancel()
+        selectionLoadJob = null
         activeJob?.cancel()
+        activeJob = null
         selectedUris.clear()
+        primaryDocName = "document.pdf"
+        primaryDocPages = 1
+        isSaved = false
         isExecuting = false
         thumbnailLoader.clearCache()
         binding.pdfSignCanvasView.reset()
@@ -175,6 +184,8 @@ class PdfQuickToolController(
         binding.tvDocPreviewContent.text = ""
         binding.etCustomMergeOrder.setText("")
         binding.etCustomPageOrder.setText("")
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
         mergeFileListAdapter?.clearAll()
         mergePageAdapter?.setItems(emptyList())
     }
@@ -769,6 +780,9 @@ class PdfQuickToolController(
 
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        selectionGeneration++
+        val generation = selectionGeneration
+        selectionLoadJob?.cancel()
         isSaved = false
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
@@ -779,6 +793,10 @@ class PdfQuickToolController(
         } else {
             selectedUris.clear()
             selectedUris.add(uris.first())
+            // A document belongs only to the active page-tool workspace. Never leave a
+            // previous Split/Reorder/Rotate adapter holding a different source URI.
+            splitThumbnailAdapter?.clear()
+            rotateThumbnailAdapter?.clear()
             val uri = uris.first()
             primaryDocName = queryDocumentName(uri)
 
@@ -796,16 +814,25 @@ class PdfQuickToolController(
                 inspectAndPreviewOfficeDoc(uri)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
-                scope.launch(Dispatchers.IO) {
+                selectionLoadJob = scope.launch(Dispatchers.IO) {
                     try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc ->
-                                primaryDocPages = doc.numberOfPages
-                                withContext(Dispatchers.Main) {
-                                    binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
-                                    splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
-                                    rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
-                                    if (activeMode == QuickMode.SIGN) {
+                        val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                        } ?: 0
+                        withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                            primaryDocPages = pageCount
+                            if (pageCount > 0) {
+                                binding.tvQuickToolDocMeta.text = "$pageCount pages total"
+                                when (activeMode) {
+                                    QuickMode.SPLIT -> splitThumbnailAdapter?.setDocument(uri, pageCount, (1..pageCount).toSet())
+                                    QuickMode.ROTATE, QuickMode.DELETE, QuickMode.REORDER -> rotateThumbnailAdapter?.setDocument(uri, pageCount, emptySet())
+                                    else -> Unit
+                                }
+                            } else {
+                                binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            }
+                            if (activeMode == QuickMode.SIGN && pageCount > 0) {
                                         binding.viewSignaturePad.isDrawingEnabled = true
                                         refreshSignPagePreview()
                                         updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
@@ -815,7 +842,9 @@ class PdfQuickToolController(
                         }
                     } catch (_: Exception) {
                         withContext(Dispatchers.Main) {
-                            binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            }
                         }
                     }
                 }
