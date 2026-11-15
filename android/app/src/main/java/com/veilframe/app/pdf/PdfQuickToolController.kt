@@ -716,8 +716,10 @@ class PdfQuickToolController(
             mergePageAdapter?.setItems(emptyList())
             return
         }
+        val generation = selectionGeneration
+        val sourceUris = selectedUris.toList()
         scope.launch(Dispatchers.IO) {
-            val mergeItems = selectedUris.mapIndexed { idx, uri ->
+            val mergeItems = sourceUris.mapIndexed { idx, uri ->
                 val mime = activity.contentResolver.getType(uri) ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
@@ -743,7 +745,12 @@ class PdfQuickToolController(
             }
             val pageItems = pdfMerger.buildPageItems(mergeItems)
             withContext(Dispatchers.Main) {
-                mergePageAdapter?.setItems(pageItems)
+                if (generation == selectionGeneration &&
+                    (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) &&
+                    sourceUris == selectedUris.toList()
+                ) {
+                    mergePageAdapter?.setItems(pageItems)
+                }
             }
         }
     }
@@ -851,10 +858,14 @@ class PdfQuickToolController(
                     val metaResult = metadataManager.readMetadata(activity, uri)
                     val meta = metaResult.getOrNull()
                     withContext(Dispatchers.Main) {
-                        meta?.let {
-                            binding.etMetaTitle.setText(it.title ?: "")
-                            binding.etMetaAuthor.setText(it.author ?: "")
-                            binding.etMetaKeywords.setText(it.keywords ?: "")
+                        if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
+                            activeMode == QuickMode.METADATA
+                        ) {
+                            meta?.let {
+                                binding.etMetaTitle.setText(it.title ?: "")
+                                binding.etMetaAuthor.setText(it.author ?: "")
+                                binding.etMetaKeywords.setText(it.keywords ?: "")
+                            }
                         }
                     }
                 }
