@@ -119,6 +119,7 @@ class PdfQuickToolController(
     private var isExecuting: Boolean = false
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
+    private var selectionGeneration: Long = 0L
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -152,9 +153,16 @@ class PdfQuickToolController(
     override val isProcessing: Boolean get() = isExecuting
 
     override fun discardAndReleaseAllResources() {
+        selectionGeneration++
         activeJob?.cancel()
+        activeJob = null
         selectedUris.clear()
+        primaryDocName = "document.pdf"
+        primaryDocPages = 1
         isExecuting = false
+        isSaved = false
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
         thumbnailLoader.clearCache()
         binding.pdfSignCanvasView.reset()
         binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -177,6 +185,10 @@ class PdfQuickToolController(
         binding.etCustomPageOrder.setText("")
         mergeFileListAdapter?.clearAll()
         mergePageAdapter?.setItems(emptyList())
+        binding.tvQuickToolDocName.text = ""
+        binding.tvQuickToolDocMeta.text = ""
+        binding.tvMultiFileCount.text = "SELECTED FILES (0)"
+        binding.btnQuickToolExecute.isEnabled = true
     }
 
     fun init() {
@@ -432,7 +444,7 @@ class PdfQuickToolController(
                 return true
             }
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
-            override fun isLongPressDragEnabled(): Boolean = (activeMode == QuickMode.REORDER)
+            override fun isLongPressDragEnabled(): Boolean = false
 
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
@@ -769,7 +781,13 @@ class PdfQuickToolController(
 
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        selectionGeneration++
+        val generation = selectionGeneration
+        activeJob?.cancel()
+        activeJob = null
         isSaved = false
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
             selectedUris.addAll(uris)
@@ -793,29 +811,35 @@ class PdfQuickToolController(
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
                 binding.pbDocVisualLoading.visibility = View.VISIBLE
                 binding.ivDocVisualPreview.setImageDrawable(null)
-                inspectAndPreviewOfficeDoc(uri)
+                inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 scope.launch(Dispatchers.IO) {
                     try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc ->
-                                primaryDocPages = doc.numberOfPages
-                                withContext(Dispatchers.Main) {
-                                    binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
-                                    splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
-                                    rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
-                                    if (activeMode == QuickMode.SIGN) {
-                                        binding.viewSignaturePad.isDrawingEnabled = true
-                                        refreshSignPagePreview()
-                                        updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
-                                    }
-                                }
+                        val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                        } ?: throw IllegalStateException("Cannot open PDF")
+                        withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                            primaryDocPages = pageCount
+                            binding.tvQuickToolDocMeta.text = "$pageCount pages total"
+                            when (activeMode) {
+                                QuickMode.SPLIT -> splitThumbnailAdapter?.setDocument(uri, pageCount, (1..pageCount).toSet())
+                                QuickMode.REORDER, QuickMode.ROTATE, QuickMode.DELETE ->
+                                    rotateThumbnailAdapter?.setDocument(uri, pageCount, emptySet())
+                                else -> Unit
+                            }
+                            if (activeMode == QuickMode.SIGN) {
+                                binding.viewSignaturePad.isDrawingEnabled = true
+                                refreshSignPagePreview()
+                                updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
                             }
                         }
                     } catch (_: Exception) {
                         withContext(Dispatchers.Main) {
-                            binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            }
                         }
                     }
                 }
@@ -838,9 +862,10 @@ class PdfQuickToolController(
         }
     }
 
-    private fun inspectAndPreviewOfficeDoc(uri: Uri) {
+    private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
+        val selectedName = selectedName
         scope.launch(Dispatchers.IO) {
-            val lower = primaryDocName.lowercase()
+            val lower = selectedName.lowercase()
             var summary = "Office Document"
             var previewText = ""
             var metaText = "Ready to convert"
@@ -888,10 +913,10 @@ class PdfQuickToolController(
                             summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
                             previewText = paragraphs.take(15).joinToString("\n\n")
                         } else {
-                            summary = "Word Document ($primaryDocName)"
+                            summary = "Word Document ($selectedName)"
                             previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("DOCX", primaryDocName, paragraphs, tablesCount, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("DOCX", selectedName, paragraphs, tablesCount, null, null)
                     }
                     lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
                         metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
@@ -926,10 +951,10 @@ class PdfQuickToolController(
                             }
                         } catch (t: Throwable) {
                             Log.w(TAG, "XLSX preview failed: ${t.message}", t)
-                            summary = "Excel Spreadsheet ($primaryDocName)"
+                            summary = "Excel Spreadsheet ($selectedName)"
                             previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("XLSX", primaryDocName, emptyList(), 1, sheetGrid, null)
+                        previewBitmap = renderOfficePreviewBitmap("XLSX", selectedName, emptyList(), 1, sheetGrid, null)
                     }
                     lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
                         metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
@@ -955,10 +980,10 @@ class PdfQuickToolController(
                             }
                         } catch (t: Throwable) {
                             Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
-                            summary = "PowerPoint Presentation ($primaryDocName)"
+                            summary = "PowerPoint Presentation ($selectedName)"
                             previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("PPTX", primaryDocName, emptyList(), 0, null, slideTexts)
+                        previewBitmap = renderOfficePreviewBitmap("PPTX", selectedName, emptyList(), 0, null, slideTexts)
                     }
                     lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
                         metaText = "Text Document (${lower.substringAfterLast('.')})"
@@ -974,19 +999,19 @@ class PdfQuickToolController(
                             summary = "Text Document • $count lines"
                             previewText = lines.take(20).joinToString("\n")
                         }
-                        previewBitmap = renderOfficePreviewBitmap("TXT", primaryDocName, lines, 0, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("TXT", selectedName, lines, 0, null, null)
                     }
                     else -> {
                         metaText = "Office Document"
-                        summary = "Document Selected • $primaryDocName"
+                        summary = "Document Selected • $selectedName"
                         previewText = "Document loaded and ready for conversion to PDF."
-                        previewBitmap = renderOfficePreviewBitmap("DOC", primaryDocName, listOf("Office document loaded", primaryDocName), 0, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("DOC", selectedName, listOf("Office document loaded", selectedName), 0, null, null)
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
                 summary = "Document Selected"
-                previewText = "Ready to convert: $primaryDocName"
+                previewText = "Ready to convert: $selectedName"
             }
 
             if (previewText.isBlank()) {
@@ -994,6 +1019,10 @@ class PdfQuickToolController(
             }
 
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
+                    previewBitmap?.recycle()
+                    return@withContext
+                }
                 binding.tvQuickToolDocMeta.text = metaText
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.tvDocPreviewSummary.text = summary
@@ -1486,6 +1515,7 @@ class PdfQuickToolController(
     private fun refreshSignPagePreview() {
         val uri = selectedUris.firstOrNull() ?: return
         if (primaryDocPages <= 0) return
+        val generation = selectionGeneration
         val targetPageIdx = when {
             binding.chipSignPageFirst.isChecked -> 0
             binding.chipSignPageAll.isChecked -> 0
@@ -1500,6 +1530,10 @@ class PdfQuickToolController(
         scope.launch(Dispatchers.IO) {
             val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
+                    bmp?.recycle()
+                    return@withContext
+                }
                 binding.pbSignPreviewLoading.visibility = View.GONE
                 if (bmp != null) {
                     binding.ivSignPagePreview.setImageBitmap(bmp)
