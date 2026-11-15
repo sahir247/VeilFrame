@@ -814,7 +814,7 @@ class PdfQuickToolController(
         cancelTransientJobs()
         isExecuting = false
         isSourceReady = false
-        binding.btnQuickToolExecute.isEnabled = true
+        binding.btnQuickToolExecute.isEnabled = false
         binding.btnQuickToolExecute.text = activeMode.buttonText
         binding.btnSignCanvasSave.isEnabled = true
         binding.pdfSignCanvasView.reset()
