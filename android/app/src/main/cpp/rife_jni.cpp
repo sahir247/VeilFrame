@@ -179,12 +179,24 @@ static jboolean do_rife_native_init(
              g_rife_gpuid, cpu_threads, loadedPadding);
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Out of memory in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (const std::exception& e) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Exception in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (...) {
+        g_rife = nullptr;
+        g_rife_gpuid = -1;
+        g_rife_gpu_lease.reset();
+        g_rife_model_dir.clear();
         LOGE("Unknown exception in RIFE nativeInit");
         return JNI_FALSE;
     }
