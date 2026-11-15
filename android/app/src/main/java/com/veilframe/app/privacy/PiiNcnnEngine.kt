@@ -162,11 +162,10 @@ class PiiNcnnEngine(
             } else {
                 when (classIdx) {
                     0 -> PiiClass.PERSON // COCO person (full human body)
-                    2, 3, 5, 7 -> PiiClass.PLATE // car, motorcycle, bus, truck
+                    2, 3, 5, 7 -> PiiClass.VEHICLE // car, motorcycle, bus, truck (accurately classified as vehicle, not plate)
                     62, 63 -> PiiClass.SCREEN // tv/monitor, laptop screen
-                    67 -> PiiClass.CARD // cell phone
-                    73 -> PiiClass.CARD // book/document
-                    else -> null // ignore non-PII classes
+                    67 -> PiiClass.DEVICE // cell phone (device, not financial card)
+                    else -> null // books and other non-PII COCO classes excluded
                 }
             }
         }
@@ -174,14 +173,13 @@ class PiiNcnnEngine(
         fun cocoPiiDetailLabel(classIdx: Int, mappedClass: PiiClass): String {
             return when (classIdx) {
                 0 -> "Person"
-                2 -> "Car / Plate"
-                3 -> "Motorcycle / Plate"
-                5 -> "Bus / Plate"
-                7 -> "Truck / Plate"
+                2 -> "Vehicle (Car)"
+                3 -> "Vehicle (Motorcycle)"
+                5 -> "Vehicle (Bus)"
+                7 -> "Vehicle (Truck)"
                 62 -> "Monitor / TV Screen"
                 63 -> "Laptop Screen"
-                67 -> "Phone Screen"
-                73 -> "Book / Document"
+                67 -> "Cell Phone"
                 else -> mappedClass.label
             }
         }
@@ -784,12 +782,14 @@ enum class PiiRedactionStyle(val label: String, val isForensicLayerC: Boolean) {
 enum class PiiClass(val label: String, val category: String) {
     FACE("Face", "Biometric"),
     PERSON("Person (Full Body)", "Human"),
-    PLATE("Vehicle / License Plate", "Identifier"),
+    PLATE("License Plate", "Identifier"),
     SIGNATURE("Signature", "Legal"),
-    CARD("Phone / ID / Document", "Financial"),
+    CARD("ID / Payment Card", "Financial"),
     BARCODE("Barcode / QR Code", "Data"),
     SCREEN("Screen / Laptop", "Device"),
-    TEXT_PII("Sensitive Text (Email/Phone/ID)", "Text")
+    TEXT_PII("Sensitive Text (Email/Phone/ID)", "Text"),
+    VEHICLE("Vehicle", "Identifier"),
+    DEVICE("Phone / Electronic Device", "Device")
 }
 
 /**

@@ -791,7 +791,7 @@ class ImageStudioController(
             val engine = getOrInitPiiEngine()
             try {
                 // Run multi-modal inference on preview bitmap, scaling bounding boxes to original dimensions
-                val detections = PiiMultiModalDetector.detectAll(
+                val summary = PiiMultiModalDetector.detectAllSummary(
                     context = activity,
                     ncnnEngine = engine,
                     bitmap = sourceBmp,
@@ -802,20 +802,37 @@ class ImageStudioController(
                     includeBarcodes = true,
                     includeOcrText = true
                 )
+                val detections = summary.detections
 
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
                     if (activeGeneration != gen) return@withContext
 
                     if (detections.isEmpty()) {
-                        if (editState.piiDetections.isNotEmpty()) {
+                        if (summary.failedEngines.isNotEmpty()) {
+                            val failedList = summary.failedEngines.keys.joinToString(", ")
+                            Toast.makeText(
+                                activity,
+                                "PII scan degraded: $failedList unavailable. 0 targets confirmed in active passes.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else if (editState.piiDetections.isNotEmpty()) {
                             editState.piiDetections = emptyList()
                             refreshPreview()
                             Toast.makeText(activity, "No PII targets detected; cleared prior redactions", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(activity, "No PII detected (0 targets found)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "No PII detected (0 targets found across all engines)", Toast.LENGTH_SHORT).show()
                         }
                         return@withContext
+                    }
+
+                    if (summary.failedEngines.isNotEmpty()) {
+                        val failedList = summary.failedEngines.keys.joinToString(", ")
+                        Toast.makeText(
+                            activity,
+                            "Partial scan: $failedList failed. ${detections.size} targets found in active passes.",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
 
                     showPiiRedactionSelectionDialog(detections, item)

@@ -93,4 +93,27 @@ class RifeModelRegistryAndManagerTest {
         assertEquals(RifeModelRegistry.RIFE_V4_25.id, manager.getSelectedModel().id)
         assertEquals(64, manager.requiredPadding)
     }
+
+    @Test
+    fun testRifeModelSha256DigestsArePresentAndValid() {
+        val shaRegex = Regex("^[a-f0-9]{64}$")
+        for (model in RifeModelRegistry.ALL_MODELS) {
+            assertTrue("Param SHA256 for ${model.id} must be valid 64-char hex", shaRegex.matches(model.paramSha256.lowercase()))
+            assertTrue("Bin SHA256 for ${model.id} must be valid 64-char hex", shaRegex.matches(model.binSha256.lowercase()))
+            assertTrue("Max param size must be positive", model.maxParamBytes > 1000)
+            assertTrue("Max bin size must be positive", model.maxBinBytes >= 5_000_000)
+        }
+    }
+
+    @Test
+    fun testAllowedHostsStrictlyExcludesWildcardsAndUnapprovedDomains() {
+        assertFalse("Amazon AWS wildcard must be rejected", RifeModelManager.isAllowedUrl("https://s3.amazonaws.com/malicious/flownet.bin"))
+        assertFalse("Unapproved CDN must be rejected", RifeModelManager.isAllowedUrl("https://unpkg.com/rife/flownet.bin"))
+        assertFalse("HTTP scheme must be rejected", RifeModelManager.isAllowedUrl("http://raw.githubusercontent.com/rife/flownet.bin"))
+        assertFalse("Arbitrary host must be rejected", RifeModelManager.isAllowedUrl("https://evil-mirror.org/flownet.bin"))
+
+        assertTrue("GitHub raw must be allowed", RifeModelManager.isAllowedUrl("https://raw.githubusercontent.com/Sahir247/VeilFrame/main/models/rife/rife-v4.25/flownet.bin"))
+        assertTrue("GitHub release object must be allowed", RifeModelManager.isAllowedUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/flownet.bin"))
+        assertTrue("jsDelivr CDN must be allowed", RifeModelManager.isAllowedUrl("https://cdn.jsdelivr.net/gh/Sahir247/VeilFrame@v2.3.1/models/rife/rife-v4.25/flownet.bin"))
+    }
 }

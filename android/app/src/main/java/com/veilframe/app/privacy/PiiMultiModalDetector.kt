@@ -24,9 +24,92 @@ import java.util.concurrent.TimeUnit
  * 2. WeChatQRCode + ML Kit Barcode Scanning (QR codes, 1D/2D barcodes)
  * 3. ML Kit Text Recognition + [PiiTextClassifier] (emails, phones, card numbers, SSN/PAN/National IDs, API keys/tokens)
  */
+data class PiiScanSummary(
+    val detections: List<PiiDetection>,
+    val successfulEngines: Set<String>,
+    val failedEngines: Map<String, String>,
+    val isFullySuccessful: Boolean = failedEngines.isEmpty()
+)
+
 object PiiMultiModalDetector {
 
     private const val TAG = "VeilFrame.PiiMultiModal"
+
+    fun detectAllSummary(
+        context: Context,
+        ncnnEngine: PiiNcnnEngine?,
+        bitmap: Bitmap,
+        targetWidth: Int = bitmap.width,
+        targetHeight: Int = bitmap.height,
+        confThreshold: Float = 0.38f,
+        iouThreshold: Float = 0.45f,
+        includeNcnn: Boolean = true,
+        includeBarcodes: Boolean = true,
+        includeOcrText: Boolean = true
+    ): PiiScanSummary {
+        val srcW = bitmap.width.coerceAtLeast(1)
+        val srcH = bitmap.height.coerceAtLeast(1)
+        val candidates = mutableListOf<PiiDetection>()
+        val successfulEngines = mutableSetOf<String>()
+        val failedEngines = mutableMapOf<String, String>()
+
+        // 1. NCNN: Faces (UltraFace RFB-320) + Vehicles, Screens, Phones, People (YOLOv8n)
+        if (includeNcnn) {
+            if (ncnnEngine != null) {
+                runCatching {
+                    val ncnnDets = ncnnEngine.detect(
+                        bitmap = bitmap,
+                        targetWidth = srcW,
+                        targetHeight = srcH,
+                        confThreshold = confThreshold,
+                        iouThreshold = iouThreshold
+                    )
+                    candidates += ncnnDets
+                    successfulEngines += "NCNN_VISION"
+                }.onFailure {
+                    Log.w(TAG, "NCNN PII pass failed: ${it.message}")
+                    failedEngines["NCNN_VISION"] = it.message ?: "Inference failure"
+                }
+            } else {
+                failedEngines["NCNN_VISION"] = "NCNN Engine not initialized"
+            }
+        }
+
+        // 2. QR Codes & Barcodes (WeChatQRCode + ML Kit BarcodeScanning)
+        if (includeBarcodes) {
+            runCatching {
+                candidates += detectBarcodesAndQr(bitmap)
+                successfulEngines += "BARCODE_SCANNER"
+            }.onFailure {
+                Log.w(TAG, "Barcode pass failed: ${it.message}")
+                failedEngines["BARCODE_SCANNER"] = it.message ?: "Scanner failure"
+            }
+        }
+
+        // 3. Sensitive OCR Text (Emails, Phones, Card Numbers, National IDs, Tokens/Credentials, IPs)
+        if (includeOcrText) {
+            runCatching {
+                candidates += detectSensitiveTextPii(bitmap)
+                successfulEngines += "OCR_TEXT"
+            }.onFailure {
+                Log.w(TAG, "OCR pass failed: ${it.message}")
+                failedEngines["OCR_TEXT"] = it.message ?: "OCR failure"
+            }
+        }
+
+        val deduplicated = PiiNcnnEngine.applyNMS(candidates, iouThreshold)
+        val scaled = if (targetWidth != srcW || targetHeight != srcH) {
+            PiiNcnnEngine.scaleDetections(deduplicated, srcW, srcH, targetWidth, targetHeight)
+        } else {
+            deduplicated
+        }
+
+        return PiiScanSummary(
+            detections = scaled,
+            successfulEngines = successfulEngines,
+            failedEngines = failedEngines
+        )
+    }
 
     fun detectAll(
         context: Context,
@@ -40,41 +123,10 @@ object PiiMultiModalDetector {
         includeBarcodes: Boolean = true,
         includeOcrText: Boolean = true
     ): List<PiiDetection> {
-        val srcW = bitmap.width.coerceAtLeast(1)
-        val srcH = bitmap.height.coerceAtLeast(1)
-        val candidates = mutableListOf<PiiDetection>()
-
-        // 1. NCNN: Faces (UltraFace RFB-320) + Vehicles/Plates, Screens/Laptops, Phones/Documents, People (YOLOv8n)
-        if (includeNcnn && ncnnEngine != null) {
-            runCatching {
-                candidates += ncnnEngine.detect(
-                    bitmap = bitmap,
-                    targetWidth = srcW,
-                    targetHeight = srcH,
-                    confThreshold = confThreshold,
-                    iouThreshold = iouThreshold
-                )
-            }.onFailure {
-                Log.w(TAG, "NCNN PII pass failed: ${it.message}")
-            }
-        }
-
-        // 2. QR Codes & Barcodes (WeChatQRCode + ML Kit BarcodeScanning)
-        if (includeBarcodes) {
-            candidates += detectBarcodesAndQr(bitmap)
-        }
-
-        // 3. Sensitive OCR Text (Emails, Phones, Card Numbers, National IDs, Tokens/Credentials, IPs)
-        if (includeOcrText) {
-            candidates += detectSensitiveTextPii(bitmap)
-        }
-
-        val deduplicated = PiiNcnnEngine.applyNMS(candidates, iouThreshold)
-        return if (targetWidth != srcW || targetHeight != srcH) {
-            PiiNcnnEngine.scaleDetections(deduplicated, srcW, srcH, targetWidth, targetHeight)
-        } else {
-            deduplicated
-        }
+        return detectAllSummary(
+            context, ncnnEngine, bitmap, targetWidth, targetHeight,
+            confThreshold, iouThreshold, includeNcnn, includeBarcodes, includeOcrText
+        ).detections
     }
 
     private fun detectBarcodesAndQr(bitmap: Bitmap): List<PiiDetection> {

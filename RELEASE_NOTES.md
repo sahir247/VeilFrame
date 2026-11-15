@@ -39,6 +39,14 @@ VeilFrame **v2.3.1** introduces our groundbreaking on-device neural sensor finge
 - **Bitmap Recycling Guards:** Explicit recycling guards ensure no duplicate bitmap allocation leaks occur during multi-stage preview rendering.
 - **Native JNI Scope Hardening:** Hardened `BitmapPixelScope` and `GpuInstanceLease` RAII handlers across `veilnet_jni.cpp`, `matting_jni.cpp`, and `rife_jni.cpp` to prevent native buffer or GPU compute lock retention.
 
+#### 6. <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> Trust Boundary & Supply-Chain Hardening
+- **Cryptographic Model Verification:** All RIFE neural weights undergo streaming SHA-256 hash checks and strict file size bounding against pinned digests before being accepted into app storage.
+- **Strict Host Whitelist:** Restricted download domains strictly to official GitHub and jsDelivr endpoints, eliminating broad subdomain wildcards.
+- **PII Scan Assurance:** Introduced structured multimodal scan summaries (`PiiScanSummary`), ensuring initialization or detector runtime failures are explicitly surfaced rather than falsely reported as clean scans.
+- **COCO Classification Precision:** Refined YOLOv8n mappings to accurately classify full vehicles and electronic devices, eliminating spurious license-plate or financial-card labels.
+- **Real-Time PRNU Self-Audit:** main PRNU sanitization path runs in-memory self-audit calculations, reporting verified numerical sPCE and 6-strip metrics only upon empirical confirmation.
+- **CI Android Release Gate:** Pinned `release-gate` in GitHub Actions to depend strictly on `android-upscaler-verify` alongside cross-platform unit test matrices.
+
 ---
 
 ### <img src="docs/images/icons/downloads.svg" width="18" height="18" alt="" /> Downloads & Installation

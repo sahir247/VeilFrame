@@ -11,6 +11,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * Manages physical storage, downloads, active selection, and lifecycle of modern RIFE v4 AI models (v4.0 - v4.26).
@@ -33,32 +34,14 @@ class RifeModelManager(private val context: Context) {
 
         private val allowedExactHosts = setOf(
             "github.com",
-            "githubusercontent.com",
             "raw.githubusercontent.com",
             "objects.githubusercontent.com",
-            "cdn.jsdelivr.net",
-            "jsdelivr.net",
-            "jsdelivr.com",
-            "huggingface.co",
-            "hf.co",
-            "amazonaws.com"
-        )
-
-        private val allowedHostSuffixes = setOf(
-            ".github.com",
-            ".githubusercontent.com",
-            ".jsdelivr.net",
-            ".jsdelivr.com",
-            ".huggingface.co",
-            ".hf.co",
-            ".amazonaws.com"
+            "cdn.jsdelivr.net"
         )
 
         private fun isAllowedHost(host: String): Boolean {
             val normalized = host.trimEnd('.').lowercase(java.util.Locale.ROOT)
-            return normalized in allowedExactHosts ||
-                allowedHostSuffixes.any { normalized.endsWith(it) } ||
-                allowedExactHosts.any { normalized.endsWith(".$it") }
+            return normalized in allowedExactHosts
         }
 
         fun isAllowedUrl(urlString: String): Boolean {
@@ -105,10 +88,43 @@ class RifeModelManager(private val context: Context) {
             if (d == null || !d.exists()) return false
             val p = File(d, "flownet.param")
             val b = File(d, "flownet.bin")
-            return p.exists() && p.length() > 500 && b.exists() && b.length() >= 4_000_000L
+            return p.exists() && p.length() > 500 && p.length() <= spec.maxParamBytes &&
+                b.exists() && b.length() >= 4_000_000L && b.length() <= spec.maxBinBytes
         }
 
         return isValidDir(internalDir) || isValidDir(externalDir) || isValidDir(legacyDir)
+    }
+
+    fun computeFileSha256(file: File): String? {
+        if (!file.exists() || !file.isFile) return null
+        return try {
+            val md = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(65536)
+            file.inputStream().use { input ->
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Cryptographically validates that model artifacts match the pinned SHA-256 digests.
+     */
+    fun verifyModelChecksums(spec: RifeModelSpec): Boolean {
+        val dir = getModelDir(spec)
+        val p = File(dir, "flownet.param")
+        val b = File(dir, "flownet.bin")
+        if (!p.exists() || !b.exists()) return false
+
+        val pHash = computeFileSha256(p) ?: return false
+        val bHash = computeFileSha256(b) ?: return false
+        return pHash.equals(spec.paramSha256, ignoreCase = true) &&
+            bHash.equals(spec.binSha256, ignoreCase = true)
     }
 
     fun getSelectedModel(): RifeModelSpec {
@@ -250,14 +266,14 @@ class RifeModelManager(private val context: Context) {
             onProgress(5, "Downloading ${spec.displayName} configuration…")
             val primaryParamUrl = spec.paramCdnUrl ?: spec.paramUrl
             val paramSuccess = runCatching {
-                downloadSingle(primaryParamUrl, paramF) { _, _ -> }
+                downloadSingle(primaryParamUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
             }.recoverCatching { e ->
                 Log.w(TAG, "Primary param download failed, trying raw GitHub: ${e.message}")
-                downloadSingle(spec.paramUrl, paramF) { _, _ -> }
+                downloadSingle(spec.paramUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
             }.recoverCatching { e ->
                 if (spec.paramFallbackUrl != null) {
                     Log.w(TAG, "Raw param download failed, trying fallback: ${e.message}")
-                    downloadSingle(spec.paramFallbackUrl, paramF) { _, _ -> }
+                    downloadSingle(spec.paramFallbackUrl, paramF, expectedSha256 = spec.paramSha256, maxBytes = spec.maxParamBytes) { _, _ -> }
                 } else throw e
             }.isSuccess
 
@@ -284,14 +300,14 @@ class RifeModelManager(private val context: Context) {
 
             val primaryBinUrl = spec.binCdnUrl ?: spec.binUrl
             val binSuccess = runCatching {
-                downloadSingle(primaryBinUrl, binF, progressCallback)
+                downloadSingle(primaryBinUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
             }.recoverCatching { e ->
                 Log.w(TAG, "Primary bin download failed, trying raw GitHub: ${e.message}")
-                downloadSingle(spec.binUrl, binF, progressCallback)
+                downloadSingle(spec.binUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
             }.recoverCatching { e ->
                 if (spec.binFallbackUrl != null) {
                     Log.w(TAG, "Raw bin download failed, trying fallback: ${e.message}")
-                    downloadSingle(spec.binFallbackUrl, binF, progressCallback)
+                    downloadSingle(spec.binFallbackUrl, binF, expectedSha256 = spec.binSha256, maxBytes = spec.maxBinBytes, onFileProgress = progressCallback)
                 } else throw e
             }.isSuccess
 
@@ -332,6 +348,8 @@ class RifeModelManager(private val context: Context) {
     private suspend fun downloadSingle(
         urlStr: String,
         destFile: File,
+        expectedSha256: String? = null,
+        maxBytes: Long = 25_000_000L,
         onFileProgress: (Long, Long) -> Unit
     ) = withContext(Dispatchers.IO) {
         if (!isAllowedUrl(urlStr)) {
@@ -386,7 +404,11 @@ class RifeModelManager(private val context: Context) {
 
             val conn = connection ?: throw IllegalStateException("Connection null")
             val totalBytes = conn.contentLengthLong
+            if (totalBytes > maxBytes) {
+                throw SecurityException("Reported file size ($totalBytes bytes) exceeds maximum limit ($maxBytes bytes)")
+            }
 
+            val md = MessageDigest.getInstance("SHA-256")
             conn.inputStream.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     val buffer = ByteArray(65536)
@@ -395,13 +417,23 @@ class RifeModelManager(private val context: Context) {
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         ensureActive()
+                        md.update(buffer, 0, bytesRead)
                         output.write(buffer, 0, bytesRead)
                         totalDownloaded += bytesRead
+                        if (totalDownloaded > maxBytes) {
+                            throw SecurityException("Downloaded bytes ($totalDownloaded) exceeded maximum allowed limit ($maxBytes)")
+                        }
                         onFileProgress(totalDownloaded, totalBytes)
                     }
                     output.flush()
                     try { output.fd.sync() } catch (_: Exception) {}
                 }
+            }
+
+            val computedHash = md.digest().joinToString("") { "%02x".format(it) }
+            if (expectedSha256 != null && !computedHash.equals(expectedSha256.trim(), ignoreCase = true)) {
+                tempFile.delete()
+                throw SecurityException("Cryptographic SHA-256 mismatch for ${destFile.name}! Expected $expectedSha256, computed $computedHash")
             }
 
             if (destFile.exists()) destFile.delete()

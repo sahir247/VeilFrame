@@ -5,6 +5,12 @@ import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.util.Log
 
+data class PurifyResult(
+    val bitmap: Bitmap,
+    val isSuccess: Boolean,
+    val errorMessage: String? = null
+)
+
 /**
  * JNI bridge for VeilNet-Nano neural sensor attribution pre-scrambler.
  * Executes on-device NCNN inference with seam-free halo-padded sliding tiling
@@ -61,16 +67,21 @@ object VeilNetNanoNative {
         return ok
     }
 
-    fun purify(
+    fun purifyResult(
         context: Context,
         src: Bitmap,
         useGpu: Boolean = false,
         coreSize: Int = 480,
         halo: Int = 16
-    ): Bitmap {
+    ): PurifyResult {
         if (!ensureInitialized(context, useGpu)) {
-            Log.w(TAG, "VeilNet-Nano initialization failed; returning copy of source")
-            return src.copy(src.config ?: Bitmap.Config.ARGB_8888, true)
+            val msg = "VeilNet-Nano initialization failed"
+            Log.w(TAG, "$msg; returning copy of source")
+            return PurifyResult(
+                bitmap = src.copy(src.config ?: Bitmap.Config.ARGB_8888, true),
+                isSuccess = false,
+                errorMessage = msg
+            )
         }
 
         val dst = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
@@ -81,11 +92,25 @@ object VeilNetNanoNative {
             false
         }
 
-        return if (success) dst else {
+        return if (success) {
+            PurifyResult(bitmap = dst, isSuccess = true)
+        } else {
             dst.recycle()
-            src.copy(src.config ?: Bitmap.Config.ARGB_8888, true)
+            PurifyResult(
+                bitmap = src.copy(src.config ?: Bitmap.Config.ARGB_8888, true),
+                isSuccess = false,
+                errorMessage = "nativePurifyBitmap execution returned false"
+            )
         }
     }
+
+    fun purify(
+        context: Context,
+        src: Bitmap,
+        useGpu: Boolean = false,
+        coreSize: Int = 480,
+        halo: Int = 16
+    ): Bitmap = purifyResult(context, src, useGpu, coreSize, halo).bitmap
 
     @Synchronized
     fun release() {

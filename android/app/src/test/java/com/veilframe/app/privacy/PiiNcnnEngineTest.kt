@@ -165,10 +165,10 @@ class PiiNcnnEngineTest {
 
         // COCO mapping
         assertEquals(PiiClass.PERSON, PiiNcnnEngine.mapClassIndex(0, numClasses = 80)) // person (full human body)
-        assertEquals(PiiClass.PLATE, PiiNcnnEngine.mapClassIndex(2, numClasses = 80)) // car
-        assertEquals(PiiClass.PLATE, PiiNcnnEngine.mapClassIndex(3, numClasses = 80)) // motorcycle
-        assertEquals(PiiClass.CARD, PiiNcnnEngine.mapClassIndex(67, numClasses = 80)) // cell phone
-        assertEquals(PiiClass.CARD, PiiNcnnEngine.mapClassIndex(73, numClasses = 80)) // book
+        assertEquals(PiiClass.VEHICLE, PiiNcnnEngine.mapClassIndex(2, numClasses = 80)) // car (vehicle)
+        assertEquals(PiiClass.VEHICLE, PiiNcnnEngine.mapClassIndex(3, numClasses = 80)) // motorcycle (vehicle)
+        assertEquals(PiiClass.DEVICE, PiiNcnnEngine.mapClassIndex(67, numClasses = 80)) // cell phone (device)
+        assertEquals(null, PiiNcnnEngine.mapClassIndex(73, numClasses = 80)) // book -> excluded from PII
         assertEquals(null, PiiNcnnEngine.mapClassIndex(16, numClasses = 80)) // dog -> null
     }
 
@@ -445,7 +445,7 @@ class PiiNcnnEngineTest {
         assertEquals(PiiClass.SCREEN, PiiNcnnEngine.mapClassIndex(62, 80)) // tv/monitor
         assertEquals(PiiClass.SCREEN, PiiNcnnEngine.mapClassIndex(63, 80)) // laptop
         assertEquals("Laptop Screen", PiiNcnnEngine.cocoPiiDetailLabel(63, PiiClass.SCREEN))
-        assertEquals("Phone Screen", PiiNcnnEngine.cocoPiiDetailLabel(67, PiiClass.CARD))
+        assertEquals("Cell Phone", PiiNcnnEngine.cocoPiiDetailLabel(67, PiiClass.DEVICE))
     }
 
     @Test
@@ -491,6 +491,25 @@ class PiiNcnnEngineTest {
         assertEquals(100, blurred.height)
         val blurManifest = PiiNcnnEngine.exportRedactionManifest(listOf(det), 100, 100, style = PiiRedactionStyle.BLUR)
         assertEquals("Layer_B_Visual_Obfuscation_BLUR", blurManifest.getString("layer"))
+    }
+
+    @Test
+    fun testPiiMultiModalScanSummaryDistinguishesFailures() {
+        val summarySuccess = PiiScanSummary(
+            detections = emptyList(),
+            successfulEngines = setOf("NCNN_VISION", "BARCODE_SCANNER", "OCR_TEXT"),
+            failedEngines = emptyMap()
+        )
+        assertTrue(summarySuccess.isFullySuccessful)
+        assertTrue(summarySuccess.failedEngines.isEmpty())
+
+        val summaryDegraded = PiiScanSummary(
+            detections = emptyList(),
+            successfulEngines = setOf("BARCODE_SCANNER"),
+            failedEngines = mapOf("NCNN_VISION" to "Init failed", "OCR_TEXT" to "Timeout")
+        )
+        assertFalse("Degraded scan must not report full success", summaryDegraded.isFullySuccessful)
+        assertEquals(2, summaryDegraded.failedEngines.size)
     }
 
     @Test

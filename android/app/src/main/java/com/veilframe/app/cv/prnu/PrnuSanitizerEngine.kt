@@ -108,15 +108,21 @@ object PrnuSanitizerEngine {
             // STAGE 1: VeilNet-Nano NCNN neural purification (Stealth mode)
             if (mode == DefenseMode.STEALTH_HYBRID) {
                 onMilestone?.invoke("[PRNU] Stage 1: VeilNet-Nano neural manifold purification...")
-                purifiedBmp = VeilNetNanoNative.purify(
+                val res = VeilNetNanoNative.purifyResult(
                     context = context,
                     src = currentBmp,
                     useGpu = false,
                     coreSize = 480,
                     halo = 16
                 )
+                purifiedBmp = res.bitmap
                 currentBmp = purifiedBmp
-                onMilestone?.invoke("[PRNU] Stage 1 complete: Deep attribution manifolds scrambled.")
+                if (res.isSuccess) {
+                    onMilestone?.invoke("[PRNU] Stage 1 complete: Deep attribution manifolds scrambled.")
+                } else {
+                    Log.w(TAG, "VeilNet-Nano neural inference unavailable: ${res.errorMessage}")
+                    onMilestone?.invoke("[PRNU] Stage 1 degraded: Neural inference unavailable. Proceeding with Stage 2 geometric scrambling.")
+                }
             }
 
             // Convert current Bitmap to OpenCV Mat (BGR)
@@ -187,7 +193,24 @@ object PrnuSanitizerEngine {
                 ImageMetadataSanitizer.stripExifLossless(outputFile, outputFile)
             }
 
-            onMilestone?.invoke("[PRNU] Fingerprint scrub complete: |sPCE| < 5.0 guaranteed.")
+            // Run real-time self-audit of sensor correlation before reporting completion
+            val auditResult = auditSanitization(intermediateMat, remappedMat)
+            if (auditResult.verifiedSecure) {
+                onMilestone?.invoke(
+                    "[PRNU] Verification passed: |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). PRNU eliminated.".format(
+                        kotlin.math.abs(auditResult.postSpce),
+                        auditResult.post6StripMaxSpce
+                    )
+                )
+            } else {
+                Log.w(TAG, "PRNU audit: postSpce=${auditResult.postSpce}, maxStrip=${auditResult.post6StripMaxSpce}")
+                onMilestone?.invoke(
+                    "[PRNU] Scrub complete: measured |sPCE| = %.2f, max 6-strip = %.2f.".format(
+                        kotlin.math.abs(auditResult.postSpce),
+                        auditResult.post6StripMaxSpce
+                    )
+                )
+            }
             return outputFile.exists() && outputFile.length() > 0L
         } catch (e: Throwable) {
             Log.e(TAG, "Error during PRNU sanitization: ${e.message}", e)

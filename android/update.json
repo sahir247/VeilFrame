@@ -1,17 +1,16 @@
 {
-  "versionCode": 230,
-  "versionName": "2.3.0",
-  "tag": "v2.3.0",
+  "versionCode": 231,
+  "versionName": "2.3.1",
+  "tag": "v2.3.1",
   "apk": "VeilFrame-android-arm64.apk",
-  "sha256": "",
+  "sha256": "7ec7069943648c9df98dbe9f7767b2c99d7e63037d9c8b7b82840772d15831f6",
   "mandatory": false,
   "changelog": [
-    "Motion Lab: RIFE v4 AI neural frame synthesis with dedicated 60 FPS target mode and optical flow fallback (DIS / Farnebäck)",
-    "NCNN Migration: Complete on-device migration to Tencent NCNN native C++ engine with zero ONNX dependencies",
-    "Hardware Acceleration: Multi-vendor Vulkan compute validation across Qualcomm Adreno and MediaTek Dimensity (Mali-G615 MC2)",
-    "PDF Studio: Symmetrical uniform card sizing and high-precision smooth Bézier signature pad with 3.5x supersampling",
-    "Background Downloads: Foreground download service with silent in-dialog progress and auto-promotion to system notifications on backgrounding",
-    "Adaptive Detail Enhancer: Dual-model hybrid background removal with trimap + guided alpha filter and interactive touch refine brush/eraser",
-    "System Permissions: Android 13+ (API 33+) runtime notification permission prompt on initial launch"
+    "VeilNet-Nano: Bundled 17.62 KB on-device neural sensor attribution pre-scrambler with seam-free halo-padded NCNN inference",
+    "PRNU Audit: Real-time sPCE self-correlation measurement verifying sensor peak suppression prior to export",
+    "Model Integrity: Cryptographic SHA-256 verification and size bounds enforcement for all on-demand RIFE neural weights",
+    "PII Scan Assurance: Structured multimodal scan summaries distinguishing clean scans from detector execution failures",
+    "COCO Mapping Hardening: Accurate vehicle and electronic device classification eliminating false plate/card claims",
+    "Zero-Bundle Architecture: Heavy RIFE and ColorOS Lift & Shift models hosted on-demand, keeping base APK lean"
   ]
 }

@@ -89,13 +89,20 @@ class ProvenanceController(
 
         scope.launch(Dispatchers.IO) {
             val hash = try {
+                val stream = activity.contentResolver.openInputStream(uri)
+                    ?: throw java.io.FileNotFoundException("Cannot open stream for URI: $uri")
                 val digest = MessageDigest.getInstance("SHA-256")
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
+                var totalBytesRead = 0L
+                stream.use { s ->
                     val buffer = ByteArray(8192)
                     var read: Int
-                    while (stream.read(buffer).also { read = it } > 0) {
+                    while (s.read(buffer).also { read = it } > 0) {
                         digest.update(buffer, 0, read)
+                        totalBytesRead += read
                     }
+                }
+                if (totalBytesRead == 0L) {
+                    throw java.io.IOException("Artifact is empty (0 bytes read)")
                 }
                 digest.digest().joinToString("") { "%02x".format(it) }
             } catch (e: Exception) {
