@@ -668,7 +668,10 @@ class PdfQuickToolController(
         }
         binding.chipMergeClear.setOnClickListener {
             selectedUris.clear()
+            isSourceReady = false
+            binding.btnQuickToolExecute.isEnabled = false
             mergeFileListAdapter?.clearAll()
+            mergePageAdapter?.setItems(emptyList())
             binding.containerQuickToolEmptyState.visibility = View.VISIBLE
             binding.btnPdfQuickToolReset.visibility = View.GONE
         }
