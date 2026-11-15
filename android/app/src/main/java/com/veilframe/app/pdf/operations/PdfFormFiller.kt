@@ -13,6 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.io.ByteArrayOutputStream
 
 /**
  * Represents a form field in the PDF.
@@ -101,6 +102,11 @@ data class FormFillResult(
     val success: Boolean,
     val fieldsUpdated: Int,
     val errorMessage: String? = null
+)
+
+data class FormFillExportResult(
+    val result: FormFillResult,
+    val pdfBytes: ByteArray? = null
 )
 
 /**
@@ -306,6 +312,71 @@ class PdfFormFiller {
         }
     }
     
+
+    /**
+     * Fill a PDF form and return the completed document bytes.
+     * This avoids writing to a temporary content:// URI merely to pass the
+     * result back to the Quick Tool export flow.
+     */
+    suspend fun fillFormToBytes(
+        context: Context,
+        inputUri: Uri,
+        fieldValues: Map<String, FieldValue>,
+        flatten: Boolean = false
+    ): FormFillExportResult = withContext(Dispatchers.IO) {
+        var document: PDDocument? = null
+        try {
+            val inputStream = context.contentResolver.openInputStream(inputUri)
+                ?: return@withContext FormFillExportResult(
+                    FormFillResult(false, 0, "Cannot open source PDF")
+                )
+            document = try {
+                PDDocument.load(inputStream)
+            } finally {
+                inputStream.close()
+            }
+
+            val acroForm = document.documentCatalog.acroForm
+                ?: return@withContext FormFillExportResult(
+                    FormFillResult(false, 0, "PDF has no interactive AcroForm")
+                )
+
+            if (fieldValues.isEmpty()) {
+                return@withContext FormFillExportResult(
+                    FormFillResult(false, 0, "No form values were supplied")
+                )
+            }
+
+            var updated = 0
+            for ((name, value) in fieldValues) {
+                val field = acroForm.getField(name)
+                if (field != null && !field.isReadOnly && updateField(field, value)) {
+                    updated++
+                }
+            }
+
+            if (updated == 0) {
+                return@withContext FormFillExportResult(
+                    FormFillResult(false, 0, "No fields could be updated. The PDF may contain unsupported or read-only fields.")
+                )
+            }
+
+            // Ask PDFBox to maintain usable widget appearances for viewers.
+            acroForm.setNeedAppearances(true)
+            if (flatten) acroForm.flatten()
+
+            val output = ByteArrayOutputStream()
+            document.save(output)
+            FormFillExportResult(FormFillResult(true, updated), output.toByteArray())
+        } catch (e: Exception) {
+            FormFillExportResult(
+                FormFillResult(false, 0, e.message ?: "Failed to fill PDF form")
+            )
+        } finally {
+            try { document?.close() } catch (_: Exception) {}
+        }
+    }
+
     /**
      * Convert PDFBox field to our FormField type.
      */
