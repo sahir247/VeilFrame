@@ -836,8 +836,6 @@ class PdfQuickToolController(
                                         binding.viewSignaturePad.isDrawingEnabled = true
                                         refreshSignPagePreview()
                                         updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
-                                    }
-                                }
                             }
                         }
                     } catch (_: Exception) {
