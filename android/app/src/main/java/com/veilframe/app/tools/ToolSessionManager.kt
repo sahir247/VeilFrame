@@ -726,7 +726,7 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Neural/geometric image perturbation applied; camera PRNU not independently verified" else "• Neural/geometric perturbation skipped"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization tables applied (device attribution neutralized)" else "• Container re-encode skipped"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization re-encoding applied" else "• Container re-encode skipped"
             }
             ToolMode.FOLDER_SCANNER -> {
                 val mode = when (getSelectedOptionIndex()) {
