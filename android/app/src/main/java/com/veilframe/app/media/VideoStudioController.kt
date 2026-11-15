@@ -2642,7 +2642,8 @@ class VideoStudioController(
                                 " (${scanResult.failedEngines.keys.joinToString(", ")})"
                             } else ""
                             val decodeInfo = if (scanResult.failedFrameExtractions > 0) " (${scanResult.failedFrameExtractions} frames failed decode)" else ""
-                            Toast.makeText(activity, "Video PII scan degraded$failedList$decodeInfo. 0 targets confirmed.", Toast.LENGTH_LONG).show()
+                            val samplingInfo = if (scanResult.isSamplingCapped) " (sparse sampling: ~${scanResult.actualSampleIntervalMs} ms interval)" else ""
+                            Toast.makeText(activity, "Video PII scan incomplete$failedList$decodeInfo$samplingInfo. 0 targets confirmed; existing redactions were kept.", Toast.LENGTH_LONG).show()
                         } else if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
                             editState.piiRedactionFilter = null
                             editState.piiRedactionSummary = ""
