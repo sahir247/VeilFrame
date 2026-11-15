@@ -13,6 +13,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
+data class FileValidationKey(val path: String, val lastModified: Long, val length: Long)
+
 /**
  * Manages physical storage, downloads, active selection, and lifecycle of modern RIFE v4 AI models (v4.0 - v4.26).
  * Legacy RIFE v2.4 is completely excluded.
@@ -38,6 +40,12 @@ class RifeModelManager(private val context: Context) {
             "objects.githubusercontent.com",
             "cdn.jsdelivr.net"
         )
+
+        private val verifiedChecksumCache = java.util.concurrent.ConcurrentHashMap<FileValidationKey, Boolean>()
+
+        fun invalidateChecksumCache() {
+            verifiedChecksumCache.clear()
+        }
 
         private fun isAllowedHost(host: String): Boolean {
             val normalized = host.trimEnd('.').lowercase(java.util.Locale.ROOT)
@@ -79,7 +87,7 @@ class RifeModelManager(private val context: Context) {
         return internalDir.also { it.mkdirs() }
     }
 
-    fun isModelDownloaded(spec: RifeModelSpec): Boolean {
+    fun isModelDownloaded(spec: RifeModelSpec, verifyChecksums: Boolean = true): Boolean {
         val internalDir = File(context.filesDir, "models/${spec.id}")
         val externalDir = context.getExternalFilesDir("models")?.let { File(it, spec.id) }
         val legacyDir = if (spec.id == RifeModelRegistry.RIFE_V4_0.id) File(context.filesDir, "models/rife-v4") else null
@@ -88,11 +96,27 @@ class RifeModelManager(private val context: Context) {
             if (d == null || !d.exists()) return false
             val p = File(d, "flownet.param")
             val b = File(d, "flownet.bin")
-            return p.exists() && p.length() > 500 && p.length() <= spec.maxParamBytes &&
+            val sizeOk = p.exists() && p.length() > 500 && p.length() <= spec.maxParamBytes &&
                 b.exists() && b.length() >= 4_000_000L && b.length() <= spec.maxBinBytes
+            if (!sizeOk) return false
+            if (!verifyChecksums) return true
+            return isFileChecksumValid(p, spec.paramSha256) && isFileChecksumValid(b, spec.binSha256)
         }
 
         return isValidDir(internalDir) || isValidDir(externalDir) || isValidDir(legacyDir)
+    }
+
+    fun isFileChecksumValid(file: File, expectedSha256: String): Boolean {
+        if (!file.exists() || !file.isFile) return false
+        val key = FileValidationKey(file.absolutePath, file.lastModified(), file.length())
+        verifiedChecksumCache[key]?.let { return it }
+
+        val hash = computeFileSha256(file)
+        val valid = hash != null && hash.equals(expectedSha256, ignoreCase = true)
+        if (valid) {
+            verifiedChecksumCache[key] = true
+        }
+        return valid
     }
 
     fun computeFileSha256(file: File): String? {
@@ -120,11 +144,14 @@ class RifeModelManager(private val context: Context) {
         val p = File(dir, "flownet.param")
         val b = File(dir, "flownet.bin")
         if (!p.exists() || !b.exists()) return false
+        return isFileChecksumValid(p, spec.paramSha256) && isFileChecksumValid(b, spec.binSha256)
+    }
 
-        val pHash = computeFileSha256(p) ?: return false
-        val bHash = computeFileSha256(b) ?: return false
-        return pHash.equals(spec.paramSha256, ignoreCase = true) &&
-            bHash.equals(spec.binSha256, ignoreCase = true)
+    /**
+     * Strict trust boundary check immediately before native inference.
+     */
+    fun verifyModelIntegrity(spec: RifeModelSpec): Boolean {
+        return isModelDownloaded(spec, verifyChecksums = true)
     }
 
     fun getSelectedModel(): RifeModelSpec {
@@ -163,8 +190,13 @@ class RifeModelManager(private val context: Context) {
      * If not ready, checks if any valid model is downloaded.
      */
     fun isModelReady(): Boolean {
-        if (isModelDownloaded(getSelectedModel())) return true
-        return RifeModelRegistry.ALL_MODELS.any { isModelDownloaded(it) }
+        if (isModelDownloaded(getSelectedModel(), verifyChecksums = true)) return true
+        val verifiedAlt = RifeModelRegistry.ALL_MODELS.firstOrNull { isModelDownloaded(it, verifyChecksums = true) }
+        if (verifiedAlt != null) {
+            setSelectedModel(verifiedAlt)
+            return true
+        }
+        return false
     }
 
     /**
@@ -234,6 +266,7 @@ class RifeModelManager(private val context: Context) {
             }
         }
 
+        invalidateChecksumCache()
         return anyDeleted || !isModelDownloaded(spec)
     }
 
@@ -332,17 +365,31 @@ class RifeModelManager(private val context: Context) {
         onProgress: (progressPct: Int, message: String) -> Unit = { _, _ -> }
     ): Result<File> = withContext(Dispatchers.IO) {
         val selected = getSelectedModel()
-        if (isModelDownloaded(selected)) {
+        if (isModelDownloaded(selected, verifyChecksums = true)) {
             return@withContext Result.success(getModelDir(selected))
         }
-        // If an alternative model is downloaded, automatically switch to it if needed
-        val available = RifeModelRegistry.ALL_MODELS.firstOrNull { isModelDownloaded(it) }
+
+        // Detect corrupted or tampered cached files and purge them
+        val selDir = getModelDir(selected)
+        val selParam = File(selDir, "flownet.param")
+        val selBin = File(selDir, "flownet.bin")
+        if (selParam.exists() || selBin.exists()) {
+            Log.w(TAG, "Cached model ${selected.id} failed integrity verification; purging corrupted files")
+            selParam.delete()
+            selBin.delete()
+            File(selDir, "flownet.param.tmp").delete()
+            File(selDir, "flownet.bin.tmp").delete()
+            invalidateChecksumCache()
+        }
+
+        // If an alternative model is verified, automatically switch to it if needed
+        val available = RifeModelRegistry.ALL_MODELS.firstOrNull { isModelDownloaded(it, verifyChecksums = true) }
         if (available != null) {
             setSelectedModel(available)
             return@withContext Result.success(getModelDir(available))
         }
         // Otherwise download the selected model
-        return@withContext downloadModel(selected, forceRedownload = false, onProgress = onProgress)
+        return@withContext downloadModel(selected, forceRedownload = true, onProgress = onProgress)
     }
 
     private suspend fun downloadSingle(

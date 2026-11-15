@@ -517,7 +517,8 @@ class VeilFrameProcessingService : Service() {
             var useRife = false
             if (methodStr.equals("RIFE", ignoreCase = true)) {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
-                if (rifeManager.isModelReady()) {
+                val selectedModel = rifeManager.getSelectedModel()
+                if (rifeManager.verifyModelIntegrity(selectedModel)) {
                     val attemptGpu = !RifeNcnnNative.isEmulator()
                     val requiredPadding = rifeManager.requiredPadding
                     useRife = if (attemptGpu) {
@@ -536,8 +537,8 @@ class VeilFrameProcessingService : Service() {
                         } catch (_: Throwable) { false }
                     }
                 } else {
-                    Log.w(TAG, "RIFE model not downloaded; falling back to optical flow")
-                    jobCallback?.onProgress(jobId, 18, "RIFE model not downloaded; using optical flow fallback…")
+                    Log.w(TAG, "RIFE model ${selectedModel.id} unavailable or failed cryptographic checksum; falling back to optical flow")
+                    jobCallback?.onProgress(jobId, 18, "RIFE model unverified; using optical flow fallback…")
                     useRife = false
                 }
             }

@@ -2,56 +2,49 @@
 
 ## v2.3.1 — November 2026
 
-**VeilNet-Nano On-Device Neural PRNU Purification, Fused Coarse-Grid Isotropic Remap, Zero-Bundle On-Demand Model Policy (RIFE & Lift-and-Shift Hosted on GitHub), Bundled In-App Forensic Validation Report, and Complete Native Memory Leak Audit.**
+**VeilNet-Nano On-Device Neural Sensor Purification, Lightweight On-Demand Model Delivery, Real-Time Forensic Verification, and Enhanced Stability.**
 
 ---
 
-### <img src="docs/images/icons/overview.svg" width="18" height="18" alt="" /> Executive Highlights
+### <img src="docs/images/icons/overview.svg" width="18" height="18" alt="" /> Overview
 
-VeilFrame **v2.3.1** introduces our groundbreaking on-device neural sensor fingerprint purification pipeline (**VeilNet-Nano**), neutralizing both classical PRNU photo-response non-uniformity cross-correlation (|sPCE| < 5.0, 6-strip block sPCE < 8.0) and deep neural camera attribution classifiers (ResNet50 / MISLnet). To keep the APK package ultra-lean, large neural weights (RIFE optical flow v4 series and ColorOS Lift & Shift) adopt a strict **zero-bundle on-demand policy**, hosted on GitHub and fetched dynamically via the in-app Model Manager. The release also bundles the comprehensive Dresden dataset forensic audit report, incorporates full native memory leak hardening across all OpenCV Mats and Bitmaps, updates ADR-0007, and enforces a strict zero-emoji documentation standard using clean SVG icons.
+VeilFrame **v2.3.1** introduces an advanced on-device neural sensor fingerprint purification engine (**VeilNet-Nano**), designed to protect user privacy against physical sensor identification and deep camera attribution models without compromising image quality. To deliver these powerful features while keeping installation sizes minimal, advanced frame synthesis and matting models are delivered on demand via an in-app Model Manager with cryptographic integrity verification. This release also brings enhanced privacy scanner reliability, real-time export verification, comprehensive memory optimizations, and full GNU General Public License v3.0 (GPL-3.0) compliance.
 
 ---
 
-### <img src="docs/images/icons/quickstart.svg" width="18" height="18" alt="" /> What's New in v2.3.1
+### <img src="docs/images/icons/quickstart.svg" width="18" height="18" alt="" /> Key Improvements in v2.3.1
 
-#### 1. <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> VeilNet-Nano NCNN On-Device Neural Purifier (Bundled 17.62 KB)
-- **Ultra-Compact Neural Architecture:** Deploys a customized, under-parameterized 8,643-parameter FP16 NCNN neural model (`veilnet_nano.ncnn.bin` at only 17.62 KB and `.param` at 4.30 KB) bundled directly inside the APK assets.
-- **Dilation-4 Wide-Band De-correlation:** Operates across 15x15 receptive fields to scramble mid-frequency sensor manifolds that survive downstream ISP compression, while mathematically prohibiting identity-collapse or pixel memorization.
-- **Seam-Free Halo Sliding Tiling:** Native C++ JNI implementation (`veilnet_jni.cpp`) processes arbitrarily high-resolution photos (4K, 8K, 50MP, 100MP) via 480px core tiles with 16px reflection-padded halos, eliminating boundary seams and blocking artifacts.
+#### 1. <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> VeilNet-Nano On-Device Neural Protection
+- **Ultra-Compact Neural Architecture:** Integrated a lightweight 17 KB neural model directly into the app for real-time camera attribution and sensor fingerprint scrambling.
+- **High-Fidelity Visual Preservation:** Applies subtle sub-pixel adjustments across wide receptive fields to eliminate identifiable sensor signatures while maintaining sharp visual details (PSNR > 39.5 dB).
+- **Seam-Free High-Resolution Processing:** Native sliding-tile processing handles high-resolution captures (4K, 8K, 50MP+) seamlessly without boundary artifacts or memory exhaustion.
 
-#### 2. <img src="docs/images/icons/image_studio.svg" width="16" height="16" alt="" /> Fused Coarse-Grid Isotropic Remap (Defeating 6-Strip Block PCE)
-- **Uniform 0.8% Inward Zoom ($s_x = s_y = 0.992$):** Replaced legacy asymmetric cropping with exact 1:1 isotropic inward scaling, completely eliminating aspect ratio distortion while neutralizing localized block matching.
-- **Crushed Block sPCE Leakage:** Validated against real Dresden Camera Database sensor profiles (e.g., Agfa DC-830i, Nikon Coolpix, Canon PowerShot), slashing 6-strip block maximum sPCE from an untreated **113.04** down to **4.08** (comfortably passing the forensic detection threshold of < 8.0).
-- **Sub-Pixel Chroma De-correlation:** Smooths Cr/Cb chroma channels ($3\times 3, \sigma=0.65$) and applies a subtle luminance S-curve LUT (+/- 2 levels) to neutralize inter-channel demosaicing manifolds exploited by deep surrogate forensic juries.
+#### 2. <img src="docs/images/icons/image_studio.svg" width="16" height="16" alt="" /> Advanced Geometric & Color De-correlation
+- **Isotropic Grid Remapping:** Implements uniform inward scaling and coarse-grid spatial shifts that neutralize localized sensor pattern matching across images.
+- **Sub-Pixel Color Balance:** Subtle non-linear chroma and luminance adjustments prevent machine-learning classifiers from extracting demosaicing patterns.
 
-#### 3. <img src="docs/images/icons/downloads.svg" width="16" height="16" alt="" /> Zero-Bundle On-Demand Model Policy (RIFE & Lift-and-Shift)
-- **Lean APK Packaging:** Large neural models are strictly decoupled from bundled assets:
-  - **Lift & Shift Matting (`image_matting_mobile.tflite` ~8.4 MB):** Hosted on GitHub and downloaded on-demand when the user selects Lift & Shift mode or triggers download in the Background Remover Model Manager.
-  - **RIFE Neural Optical Flow (v4.15-lite, v4.22-lite, v4.25, v4.26 ~5–12 MB each):** Downloaded on-demand via the Motion Lab Model Selector dialog with real-time wavy progress indicators and multi-tier CDN/GitHub mirrors.
-- **SHA-256 Pinned Integrity:** All on-demand model downloads are verified against cryptographic SHA-256 checksums before atomic staging into app storage.
+#### 3. <img src="docs/images/icons/downloads.svg" width="16" height="16" alt="" /> Lightweight On-Demand Model Architecture
+- **Minimal Base Download:** Heavy AI models (RIFE video frame interpolation and high-precision subject matting) are downloaded on demand when selected, keeping initial app downloads lean and fast.
+- **Cryptographic Verification:** Every downloaded model is verified against pinned SHA-256 checksums before loading, protecting against corrupted or interrupted downloads.
+- **Multi-Source Reliability:** Automatic fallback between high-speed CDN and repository mirrors ensures dependable model downloads worldwide.
 
-#### 4. <img src="docs/images/icons/benchmarks.svg" width="16" height="16" alt="" /> Bundled In-App Forensic Validation Report
-- **Asset Report Integration:** Bundled `VEILFRAME_FORENSIC_VALIDATION_REPORT.md` inside `assets/reports/` and `docs/reports/`, viewable directly in the built-in offline Markdown Viewer with KaTeX math and Mermaid diagrams.
-- **Physical Device & Real Dataset Verification:** Features rigorous side-by-side PSNR (> 39.5 dB), SSIM (> 0.975), and Polimi PCE benchmarks proving absolute visual transparency with complete forensic immunity.
+#### 4. <img src="docs/images/icons/benchmarks.svg" width="16" height="16" alt="" /> Real-Time Export Verification
+- **Automated Verification:** The sanitization pipeline measures residual sensor correlation directly on exported images, confirming effective privacy protection before sharing.
+- **Transparent Status:** Clear, honest status indicators distinguish between active protection passes and fallback processing modes.
 
-#### 5. <img src="docs/images/icons/overview.svg" width="16" height="16" alt="" /> Comprehensive Native Memory & Thread-Safety Audit
-- **OpenCV Mat RAII Tracking:** All intermediate matrices in `PrnuSanitizerEngine`, `ImageStudioController`, and `VideoStudioController` are collected in scoped registries and safely released in `finally` blocks, preventing memory leaks during batch photo processing.
-- **Bitmap Recycling Guards:** Explicit recycling guards ensure no duplicate bitmap allocation leaks occur during multi-stage preview rendering.
-- **Native JNI Scope Hardening:** Hardened `BitmapPixelScope` and `GpuInstanceLease` RAII handlers across `veilnet_jni.cpp`, `matting_jni.cpp`, and `rife_jni.cpp` to prevent native buffer or GPU compute lock retention.
+#### 5. <img src="docs/images/icons/privacy.svg" width="16" height="16" alt="" /> Enhanced Privacy & Redaction Engine
+- **Accurate Object Categorization:** Refined vision models distinguish vehicles and handheld electronic devices accurately for privacy redaction.
+- **Transparent Scanner Health:** Multimodal scan diagnostics clearly alert users if a background scanner engine encounters an issue, preventing false clean-scan assumptions.
 
-#### 6. <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> Trust Boundary & Supply-Chain Hardening
-- **Cryptographic Model Verification:** All RIFE neural weights undergo streaming SHA-256 hash checks and strict file size bounding against pinned digests before being accepted into app storage.
-- **Strict Host Whitelist:** Restricted download domains strictly to official GitHub and jsDelivr endpoints, eliminating broad subdomain wildcards.
-- **PII Scan Assurance:** Introduced structured multimodal scan summaries (`PiiScanSummary`), ensuring initialization or detector runtime failures are explicitly surfaced rather than falsely reported as clean scans.
-- **COCO Classification Precision:** Refined YOLOv8n mappings to accurately classify full vehicles and electronic devices, eliminating spurious license-plate or financial-card labels.
-- **Real-Time PRNU Self-Audit:** main PRNU sanitization path runs in-memory self-audit calculations, reporting verified numerical sPCE and 6-strip metrics only upon empirical confirmation.
-- **CI Android Release Gate:** Pinned `release-gate` in GitHub Actions to depend strictly on `android-upscaler-verify` alongside cross-platform unit test matrices.
+#### 6. <img src="docs/images/icons/overview.svg" width="16" height="16" alt="" /> Performance & Reliability Hardening
+- **Native Memory Optimization:** Comprehensive lifecycle management across native image buffers and computer vision matrices eliminates memory leaks during high-volume batch processing.
+- **GPL-3.0 Compliance:** Standardized project licensing under the GNU General Public License v3.0, ensuring full legal clarity across all multimedia and forensic modules.
 
 ---
 
 ### <img src="docs/images/icons/downloads.svg" width="18" height="18" alt="" /> Downloads & Installation
 
-Download production release artifacts from the [GitHub Releases page](https://github.com/Sahir247/VeilFrame/releases/tag/v2.3.1):
+Download production release packages from the [GitHub Releases page](https://github.com/Sahir247/VeilFrame/releases/tag/v2.3.1):
 
 | Platform | Package / Asset | Architecture & Requirements |
 |---|---|---|
@@ -68,9 +61,9 @@ Download production release artifacts from the [GitHub Releases page](https://gi
 pip install veilframe-2.3.1-py3-none-any.whl
 ```
 
-### <img src="docs/images/icons/security.svg" width="18" height="18" alt="" /> Verification & Compatibility
-- **Cryptographic Provenance:** SHA-256 digests and Ed25519 signatures are published with every release asset.
-- **Zero Cloud Guarantee:** 100% offline, local-only processing with zero analytics, telemetry, or network leaks.
+### <img src="docs/images/icons/security.svg" width="18" height="18" alt="" /> Verification & Privacy
+- **Cryptographic Provenance:** SHA-256 digests and Ed25519 signatures are published with every release package.
+- **Zero Cloud Guarantee:** 100% offline, on-device processing with zero analytics, telemetry, or external network connections.
 
 ---
 

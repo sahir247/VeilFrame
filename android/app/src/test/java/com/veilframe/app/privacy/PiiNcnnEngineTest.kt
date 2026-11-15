@@ -546,6 +546,24 @@ class PiiNcnnEngineTest {
         assertTrue(drawboxChain.contains("color=black:t=fill"))
     }
 
+    @Test
+    fun testDetectAllSummarySurfacesFailedEnginesWhenNcnnIsNull() {
+        val appCtx = org.robolectric.RuntimeEnvironment.getApplication()
+        val bmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        val summary = PiiMultiModalDetector.detectAllSummary(
+            context = appCtx,
+            ncnnEngine = null,
+            bitmap = bmp,
+            includeNcnn = true,
+            includeBarcodes = false,
+            includeOcrText = false
+        )
+        // Must explicitly report NCNN_VISION as failed engine rather than claiming clean scan
+        assertTrue(summary.failedEngines.containsKey("NCNN_VISION"))
+        assertTrue(summary.detections.isEmpty())
+        bmp.recycle()
+    }
+
     private fun findModelFile(name: String): File? {
         val candidates = listOf(
             File("android/app/src/main/assets/$name"),

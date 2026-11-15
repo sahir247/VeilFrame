@@ -6,11 +6,11 @@
   "sha256": "7ec7069943648c9df98dbe9f7767b2c99d7e63037d9c8b7b82840772d15831f6",
   "mandatory": false,
   "changelog": [
-    "VeilNet-Nano: Bundled 17.62 KB on-device neural sensor attribution pre-scrambler with seam-free halo-padded NCNN inference",
-    "PRNU Audit: Real-time sPCE self-correlation measurement verifying sensor peak suppression prior to export",
-    "Model Integrity: Cryptographic SHA-256 verification and size bounds enforcement for all on-demand RIFE neural weights",
-    "PII Scan Assurance: Structured multimodal scan summaries distinguishing clean scans from detector execution failures",
-    "COCO Mapping Hardening: Accurate vehicle and electronic device classification eliminating false plate/card claims",
-    "Zero-Bundle Architecture: Heavy RIFE and ColorOS Lift & Shift models hosted on-demand, keeping base APK lean"
+    "VeilNet-Nano: Lightweight on-device neural sensor fingerprint protection with high-fidelity detail preservation",
+    "Real-Time Verification: Automatic self-audit measuring sensor correlation attenuation on exported media",
+    "Model Integrity: Cryptographic SHA-256 verification and size bounds enforcement for all on-demand neural weights",
+    "Privacy Scanner Assurance: Reliable multimodal scan diagnostics with transparent status reporting",
+    "Classification Precision: Enhanced vehicle and electronic device detection for accurate redactions",
+    "Memory & Stability: Comprehensive native memory optimizations and full GPL-3.0 licensing compliance"
   ]
 }

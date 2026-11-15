@@ -776,7 +776,7 @@ class ImageStudioController(
         val progressDialog = M3ExpressiveProgressDialog(activity)
         progressDialog.show(
             title = "AI PII Redaction Scan",
-            initialStatus = "Scanning faces, plates, screens, barcodes & text…",
+            initialStatus = "Scanning faces, vehicles, devices, barcodes & text…",
             isIndeterminate = true,
             cancelable = true,
             onCancel = {
@@ -798,7 +798,7 @@ class ImageStudioController(
                     targetWidth = item.origWidth,
                     targetHeight = item.origHeight,
                     confThreshold = confThreshold,
-                    includeNcnn = (engine != null),
+                    includeNcnn = true,
                     includeBarcodes = true,
                     includeOcrText = true
                 )

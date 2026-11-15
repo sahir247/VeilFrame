@@ -1,6 +1,7 @@
 package com.veilframe.app.media.rife
 
 import android.content.Context
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -115,5 +116,31 @@ class RifeModelRegistryAndManagerTest {
         assertTrue("GitHub raw must be allowed", RifeModelManager.isAllowedUrl("https://raw.githubusercontent.com/Sahir247/VeilFrame/main/models/rife/rife-v4.25/flownet.bin"))
         assertTrue("GitHub release object must be allowed", RifeModelManager.isAllowedUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/flownet.bin"))
         assertTrue("jsDelivr CDN must be allowed", RifeModelManager.isAllowedUrl("https://cdn.jsdelivr.net/gh/Sahir247/VeilFrame@v2.3.1/models/rife/rife-v4.25/flownet.bin"))
+    }
+
+    @Test
+    fun testCachedRifeModelTamperingIsRejectedByChecksum() {
+        val manager = RifeModelManager(context)
+        val model = RifeModelRegistry.RIFE_V4_26
+        val modelDir = File(context.filesDir, "models/${model.id}").apply { mkdirs() }
+        val paramF = File(modelDir, "flownet.param")
+        val binF = File(modelDir, "flownet.bin")
+
+        // Create dummy files within size bounds but with mismatched content (tampered)
+        paramF.writeBytes(ByteArray(2000) { 0x55.toByte() })
+        binF.writeBytes(ByteArray(5_000_000) { 0xAA.toByte() })
+
+        // Checksum verification must catch the tampering and return false
+        assertFalse("Tampered cached param/bin must be rejected by isModelDownloaded", manager.isModelDownloaded(model, verifyChecksums = true))
+        assertFalse("Tampered cached model must not be considered ready for inference", manager.verifyModelIntegrity(model))
+
+        // Basic size check without verifyChecksums might return true, but trust boundary enforces verifyChecksums
+        assertTrue("Basic size check passes without checksum verification", manager.isModelDownloaded(model, verifyChecksums = false))
+
+        // Cleanup
+        paramF.delete()
+        binF.delete()
+        modelDir.delete()
+        RifeModelManager.invalidateChecksumCache()
     }
 }

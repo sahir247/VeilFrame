@@ -119,4 +119,26 @@ class PrnuSanitizerEngineTest {
         assertTrue(kotlin.math.abs(auditResult.postSpce) < 5.0)
         assertTrue(auditResult.post6StripMaxSpce < 8.0)
     }
+
+    @Test
+    fun testSanitizeImageFileDetailedReturnsStructuredResult() {
+        val context = RuntimeEnvironment.getApplication()
+        val dummyInput = File(context.cacheDir, "test_input_detailed.jpg")
+        dummyInput.writeBytes(ByteArray(128))
+        val dummyOutput = File(context.cacheDir, "test_output_detailed.jpg")
+
+        val res = PrnuSanitizerEngine.sanitizeImageFileDetailed(
+            context = context,
+            inputFile = dummyInput,
+            outputFile = dummyOutput,
+            mode = PrnuSanitizerEngine.DefenseMode.METADATA_ONLY
+        )
+        assertTrue(res.isSuccess)
+        assertFalse(res.neuralStageExecuted)
+        assertFalse(res.geometricStageExecuted)
+        assertNotNull(res.outputFile)
+
+        dummyInput.delete()
+        dummyOutput.delete()
+    }
 }

@@ -64,6 +64,17 @@ object PrnuSanitizerEngine {
         )
     }
 
+    data class PrnuSanitizationResult(
+        val isSuccess: Boolean,
+        val outputFile: File?,
+        val neuralStageExecuted: Boolean,
+        val geometricStageExecuted: Boolean,
+        val isAuditPassed: Boolean,
+        val measuredPce: Double,
+        val measuredMaxStrip: Double,
+        val errorMessage: String? = null
+    )
+
     /**
      * Sanitizes an image file end-to-end according to the selected defense mode.
      */
@@ -75,9 +86,32 @@ object PrnuSanitizerEngine {
         targetQuality: Int? = null,
         onMilestone: ((String) -> Unit)? = null
     ): Boolean {
+        return sanitizeImageFileDetailed(context, inputFile, outputFile, mode, targetQuality, onMilestone).isSuccess
+    }
+
+    /**
+     * Sanitizes an image file end-to-end and returns structured forensic audit results.
+     */
+    fun sanitizeImageFileDetailed(
+        context: Context,
+        inputFile: File,
+        outputFile: File,
+        mode: DefenseMode = DefenseMode.STEALTH_HYBRID,
+        targetQuality: Int? = null,
+        onMilestone: ((String) -> Unit)? = null
+    ): PrnuSanitizationResult {
         if (!inputFile.exists() || inputFile.length() == 0L) {
             Log.e(TAG, "Input file does not exist or is empty: ${inputFile.absolutePath}")
-            return false
+            return PrnuSanitizationResult(
+                isSuccess = false,
+                outputFile = null,
+                neuralStageExecuted = false,
+                geometricStageExecuted = false,
+                isAuditPassed = false,
+                measuredPce = 0.0,
+                measuredMaxStrip = 0.0,
+                errorMessage = "Input file does not exist or is empty"
+            )
         }
 
         CvRuntime.initialize()
@@ -86,7 +120,15 @@ object PrnuSanitizerEngine {
             onMilestone?.invoke("[PRNU] Executing lossless metadata scrub...")
             val ok = ImageMetadataSanitizer.stripExifLossless(inputFile, outputFile)
             if (ok) onMilestone?.invoke("[PRNU] Lossless metadata scrub completed.")
-            return ok
+            return PrnuSanitizationResult(
+                isSuccess = ok,
+                outputFile = if (ok) outputFile else null,
+                neuralStageExecuted = false,
+                geometricStageExecuted = false,
+                isAuditPassed = false,
+                measuredPce = 0.0,
+                measuredMaxStrip = 0.0
+            )
         }
 
         outputFile.parentFile?.mkdirs()
@@ -100,10 +142,26 @@ object PrnuSanitizerEngine {
             srcBmp = BitmapFactory.decodeFile(inputFile.absolutePath)
             if (srcBmp == null) {
                 Log.e(TAG, "Failed to decode input bitmap from: ${inputFile.absolutePath}")
-                return false
+                return PrnuSanitizationResult(
+                    isSuccess = false,
+                    outputFile = null,
+                    neuralStageExecuted = false,
+                    geometricStageExecuted = false,
+                    isAuditPassed = false,
+                    measuredPce = 0.0,
+                    measuredMaxStrip = 0.0,
+                    errorMessage = "Failed to decode input bitmap"
+                )
             }
 
+            // Capture pristine original image before any modification for real-time audit
+            val originalMat = Mat().also { matsToRelease.add(it) }
+            val origRgba = Mat().also { matsToRelease.add(it) }
+            Utils.bitmapToMat(srcBmp, origRgba)
+            Imgproc.cvtColor(origRgba, originalMat, Imgproc.COLOR_RGBA2BGR)
+
             var currentBmp = srcBmp
+            var neuralStageExecuted = false
 
             // STAGE 1: VeilNet-Nano NCNN neural purification (Stealth mode)
             if (mode == DefenseMode.STEALTH_HYBRID) {
@@ -117,6 +175,7 @@ object PrnuSanitizerEngine {
                 )
                 purifiedBmp = res.bitmap
                 currentBmp = purifiedBmp
+                neuralStageExecuted = res.isSuccess
                 if (res.isSuccess) {
                     onMilestone?.invoke("[PRNU] Stage 1 complete: Deep attribution manifolds scrambled.")
                 } else {
@@ -146,7 +205,7 @@ object PrnuSanitizerEngine {
             }
             applyFusedCoarseRemap(processingMat, remappedMat, remapStrength)
 
-            // Non-linear color perturbation & chroma decorrelation (Leak B: crushes ResNet50)
+            // Non-linear color perturbation & chroma decorrelation (crushes attribution manifolds)
             if (mode == DefenseMode.STEALTH_HYBRID || mode == DefenseMode.HIGH_DEFENSE || mode == DefenseMode.HIGH_SUPPRESSION) {
                 applyColorManifoldTwist(remappedMat)
                 applyChromaSmoothingAndSCurve(remappedMat)
@@ -179,7 +238,16 @@ object PrnuSanitizerEngine {
             val encodeOk = Imgcodecs.imencode(encodeExt, remappedMat, encodedBuf, encodeParams)
             if (!encodeOk || encodedBuf.empty()) {
                 Log.e(TAG, "OpenCV imencode failed")
-                return false
+                return PrnuSanitizationResult(
+                    isSuccess = false,
+                    outputFile = null,
+                    neuralStageExecuted = neuralStageExecuted,
+                    geometricStageExecuted = true,
+                    isAuditPassed = false,
+                    measuredPce = 0.0,
+                    measuredMaxStrip = 0.0,
+                    errorMessage = "OpenCV imencode failed"
+                )
             }
 
             val bytes = encodedBuf.toArray()
@@ -193,11 +261,22 @@ object PrnuSanitizerEngine {
                 ImageMetadataSanitizer.stripExifLossless(outputFile, outputFile)
             }
 
-            // Run real-time self-audit of sensor correlation before reporting completion
-            val auditResult = auditSanitization(intermediateMat, remappedMat)
+            // Run real-time self-audit of sensor correlation on the actual exported artifact against original input
+            val exportedMat = Mat().also { matsToRelease.add(it) }
+            val readOk = try {
+                val decoded = Imgcodecs.imread(outputFile.absolutePath)
+                if (!decoded.empty()) {
+                    decoded.copyTo(exportedMat)
+                    decoded.release()
+                    true
+                } else false
+            } catch (_: Throwable) { false }
+
+            val auditTargetMat = if (readOk && !exportedMat.empty()) exportedMat else remappedMat
+            val auditResult = auditSanitization(originalMat, auditTargetMat)
             if (auditResult.verifiedSecure) {
                 onMilestone?.invoke(
-                    "[PRNU] Verification passed: |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). PRNU eliminated.".format(
+                    "[PRNU] Empirical verification: |sPCE| = %.2f (< 5.0), max 6-strip = %.2f (< 8.0). Sensor correlation attenuated below detection threshold.".format(
                         kotlin.math.abs(auditResult.postSpce),
                         auditResult.post6StripMaxSpce
                     )
@@ -205,17 +284,37 @@ object PrnuSanitizerEngine {
             } else {
                 Log.w(TAG, "PRNU audit: postSpce=${auditResult.postSpce}, maxStrip=${auditResult.post6StripMaxSpce}")
                 onMilestone?.invoke(
-                    "[PRNU] Scrub complete: measured |sPCE| = %.2f, max 6-strip = %.2f.".format(
+                    "[PRNU] Processing complete: measured |sPCE| = %.2f, max 6-strip = %.2f across exported artifact.".format(
                         kotlin.math.abs(auditResult.postSpce),
                         auditResult.post6StripMaxSpce
                     )
                 )
             }
-            return outputFile.exists() && outputFile.length() > 0L
+
+            val isSuccess = outputFile.exists() && outputFile.length() > 0L
+            return PrnuSanitizationResult(
+                isSuccess = isSuccess,
+                outputFile = if (isSuccess) outputFile else null,
+                neuralStageExecuted = neuralStageExecuted,
+                geometricStageExecuted = true,
+                isAuditPassed = auditResult.verifiedSecure,
+                measuredPce = auditResult.postSpce,
+                measuredMaxStrip = auditResult.post6StripMaxSpce,
+                errorMessage = null
+            )
         } catch (e: Throwable) {
             Log.e(TAG, "Error during PRNU sanitization: ${e.message}", e)
             if (outputFile.exists()) outputFile.delete()
-            return false
+            return PrnuSanitizationResult(
+                isSuccess = false,
+                outputFile = null,
+                neuralStageExecuted = false,
+                geometricStageExecuted = false,
+                isAuditPassed = false,
+                measuredPce = 0.0,
+                measuredMaxStrip = 0.0,
+                errorMessage = e.message ?: "Unknown error"
+            )
         } finally {
             srcBmp?.recycle()
             purifiedBmp?.recycle()

@@ -187,7 +187,10 @@ object PiiMultiModalDetector {
                 }
             }
         } catch (t: Throwable) {
-            Log.d(TAG, "ML Kit barcode scan skipped: ${t.message}")
+            Log.w(TAG, "ML Kit barcode scan failure: ${t.message}")
+            if (found.isEmpty()) {
+                throw t
+            }
         } finally {
             runCatching { scanner?.close() }
         }
@@ -234,7 +237,8 @@ object PiiMultiModalDetector {
                 }
             }
         } catch (t: Throwable) {
-            Log.d(TAG, "ML Kit text PII scan skipped: ${t.message}")
+            Log.w(TAG, "ML Kit text PII scan failure: ${t.message}")
+            throw t
         } finally {
             runCatching { recognizer?.close() }
         }
