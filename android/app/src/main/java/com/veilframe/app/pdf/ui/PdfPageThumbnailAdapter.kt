@@ -28,6 +28,7 @@ class PdfPageThumbnailAdapter(
 ) : RecyclerView.Adapter<PdfPageThumbnailAdapter.ThumbnailViewHolder>() {
 
     private var pdfUri: Uri? = null
+    private var documentGeneration: Long = 0L
     private var totalPages: Int = 0
     private val pageOrder = mutableListOf<Int>()
     private val selectedPages = mutableSetOf<Int>()
@@ -52,8 +53,9 @@ class PdfPageThumbnailAdapter(
     var onStartDragListener: ((RecyclerView.ViewHolder) -> Unit)? = null
 
     fun setDocument(uri: Uri, count: Int, initialSelectedPages: Set<Int> = emptySet()) {
+        documentGeneration++
         pdfUri = uri
-        totalPages = count
+        totalPages = count.coerceAtLeast(0)
         pageOrder.clear()
         for (i in 1..count) pageOrder.add(i)
         selectedPages.clear()
@@ -66,6 +68,7 @@ class PdfPageThumbnailAdapter(
     }
 
     fun clear() {
+        documentGeneration++
         pdfUri = null
         totalPages = 0
         pageOrder.clear()
@@ -81,10 +84,9 @@ class PdfPageThumbnailAdapter(
         if (fromPosition < 0 || fromPosition >= pageOrder.size || toPosition < 0 || toPosition >= pageOrder.size) return
         val item = pageOrder.removeAt(fromPosition)
         pageOrder.add(toPosition, item)
+        // RecyclerView already rebinds the moved range; avoid a second full range refresh
+        // on every drag frame, which causes repeated thumbnail work and visible jank.
         notifyItemMoved(fromPosition, toPosition)
-        val start = minOf(fromPosition, toPosition)
-        val count = kotlin.math.abs(fromPosition - toPosition) + 1
-        notifyItemRangeChanged(start, count)
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
@@ -209,10 +211,23 @@ class PdfPageThumbnailAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var renderJob: Job? = null
+        private var boundUri: Uri? = null
+        private var boundPage: Int = RecyclerView.NO_POSITION
+        private var boundGeneration: Long = -1L
 
         fun bind(pageNumber: Int) {
             renderJob?.cancel()
-            val uri = pdfUri ?: return
+            val uri = pdfUri ?: run {
+                boundUri = null
+                boundPage = RecyclerView.NO_POSITION
+                binding.ivPageThumbnail.setImageDrawable(null)
+                binding.pbThumbLoading.visibility = View.GONE
+                return
+            }
+            val generation = documentGeneration
+            boundUri = uri
+            boundPage = pageNumber
+            boundGeneration = generation
 
             val currentPos = bindingAdapterPosition
             val isReordered = pageOrder != (1..totalPages).toList()
@@ -241,11 +256,18 @@ class PdfPageThumbnailAdapter(
                 binding.cbPageSelected.visibility = View.GONE
                 binding.ivDragHandle.visibility = View.VISIBLE
                 binding.ivDragHandle.setOnTouchListener { v, event ->
-                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                        v.parent?.requestDisallowInterceptTouchEvent(true)
-                        onStartDragListener?.invoke(this)
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                            onStartDragListener?.invoke(this)
+                            true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> true
                     }
-                    false
                 }
                 binding.cardPageThumbnail.setOnLongClickListener {
                     binding.root.parent?.requestDisallowInterceptTouchEvent(true)
@@ -325,6 +347,11 @@ class PdfPageThumbnailAdapter(
             renderJob = scope.launch(Dispatchers.IO) {
                 val bmp = thumbnailLoader.loadPageThumbnail(uri, pageNumber - 1)
                 withContext(Dispatchers.Main) {
+                    // A holder may have been recycled or the document replaced while rendering.
+                    if (boundUri != uri || boundPage != pageNumber ||
+                        boundGeneration != generation || documentGeneration != generation ||
+                        bindingAdapterPosition == RecyclerView.NO_POSITION
+                    ) return@withContext
                     binding.pbThumbLoading.visibility = View.GONE
                     if (bmp != null) {
                         binding.ivPageThumbnail.setImageBitmap(bmp)
@@ -334,5 +361,20 @@ class PdfPageThumbnailAdapter(
                 }
             }
         }
+
+        fun recycle() {
+            renderJob?.cancel()
+            renderJob = null
+            boundUri = null
+            boundPage = RecyclerView.NO_POSITION
+            boundGeneration = -1L
+            binding.ivPageThumbnail.setImageDrawable(null)
+            binding.pbThumbLoading.visibility = View.GONE
+        }
+    }
+
+    override fun onViewRecycled(holder: ThumbnailViewHolder) {
+        holder.recycle()
+        super.onViewRecycled(holder)
     }
 }
