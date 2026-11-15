@@ -2169,12 +2169,22 @@ class PdfQuickToolController(
                     button.setOnClickListener {
                         val options = field.options.toTypedArray()
                         val checked = BooleanArray(options.size) { options[it] in selected }
-                        androidx.appcompat.app.AlertDialog.Builder(activity)
+                        val chooser = androidx.appcompat.app.AlertDialog.Builder(activity)
                             .setTitle(field.name)
-                            .setMultiChoiceItems(options, checked) { _, which, isChecked ->
+                        if (field.isMultiSelect) {
+                            chooser.setMultiChoiceItems(options, checked) { _, which, isChecked ->
                                 if (isChecked) selected.add(options[which]) else selected.remove(options[which])
                             }
-                            .setPositiveButton("Done") { _, _ -> button.text = selected.joinToString().ifBlank { "Choose values" } }
+                        } else {
+                            val selectedIndex = options.indexOfFirst { it in selected }
+                            chooser.setSingleChoiceItems(options, selectedIndex) { dialog, which ->
+                                selected.clear()
+                                selected.add(options[which])
+                                dialog.dismiss()
+                                button.text = selected.joinToString().ifBlank { "Choose values" }
+                            }
+                        }
+                        chooser.setPositiveButton("Done") { _, _ -> button.text = selected.joinToString().ifBlank { "Choose values" } }
                             .setNegativeButton("Cancel", null)
                             .show()
                     }
