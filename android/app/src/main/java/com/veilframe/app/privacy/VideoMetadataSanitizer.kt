@@ -106,7 +106,6 @@ object VideoMetadataSanitizer {
                 }
                 cmd.add("-c:v")
                 cmd.add(vCodec)
-                cmd.add(vCodec)
                 if (isWebm) {
                     cmd.add("-b:v")
                     cmd.add("0")
