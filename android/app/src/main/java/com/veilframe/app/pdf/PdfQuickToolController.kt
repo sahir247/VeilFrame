@@ -127,6 +127,7 @@ class PdfQuickToolController(
     private var formEditorDialog: AlertDialog? = null
     private var pagePreviewDialog: AlertDialog? = null
     private var pagePreviewJob: Job? = null
+    private var isFormExporting: Boolean = false
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -171,6 +172,7 @@ class PdfQuickToolController(
         primaryDocPages = 0
         primaryDocName = "document.pdf"
         formAnalysis = null
+        isFormExporting = false
         formEditorDialog?.dismiss()
         formEditorDialog = null
         pagePreviewJob?.cancel()
@@ -2220,7 +2222,13 @@ class PdfQuickToolController(
             .setPositiveButton("Fill & Export", null)
             .create()
         formEditorDialog = dialog
-        dialog.setOnDismissListener { if (formEditorDialog === dialog) formEditorDialog = null }
+        dialog.setOnDismissListener {
+            if (formEditorDialog === dialog) formEditorDialog = null
+            if (isFormExporting) {
+                isFormExporting = false
+                formAnalysisJob?.cancel()
+            }
+        }
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (valueReaders.isEmpty()) {
@@ -2229,15 +2237,18 @@ class PdfQuickToolController(
                 }
                 val values = valueReaders.mapValues { (_, read) -> read() }
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                isFormExporting = true
                 formAnalysisJob = scope.launch(Dispatchers.IO) {
                     val export = pdfFormFiller.fillFormToBytes(activity, uri, values, flatten.isChecked)
                     withContext(Dispatchers.Main) {
                         if (selectedUris.firstOrNull() != uri) return@withContext
                         if (export.result.success && !export.pdfBytes.isNullOrEmpty()) {
+                            isFormExporting = false
                             isSaved = true
                             dialog.dismiss()
                             onSaveFileRequest(export.pdfBytes, "${primaryDocName.removeSuffix(".pdf")}_filled.pdf")
                         } else {
+                            isFormExporting = false
                             dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
                             Toast.makeText(activity, export.result.errorMessage ?: "Could not update form fields", Toast.LENGTH_LONG).show()
                         }
