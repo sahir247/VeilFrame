@@ -362,7 +362,7 @@ class ToolSessionManager(
                 configureOptions(
                     paramHeader = "FORENSIC PRIVACY PARAMETERS",
                     primaryLabel = "Suppression Preset",
-                    primaryDesc = "Sensor fingerprint & PRNU suppression strategy",
+                    primaryDesc = "Image transformation and metadata privacy options",
                     primaryChips = listOf("Stealth (2-Stage)", "Standard (Remap)", "High Suppression", "Metadata Only"),
                     primaryDefaultIndex = 0,
                     formatLabel = "Image Format",
@@ -372,8 +372,8 @@ class ToolSessionManager(
                     switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
                     switch1Desc = "Eliminates location, aperture, camera serials, and timestamps",
                     switch1Checked = true,
-                    switch2Title = "PRNU Sensor & Demosaicing Suppression",
-                    switch2Desc = "VeilNet-Nano NCNN + Fused Coarse-Grid Remap (|sPCE| < 5.0, 6-strip < 8.0)",
+                    switch2Title = "Neural & Geometric Image Perturbation",
+                    switch2Desc = "VeilNet-Nano NCNN + fused remap; camera PRNU removal is not independently verified",
                     switch2Checked = true,
                     switch3Title = "Clean IJG Re-Encode",
                     switch3Desc = "Randomized IJG quantization tables (86-91 / 82-88), purges vendor matrices",
@@ -725,7 +725,7 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• PRNU sensor pattern suppressed (|sPCE| < 5.0, 6-strip < 8.0)" else "• Sensor PRNU preserved"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Neural/geometric image perturbation applied; camera PRNU not independently verified" else "• Neural/geometric perturbation skipped"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization tables applied (device attribution neutralized)" else "• Container re-encode skipped"
             }
             ToolMode.FOLDER_SCANNER -> {
