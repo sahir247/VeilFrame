@@ -118,7 +118,24 @@ class PdfQuickToolController(
     private var primaryDocPages: Int = 1
     private var isExecuting: Boolean = false
     private var isSaved: Boolean = false
+    private var isSourceReady: Boolean = false
     private var activeJob: Job? = null
+    private var selectionGeneration: Long = 0L
+    private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
+
+    private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
+        val job = scope.launch(Dispatchers.IO, block = block)
+        transientJobs.add(job)
+        job.invokeOnCompletion { transientJobs.remove(job) }
+        return job
+    }
+
+    private fun cancelTransientJobs() {
+        synchronized(transientJobs) {
+            transientJobs.toList().forEach { it.cancel() }
+            transientJobs.clear()
+        }
+    }
 
     private val pdfMerger by lazy { PdfMerger() }
     private val pdfSplitter by lazy { PdfSplitter() }
@@ -152,9 +169,19 @@ class PdfQuickToolController(
     override val isProcessing: Boolean get() = isExecuting
 
     override fun discardAndReleaseAllResources() {
+        selectionGeneration++
         activeJob?.cancel()
+        activeJob = null
+        cancelTransientJobs()
         selectedUris.clear()
+        primaryDocName = "document.pdf"
+        primaryDocPages = 1
         isExecuting = false
+        isSaved = false
+        isSourceReady = false
+        binding.btnSignCanvasSave.isEnabled = true
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
         thumbnailLoader.clearCache()
         binding.pdfSignCanvasView.reset()
         binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -177,6 +204,10 @@ class PdfQuickToolController(
         binding.etCustomPageOrder.setText("")
         mergeFileListAdapter?.clearAll()
         mergePageAdapter?.setItems(emptyList())
+        binding.tvQuickToolDocName.text = ""
+        binding.tvQuickToolDocMeta.text = ""
+        binding.tvMultiFileCount.text = "SELECTED FILES (0)"
+        binding.btnQuickToolExecute.isEnabled = true
     }
 
     fun init() {
@@ -432,7 +463,7 @@ class PdfQuickToolController(
                 return true
             }
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
-            override fun isLongPressDragEnabled(): Boolean = (activeMode == QuickMode.REORDER)
+            override fun isLongPressDragEnabled(): Boolean = false
 
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
@@ -637,7 +668,10 @@ class PdfQuickToolController(
         }
         binding.chipMergeClear.setOnClickListener {
             selectedUris.clear()
+            isSourceReady = false
+            binding.btnQuickToolExecute.isEnabled = false
             mergeFileListAdapter?.clearAll()
+            mergePageAdapter?.setItems(emptyList())
             binding.containerQuickToolEmptyState.visibility = View.VISIBLE
             binding.btnPdfQuickToolReset.visibility = View.GONE
         }
@@ -704,8 +738,10 @@ class PdfQuickToolController(
             mergePageAdapter?.setItems(emptyList())
             return
         }
-        scope.launch(Dispatchers.IO) {
-            val mergeItems = selectedUris.mapIndexed { idx, uri ->
+        val generation = selectionGeneration
+        val sourceUris = selectedUris.toList()
+        launchTransient {
+            val mergeItems = sourceUris.mapIndexed { idx, uri ->
                 val mime = activity.contentResolver.getType(uri) ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
@@ -731,7 +767,12 @@ class PdfQuickToolController(
             }
             val pageItems = pdfMerger.buildPageItems(mergeItems)
             withContext(Dispatchers.Main) {
-                mergePageAdapter?.setItems(pageItems)
+                if (generation == selectionGeneration &&
+                    (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) &&
+                    sourceUris == selectedUris.toList()
+                ) {
+                    mergePageAdapter?.setItems(pageItems)
+                }
             }
         }
     }
@@ -769,10 +810,29 @@ class PdfQuickToolController(
 
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        selectionGeneration++
+        val generation = selectionGeneration
+        activeJob?.cancel()
+        activeJob = null
+        cancelTransientJobs()
+        isExecuting = false
+        isSourceReady = false
+        binding.btnQuickToolExecute.isEnabled = false
+        binding.btnQuickToolExecute.text = activeMode.buttonText
+        binding.btnSignCanvasSave.isEnabled = true
+        binding.pdfSignCanvasView.reset()
+        binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+        binding.ivSignPagePreview.setImageDrawable(null)
+        binding.pbSignPreviewLoading.visibility = View.GONE
+        primaryDocPages = 1
         isSaved = false
+        splitThumbnailAdapter?.clear()
+        rotateThumbnailAdapter?.clear()
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
             selectedUris.addAll(uris)
+            isSourceReady = selectedUris.isNotEmpty()
+            binding.btnQuickToolExecute.isEnabled = isSourceReady
             updateMultiFileList()
             binding.containerQuickToolEmptyState.visibility = View.GONE
             binding.btnPdfQuickToolReset.visibility = View.VISIBLE
@@ -788,34 +848,46 @@ class PdfQuickToolController(
             binding.tvQuickToolDocName.text = primaryDocName
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
+                isSourceReady = true
+                binding.btnQuickToolExecute.isEnabled = true
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
                 binding.pbDocVisualLoading.visibility = View.VISIBLE
                 binding.ivDocVisualPreview.setImageDrawable(null)
-                inspectAndPreviewOfficeDoc(uri)
+                inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc ->
-                                primaryDocPages = doc.numberOfPages
-                                withContext(Dispatchers.Main) {
-                                    binding.tvQuickToolDocMeta.text = "$primaryDocPages pages total"
-                                    splitThumbnailAdapter?.setDocument(uri, primaryDocPages, (1..primaryDocPages).toSet())
-                                    rotateThumbnailAdapter?.setDocument(uri, primaryDocPages, emptySet())
-                                    if (activeMode == QuickMode.SIGN) {
-                                        binding.viewSignaturePad.isDrawingEnabled = true
-                                        refreshSignPagePreview()
-                                        updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
-                                    }
-                                }
+                        val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                        } ?: throw IllegalStateException("Cannot open PDF")
+                        withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                            primaryDocPages = pageCount
+                            isSourceReady = pageCount > 0
+                            binding.btnQuickToolExecute.isEnabled = isSourceReady
+                            binding.tvQuickToolDocMeta.text = "$pageCount pages total"
+                            when (activeMode) {
+                                QuickMode.SPLIT -> splitThumbnailAdapter?.setDocument(uri, pageCount, (1..pageCount).toSet())
+                                QuickMode.REORDER, QuickMode.ROTATE, QuickMode.DELETE ->
+                                    rotateThumbnailAdapter?.setDocument(uri, pageCount, emptySet())
+                                else -> Unit
+                            }
+                            if (activeMode == QuickMode.SIGN) {
+                                binding.viewSignaturePad.isDrawingEnabled = true
+                                refreshSignPagePreview()
+                                updateSignPlacementIndicator(signPosXPercent, signPosYPercent)
                             }
                         }
                     } catch (_: Exception) {
                         withContext(Dispatchers.Main) {
-                            binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                isSourceReady = false
+                                binding.btnQuickToolExecute.isEnabled = false
+                                binding.tvQuickToolDocMeta.text = "Unable to read page count"
+                            }
                         }
                     }
                 }
@@ -823,14 +895,18 @@ class PdfQuickToolController(
 
             // If metadata mode, inspect immediately
             if (activeMode == QuickMode.METADATA) {
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     val metaResult = metadataManager.readMetadata(activity, uri)
                     val meta = metaResult.getOrNull()
                     withContext(Dispatchers.Main) {
-                        meta?.let {
-                            binding.etMetaTitle.setText(it.title ?: "")
-                            binding.etMetaAuthor.setText(it.author ?: "")
-                            binding.etMetaKeywords.setText(it.keywords ?: "")
+                        if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
+                            activeMode == QuickMode.METADATA
+                        ) {
+                            meta?.let {
+                                binding.etMetaTitle.setText(it.title ?: "")
+                                binding.etMetaAuthor.setText(it.author ?: "")
+                                binding.etMetaKeywords.setText(it.keywords ?: "")
+                            }
                         }
                     }
                 }
@@ -838,9 +914,10 @@ class PdfQuickToolController(
         }
     }
 
-    private fun inspectAndPreviewOfficeDoc(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
-            val lower = primaryDocName.lowercase()
+    private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
+        val selectedName = primaryDocName
+        launchTransient {
+            val lower = selectedName.lowercase()
             var summary = "Office Document"
             var previewText = ""
             var metaText = "Ready to convert"
@@ -888,10 +965,10 @@ class PdfQuickToolController(
                             summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
                             previewText = paragraphs.take(15).joinToString("\n\n")
                         } else {
-                            summary = "Word Document ($primaryDocName)"
+                            summary = "Word Document ($selectedName)"
                             previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("DOCX", primaryDocName, paragraphs, tablesCount, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("DOCX", selectedName, paragraphs, tablesCount, null, null)
                     }
                     lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
                         metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
@@ -926,10 +1003,10 @@ class PdfQuickToolController(
                             }
                         } catch (t: Throwable) {
                             Log.w(TAG, "XLSX preview failed: ${t.message}", t)
-                            summary = "Excel Spreadsheet ($primaryDocName)"
+                            summary = "Excel Spreadsheet ($selectedName)"
                             previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("XLSX", primaryDocName, emptyList(), 1, sheetGrid, null)
+                        previewBitmap = renderOfficePreviewBitmap("XLSX", selectedName, emptyList(), 1, sheetGrid, null)
                     }
                     lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
                         metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
@@ -955,10 +1032,10 @@ class PdfQuickToolController(
                             }
                         } catch (t: Throwable) {
                             Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
-                            summary = "PowerPoint Presentation ($primaryDocName)"
+                            summary = "PowerPoint Presentation ($selectedName)"
                             previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("PPTX", primaryDocName, emptyList(), 0, null, slideTexts)
+                        previewBitmap = renderOfficePreviewBitmap("PPTX", selectedName, emptyList(), 0, null, slideTexts)
                     }
                     lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
                         metaText = "Text Document (${lower.substringAfterLast('.')})"
@@ -974,19 +1051,19 @@ class PdfQuickToolController(
                             summary = "Text Document • $count lines"
                             previewText = lines.take(20).joinToString("\n")
                         }
-                        previewBitmap = renderOfficePreviewBitmap("TXT", primaryDocName, lines, 0, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("TXT", selectedName, lines, 0, null, null)
                     }
                     else -> {
                         metaText = "Office Document"
-                        summary = "Document Selected • $primaryDocName"
+                        summary = "Document Selected • $selectedName"
                         previewText = "Document loaded and ready for conversion to PDF."
-                        previewBitmap = renderOfficePreviewBitmap("DOC", primaryDocName, listOf("Office document loaded", primaryDocName), 0, null, null)
+                        previewBitmap = renderOfficePreviewBitmap("DOC", selectedName, listOf("Office document loaded", selectedName), 0, null, null)
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
                 summary = "Document Selected"
-                previewText = "Ready to convert: $primaryDocName"
+                previewText = "Ready to convert: $selectedName"
             }
 
             if (previewText.isBlank()) {
@@ -994,6 +1071,12 @@ class PdfQuickToolController(
             }
 
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
+                    previewBitmap?.recycle()
+                    return@withContext
+                }
+                isSourceReady = true
+                binding.btnQuickToolExecute.isEnabled = true
                 binding.tvQuickToolDocMeta.text = metaText
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.tvDocPreviewSummary.text = summary
@@ -1486,6 +1569,7 @@ class PdfQuickToolController(
     private fun refreshSignPagePreview() {
         val uri = selectedUris.firstOrNull() ?: return
         if (primaryDocPages <= 0) return
+        val generation = selectionGeneration
         val targetPageIdx = when {
             binding.chipSignPageFirst.isChecked -> 0
             binding.chipSignPageAll.isChecked -> 0
@@ -1497,9 +1581,12 @@ class PdfQuickToolController(
         }
 
         binding.pbSignPreviewLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
+                    return@withContext
+                }
                 binding.pbSignPreviewLoading.visibility = View.GONE
                 if (bmp != null) {
                     binding.ivSignPagePreview.setImageBitmap(bmp)
@@ -1689,7 +1776,7 @@ class PdfQuickToolController(
             .setView(til)
             .setPositiveButton("Save") { _, _ ->
                 val name = editText.text?.toString()?.trim().orEmpty()
-                scope.launch(Dispatchers.IO) {
+                launchTransient {
                     pdfSigner.saveSignatureBitmap(bitmap, name)
                     withContext(Dispatchers.Main) {
                         Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
@@ -1926,7 +2013,7 @@ class PdfQuickToolController(
         binding.btnSignCanvasSave.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
 
-        activeJob = scope.launch(Dispatchers.IO) {
+        activeJob = launchTransient {
             try {
                 val outStream = ByteArrayOutputStream()
                 val base = primaryDocName.removeSuffix(".pdf")
@@ -1962,13 +2049,18 @@ class PdfQuickToolController(
 
         binding.btnStripAllMetadata.setOnClickListener {
             val uri = selectedUris.firstOrNull() ?: return@setOnClickListener
-            scope.launch(Dispatchers.IO) {
+            val generation = selectionGeneration
+            val sourceName = primaryDocName
+            launchTransient {
                 val out = ByteArrayOutputStream()
                 val res = metadataManager.removeMetadata(activity, uri, out)
                 withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri ||
+                        activeMode != QuickMode.METADATA
+                    ) return@withContext
                     if (res.isSuccess) {
                         isSaved = true
-                        val exportName = "${primaryDocName.removeSuffix(".pdf")}_sanitized.pdf"
+                        val exportName = "${sourceName.removeSuffix(".pdf")}_sanitized.pdf"
                         onSaveFileRequest(out.toByteArray(), exportName)
                     } else {
                         Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
@@ -1979,6 +2071,14 @@ class PdfQuickToolController(
     }
 
     private fun executeActiveOperation() {
+        if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
+            Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (activeMode == QuickMode.FILL_FORMS) {
+            openFillFormEditor()
+            return
+        }
         if (activeMode != QuickMode.HTML_TO_PDF && selectedUris.isEmpty()) {
             Toast.makeText(activity, "Please select document(s) first", Toast.LENGTH_SHORT).show()
             return
@@ -1990,7 +2090,7 @@ class PdfQuickToolController(
         val origText = binding.btnQuickToolExecute.text.toString()
         binding.btnQuickToolExecute.text = "Processing..."
 
-        activeJob = scope.launch(Dispatchers.IO) {
+        activeJob = launchTransient {
             try {
                 val outStream = ByteArrayOutputStream()
                 val base = primaryDocName.removeSuffix(".pdf")
@@ -2049,7 +2149,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please select at least one page to split", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val result = pdfOrganizer.extractPagesAsPdf(
@@ -2072,7 +2172,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please enter valid page ranges (e.g. 1-2, 3-5)", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val partPdfs = mutableListOf<Pair<Int, ByteArray>>()
@@ -2119,7 +2219,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please tap at least one page to delete", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val result = pdfOrganizer.removePages(
@@ -2190,7 +2290,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please enter an encryption password", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val options = PdfSecurityOptions(
@@ -2233,7 +2333,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val targetPages = when {
@@ -2283,7 +2383,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please enter HTML code", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val htmlContent = if (!input.contains("<html", ignoreCase = true) && !input.contains("<!doctype", ignoreCase = true)) {
@@ -2407,6 +2507,284 @@ class PdfQuickToolController(
                 }
             }
         }
+    }
+
+    /**
+     * Analyze the selected PDF and present its actual AcroForm fields for editing.
+     * PDFs without editable AcroForm fields are reported explicitly instead of showing
+     * an empty form-filling screen.
+     */
+    private fun openFillFormEditor() {
+        val uri = selectedUris.firstOrNull()
+        if (uri == null) {
+            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isExecuting) return
+        val generation = selectionGeneration
+        isExecuting = true
+        binding.btnQuickToolExecute.isEnabled = false
+        binding.btnQuickToolExecute.text = "Inspecting form..."
+        activeJob = launchTransient {
+            val analysis = pdfFormFiller.analyzeForm(activity, uri)
+            withContext(Dispatchers.Main) {
+                isExecuting = false
+                binding.btnQuickToolExecute.isEnabled = true
+                binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                if (analysis.errorMessage != null) {
+                    Toast.makeText(activity, analysis.errorMessage, Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                if (!analysis.hasForm || analysis.fields.isEmpty()) {
+                    Toast.makeText(
+                        activity,
+                        "This PDF has no editable AcroForm fields. Scanned or XFA-only forms are not editable here.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@withContext
+                }
+                if (analysis.fillableFields == 0) {
+                    Toast.makeText(activity, "This PDF contains no editable form fields.", Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                showAcroFormEditor(uri, generation, analysis.fields)
+            }
+        }
+    }
+
+    private fun showAcroFormEditor(
+        uri: Uri,
+        generation: Long,
+        fields: List<com.veilframe.app.pdf.operations.FormField>
+    ) {
+        val density = activity.resources.displayMetrics.density
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (12 * density).toInt(), (20 * density).toInt(), (12 * density).toInt())
+        }
+        val scroll = ScrollView(activity).apply {
+            addView(content)
+        }
+        val readers = linkedMapOf<String, () -> com.veilframe.app.pdf.operations.FieldValue>()
+        val requiredChecks = mutableListOf<Pair<String, () -> Boolean>>()
+
+        fun addLabel(text: String) {
+            content.addView(TextView(activity).apply {
+                this.text = text
+                textSize = 13f
+                setTextColor(activity.getColor(R.color.vf_text_primary))
+                setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
+            })
+        }
+
+        for (field in fields) {
+            if (field is com.veilframe.app.pdf.operations.FormField.UnknownField) {
+                addLabel("${field.name} — unsupported field (${field.fieldType})")
+                continue
+            }
+            addLabel(field.name + if (field.isRequired) " *" else "")
+            when (field) {
+                is com.veilframe.app.pdf.operations.FormField.TextField -> {
+                    val edit = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                        setText(field.value)
+                        isEnabled = !field.isReadOnly
+                        isSingleLine = !field.isMultiline
+                        if (field.isMultiline) {
+                            minLines = 2
+                            maxLines = 5
+                            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                        }
+                        field.maxLength?.let {
+                            filters = arrayOf(android.text.InputFilter.LengthFilter(it))
+                        }
+                    }
+                    content.addView(edit, LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ))
+                    if (!field.isReadOnly) {
+                        readers[field.name] = { com.veilframe.app.pdf.operations.FieldValue.Text(edit.text?.toString().orEmpty()) }
+                        if (field.isRequired) requiredChecks.add(field.name to { !edit.text.isNullOrBlank() })
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.CheckBoxField -> {
+                    val check = android.widget.CheckBox(activity).apply {
+                        text = "Checked"
+                        isChecked = field.isChecked
+                        isEnabled = !field.isReadOnly
+                    }
+                    content.addView(check)
+                    if (!field.isReadOnly) {
+                        readers[field.name] = { com.veilframe.app.pdf.operations.FieldValue.CheckBox(check.isChecked) }
+                        if (field.isRequired) requiredChecks.add(field.name to { check.isChecked })
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.RadioButtonField -> {
+                    val spinner = android.widget.Spinner(activity)
+                    val options = field.options
+                    spinner.adapter = android.widget.ArrayAdapter(
+                        activity, android.R.layout.simple_spinner_item, options
+                    ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                    val selected = field.selectedOption?.let { options.indexOf(it) } ?: -1
+                    if (selected >= 0) spinner.setSelection(selected)
+                    spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
+                    content.addView(spinner)
+                    if (!field.isReadOnly) {
+                        readers[field.name] = {
+                            com.veilframe.app.pdf.operations.FieldValue.Radio(
+                                options.getOrNull(spinner.selectedItemPosition).orEmpty()
+                            )
+                        }
+                        if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.ComboBoxField -> {
+                    if (field.isEditable) {
+                        val edit = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                            setText(field.selectedValue.orEmpty())
+                            isEnabled = !field.isReadOnly
+                            isSingleLine = true
+                        }
+                        content.addView(edit, LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        ))
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.Combo(edit.text?.toString().orEmpty())
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { !edit.text.isNullOrBlank() })
+                        }
+                    } else {
+                        val spinner = android.widget.Spinner(activity)
+                        val options = field.options
+                        spinner.adapter = android.widget.ArrayAdapter(
+                            activity, android.R.layout.simple_spinner_item, options
+                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                        val selected = field.selectedValue?.let { options.indexOf(it) } ?: -1
+                        if (selected >= 0) spinner.setSelection(selected)
+                        spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
+                        content.addView(spinner)
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.Combo(
+                                    options.getOrNull(spinner.selectedItemPosition) ?: field.selectedValue.orEmpty()
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
+                        }
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.ListBoxField -> {
+                    if (field.isMultiSelect) {
+                        val checks = field.options.map { option ->
+                            android.widget.CheckBox(activity).apply {
+                                text = option
+                                isChecked = option in field.selectedValues
+                                isEnabled = !field.isReadOnly
+                                content.addView(this)
+                            }
+                        }
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
+                                    checks.filter { it.isChecked }.map { it.text.toString() }
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to { checks.any { it.isChecked } })
+                        }
+                    } else {
+                        val spinner = android.widget.Spinner(activity)
+                        spinner.adapter = android.widget.ArrayAdapter(
+                            activity, android.R.layout.simple_spinner_item, field.options
+                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                        val selected = field.selectedValues.firstOrNull()?.let { field.options.indexOf(it) } ?: -1
+                        if (selected >= 0) spinner.setSelection(selected)
+                        spinner.isEnabled = !field.isReadOnly && field.options.isNotEmpty()
+                        content.addView(spinner)
+                        if (!field.isReadOnly) {
+                            readers[field.name] = {
+                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
+                                    listOfNotNull(field.options.getOrNull(spinner.selectedItemPosition))
+                                )
+                            }
+                            if (field.isRequired) requiredChecks.add(field.name to {
+                                spinner.selectedItemPosition >= 0 && field.options.isNotEmpty()
+                            })
+                        }
+                    }
+                }
+                is com.veilframe.app.pdf.operations.FormField.UnknownField -> Unit
+            }
+            if (field.isReadOnly) {
+                content.addView(TextView(activity).apply {
+                    text = "Read-only"
+                    textSize = 11f
+                    setTextColor(activity.getColor(R.color.vf_text_secondary))
+                })
+            }
+        }
+
+        val flatten = android.widget.CheckBox(activity).apply {
+            text = "Flatten form after filling (fields become non-editable)"
+            isChecked = false
+        }
+        content.addView(flatten)
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle("Fill PDF Form")
+            .setMessage("${readers.size} editable field(s) • * required")
+            .setView(scroll)
+            .setPositiveButton("Apply & Export", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setLayout(
+                (activity.resources.displayMetrics.widthPixels * 0.92f).toInt(),
+                (activity.resources.displayMetrics.heightPixels * 0.78f).toInt()
+            )
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val missing = requiredChecks.firstOrNull { !it.second.invoke() }
+                if (missing != null) {
+                    Toast.makeText(activity, "Complete required field: ${missing.first}", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
+                    dialog.dismiss()
+                    return@setOnClickListener
+                }
+                val values = readers.mapValues { it.value.invoke() }
+                isExecuting = true
+                binding.btnQuickToolExecute.isEnabled = false
+                binding.btnQuickToolExecute.text = "Applying form values..."
+                val outputName = "${primaryDocName.substringBeforeLast('.', primaryDocName)}_filled.pdf"
+                activeJob = launchTransient {
+                    val output = ByteArrayOutputStream()
+                    val result = pdfFormFiller.fillFormToStream(
+                        context = activity,
+                        inputUri = uri,
+                        outputStream = output,
+                        fieldValues = values,
+                        flatten = flatten.isChecked
+                    )
+                    withContext(Dispatchers.Main) {
+                        isExecuting = false
+                        binding.btnQuickToolExecute.isEnabled = true
+                        binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
+                        if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                        if (result.success && output.size() > 0) {
+                            isSaved = true
+                            dialog.dismiss()
+                            onSaveFileRequest(output.toByteArray(), outputName)
+                            Toast.makeText(activity, "${result.fieldsUpdated} field(s) filled", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(activity, result.errorMessage ?: "Unable to fill this PDF form", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun parsePageRanges(rangeInput: String): List<PageRange> {
@@ -2540,13 +2918,17 @@ class PdfQuickToolController(
         val ivPreview = dialogView.findViewById<ImageView>(R.id.ivPreviewFullPage)
         val pbLoading = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
 
+        val generation = selectionGeneration
         tvTitle.text = "Page ${pageIndex + 1} Preview"
         btnClose.setOnClickListener { dialog.dismiss() }
 
         pbLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        launchTransient {
             val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || !dialog.isShowing) {
+                    return@withContext
+                }
                 pbLoading.visibility = View.GONE
                 if (highResBitmap != null) {
                     ivPreview.setImageBitmap(highResBitmap)
