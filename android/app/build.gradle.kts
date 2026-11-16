@@ -124,7 +124,7 @@ kotlin {
     }
 }
 
-    // Kotlin 2.2+ compiler configuration; use typed options instead of android.kotlinOptions.
+    // Kotlin 2.4 compiler configuration; use typed options instead of deprecated android.kotlinOptions.
 
 
     buildFeatures {
