@@ -41,7 +41,7 @@ class PdfFormFillerRegressionTest {
         if (!PDFBoxResourceLoader.isReady()) PDFBoxResourceLoader.init(context)
     }
 
-    private fun configureAcroForm(document: PDDocument, form: PDAcroForm) {
+    private fun configureAcroForm(form: PDAcroForm) {
         val resources = PDResources().apply {
             put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
         }
@@ -66,8 +66,8 @@ class PdfFormFillerRegressionTest {
         val off = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
         val on = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
         normal.setItem(COSName.Off, off.cosObject)
-        normal.setItem(COSName.YES, on.cosObject)
-        widget.appearanceState = COSName.Off
+        normal.setItem(COSName.getPDFName("Yes"), on.cosObject)
+        widget.appearanceState = "Off"
         page.annotations.add(widget)
         form.fields.add(checkbox)
         return checkbox
@@ -81,7 +81,7 @@ class PdfFormFillerRegressionTest {
                 document.addPage(PDPage())
                 val form = PDAcroForm(document)
                 document.documentCatalog.acroForm = form
-                configureAcroForm(document, form)
+                configureAcroForm(form)
 
                 val name = PDTextField(form).apply {
                     partialName = "name"
