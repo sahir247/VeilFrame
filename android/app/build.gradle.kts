@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -157,7 +156,7 @@ android {
     }
 }
 
-// Keep the existing Java 17 bytecode target and compiler opt-ins.
+// AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

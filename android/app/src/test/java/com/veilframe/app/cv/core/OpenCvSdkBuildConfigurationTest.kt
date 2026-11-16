@@ -285,6 +285,47 @@ class OpenCvSdkBuildConfigurationTest {
         }
     }
 
+
+    @Test
+    fun `Android modules use AGP built-in Kotlin and the modern DSL`() {
+        val root = findProjectRoot()
+        val gradleProperties = File(root, "android/gradle.properties").readText()
+        val rootBuild = File(root, "android/build.gradle.kts").readText()
+        val moduleBuilds = listOf(
+            File(root, "android/app/build.gradle.kts"),
+            File(root, "android/opencv-sdk/build.gradle.kts"),
+        )
+
+        assertTrue(
+            "AGP built-in Kotlin must not be disabled",
+            !gradleProperties.contains("android.builtInKotlin=false")
+        )
+        assertTrue(
+            "AGP modern DSL must not be disabled",
+            !gradleProperties.contains("android.newDsl=false")
+        )
+        assertTrue(
+            "Kotlin 2.4.21 must remain explicitly selected using AGP's built-in Kotlin classpath",
+            rootBuild.contains("classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21\")")
+        )
+        assertTrue(
+            "Root build must not declare the external Kotlin Android plugin",
+            !rootBuild.contains("id(\"org.jetbrains.kotlin.android\")")
+        )
+        moduleBuilds.forEach { buildFile ->
+            val content = buildFile.readText()
+            assertTrue(
+                "$buildFile must use AGP's built-in Kotlin rather than apply the old plugin",
+                !content.contains("id(\"org.jetbrains.kotlin.android\")")
+            )
+            assertTrue(
+                "$buildFile must preserve Kotlin opt-ins under compilerOptions",
+                content.contains("compilerOptions {") &&
+                    content.contains("optIn.addAll(\"kotlin.ExperimentalUnsignedTypes\"")
+            )
+        }
+    }
+
     @Test
     fun `ci workflow configures KVM hardware acceleration for emulator runner`() {
         val root = findProjectRoot()

@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Deterministic verification of complete custom OpenCV + WeChatQRCode SDK artifacts:
@@ -114,7 +113,7 @@ android {
     }
 }
 
-// Keep the existing Java 17 bytecode target and compiler opt-ins.
+// AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

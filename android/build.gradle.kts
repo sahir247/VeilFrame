@@ -4,6 +4,10 @@ buildscript {
         mavenCentral()
     }
     dependencies {
+        // AGP 9's built-in Kotlin chooses its KGP from the buildscript classpath.
+        // Keep the previously validated Kotlin 2.4.21 compiler without applying
+        // the deprecated org.jetbrains.kotlin.android plugin to Android modules.
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
         constraints {
             classpath("io.netty:netty-codec-http2:4.2.20.Final")
             classpath("io.netty:netty-codec-http:4.2.20.Final")
@@ -28,7 +32,6 @@ buildscript {
 plugins {
     id("com.android.application") version "9.3.3" apply false
     id("com.android.library") version "9.3.3" apply false
-    id("org.jetbrains.kotlin.android") version "2.4.21" apply false
 }
 
 tasks.register("clean", Delete::class) {
