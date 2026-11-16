@@ -2149,7 +2149,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please select at least one page to split", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val result = pdfOrganizer.extractPagesAsPdf(
@@ -2172,7 +2172,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please enter valid page ranges (e.g. 1-2, 3-5)", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val partPdfs = mutableListOf<Pair<Int, ByteArray>>()
@@ -2219,7 +2219,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please tap at least one page to delete", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val result = pdfOrganizer.removePages(
@@ -2290,7 +2290,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please enter an encryption password", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val options = PdfSecurityOptions(
@@ -2333,7 +2333,7 @@ class PdfQuickToolController(
                                     binding.btnQuickToolExecute.text = origText
                                     Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
                                 }
-                                return@launch
+                                return@launchTransient
                             }
 
                             val targetPages = when {
@@ -2383,7 +2383,7 @@ class PdfQuickToolController(
                                 binding.btnQuickToolExecute.text = origText
                                 Toast.makeText(activity, "Please enter HTML code", Toast.LENGTH_SHORT).show()
                             }
-                            return@launch
+                            return@launchTransient
                         }
 
                         val htmlContent = if (!input.contains("<html", ignoreCase = true) && !input.contains("<!doctype", ignoreCase = true)) {
