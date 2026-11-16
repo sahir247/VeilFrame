@@ -26,4 +26,4 @@ jobs:
         uses: gradle/actions/dependency-submission@v4
         with:
           build-root-directory: ./android
-          gradle-version: "8.10.2"
+          gradle-version: "9.5.0"
