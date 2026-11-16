@@ -10,6 +10,7 @@ import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.TensorBuffer
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.core.LiteRtEnvironment
+import com.veilframe.app.cv.core.LiteRtModelStorage
 import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
@@ -163,17 +164,19 @@ class DocumentSegmentationService(
         }.getOrDefault(false)
         val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
 
+        val modelPath = try {
+            if (modelFile?.isFile == true) modelFile.absolutePath
+            else LiteRtModelStorage.stageBundled(
+                checkNotNull(appContext), MODEL_ASSET_NAME, "fairscan"
+            ).absolutePath
+        } catch (error: Exception) {
+            isModelAvailable = false
+            Log.w(TAG, "Cannot prepare FairScan model file", error)
+            return false
+        }
+
         fun create(options: CompiledModel.Options): CompiledModel =
-            if (modelFile != null && modelFile.isFile) {
-                CompiledModel.create(modelFile.absolutePath, options, environment)
-            } else {
-                CompiledModel.create(
-                    checkNotNull(appContext).assets,
-                    MODEL_ASSET_NAME,
-                    options,
-                    environment
-                )
-            }
+            CompiledModel.create(modelPath, options, environment)
 
         data class ReadyModel(
             val model: CompiledModel,

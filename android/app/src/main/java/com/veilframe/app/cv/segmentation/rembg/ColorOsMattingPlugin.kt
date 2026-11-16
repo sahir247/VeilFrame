@@ -9,6 +9,7 @@ import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.TensorBuffer
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.core.LiteRtEnvironment
+import com.veilframe.app.cv.core.LiteRtModelStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
@@ -87,12 +88,12 @@ object ColorOsMattingPlugin {
         }.getOrDefault(false)
         val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
 
+        // Downloaded models already have file paths; stage only the bundled fallback.
+        val modelPath = modelFile?.absolutePath ?: LiteRtModelStorage.stageBundled(
+            appContext, MODEL_ASSET_PATH, "coloros-liftshift"
+        ).absolutePath
         fun create(options: CompiledModel.Options): CompiledModel =
-            if (modelFile != null) {
-                CompiledModel.create(modelFile.absolutePath, options, environment)
-            } else {
-                CompiledModel.create(appContext.assets, MODEL_ASSET_PATH, options, environment)
-            }
+            CompiledModel.create(modelPath, options, environment)
 
         data class ReadyModel(
             val model: CompiledModel,

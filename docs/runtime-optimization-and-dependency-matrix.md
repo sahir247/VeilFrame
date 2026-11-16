@@ -85,6 +85,7 @@ Both FairScan document segmentation and ColorOS Lift & Shift matting now use Lit
 - GPU is selected only when the bundled environment reports it available; failed GPU setup falls back to CPU.
 - CPU fallback uses a bounded thread count and XNNPACK `xnnPackFlags=0x23` to use the transient indirection-buffer option.
 - Environment compiler cache is enabled with Application context to reduce repeated accelerator compilation after process restarts.
+- Bundled .tflite assets are atomically staged once per installed APK revision into no-backup private storage; CompiledModel loads the file path so model pages can be memory-mapped/reclaimed instead of holding an additional native-heap asset copy. Existing downloaded model paths remain untouched.
 - The FairScan suspend API now dispatches to its model executor instead of performing synchronous model work on the caller thread. Model initialization is also scheduled off-main.
 
 ### PDF thumbnail memory and responsiveness
