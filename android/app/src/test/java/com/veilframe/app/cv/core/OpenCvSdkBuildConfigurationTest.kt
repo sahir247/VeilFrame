@@ -274,20 +274,15 @@ class OpenCvSdkBuildConfigurationTest {
         val sdkBuildGradle = File(root, "android/opencv-sdk/build.gradle.kts")
         val appBuildGradle = File(root, "android/app/build.gradle.kts")
 
-        assertTrue("opencv-sdk/build.gradle.kts must exist", sdkBuildGradle.exists())
-        assertTrue("app/build.gradle.kts must exist", appBuildGradle.exists())
-
-        val sdkContent = sdkBuildGradle.readText()
-        val appContent = appBuildGradle.readText()
-
-        assertTrue(
-            "opencv-sdk build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes for MatAt.kt extensions",
-            sdkContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
-        )
-        assertTrue(
-            "app build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes",
-            appContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
-        )
+        listOf(sdkBuildGradle, appBuildGradle).forEach { buildFile ->
+            assertTrue("$buildFile must exist", buildFile.exists())
+            val content = buildFile.readText()
+            assertTrue(
+                "$buildFile must opt in to ExperimentalUnsignedTypes through Kotlin compilerOptions",
+                content.contains("compilerOptions {") &&
+                    content.contains("optIn.addAll(\"kotlin.ExperimentalUnsignedTypes\"")
+            )
+        }
     }
 
     @Test
@@ -312,23 +307,31 @@ class OpenCvSdkBuildConfigurationTest {
         val root = findProjectRoot()
         val rootProperties = File(root, "gradle/wrapper/gradle-wrapper.properties")
         val rootJar = File(root, "gradle/wrapper/gradle-wrapper.jar")
+        val androidProperties = File(root, "android/gradle/wrapper/gradle-wrapper.properties")
         val submissionWorkflow = File(root, ".github/workflows/dependency-submission.yml")
 
         assertTrue("Root gradle-wrapper.properties must exist", rootProperties.exists())
         assertTrue("Root gradle-wrapper.jar must exist", rootJar.exists())
-        assertTrue(
-            "Root gradle-wrapper.properties must specify gradle-8.10.2",
-            rootProperties.readText().contains("gradle-8.10.2")
-        )
+        assertTrue("Android gradle-wrapper.properties must exist", androidProperties.exists())
         assertTrue("dependency-submission.yml must exist", submissionWorkflow.exists())
+
+        val androidUrl = androidProperties.readText()
+        val gradleVersion = Regex("""gradle-(\d+\.\d+(?:\.\d+)?)-bin\.zip""")
+            .find(androidUrl)?.groupValues?.get(1)
+        assertTrue("Android wrapper must specify a versioned Gradle binary distribution", gradleVersion != null)
+        assertTrue(
+            "Root wrapper must use the same Gradle version as the Android wrapper ($gradleVersion)",
+            rootProperties.readText().contains("gradle-$gradleVersion-bin.zip")
+        )
+
         val submissionContent = submissionWorkflow.readText()
         assertTrue(
             "dependency-submission workflow must configure build-root-directory to ./android",
             submissionContent.contains("build-root-directory: ./android")
         )
         assertTrue(
-            "dependency-submission workflow must configure gradle-version 8.10.2",
-            submissionContent.contains("gradle-version: \"8.10.2\"")
+            "dependency-submission Gradle version must match Android wrapper ($gradleVersion)",
+            submissionContent.contains("gradle-version: \"$gradleVersion\"")
         )
     }
 
