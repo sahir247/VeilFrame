@@ -325,14 +325,24 @@ jobs:
           # Prefer an artifact built from this exact head or this feature branch.
           # If neither exists, a successful main-branch SDK is safe only when every
           # OpenCV SDK build input is identical between that artifact SHA and HEAD.
-          RUNS=$(gh run list --repo "${{ github.repository }}" \
-            --workflow "build-opencv-sdk.yml" \
-            --branch "$REQUIRED_BRANCH" \
-            --limit 100 \
-            --json databaseId,headSha,status,conclusion)
-
-          RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
-            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+          # The OpenCV SDK workflow is triggered by the same PR. Allow it time to
+          # register before considering a fallback artifact from main.
+          RUN_ID=""
+          RUNS=""
+          for attempt in $(seq 1 18); do
+            RUNS=$(gh run list --repo "${{ github.repository }}" \
+              --workflow "build-opencv-sdk.yml" \
+              --branch "$REQUIRED_BRANCH" \
+              --limit 100 \
+              --json databaseId,headSha,status,conclusion)
+            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+              '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+            if [ -n "$RUN_ID" ]; then
+              break
+            fi
+            echo "Waiting for the matching OpenCV SDK workflow to register ($attempt/18)..."
+            sleep 10
+          done
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
