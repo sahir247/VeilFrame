@@ -127,7 +127,6 @@ class PdfFormFillerRegressionTest {
                 document.documentCatalog.acroForm = form
                 val locked = PDTextField(form).apply {
                     partialName = "locked"
-                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isReadOnly = true
                 }
                 form.fields.add(locked)
