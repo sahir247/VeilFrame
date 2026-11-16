@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/veilframe_logo.svg" width="160" height="160" alt="VeilFrame Logo" />
+  <img src="docs/images/veilframe_hero.svg" width="100%" alt="VeilFrame — Your world. Your control." />
   <br />
   <h1 align="center">VeilFrame</h1>
   <p align="center"><b>Offline-First Multimedia Engineering, Forensic Signal Transformation, AI Super-Resolution & Privacy Compilation Platform</b></p>
