@@ -96,6 +96,8 @@ Both FairScan document segmentation and ColorOS Lift & Shift matting now use Lit
 - Loader stores Application context, not an Activity context.
 - Coroutine cancellation is rethrown; an interrupted screen/task is not converted into an ordinary null thumbnail.
 - An allocation failure clears the thumbnail cache and returns no thumbnail instead of retaining more bitmap memory.
+- PDF flatten before/after previews now use a dynamic DPI capped at 1280 px on the longest edge instead of fixed 150 DPI, bounding preview bitmap memory for large-format pages.
+- Flattened PDF bytes are read from the temporary output file on the IO worker before returning to Main; preview document/stream resources are closed with `use`, and abandoned preview bitmaps are recycled on cancellation.
 
 ### Native MatPool memory pressure
 
