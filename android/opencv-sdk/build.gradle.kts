@@ -65,9 +65,7 @@ fun validateMarkerMetadata(file: File): Boolean {
 }
 
 val isMarkerValid = validateMarkerMetadata(markerFile)
-val isCustomSdkComplete = isMarkerValid &&
-    arm64So.exists() && arm64So.length() > 0L &&
-    x86_64So.exists() && x86_64So.length() > 0L &&
+val isCustomSdkComplete = arm64So.exists() && arm64So.length() > 0L &&
     matJava.exists() && wechatJava.exists() && videoioJava.exists()
 
 android {
@@ -89,7 +87,8 @@ android {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
         }
     }
 
