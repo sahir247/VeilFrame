@@ -213,6 +213,38 @@ class PdfStudioEnhancementsTest {
     }
 
     @Test
+    fun testPageThumbnailAdapter_replacingSourceClearsPreviousPageState() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val loader = com.veilframe.app.pdf.ui.PdfThumbnailLoader(context)
+        val adapter = com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter(
+            context = context,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main),
+            thumbnailLoader = loader,
+            onPageSelectionChanged = {}
+        )
+
+        val splitUri = android.net.Uri.parse("content://test.documents/split.pdf")
+        val reorderUri = android.net.Uri.parse("content://test.documents/reorder.pdf")
+
+        adapter.setDocument(splitUri, 5, setOf(2, 4))
+        adapter.moveItem(0, 3)
+        assertEquals(listOf(2, 3, 4, 1, 5), adapter.getPageOrder())
+        assertEquals(setOf(2, 4), adapter.getSelectedPages())
+
+        // A new source must start from its own page order and selection, not inherit Split state.
+        adapter.setDocument(reorderUri, 3, setOf(1))
+        assertEquals(3, adapter.itemCount)
+        assertEquals(listOf(1, 2, 3), adapter.getPageOrder())
+        assertEquals(setOf(1), adapter.getSelectedPages())
+        assertTrue(adapter.getDeletedPages().isEmpty())
+
+        adapter.clear()
+        assertEquals(0, adapter.itemCount)
+        assertTrue(adapter.getPageOrder().isEmpty())
+        assertTrue(adapter.getSelectedPages().isEmpty())
+    }
+
+    @Test
     fun testOpticalScaleMultiplier_forMonospace() {
         val baseSizePx = 15f
         val modernScale = 1.0f
