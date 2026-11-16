@@ -83,8 +83,15 @@ object CvRuntime {
      * CvResult failures. Heavy one-shot CV work (segmentation, quality analysis,
      * document warp/filter) submits here instead of raw Dispatchers.IO.
      */
-    val engine: CvEngine by lazy {
+    private val engineDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         CvEngine(CvMemoryManager(MemInfoMemoryProbe()))
+    }
+
+    val engine: CvEngine by engineDelegate
+
+    /** Release only idle pooled Mats; active leases remain valid. Never initializes the engine. */
+    fun trimMemory() {
+        if (engineDelegate.isInitialized()) engineDelegate.value.memory.matPool.trim()
     }
 
     /** Rough admission estimate: bitmap bytes x intermediate-buffer multiplier. */

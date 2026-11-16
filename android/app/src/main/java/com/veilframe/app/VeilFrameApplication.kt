@@ -1,25 +1,35 @@
 package com.veilframe.app
 
 import android.app.Application
+import android.content.ComponentCallbacks2
+import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.pdf.ui.PdfThumbnailLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/**
- * Main application class for VeilFrame Android.
- * Fully native Android runtime with no Python/Chaquopy layer.
- */
+/** Main application class for VeilFrame Android. */
 class VeilFrameApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         com.veilframe.app.settings.ThemeSettingsManager.init(this)
         // CV native bootstrap (idempotent — OpenCVInitProvider normally ran first).
-        runCatching { com.veilframe.app.cv.core.CvRuntime.initialize() }
-        // Initialise the primary QR engine (cv::wechat_qrcode::WeChatQRCode) asynchronously
-        // on Dispatchers.IO to prevent cold-start main thread disk I/O and SHA-256 calculation.
-        // Safe to call in tests / stripped builds — degrades to "unavailable" and QR falls back to ML Kit.
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        runCatching { CvRuntime.initialize() }
+        // Initialize the primary QR engine asynchronously to avoid cold-start disk I/O and hashing.
+        CoroutineScope(Dispatchers.IO).launch {
             runCatching { com.veilframe.app.cv.qr.WeChatQrEngine.install(this@VeilFrameApplication) }
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        PdfThumbnailLoader.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) CvRuntime.trimMemory()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        PdfThumbnailLoader.clearAllCaches()
+        CvRuntime.trimMemory()
     }
 }

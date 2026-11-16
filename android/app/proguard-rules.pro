@@ -19,9 +19,13 @@
 -keep class org.opencv.** { *; }
 -dontwarn org.opencv.**
 
-# TensorFlow Lite (FairScan neural document edge segmentation)
--keep class org.tensorflow.lite.** { *; }
--dontwarn org.tensorflow.lite.**
+# LiteRT CompiledModel uses its own consumer rules for JNI/native runtime entry points.
+# Keep only the public model API types used by app code; allow R8 to optimize internals.
+-keep class com.google.ai.edge.litert.Accelerator { *; }
+-keep class com.google.ai.edge.litert.CompiledModel { *; }
+-keep class com.google.ai.edge.litert.TensorBuffer { *; }
+-keep class com.google.ai.edge.litert.Environment { *; }
+-dontwarn com.google.ai.edge.litert.**
 
 
 # ML Kit Barcode Scanning

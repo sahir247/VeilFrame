@@ -254,7 +254,7 @@ class MainActivity : AppCompatActivity() {
         binding.layoutSettingsPanel.tvSettingsUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
 
         consoleLogController.log("[SYS] Initialized VeilFrame ${com.veilframe.app.util.AppVersionProvider.getVersionName(this)} Native Core Runtime")
-        consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
+        consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.9, and AndroidX Privacy Engine active.")
 
         if (savedInstanceState != null) {
             restoreInstanceState(savedInstanceState)

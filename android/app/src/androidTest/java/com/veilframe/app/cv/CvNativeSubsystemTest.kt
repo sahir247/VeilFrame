@@ -243,6 +243,7 @@ class CvNativeSubsystemTest {
     fun documentScannerNeuralSegmentationAndOpenCvQuadDetection() {
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val service = DocumentSegmentationService.getInstance(context)
+        assertTrue("DocumentSegmentationService must initialize via LiteRT", service.initialize())
         assertTrue("DocumentSegmentationService must be available via LiteRT", service.isModelAvailable)
 
         // Create a synthetic document image (white document rectangle on dark desk)

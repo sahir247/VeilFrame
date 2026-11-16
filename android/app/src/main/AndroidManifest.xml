@@ -54,7 +54,7 @@
         android:theme="@style/Theme.VeilFrame"
         android:largeHeap="true"
         android:enableOnBackInvokedCallback="true"
-        tools:targetApi="35">
+        tools:targetApi="36">
 
         <activity
             android:name=".MainActivity"

@@ -72,7 +72,7 @@ android {
     // Namespace is org.opencv so AGP generates org.opencv.R and org.opencv.BuildConfig
     // expected by CameraBridgeViewBase, CameraGLSurfaceView, and custom CV native components.
     namespace = "org.opencv"
-    compileSdk = 37
+    compileSdk = 36
 
     buildFeatures {
         buildConfig = true
