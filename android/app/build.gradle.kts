@@ -250,6 +250,35 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
 
+// Fast metadata-only compatibility check, independent of the native OpenCV build.
+// Configuration is resolved on demand and missing dependency coordinates fail the task.
+// Avoid artifact transforms here: OpenCV's custom SDK may not be staged yet.
+tasks.register("verifyDependencyResolution") {
+    group = "verification"
+    description = "Resolve Android compile/runtime dependency graphs before costly native builds."
+    doLast {
+        val scopes = listOf(
+            "debugCompileClasspath",
+            "debugRuntimeClasspath",
+            "releaseCompileClasspath",
+            "releaseRuntimeClasspath",
+            "testDebugRuntimeClasspath",
+        )
+        scopes.forEach { scope ->
+            val configuration = configurations.getByName(scope)
+            val failures = configuration.incoming.resolutionResult.allDependencies
+                .filterIsInstance<org.gradle.api.artifacts.result.UnresolvedDependencyResult>()
+            if (failures.isNotEmpty()) {
+                val details = failures.joinToString("\n") { failure ->
+                    "${failure.requested.displayName}: ${failure.failure.message}"
+                }
+                throw GradleException("Unresolved dependencies in $scope:\n$details")
+            }
+            logger.lifecycle("Verified dependency graph: $scope")
+        }
+    }
+}
+
 // Fail closed when release packaging tasks are scheduled for :app without release credentials
 gradle.taskGraph.whenReady {
     val appReleaseTasks = allTasks.filter { task ->

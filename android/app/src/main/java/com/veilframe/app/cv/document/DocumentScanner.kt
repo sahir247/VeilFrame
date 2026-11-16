@@ -216,10 +216,16 @@ object DocumentScanner {
         minCoverage: Double = 0.08,
         context: com.veilframe.app.cv.core.CvContext? = null,
     ): Pair<List<org.opencv.core.Point>, Double> {
-        if (segmentationService != null && segmentationService.isModelAvailable) {
+        // Initialization now happens asynchronously. Checking isModelAvailable before
+        // requesting inference would silently skip the neural path on the first frame.
+        // runSegmentationDirect safely joins the model's dedicated executor and returns
+        // null if the model really is unavailable.
+        if (segmentationService != null) {
             val segResult = try {
                 segmentationService.runSegmentationDirect(source)
-            } catch (_: Throwable) {
+            } catch (cancelled: java.util.concurrent.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 null
             }
             if (segResult != null) {
