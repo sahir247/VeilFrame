@@ -190,7 +190,7 @@ class PdfUnlockController(
 
         binding.tvPdfUnlockDocName.text = fileName
 
-        activeJob = scope.launch {
+        activeJob = taskTracker.launch {
             val result = PdfUnlockEngine.unlockPdf(bytes, password)
             isUnlocking = false
             binding.progressPdfUnlockPreview.visibility = View.GONE
