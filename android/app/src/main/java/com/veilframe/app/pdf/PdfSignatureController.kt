@@ -216,7 +216,7 @@ class PdfSignatureController(
         binding.tvPdfDocName.text = fileName
         binding.containerSignaturesList.removeAllViews()
 
-        activeJob = scope.launch {
+        activeJob = taskTracker.launch {
             val result = engine.inspectPdf(bytes, password)
             isWorking = false
             binding.progressPdfPreview.visibility = View.GONE
@@ -518,7 +518,7 @@ class PdfSignatureController(
         binding.progressPdfPreview.visibility = View.VISIBLE
         isWorking = true
 
-        scope.launch {
+        taskTracker.launch {
             val rectified = rectifiedPdfBytes ?: run {
                 val res = engine.rectifyAndSave(bytes, currentPassword)
                 res.getOrNull() ?: bytes
@@ -536,7 +536,7 @@ class PdfSignatureController(
         binding.progressPdfPreview.visibility = View.VISIBLE
         isWorking = true
 
-        scope.launch {
+        taskTracker.launch {
             val rectified = rectifiedPdfBytes ?: run {
                 val res = engine.rectifyAndSave(bytes, currentPassword)
                 res.getOrNull() ?: bytes
