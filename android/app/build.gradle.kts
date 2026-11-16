@@ -114,18 +114,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-kotlin {
-    compilerOptions {
-        jvmTarget = JvmTarget.fromTarget("17")
-        optIn.addAll(
-            listOf(
-                "kotlin.ExperimentalUnsignedTypes",
-                "kotlin.RequiresOptIn",
-            )
-        )
-    }
-}
-
     // Kotlin 2.4 compiler configuration; use typed options instead of deprecated android.kotlinOptions.
 
 
@@ -165,6 +153,18 @@ kotlin {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.fromTarget("17")
+        optIn.addAll(
+            listOf(
+                "kotlin.ExperimentalUnsignedTypes",
+                "kotlin.RequiresOptIn",
+            )
+        )
     }
 }
 
