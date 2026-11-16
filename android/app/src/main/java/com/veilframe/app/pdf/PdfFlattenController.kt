@@ -49,7 +49,7 @@ class PdfFlattenController(
     private val binding: LayoutPdfFlattenBinding,
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
-    private val onSavePdfRequest: (ByteArray, String) -> Unit,
+    private val onSavePdfRequest: (File, String) -> Unit,
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
@@ -145,11 +145,8 @@ class PdfFlattenController(
                         )
                     )
 
-                    // Read the exported PDF on IO; never perform a potentially large disk read on Main.
-                    val flattenedBytes = if (result.success && outputFile.isFile) {
-                        outputFile.readBytes()
-                    } else {
-                        null
+                    val flattenedFile = outputFile.takeIf {
+                        result.success && it.isFile && it.length() > 0L
                     }
 
                     withContext(Dispatchers.Main) {
@@ -157,11 +154,13 @@ class PdfFlattenController(
                         binding.btnFlattenExecute.isEnabled = true
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
 
-                        if (flattenedBytes != null) {
+                        if (flattenedFile != null) {
                             isSaved = true
                             val base = activePdfName.removeSuffix(".pdf")
                             val exportName = "${base}_flattened.pdf"
-                            onSavePdfRequest(flattenedBytes, exportName)
+                            // Transfer the temporary file to PdfSuiteCoordinator; it streams it to SAF.
+                            onSavePdfRequest(flattenedFile, exportName)
+                            tempOutFile = null
                         } else {
                             val err = result.errorMessage ?: "Failed to flatten PDF"
                             Toast.makeText(activity, err, Toast.LENGTH_LONG).show()
