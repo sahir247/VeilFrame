@@ -125,11 +125,13 @@ class PdfFlattenController(
             binding.btnFlattenExecute.text = "Flattening Document..."
 
             taskTracker.launch(Dispatchers.IO) {
+                var tempOutFile: File? = null
                 try {
                     val cacheDir = File(activity.cacheDir, "pdf_flatten_temp")
                     if (!cacheDir.exists()) cacheDir.mkdirs()
-                    val tempOutFile = File(cacheDir, "flattened_${System.currentTimeMillis()}.pdf")
-                    val outUri = Uri.fromFile(tempOutFile)
+                    val outputFile = File(cacheDir, "flattened_${System.currentTimeMillis()}.pdf")
+                    tempOutFile = outputFile
+                    val outUri = Uri.fromFile(outputFile)
 
                     val result = pdfFlattener.flattenPdf(
                         context = activity,
@@ -144,10 +146,10 @@ class PdfFlattenController(
                     )
 
                     // Read the exported PDF on IO; never perform a potentially large disk read on Main.
-                    val flattenedBytes = try {
-                        if (result.success && tempOutFile.isFile) tempOutFile.readBytes() else null
-                    } finally {
-                        tempOutFile.delete()
+                    val flattenedBytes = if (result.success && outputFile.isFile) {
+                        outputFile.readBytes()
+                    } else {
+                        null
                     }
 
                     withContext(Dispatchers.Main) {
@@ -165,6 +167,8 @@ class PdfFlattenController(
                             Toast.makeText(activity, err, Toast.LENGTH_LONG).show()
                         }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         isFlattening = false
@@ -172,6 +176,8 @@ class PdfFlattenController(
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
                         Toast.makeText(activity, "Flatten failed: ${e.message}", Toast.LENGTH_LONG).show()
                     }
+                } finally {
+                    tempOutFile?.delete()
                 }
             }
         }
