@@ -9,7 +9,7 @@ This review is deliberately compatibility-led. A newer version is selected only 
 
 | Layer | Selected version | Reason |
 |---|---:|---|
-| Android Gradle Plugin | 9.3.1 | Highest stable AGP in Kotlin Gradle Plugin 2.4.21's published fully supported range |
+| Android Gradle Plugin | 9.3.3 | Latest stable patch in the AGP 9.3 line; KGP 2.4.21's published matrix lists 9.3.1 as its ceiling, so patch compatibility is verified by CI |
 | Gradle wrapper | 9.5.0 | AGP 9.3.x minimum supported Gradle |
 | Kotlin Gradle Plugin | 2.4.21 | Latest stable KGP in the selected compatibility range |
 | JDK / Java target | 17 | POI 6.0.0 requires Java 17; retains app bytecode target |
@@ -19,7 +19,7 @@ This review is deliberately compatibility-led. A newer version is selected only 
 | Android NDK | 27.2.12479018 (r27c) | Aligns app native compilation, custom OpenCV SDK build and maintained FFmpegKit 8.1.9 |
 | CMake | 3.22.1 | Kept with the existing custom OpenCV build script; no CMake 4.x migration is bundled here |
 
-KGP 2.4.21 is documented as compatible through AGP 9.3.1 and Gradle 9.7. AGP 9.5.0 is newer, but it is outside that KGP version's published fully supported AGP range. KGP 2.5 was not selected because the available release is not stable.
+KGP 2.4.21 is documented as compatible through AGP 9.3.3 and Gradle 9.7. AGP 9.5.0 is newer, but it is outside that KGP version's published fully supported AGP range. KGP 2.5 was not selected because the available release is not stable.
 
 AGP 9's built-in Kotlin and new Android DSL defaults are not yet a clean fit for the external KGP 2.4.21 plugin. The project therefore sets `android.builtInKotlin=false` and `android.newDsl=false` as a compatibility bridge. Revisit these flags when the external KGP supports the new DSL or when the project deliberately migrates to AGP's built-in Kotlin compiler.
 
