@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-labelledby="title desc">
+  <title id="title">VeilFrame — Your world. Your control.</title>
+  <desc id="desc">An animated privacy shield and camera aperture over a dark technical grid, alongside the VeilFrame wordmark and product message.</desc>
+  <defs>
+    <radialGradient id="ambient" cx="76%" cy="48%" r="68%">
+      <stop offset="0" stop-color="#18265a" stop-opacity=".78"/>
+      <stop offset=".58" stop-color="#0a1228" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#050914" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset=".52" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#a5b4fc"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#64748b" stroke-opacity=".13" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="520" rx="28" fill="#050914"/>
+  <rect width="1200" height="520" rx="28" fill="url(#grid)"/>
+  <rect width="1200" height="520" rx="28" fill="url(#ambient)"/>
+  <path d="M0 410H1200" stroke="#334155" stroke-opacity=".2"/>
+  <path d="M0 1H1200" stroke="#94a3b8" stroke-opacity=".16"/>
+
+  <g transform="translate(82 92)">
+    <rect width="122" height="30" rx="15" fill="#0b1c32" stroke="#164e63"/>
+    <circle cx="17" cy="15" r="4" fill="#34d399">
+      <animate attributeName="opacity" values="1;.35;1" dur="2.2s" repeatCount="indefinite"/>
+    </circle>
+    <text x="31" y="20" fill="#a5f3fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" letter-spacing="2">VEILFRAME</text>
+  </g>
+
+  <text x="82" y="218" fill="url(#word)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="62" font-weight="750" letter-spacing="-2">Your world.</text>
+  <text x="82" y="288" fill="url(#word)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="62" font-weight="750" letter-spacing="-2">Your control.</text>
+  <rect x="84" y="322" width="54" height="3" rx="1.5" fill="#67e8f9"/>
+  <text x="82" y="365" fill="#cbd5e1" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="21">Powerful tools. Private by design.</text>
+  <text x="82" y="398" fill="#94a3b8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17">Your files stay yours.</text>
+
+  <g transform="translate(870 260)">
+    <ellipse rx="190" ry="172" fill="#4f46e5" opacity=".13" filter="url(#soft)"/>
+    <g fill="none" stroke="#64748b" stroke-opacity=".28">
+      <circle r="178" stroke-dasharray="2 12"/>
+      <circle r="148" stroke-dasharray="3 10"/>
+    </g>
+    <g fill="none" stroke="#67e8f9" stroke-opacity=".55" stroke-width="1.5">
+      <circle r="178" stroke-dasharray="80 1038">
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="34s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="148" stroke-dasharray="48 882">
+        <animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="26s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g class="shield">
+      <path d="M0 -164L132 -118V-8C132 76 78 137 0 178C-78 137 -132 76 -132 -8V-118Z" fill="#0b1730" stroke="url(#edge)" stroke-width="5" stroke-linejoin="round" filter="url(#glow)"/>
+      <path d="M0 -136L106 -99V-9C106 57 64 108 0 145C-64 108 -106 57 -106 -9V-99Z" fill="#0d1b34" stroke="#334155" stroke-width="2"/>
+      <g class="aperture">
+        <path d="M0 -86L58 -50L0 0Z" fill="#22d3ee"/>
+        <path d="M58 -50L77 16L0 0Z" fill="#6366f1"/>
+        <path d="M77 16L43 75L0 0Z" fill="#38bdf8"/>
+        <path d="M43 75L-34 82L0 0Z" fill="#818cf8"/>
+        <path d="M-34 82L-78 30L0 0Z" fill="#22d3ee"/>
+        <path d="M-78 30L-58 -50L0 0Z" fill="#6366f1"/>
+        <path d="M-58 -50L0 -86V0Z" fill="#34d399"/>
+        <animateTransform attributeName="transform" type="rotate" values="0;5;0;-5;0" dur="8s" repeatCount="indefinite"/>
+      </g>
+      <circle r="25" fill="#050914" stroke="url(#edge)" stroke-width="4"/>
+      <circle r="8" fill="#67e8f9" filter="url(#glow)"/>
+      <path d="M-152 -102L-152 -130L-124 -130M152 -102L152 -130L124 -130M-152 102L-152 130L-124 130M152 102L152 130L124 130" fill="none" stroke="#67e8f9" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+    </g>
+    <path d="M-154 -10H154" stroke="#67e8f9" stroke-width="2" opacity=".0">
+      <animate attributeName="opacity" values="0;.5;0" dur="4.8s" repeatCount="indefinite"/>
+    </path>
+    <g fill="#a5f3fc">
+      <circle cx="-180" cy="-70" r="2.5"><animate attributeName="opacity" values=".2;1;.2" dur="3s" repeatCount="indefinite"/></circle>
+      <circle cx="166" cy="84" r="2"><animate attributeName="opacity" values="1;.2;1" dur="2.5s" repeatCount="indefinite"/></circle>
+      <circle cx="115" cy="-170" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="3.8s" repeatCount="indefinite"/></circle>
+    </g>
+  </g>
+
+  <g transform="translate(82 466)" fill="#64748b" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12" letter-spacing="2">
+    <text>OFFLINE-FIRST</text><circle cx="128" cy="-4" r="2" fill="#34d399"/>
+    <text x="145">LOCAL PROCESSING</text><circle cx="298" cy="-4" r="2" fill="#34d399"/>
+    <text x="315">USER CONTROL</text>
+  </g>
+  <style>
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</svg>
