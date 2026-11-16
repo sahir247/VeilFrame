@@ -31,7 +31,7 @@ buildscript {
 
 plugins {
     id("com.android.application") version "9.3.3" apply false
-    id("com.android.library") version "9.3.3" apply false
+    id("com.android.library") version "9.5.1" apply false
 }
 
 tasks.register("clean", Delete::class) {
