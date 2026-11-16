@@ -40,6 +40,8 @@ class PdfImpositionController(
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var activePdfUri: Uri? = null
     private var activePdfName: String = "document.pdf"
     private var totalPages: Int = 1
@@ -57,6 +59,7 @@ class PdfImpositionController(
     override val isProcessing: Boolean get() = isGenerating
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         previewJob?.cancel()
         activePdfUri = null
@@ -127,6 +130,7 @@ class PdfImpositionController(
     }
 
     fun onPdfSelected(uri: Uri) {
+        taskTracker.cancelAll()
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
@@ -138,7 +142,7 @@ class PdfImpositionController(
         binding.tvImpositionDocName.text = activePdfName
         binding.tvImpositionDocMeta.text = "Reading document geometry..."
 
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val inputStream = activity.contentResolver.openInputStream(uri) ?: return@launch
                 val document = PDDocument.load(inputStream)
@@ -304,7 +308,7 @@ class PdfImpositionController(
         previewJob?.cancel()
         binding.pbImpositionLoading.visibility = View.VISIBLE
 
-        previewJob = scope.launch(Dispatchers.IO) {
+        previewJob = taskTracker.launch(Dispatchers.IO) {
             val bitmap = ImpositionPdfExporter.renderSheetPreview(
                 context = activity,
                 inputUri = uri,
@@ -331,7 +335,7 @@ class PdfImpositionController(
             binding.btnImpositionExecute.isEnabled = false
             binding.btnImpositionExecute.text = "Calculating & Imposing..."
 
-            activeJob = scope.launch(Dispatchers.IO) {
+            activeJob = taskTracker.launch(Dispatchers.IO) {
                 try {
                     val config = getCurrentConfig()
                     val layouts = ImpositionEngine.calculateLayout(
