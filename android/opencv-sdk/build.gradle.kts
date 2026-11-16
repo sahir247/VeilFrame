@@ -3,6 +3,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.library")
+    id("org.jetbrains.kotlin.android")
 }
 
 // Deterministic verification of complete custom OpenCV + WeChatQRCode SDK artifacts:

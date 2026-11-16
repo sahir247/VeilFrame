@@ -4,8 +4,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
-        constraints {
+                constraints {
             classpath("io.netty:netty-codec-http2:4.2.19.Final")
             classpath("io.netty:netty-codec-http:4.2.19.Final")
             classpath("io.netty:netty-handler:4.2.19.Final")
@@ -27,7 +26,7 @@ buildscript {
 }
 
 plugins {
-    id("com.android.application") version "9.1.0" apply false
+    id("com.android.application") version "9.1.1" apply false
     id("com.android.library") version "9.1.0" apply false
 }
 

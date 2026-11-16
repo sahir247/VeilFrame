@@ -48,7 +48,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-37 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 cmdline-tools;latest'
+          packages: 'build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 cmdline-tools;latest'
+
+      - name: Install Android API 37 preview platform
+        run: sdkmanager --channel=3 "platforms;android-37"
 
       - name: Install Host Build Dependencies
         run: |

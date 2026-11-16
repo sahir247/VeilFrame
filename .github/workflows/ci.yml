@@ -307,7 +307,7 @@ jobs:
           set -Eeuo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
-          sdkmanager --sdk_root="$SDK_ROOT" \
+          sdkmanager --channel=3 --sdk_root="$SDK_ROOT" \
             "platform-tools" \
             "platforms;android-37" \
             "build-tools;36.0.0" \
