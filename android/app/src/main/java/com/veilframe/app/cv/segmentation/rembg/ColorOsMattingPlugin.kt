@@ -151,7 +151,7 @@ object ColorOsMattingPlugin {
         isGpuAccelerated = ready.gpu
         Log.i(
             TAG,
-            "ColorOS Lift & Shift CompiledModel ready (backend=\${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
+            "ColorOS Lift & Shift CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
         )
         return ready.model
     }
@@ -228,13 +228,13 @@ object ColorOsMattingPlugin {
                     model.run(inputBuffers, outputBuffers)
                     val result = outputBuffers[0].readFloat()
                     check(result.size == OUTPUT_FLOAT_COUNT) {
-                        "Unexpected ColorOS matting output size: \${result.size}"
+                        "Unexpected ColorOS matting output size: ${result.size}"
                     }
                     val latency = SystemClock.elapsedRealtime() - startedAt
                     lastInferenceTimeMs = latency
                     Log.i(
                         TAG,
-                        "ColorOS neural matting completed in $latency ms (backend=\${if (isGpuAccelerated) "LiteRT GPU+CPU" else "LiteRT CPU"})"
+                        "ColorOS neural matting completed in $latency ms (backend=${if (isGpuAccelerated) "LiteRT GPU+CPU" else "LiteRT CPU"})"
                     )
                     result
                 }

@@ -234,7 +234,7 @@ class DocumentSegmentationService(
             isModelAvailable = true
             Log.i(
                 TAG,
-                "FairScan CompiledModel ready (backend=\${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
+                "FairScan CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
             )
             true
         } catch (error: Throwable) {
@@ -243,7 +243,7 @@ class DocumentSegmentationService(
             outputBuffers = emptyList()
             isGpuAccelerated = false
             isModelAvailable = false
-            Log.w(TAG, "LiteRT segmentation model initialization skipped: \${error.message}", error)
+            Log.w(TAG, "LiteRT segmentation model initialization skipped: ${error.message}", error)
             false
         }
     }
@@ -342,7 +342,7 @@ class DocumentSegmentationService(
             model.run(inputBuffers, outputBuffers)
             val probabilities = outputBuffers[0].readFloat()
             check(probabilities.size == OUTPUT_FLOAT_COUNT) {
-                "Unexpected FairScan output size: \${probabilities.size}"
+                "Unexpected FairScan output size: ${probabilities.size}"
             }
             for (i in probabilities.indices) probabilities[i] = probabilities[i].coerceIn(0f, 1f)
 
@@ -350,7 +350,7 @@ class DocumentSegmentationService(
             lastInferenceTimeMs = duration
             Log.i(
                 TAG,
-                "FairScan segmentation completed in $duration ms (Backend: \${if (isGpuAccelerated) "LiteRT GPU+CPU" else "LiteRT CPU"})"
+                "FairScan segmentation completed in $duration ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU+CPU" else "LiteRT CPU"})"
             )
             SegmentationResult(
                 DocumentSegmentation(probabilities, INPUT_WIDTH, INPUT_HEIGHT),
