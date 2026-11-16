@@ -54,7 +54,7 @@ class PdfFormFillerRegressionTest {
         widget.appearance = appearance
         val normal = appearance.normalAppearance.cosObject as COSDictionary
         val off = PDAppearanceStream(document).apply { cosObject.setItem(COSName.getPDFName("BBox"), PDRectangle(0f, 0f, 12f, 12f).cosObject) }
-        val on = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
+        val on = PDAppearanceStream(document).apply { cosObject.setItem(COSName.getPDFName("BBox"), PDRectangle(0f, 0f, 12f, 12f).cosObject) }
         normal.setItem(COSName.Off, off.cosObject)
         normal.setItem(COSName.getPDFName("Yes"), on.cosObject)
         widget.appearanceState = COSName.Off
