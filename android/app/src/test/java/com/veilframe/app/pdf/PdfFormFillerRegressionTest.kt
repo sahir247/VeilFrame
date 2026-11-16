@@ -53,11 +53,11 @@ class PdfFormFillerRegressionTest {
         val appearance = PDAppearanceDictionary()
         widget.appearance = appearance
         val normal = appearance.normalAppearance.cosObject as COSDictionary
-        val off = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
+        val off = PDAppearanceStream(document).apply { cosObject.setItem(COSName.getPDFName("BBox"), PDRectangle(0f, 0f, 12f, 12f).cosObject) }
         val on = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
         normal.setItem(COSName.Off, off.cosObject)
         normal.setItem(COSName.getPDFName("Yes"), on.cosObject)
-        widget.appearanceState = "Off"
+        widget.appearanceState = COSName.Off
         page.annotations.add(widget)
         form.fields.add(checkbox)
         return checkbox
