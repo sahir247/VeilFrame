@@ -54,6 +54,8 @@ class PdfSignatureController(
     private val engine = PdfSignatureEngine(activity)
     private val trustStore = TrustedCertificateStore(activity)
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var currentPdfBytes: ByteArray? = null
     private var currentPdfName: String = "document.pdf"
     private var currentPassword: String = ""
@@ -72,6 +74,7 @@ class PdfSignatureController(
     override val isProcessing: Boolean get() = isWorking
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         activeJob = null
         isWorking = false
@@ -136,7 +139,8 @@ class PdfSignatureController(
     }
 
     fun handlePdfSelected(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.cancelAll()
+        taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             } catch (e: Exception) {
@@ -478,7 +482,7 @@ class PdfSignatureController(
     }
 
     fun handleCaCertImported(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val cert = activity.contentResolver.openInputStream(uri)?.use { stream ->
                     val factory = java.security.cert.CertificateFactory.getInstance("X.509")
