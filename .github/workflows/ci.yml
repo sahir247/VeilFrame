@@ -36,15 +36,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-24.04, windows-latest, macos-latest ]
         python-version: [ "3.10", "3.11", "3.12" ]
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -228,21 +228,21 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: "temurin"
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: 'platforms;android-37.0 build-tools;36.0.0'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
@@ -283,21 +283,21 @@ jobs:
       actions: read
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: ''
 
@@ -545,7 +545,7 @@ jobs:
           PY
 
       - name: Upload verified debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-android-debug-arm64
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -562,14 +562,14 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-24.04, windows-latest, macos-latest ]
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -680,10 +680,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -762,7 +762,7 @@ jobs:
           & "artifacts/VeilFrame-windows-x86_64.exe" presets
 
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-windows-x86_64
           path: artifacts/VeilFrame-windows-x86_64.exe
@@ -783,10 +783,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -881,7 +881,7 @@ jobs:
           /tmp/test_linux_tar/VeilFrame doctor --json
 
       - name: Upload Linux Artifacts
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-linux-x86_64
           path: artifacts/*
@@ -902,10 +902,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -1036,7 +1036,7 @@ jobs:
             https://api.github.com/zen || true
 
       - name: Upload macOS tarball
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-macos-arm64-tar
           path: artifacts/VeilFrame-macos-arm64.tar.gz
@@ -1046,7 +1046,7 @@ jobs:
           overwrite: true
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-macos-arm64-dmg
           path: artifacts/VeilFrame-macos-arm64.dmg
@@ -1060,15 +1060,15 @@ jobs:
   # ------------------------------------------------------------------ #
   build-python:
     name: Build Universal Python Packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [test, release-gate]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
@@ -1082,7 +1082,7 @@ jobs:
         run: python -m build
 
       - name: Upload Python Artifacts
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-python-dist
           path: dist/*
@@ -1096,26 +1096,26 @@ jobs:
   # ------------------------------------------------------------------ #
   build-android:
     name: Build Android (APK)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [test, release-gate]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: "temurin"
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: ''
 
@@ -1275,7 +1275,7 @@ jobs:
           ls -lh android_artifacts/
 
       - name: Upload Android Artifacts
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-android-packages
           path: android_artifacts/*
@@ -1289,7 +1289,7 @@ jobs:
   # ------------------------------------------------------------------ #
   publish-release:
     name: Aggregate & Publish Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-windows, build-linux, build-macos, build-python, build-android]
     if: >
       ${{
@@ -1306,10 +1306,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download All Binary, Android & Python Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: downloaded_artifacts
 
@@ -1372,7 +1372,7 @@ jobs:
           ls -lah final_release
 
       - name: Upload Aggregate Workflow Artifact
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: VeilFrame-all-release-assets
           path: final_release/*
