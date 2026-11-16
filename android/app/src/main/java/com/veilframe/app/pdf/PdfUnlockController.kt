@@ -111,6 +111,15 @@ class PdfUnlockController(
 
     fun handlePdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        activeJob = null
+        currentPreviewBitmap?.recycle()
+        currentPreviewBitmap = null
+        originalPdfBytes = null
+        unlockedResult = null
+        isUnlocking = false
+        isSaved = false
+        binding.progressPdfUnlockPreview.visibility = View.GONE
+        binding.ivPdfUnlockPreview.setImageDrawable(null)
         taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
