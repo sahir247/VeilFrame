@@ -1,5 +1,5 @@
-import java.security.MessageDigest
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -66,9 +66,7 @@ fun validateMarkerMetadata(file: File): Boolean {
 }
 
 val isMarkerValid = validateMarkerMetadata(markerFile)
-val isCustomSdkComplete = isMarkerValid &&
-    arm64So.exists() && arm64So.length() > 0L &&
-    x86_64So.exists() && x86_64So.length() > 0L &&
+val isCustomSdkComplete = arm64So.exists() && arm64So.length() > 0L &&
     matJava.exists() && wechatJava.exists() && videoioJava.exists()
 
 android {
@@ -90,7 +88,8 @@ android {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
         }
     }
 
@@ -98,19 +97,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-
-
-    packaging {
-        jniLibs {
-            keepDebugSymbols += listOf("**/*.so")
-        }
-    }
-
-    testOptions {
-        unitTests.isReturnDefaultValues = true
-    }
-}
 
 kotlin {
     compilerOptions {
@@ -121,6 +107,17 @@ kotlin {
                 "kotlin.RequiresOptIn",
             )
         )
+    }
+}
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols += listOf("**/*.so")
+        }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
