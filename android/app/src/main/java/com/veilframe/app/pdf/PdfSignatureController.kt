@@ -140,6 +140,17 @@ class PdfSignatureController(
 
     fun handlePdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        activeJob = null
+        currentPreviewBitmap?.recycle()
+        currentPreviewBitmap = null
+        currentPdfBytes = null
+        rectifiedPdfBytes = null
+        currentInspectionReport = null
+        currentPassword = ""
+        isWorking = false
+        isSaved = false
+        binding.progressPdfPreview.visibility = View.GONE
+        binding.ivPdfSignaturePreview.setImageDrawable(null)
         taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
