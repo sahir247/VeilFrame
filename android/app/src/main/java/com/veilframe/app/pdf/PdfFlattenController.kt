@@ -162,6 +162,7 @@ class PdfFlattenController(
         afterBitmap?.recycle()
         beforeBitmap = null
         afterBitmap = null
+        binding.ivFlattenPreview.setImageDrawable(null)
         isFlattening = false
         binding.pbFlattenLoading.visibility = View.GONE
         binding.btnFlattenExecute.isEnabled = true
