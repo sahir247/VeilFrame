@@ -30,8 +30,8 @@ android {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 229
-        versionName = "2.2.9"
+        versionCode = 231
+        versionName = "2.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -114,8 +114,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // Kotlin 2.4 compiler configuration; use typed options instead of deprecated android.kotlinOptions.
-
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.fromTarget("17")
+        optIn.addAll(
+            listOf(
+                "kotlin.ExperimentalUnsignedTypes",
+                "kotlin.RequiresOptIn",
+            )
+        )
+    }
+}
 
     buildFeatures {
         viewBinding = true
@@ -123,7 +132,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite")
     }
 
     ndkVersion = "26.1.10909125"
@@ -156,18 +165,6 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget = JvmTarget.fromTarget("17")
-        optIn.addAll(
-            listOf(
-                "kotlin.ExperimentalUnsignedTypes",
-                "kotlin.RequiresOptIn",
-            )
-        )
-    }
-}
-
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
@@ -178,7 +175,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.14.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     // Spring physics for M3 Expressive motion (VfSprings)
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -202,10 +199,9 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
 
     // ONNX Runtime Android for AI image super-resolution inference (Plugin EP ABI compatible)
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
 
     // ZXing — QR code encode & decode (QR Studio: generator + scanner)
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // CameraX — QR Studio scanner (camera preview + image analysis)
     val cameraXVersion = "1.3.2"
@@ -220,8 +216,10 @@ dependencies {
     // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
     implementation(project(":opencv-sdk"))
 
-    // TensorFlow Lite runtime for neural document segmentation (FairScan SOTA model)
-    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    // Google AI Edge LiteRT Core & GPU runtimes (surgically replaces legacy TensorFlow Lite 2.17.0)
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu-api:1.0.1")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")
@@ -239,14 +237,19 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-ooxml:5.2.5")
+    implementation("org.apache.poi:poi:6.0.0")
+    // Replace the reduced schema bundle: D8 cannot dex one of its nested schema
+    // classes because its declared nest host is absent from poi-ooxml-lite.
+    // Apache POI documents poi-ooxml-full as the drop-in alternative to lite.
+    implementation("org.apache.poi:poi-ooxml:6.0.0") {
+        exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
+    }
+    implementation("org.apache.poi:poi-ooxml-full:6.0.0")
     implementation("org.apache.commons:commons-compress:1.26.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("org.json:json:20240303")
-    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.27.0")
+    testImplementation("org.json:json:20260719")
     testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
