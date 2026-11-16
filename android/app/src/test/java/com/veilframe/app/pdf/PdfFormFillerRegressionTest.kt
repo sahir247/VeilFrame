@@ -80,7 +80,6 @@ class PdfFormFillerRegressionTest {
 
                 val locked = PDTextField(form).apply {
                     partialName = "locked"
-                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isReadOnly = true
                 }
                 locked.cosObject.setString(COSName.V, "original")
@@ -126,7 +125,6 @@ class PdfFormFillerRegressionTest {
                 document.addPage(PDPage())
                 val form = PDAcroForm(document)
                 document.documentCatalog.acroForm = form
-                configureAcroForm(document, form)
                 val locked = PDTextField(form).apply {
                     partialName = "locked"
                     defaultAppearance = "/Helv 10 Tf 0 g"
