@@ -88,6 +88,36 @@ class VideoMetadataSanitizerTest {
     }
 
     @Test
+    fun `fallback respects disabled metadata stripping`() {
+        val input = "/tmp/input.mp4"
+        val output = "/tmp/output.mp4"
+
+        val args = VideoMetadataSanitizer.buildFallbackArguments(
+            inputPath = input,
+            outputPath = output,
+            scrubAudio = true,
+            stripExif = false
+        )
+
+        assertFalse(args.contains("-map_metadata"))
+        assertFalse(args.contains("-map_chapters"))
+        assertTrue(args.contains("-an"))
+        assertEquals(output, args.last())
+    }
+
+    @Test
+    fun `fallback strips metadata when explicitly enabled`() {
+        val args = VideoMetadataSanitizer.buildFallbackArguments(
+            inputPath = "/tmp/input.mp4",
+            outputPath = "/tmp/output.mp4",
+            stripExif = true
+        )
+
+        assertTrue(args.contains("-map_metadata"))
+        assertTrue(args.contains("-map_chapters"))
+    }
+
+    @Test
     fun `low noise preset emits exactly one video codec option for mp4 and webm`() {
         for (output in listOf("/tmp/out.mp4", "/tmp/out.webm")) {
             val args = VideoMetadataSanitizer.buildArguments(
