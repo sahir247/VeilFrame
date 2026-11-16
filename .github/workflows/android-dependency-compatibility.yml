@@ -37,7 +37,18 @@ jobs:
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace
+          # Retry only transient Maven repository throttling, not compilation errors.
+          for attempt in 1 2 3; do
+            if ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace > ../dependency-validation.log 2>&1; then
+              cat ../dependency-validation.log
+              exit 0
+            fi
+            cat ../dependency-validation.log
+            if ! grep -Eq 'status code 429|Too Many Requests|HTTP 429' ../dependency-validation.log || [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
 
       # Diagnose the protobuf/Tink warning emitted by release R8/D8. Do not
       # suppress com.google.protobuf.use_unsafe_pre22_gencode: the fix belongs
