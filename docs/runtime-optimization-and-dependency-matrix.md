@@ -33,7 +33,7 @@ Versions below reflect the selected stable dependency set as of the review date.
 | AndroidX | AppCompat | 1.8.0 | Current stable |
 | AndroidX | ConstraintLayout | 2.2.2 | Current stable |
 | AndroidX | DynamicAnimation | 1.1.0 | Current stable |
-| AndroidX | Lifecycle runtime / ViewModel | 2.12.0 | Keep the two artifacts aligned |
+| AndroidX | Lifecycle runtime / ViewModel | 2.11.0 | Keep the two artifacts aligned |
 | AndroidX | Fragment KTX | 1.9.1 | Current stable |
 | AndroidX | DocumentFile | 1.1.0 | Current stable |
 | AndroidX | ViewPager2 | 1.1.0 | Latest stable line |
