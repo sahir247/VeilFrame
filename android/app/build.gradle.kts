@@ -257,15 +257,31 @@ tasks.register("verifyDependencyResolution") {
     group = "verification"
     description = "Resolve Android compile/runtime dependency graphs before costly native builds."
     doLast {
+        // Android Gradle Plugin names the resolvable test variants
+        // debugUnitTest* and debugAndroidTest*, not testDebug*.
+        // Check both compile and runtime classpaths, including test-only dependencies,
+        // without requiring the custom OpenCV AAR to have been built.
         val scopes = listOf(
             "debugCompileClasspath",
             "debugRuntimeClasspath",
             "releaseCompileClasspath",
             "releaseRuntimeClasspath",
-            "testDebugRuntimeClasspath",
+            "debugUnitTestCompileClasspath",
+            "debugUnitTestRuntimeClasspath",
+            "debugAndroidTestCompileClasspath",
+            "debugAndroidTestRuntimeClasspath",
         )
         scopes.forEach { scope ->
-            val configuration = configurations.getByName(scope)
+            val configuration = configurations.findByName(scope)
+                ?: throw GradleException(
+                    "Expected Android classpath configuration '$scope' was not created. " +
+                        "Available resolvable classpaths: " +
+                        configurations.filter { it.isCanBeResolved && it.name.endsWith("Classpath") }
+                            .joinToString { it.name }
+                )
+            check(configuration.isCanBeResolved) {
+                "Expected '$scope' to be a resolvable Android classpath"
+            }
             val failures = configuration.incoming.resolutionResult.allDependencies
                 .filterIsInstance<org.gradle.api.artifacts.result.UnresolvedDependencyResult>()
             if (failures.isNotEmpty()) {
