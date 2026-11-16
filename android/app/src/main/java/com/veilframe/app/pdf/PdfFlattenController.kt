@@ -157,6 +157,15 @@ class PdfFlattenController(
 
     fun onPdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        previewJob = null
+        beforeBitmap?.recycle()
+        afterBitmap?.recycle()
+        beforeBitmap = null
+        afterBitmap = null
+        isFlattening = false
+        binding.pbFlattenLoading.visibility = View.GONE
+        binding.btnFlattenExecute.isEnabled = true
+        binding.btnFlattenExecute.text = "Flatten & Save PDF"
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
