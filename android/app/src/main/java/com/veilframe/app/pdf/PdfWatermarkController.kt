@@ -39,6 +39,8 @@ class PdfWatermarkController(
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var activePdfUri: Uri? = null
     private var activePdfName: String = "document.pdf"
     private var basePageBitmap: Bitmap? = null
@@ -54,6 +56,7 @@ class PdfWatermarkController(
     override val isProcessing: Boolean get() = isApplying
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         previewJob?.cancel()
         basePageBitmap?.recycle()
         basePageBitmap = null
@@ -94,6 +97,15 @@ class PdfWatermarkController(
     }
 
     fun onPdfSelected(uri: Uri) {
+        taskTracker.cancelAll()
+        previewJob = null
+        basePageBitmap?.recycle()
+        basePageBitmap = null
+        binding.ivWatermarkPreview.setImageDrawable(null)
+        isApplying = false
+        binding.pbWatermarkPreviewLoading.visibility = View.GONE
+        binding.btnWatermarkApplyExport.isEnabled = true
+        binding.btnWatermarkApplyExport.text = "Apply Watermark & Export"
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
@@ -110,7 +122,7 @@ class PdfWatermarkController(
 
     private fun renderBasePagePreview(uri: Uri) {
         binding.pbWatermarkPreviewLoading.visibility = View.VISIBLE
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val inputStream = activity.contentResolver.openInputStream(uri) ?: return@launch
                 val document = PDDocument.load(inputStream)
@@ -202,7 +214,7 @@ class PdfWatermarkController(
     private fun triggerLivePreviewUpdate() {
         val bmp = basePageBitmap ?: return
         previewJob?.cancel()
-        previewJob = scope.launch(Dispatchers.Default) {
+        previewJob = taskTracker.launch(Dispatchers.Default) {
             val config = getCurrentConfig()
             val watermarked = pdfWatermarker.renderLivePreview(bmp, config)
             withContext(Dispatchers.Main) {
@@ -220,7 +232,7 @@ class PdfWatermarkController(
             binding.btnWatermarkApplyExport.isEnabled = false
             binding.btnWatermarkApplyExport.text = "Applying Watermark..."
 
-            scope.launch(Dispatchers.IO) {
+            taskTracker.launch(Dispatchers.IO) {
                 try {
                     val config = getCurrentConfig()
                     val tempOut = File(activity.cacheDir, "watermarked_${System.currentTimeMillis()}.pdf")

@@ -42,6 +42,8 @@ class PdfUnlockController(
     private val onOpenPdfStudio: (() -> Unit)? = null
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var originalPdfBytes: ByteArray? = null
     private var originalPdfName: String = "document.pdf"
     private var unlockedResult: PdfUnlockResult? = null
@@ -58,6 +60,7 @@ class PdfUnlockController(
     override val isProcessing: Boolean get() = isUnlocking
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         activeJob = null
         isUnlocking = false
@@ -107,7 +110,17 @@ class PdfUnlockController(
     }
 
     fun handlePdfSelected(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.cancelAll()
+        activeJob = null
+        currentPreviewBitmap?.recycle()
+        currentPreviewBitmap = null
+        originalPdfBytes = null
+        unlockedResult = null
+        isUnlocking = false
+        isSaved = false
+        binding.progressPdfUnlockPreview.visibility = View.GONE
+        binding.ivPdfUnlockPreview.setImageDrawable(null)
+        taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             } catch (e: Exception) {
@@ -186,7 +199,7 @@ class PdfUnlockController(
 
         binding.tvPdfUnlockDocName.text = fileName
 
-        activeJob = scope.launch {
+        activeJob = taskTracker.launch {
             val result = PdfUnlockEngine.unlockPdf(bytes, password)
             isUnlocking = false
             binding.progressPdfUnlockPreview.visibility = View.GONE
@@ -261,7 +274,7 @@ class PdfUnlockController(
 
     private fun shareUnlockedPdf() {
         val res = unlockedResult ?: return
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val shareDir = File(activity.cacheDir, "shared_pdfs").apply { mkdirs() }
                 val shareFile = File(shareDir, "unlocked_$originalPdfName")

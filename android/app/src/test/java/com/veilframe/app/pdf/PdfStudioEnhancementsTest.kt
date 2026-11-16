@@ -378,4 +378,33 @@ class PdfStudioEnhancementsTest {
         val isTriggeredTwist = Math.abs(deltaTwist) > thresholdDeg
         assertTrue(isTriggeredTwist)
     }
+
+    @Test
+    fun testPageThumbnailAdapter_reorderStressPreservesEveryPageExactlyOnce() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val adapter = com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter(
+            context = context,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main),
+            thumbnailLoader = com.veilframe.app.pdf.ui.PdfThumbnailLoader(context),
+            onPageSelectionChanged = {}
+        )
+        val pageCount = 500
+        adapter.setDocument(android.net.Uri.parse("content://test.documents/stress.pdf"), pageCount)
+
+        repeat(1_000) { iteration ->
+            val from = (iteration * 37) % pageCount
+            val to = (iteration * 91 + 17) % pageCount
+            adapter.moveItem(from, to)
+        }
+
+        val finalOrder = adapter.getPageOrder()
+        assertEquals(pageCount, finalOrder.size)
+        assertEquals("Reordering must not duplicate or lose pages", pageCount, finalOrder.toSet().size)
+        assertEquals((1..pageCount).toSet(), finalOrder.toSet())
+
+        // Invalid drag coordinates must be ignored without corrupting the sequence.
+        adapter.moveItem(-1, 0)
+        adapter.moveItem(0, pageCount)
+        assertEquals(finalOrder, adapter.getPageOrder())
+    }
 }

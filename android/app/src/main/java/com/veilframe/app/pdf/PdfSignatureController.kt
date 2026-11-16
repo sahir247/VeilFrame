@@ -54,6 +54,8 @@ class PdfSignatureController(
     private val engine = PdfSignatureEngine(activity)
     private val trustStore = TrustedCertificateStore(activity)
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var currentPdfBytes: ByteArray? = null
     private var currentPdfName: String = "document.pdf"
     private var currentPassword: String = ""
@@ -72,6 +74,7 @@ class PdfSignatureController(
     override val isProcessing: Boolean get() = isWorking
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         activeJob = null
         isWorking = false
@@ -136,7 +139,19 @@ class PdfSignatureController(
     }
 
     fun handlePdfSelected(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.cancelAll()
+        activeJob = null
+        currentPreviewBitmap?.recycle()
+        currentPreviewBitmap = null
+        currentPdfBytes = null
+        rectifiedPdfBytes = null
+        currentInspectionReport = null
+        currentPassword = ""
+        isWorking = false
+        isSaved = false
+        binding.progressPdfPreview.visibility = View.GONE
+        binding.ivPdfPreview.setImageDrawable(null)
+        taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             } catch (e: Exception) {
@@ -212,7 +227,7 @@ class PdfSignatureController(
         binding.tvPdfDocName.text = fileName
         binding.containerSignaturesList.removeAllViews()
 
-        activeJob = scope.launch {
+        activeJob = taskTracker.launch {
             val result = engine.inspectPdf(bytes, password)
             isWorking = false
             binding.progressPdfPreview.visibility = View.GONE
@@ -478,7 +493,7 @@ class PdfSignatureController(
     }
 
     fun handleCaCertImported(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val cert = activity.contentResolver.openInputStream(uri)?.use { stream ->
                     val factory = java.security.cert.CertificateFactory.getInstance("X.509")
@@ -514,7 +529,7 @@ class PdfSignatureController(
         binding.progressPdfPreview.visibility = View.VISIBLE
         isWorking = true
 
-        scope.launch {
+        taskTracker.launch {
             val rectified = rectifiedPdfBytes ?: run {
                 val res = engine.rectifyAndSave(bytes, currentPassword)
                 res.getOrNull() ?: bytes
@@ -532,7 +547,7 @@ class PdfSignatureController(
         binding.progressPdfPreview.visibility = View.VISIBLE
         isWorking = true
 
-        scope.launch {
+        taskTracker.launch {
             val rectified = rectifiedPdfBytes ?: run {
                 val res = engine.rectifyAndSave(bytes, currentPassword)
                 res.getOrNull() ?: bytes

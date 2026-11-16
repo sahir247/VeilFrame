@@ -40,6 +40,8 @@ class PdfExtractPagesController(
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var activePdfUri: Uri? = null
     private var activePdfName: String = "document.pdf"
     private var totalPages: Int = 1
@@ -57,6 +59,7 @@ class PdfExtractPagesController(
     override val isProcessing: Boolean get() = isExtracting
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         activePdfUri = null
         activePdfName = "document.pdf"
@@ -148,6 +151,12 @@ class PdfExtractPagesController(
     }
 
     fun handlePdfSelected(uri: Uri) {
+        taskTracker.cancelAll()
+        activeJob = null
+        isExtracting = false
+        totalPages = 1
+        binding.btnExtractPagesExecute.isEnabled = true
+        binding.btnExtractPagesExecute.text = "Extract & Export"
         activePdfUri = uri
         isSaved = false
         val docName = queryDocumentName(uri)
@@ -159,7 +168,7 @@ class PdfExtractPagesController(
         binding.tvExtractPagesDocName.text = docName
         binding.tvExtractPagesDocMeta.text = "Reading document pages..."
 
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 activity.contentResolver.openInputStream(uri)?.use { stream ->
                     PDDocument.load(stream).use { doc ->
@@ -272,7 +281,7 @@ class PdfExtractPagesController(
 
             val isImageMode = binding.chipFormatImages.isChecked
 
-            activeJob = scope.launch(Dispatchers.IO) {
+            activeJob = taskTracker.launch(Dispatchers.IO) {
                 try {
                     val base = activePdfName.removeSuffix(".pdf")
                     if (!isImageMode) {
