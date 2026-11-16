@@ -219,7 +219,7 @@ class PdfFlattenController(
             var fields = 0
             try {
                 val document = activity.contentResolver.openInputStream(uri)?.use { PDDocument.load(it) }
-                    ?: return@launch
+                    ?: throw IllegalStateException("Unable to open the selected PDF for preview")
 
                 document.use { doc ->
                     pageCount = doc.numberOfPages
