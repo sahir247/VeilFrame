@@ -2,7 +2,10 @@ package com.veilframe.app.pdf.operations
 
 import android.content.Context
 import android.net.Uri
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDResources
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDCheckBox
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDComboBox
@@ -10,6 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDField
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDListBox
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDRadioButton
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
+import com.tom_roush.pdfbox.pdmodel.interactive.form.PDVariableText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -248,7 +252,8 @@ class PdfFormFiller {
                 )
             }
             
-            // Ensure appearances are generated
+            // Ensure PDFBox has the resources needed to generate field appearances.
+            ensureAppearanceResources(acroForm)
             acroForm.setNeedAppearances(false)
             
             var fieldsUpdated = 0
@@ -328,6 +333,8 @@ class PdfFormFiller {
                     if (acroForm.fields.isEmpty()) {
                         return@withContext FormFillResult(false, 0, "PDF has no AcroForm fields")
                     }
+                    // Repair missing AcroForm font resources before asking PDFBox to build appearances.
+                    ensureAppearanceResources(acroForm)
                     acroForm.setNeedAppearances(false)
                     var updated = 0
                     for ((fieldName, value) in fieldValues) {
@@ -432,6 +439,37 @@ class PdfFormFiller {
         }
     }
     
+    /**
+     * PDFBox requires AcroForm default resources when generating appearances. Some real-world
+     * PDFs omit /DR or reference a font in /DA that is not present in /DR. Supply a standard
+     * Helvetica fallback without replacing any font resource that the document already has.
+     */
+    private fun ensureAppearanceResources(acroForm: PDAcroForm) {
+        val resources = acroForm.defaultResources ?: PDResources().also {
+            acroForm.defaultResources = it
+        }
+        val helveticaName = COSName.getPDFName("Helv")
+        if (resources.getFont(helveticaName) == null) {
+            resources.put(helveticaName, PDType1Font.HELVETICA)
+        }
+
+        val fontReference = Regex("""/([A-Za-z0-9_.+-]+)\\s+[-+]?(?:\\d*\\.)?\\d+\\s+Tf""")
+        for (field in acroForm.fieldTree) {
+            if (field !is PDVariableText) continue
+            val appearance = field.defaultAppearance
+            if (appearance.isNullOrBlank()) {
+                field.defaultAppearance = "/Helv 10 Tf 0 g"
+                continue
+            }
+
+            val fontAlias = fontReference.find(appearance)?.groupValues?.get(1) ?: continue
+            val fontName = COSName.getPDFName(fontAlias)
+            if (resources.getFont(fontName) == null) {
+                resources.put(fontName, PDType1Font.HELVETICA)
+            }
+        }
+    }
+
     /**
      * Update a form field with a value.
      */
