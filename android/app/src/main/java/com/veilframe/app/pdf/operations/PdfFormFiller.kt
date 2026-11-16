@@ -453,7 +453,7 @@ class PdfFormFiller {
             resources.put(helveticaName, PDType1Font.HELVETICA)
         }
 
-        val fontReference = Regex("""/([A-Za-z0-9_.+-]+)\\s+[-+]?(?:\\d*\\.)?\\d+\\s+Tf""")
+        val fontReference = Regex("""/([A-Za-z0-9_.+-]+)\s+[-+]?(?:\d*\.)?\d+\s+Tf""")
         for (field in acroForm.fieldTree) {
             if (field !is PDVariableText) continue
             val appearance = field.defaultAppearance
