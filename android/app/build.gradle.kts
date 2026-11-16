@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -112,13 +114,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + listOf(
-            "-opt-in=kotlin.ExperimentalUnsignedTypes",
-            "-opt-in=kotlin.RequiresOptIn",
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.fromTarget("17")
+        optIn.addAll(
+            "kotlin.ExperimentalUnsignedTypes",
+            "kotlin.RequiresOptIn",
         )
     }
+}
+
+    // Kotlin 2.2+ compiler configuration; use typed options instead of android.kotlinOptions.
+
 
     buildFeatures {
         viewBinding = true
