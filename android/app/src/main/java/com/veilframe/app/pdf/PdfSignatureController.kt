@@ -150,7 +150,7 @@ class PdfSignatureController(
         isWorking = false
         isSaved = false
         binding.progressPdfPreview.visibility = View.GONE
-        binding.ivPdfSignaturePreview.setImageDrawable(null)
+        binding.ivPdfPreview.setImageDrawable(null)
         taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
