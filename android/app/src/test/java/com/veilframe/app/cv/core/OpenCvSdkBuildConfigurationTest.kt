@@ -30,6 +30,34 @@ class OpenCvSdkBuildConfigurationTest {
     }
 
     @Test
+    fun `OpenCV upstream packaging uses JDK 17 and VeilFrame tests use JDK 21`() {
+        val root = findProjectRoot()
+        val workflow = File(root, ".github/workflows/build-opencv-sdk.yml").readText()
+        val builder = File(root, "android/scripts/build_opencv_contrib_sdk.sh").readText()
+
+        val jdk17 = workflow.indexOf("- name: Set up JDK 17 for upstream OpenCV")
+        val build = workflow.indexOf("- name: Execute OpenCV Android SDK Build")
+        val jdk21 = workflow.indexOf("- name: Set up JDK 21 for VeilFrame and Robolectric")
+        val appCheck = workflow.indexOf("- name: Validate Application Compilation with Custom OpenCV SDK")
+
+        assertTrue(
+            "Upstream OpenCV generation must run on JDK 17 (old Kotlin plugin), not JDK 21",
+            jdk17 >= 0 && build > jdk17 &&
+                workflow.substring(jdk17, build).contains("java-version: '17'")
+        )
+        assertTrue(
+            "VeilFrame's Android and Robolectric tests must restore JDK 21 after SDK generation",
+            jdk21 > build && appCheck > jdk21 &&
+                workflow.substring(jdk21, appCheck).contains("java-version: '21'")
+        )
+        assertTrue(
+            "OpenCV build script must reject an incompatible JDK before native compilation",
+            builder.contains("JAVA_COMPILER_VERSION=\"\$(javac -version 2>&1)\"") &&
+                builder.contains("packaging requires JDK 17")
+        )
+    }
+
+    @Test
     fun `build script explicitly whitelists videoio module`() {
         val root = findProjectRoot()
         val buildScript = File(root, "android/scripts/build_opencv_contrib_sdk.sh")

@@ -39,11 +39,14 @@ jobs:
           sudo swapon /swapfile || true
           free -h
 
-      - name: Set up JDK 21
+      # OpenCV 4.14 generates a standalone Gradle 8.11.1 / Kotlin 1.8.20 project.
+      # Its Kotlin plugin derives jvmTarget from the build JDK, and does not
+      # recognize JVM 21. Use JDK 17 exclusively for upstream SDK generation.
+      - name: Set up JDK 17 for upstream OpenCV
         uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -92,6 +95,15 @@ jobs:
           grep -q "STL=c++_static" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "ARM64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "X86_64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
+
+      # VeilFrame uses AGP 9 / Kotlin 2.4.21 and Robolectric 4.18.
+      # Restore JDK 21 after the upstream OpenCV Gradle project has finished.
+      # App bytecode stays at Java 17 (as configured in android/app/build.gradle.kts).
+      - name: Set up JDK 21 for VeilFrame and Robolectric
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android

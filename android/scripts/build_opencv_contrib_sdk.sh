@@ -8,7 +8,7 @@
 #
 # Exact Verified Toolchain:
 #   - Linux x86_64 (Ubuntu 22.04 / 24.04 or WSL2)
-#   - Eclipse Temurin JDK 17
+#   - Eclipse Temurin JDK 17 for the upstream OpenCV Gradle 8.11.1 / Kotlin 1.8.20 project
 #   - Android SDK API 37.0 (build-tools 36.0.0)
 #   - Android NDK 27.2.12479018
 #   - CMake 3.22.1, Ninja, Python 3.10+, Git
@@ -38,6 +38,20 @@ mkdir -p "${WORK_DIR}"
 cd "${WORK_DIR}"
 
 # 1. Verify Android Toolchain
+# OpenCV's generated Android AAR project uses Kotlin Gradle Plugin 1.8.20,
+# whose inferred jvmTarget cannot be 21. Fail fast BEFORE expensive C++ builds
+# instead of letting its final :opencv:compileDebugKotlin task fail.
+if ! command -v javac >/dev/null 2>&1; then
+    echo "FATAL: JDK 17 (javac) is required to build the upstream OpenCV Android SDK."
+    exit 1
+fi
+JAVA_COMPILER_VERSION="$(javac -version 2>&1)"
+if [[ ! "${JAVA_COMPILER_VERSION}" =~ ^javac[[:space:]]17([[:space:].]|$) ]]; then
+    echo "FATAL: OpenCV 4.14.0 SDK packaging requires JDK 17; found ${JAVA_COMPILER_VERSION}."
+    echo "Use JDK 17 for build_opencv_contrib_sdk.sh; switch to JDK 21 for VeilFrame's Robolectric tests."
+    exit 1
+fi
+echo "✓ Verified upstream OpenCV SDK Java toolchain: ${JAVA_COMPILER_VERSION}"
 EXPECTED_NDK_VERSION="27.2.12479018"
 if [ -z "${ANDROID_NDK_HOME:-}" ]; then
     if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}/ndk/${EXPECTED_NDK_VERSION}" ]; then
