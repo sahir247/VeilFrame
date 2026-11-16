@@ -96,18 +96,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // AGP 9 built-in Kotlin uses the compilerOptions DSL.
-    kotlin {
-        compilerOptions {
-            optIn.addAll(
-                listOf(
-                    "kotlin.ExperimentalUnsignedTypes",
-                    "kotlin.RequiresOptIn",
-                )
-            )
-        }
-    }
-
     packaging {
         jniLibs {
             keepDebugSymbols += listOf("**/*.so")
@@ -116,6 +104,18 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+// AGP 9 built-in Kotlin replaces the legacy kotlin-android plugin.
+kotlin {
+    compilerOptions {
+        optIn.addAll(
+            listOf(
+                "kotlin.ExperimentalUnsignedTypes",
+                "kotlin.RequiresOptIn",
+            )
+        )
     }
 }
 
