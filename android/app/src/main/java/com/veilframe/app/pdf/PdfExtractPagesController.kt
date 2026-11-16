@@ -155,7 +155,6 @@ class PdfExtractPagesController(
         activeJob = null
         isExtracting = false
         totalPages = 1
-        binding.pbExtractPagesLoading.visibility = View.GONE
         binding.btnExtractPagesExecute.isEnabled = true
         binding.btnExtractPagesExecute.text = "Extract & Export"
         activePdfUri = uri
