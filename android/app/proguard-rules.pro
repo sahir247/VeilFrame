@@ -56,6 +56,23 @@
 -keep class com.google.android.material.** { *; }
 -dontwarn com.google.android.material.**
 
+# =========================================================================
+# AndroidX WorkManager & Room Database (Transitive via Google AI Edge LiteRT)
+# =========================================================================
+# WorkManager initializes WorkDatabase reflectively via Room.getGeneratedImplementation().
+# Under R8 optimization (proguard-android-optimize.txt), the no-argument constructor
+# of WorkDatabase_Impl is stripped because it is only invoked via reflection.
+# Preserving the generated implementation and its constructor prevents InstantiationException on startup.
+-keep class androidx.work.impl.WorkDatabase_Impl {
+    public <init>();
+}
+-keep class * extends androidx.room.RoomDatabase {
+    public <init>();
+}
+-keep class androidx.work.impl.WorkDatabase {
+    *;
+}
+
 # Custom Views instantiated via XML layout inflation
 -keep public class * extends android.view.View {
     public <init>(android.content.Context);

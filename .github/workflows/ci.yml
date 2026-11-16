@@ -1264,6 +1264,31 @@ jobs:
             --min-sdk-version 26 \
             "$APK"
 
+      - name: Verify R8 WorkManager & Room Constructor Preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          USAGE="android/app/build/outputs/mapping/release/usage.txt"
+          MAPPING="android/app/build/outputs/mapping/release/mapping.txt"
+
+          test -s "$MAPPING"
+          echo "==> Verifying WorkDatabase_Impl constructor preservation in release build..."
+
+          # Fail if R8 stripped WorkDatabase_Impl constructor into usage.txt
+          if [ -f "$USAGE" ] && grep -A 3 "androidx.work.impl.WorkDatabase_Impl:" "$USAGE" | grep -q "<init>()"; then
+            echo "::error::R8 regression: androidx.work.impl.WorkDatabase_Impl constructor was stripped into usage.txt!"
+            exit 1
+          fi
+
+          # Verify WorkDatabase_Impl is retained in mapping.txt
+          grep -q "androidx.work.impl.WorkDatabase_Impl -> androidx.work.impl.WorkDatabase_Impl:" "$MAPPING" || {
+            echo "::error::WorkDatabase_Impl was not retained in mapping.txt!"
+            exit 1
+          }
+
+          echo "==> WorkDatabase_Impl and no-arg constructor successfully preserved against R8 stripping."
+
       - name: Stage Android Artifacts
         run: |
           mkdir -p android_artifacts
