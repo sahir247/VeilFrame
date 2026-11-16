@@ -100,7 +100,7 @@
   </g>
   <style>
     @media (prefers-reduced-motion: reduce) {
-      * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+      animate, animateTransform { display: none; }
     }
   </style>
 </svg>
