@@ -98,6 +98,13 @@ class PdfWatermarkController(
 
     fun onPdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        previewJob = null
+        basePageBitmap?.recycle()
+        basePageBitmap = null
+        isApplying = false
+        binding.pbWatermarkPreviewLoading.visibility = View.GONE
+        binding.btnWatermarkApplyExport.isEnabled = true
+        binding.btnWatermarkApplyExport.text = "Apply Watermark & Export"
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
