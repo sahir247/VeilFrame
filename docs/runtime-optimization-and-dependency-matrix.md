@@ -19,7 +19,7 @@ This review is deliberately compatibility-led. A newer version is selected only 
 | Android NDK | 27.2.12479018 (r27c) | Aligns app native compilation, custom OpenCV SDK build and maintained FFmpegKit 8.1.9 |
 | CMake | 3.22.1 | Kept with the existing custom OpenCV build script; no CMake 4.x migration is bundled here |
 
-KGP 2.4.21 is documented as compatible through AGP 9.3.3 and Gradle 9.7. AGP 9.5.0 is newer, but it is outside that KGP version's published fully supported AGP range. KGP 2.5 was not selected because the available release is not stable.
+KGP 2.4.21's published compatibility matrix lists AGP 9.3.1 as its maximum fully supported AGP version and Gradle 9.7 as its maximum Gradle version. AGP 9.3.3 is a patch release in the same 9.3 line and includes D8/R8 fixes; CI is verifying this patch-level pairing. AGP 9.5.1 is the newer stable AGP line, but it is outside KGP 2.4.21's published full-compatibility range. KGP 2.5 was not selected because the available release is not stable.
 
 AGP 9's built-in Kotlin and new Android DSL defaults are not yet a clean fit for the external KGP 2.4.21 plugin. The project therefore sets `android.builtInKotlin=false` and `android.newDsl=false` as a compatibility bridge. Revisit these flags when the external KGP supports the new DSL or when the project deliberately migrates to AGP's built-in Kotlin compiler.
 
@@ -115,3 +115,21 @@ Before release, compare old and new implementations on the same physical devices
 6. Android 16 targetSdk 36 edge-to-edge, system bars and navigation behavior.
 
 CI compilation and tests are necessary but do not replace this device-level validation.
+
+
+## Research sources
+
+Version and compatibility checks were made against release documentation and artifact metadata available on 2026-11-16:
+
+- [Kotlin Gradle Plugin compatibility matrix](https://kotlinlang.org/docs/gradle-configure-project.html) — supported Gradle and AGP ranges for KGP 2.4.21.
+- [Android Gradle Plugin 9.3 release notes](https://developer.android.com/build/releases/agp-9-3-0-release-notes) — AGP 9.3.3 D8/R8 fixes, Gradle 9.5 minimum, Build Tools 36.0.0 and JDK 17.
+- [Android Gradle Plugin current releases](https://developer.android.com/reference/tools/gradle-api) — current AGP 9.5.1 and past 9.3.3 release line.
+- [AndroidX stable release channel](https://developer.android.com/jetpack/androidx/versions/stable-channel) — Core, AppCompat, Fragment, CameraX, Media3 and WebKit release versions.
+- [LiteRT for Android](https://developers.google.com/edge/litert/android) — CompiledModel as the modern CPU/GPU/NPU API; LiteRT 2.3.2 is latest and supports API 23.
+- [LiteRT CompiledModel API reference](https://developers.google.com/edge/api/litert/kotlin/com/google/ai/edge/litert/CompiledModel) — model, tensor-buffer and accelerator APIs.
+- [ML Kit release notes](https://developers.google.com/ml-kit/release-notes) and [bundled barcode scanning setup](https://developers.google.com/ml-kit/vision/barcode-scanning/android) — bundled model versions and API requirements.
+- [FFmpegKit maintained releases](https://github.com/ffmpegkit-maintained/ffmpeg/releases) and [Maven Central artifact versions](https://central.sonatype.com/artifact/dev.ffmpegkit-maintained/ffmpeg-kit-full-gpl/versions) — 8.1.9 Android release built with NDK r27c.
+- [Apache POI change history](https://poi.apache.org/changes.html) — POI 6.0.0 Java 17 baseline and aligned Commons/Bouncy Castle/XMLBeans dependency upgrades.
+- [Google Play target API requirements](https://support.google.com/googleplay/android-developer/answer/11926878) — API 36 requirement for new apps and updates from 2026-08-31.
+- [Maven Central org.json versions](https://central.sonatype.com/artifact/org.json/json/versions), [Netty BOM versions](https://central.sonatype.com/artifact/io.netty/netty-bom/versions), [Protobuf Java versions](https://central.sonatype.com/artifact/com.google.protobuf/protobuf-java/versions), [ZXing Core](https://central.sonatype.com/artifact/com.google.zxing/core/versions), and [jose4j](https://central.sonatype.com/artifact/org.bitbucket.b_c/jose4j) — selected artifact releases.
+- [OpenCV upstream releases](https://github.com/opencv/opencv/releases) — major-version boundary considered before retaining the app's custom 4.14.0 SDK.
