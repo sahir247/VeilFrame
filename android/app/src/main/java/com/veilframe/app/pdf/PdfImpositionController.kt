@@ -131,6 +131,15 @@ class PdfImpositionController(
 
     fun onPdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        activeJob = null
+        previewJob = null
+        isGenerating = false
+        activeSheetLayouts = emptyList()
+        currentSheetIndex = 0
+        binding.pbImpositionLoading.visibility = View.GONE
+        binding.btnImpositionExecute.isEnabled = true
+        binding.btnImpositionExecute.text = "Calculate & Impose"
+        binding.ivImpositionPreview.setImageDrawable(null)
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
