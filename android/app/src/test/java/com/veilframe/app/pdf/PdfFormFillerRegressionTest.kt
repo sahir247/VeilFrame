@@ -19,6 +19,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -77,7 +78,7 @@ class PdfFormFillerRegressionTest {
             assertEquals(2, result.fieldsUpdated)
             assertTrue(output.size() > 0)
 
-            PDDocument.load(output.toByteArray()).use { filled ->
+            PDDocument.load(ByteArrayInputStream(output.toByteArray())).use { filled ->
                 val form = filled.documentCatalog.acroForm!!
                 assertEquals("Sahir", (form.getField("name") as PDTextField).value)
                 assertEquals("original", (form.getField("locked") as PDTextField).value)
