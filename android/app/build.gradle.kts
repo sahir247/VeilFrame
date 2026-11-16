@@ -118,8 +118,10 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.fromTarget("17")
         optIn.addAll(
-            "kotlin.ExperimentalUnsignedTypes",
-            "kotlin.RequiresOptIn",
+            listOf(
+                "kotlin.ExperimentalUnsignedTypes",
+                "kotlin.RequiresOptIn",
+            )
         )
     }
 }
