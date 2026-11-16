@@ -5,6 +5,13 @@ import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDResources
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.cos.COSDictionary
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDCheckBox
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
@@ -34,6 +41,38 @@ class PdfFormFillerRegressionTest {
         if (!PDFBoxResourceLoader.isReady()) PDFBoxResourceLoader.init(context)
     }
 
+    private fun configureAcroForm(document: PDDocument, form: PDAcroForm) {
+        val resources = PDResources().apply {
+            put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
+        }
+        form.defaultResources = resources
+        form.defaultAppearance = "/Helv 10 Tf 0 g"
+    }
+
+    private fun addUsableCheckbox(
+        document: PDDocument,
+        page: PDPage,
+        form: PDAcroForm,
+        name: String
+    ): PDCheckBox {
+        val checkbox = PDCheckBox(form).apply { partialName = name }
+        val widget = checkbox.widgets.first()
+        widget.rectangle = PDRectangle(0f, 0f, 12f, 12f)
+        widget.page = page
+
+        val appearance = PDAppearanceDictionary()
+        widget.appearance = appearance
+        val normal = appearance.normalAppearance.cosObject as COSDictionary
+        val off = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
+        val on = PDAppearanceStream(document).apply { bbox = PDRectangle(0f, 0f, 12f, 12f) }
+        normal.setItem(COSName.Off, off.cosObject)
+        normal.setItem(COSName.YES, on.cosObject)
+        widget.appearanceState = COSName.Off
+        page.annotations.add(widget)
+        form.fields.add(checkbox)
+        return checkbox
+    }
+
     @Test
     fun fillFormToStream_persistsTextCheckboxAndRespectsReadOnlyFields() = runBlocking {
         val source = File.createTempFile("form_source_", ".pdf", context.cacheDir)
@@ -42,22 +81,24 @@ class PdfFormFillerRegressionTest {
                 document.addPage(PDPage())
                 val form = PDAcroForm(document)
                 document.documentCatalog.acroForm = form
+                configureAcroForm(document, form)
 
                 val name = PDTextField(form).apply {
                     partialName = "name"
+                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isRequired = true
                 }
                 form.fields.add(name)
 
                 val locked = PDTextField(form).apply {
                     partialName = "locked"
+                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isReadOnly = true
-                    value = "original"
                 }
+                locked.value = "original"
                 form.fields.add(locked)
 
-                val accepted = PDCheckBox(form).apply { partialName = "accepted" }
-                form.fields.add(accepted)
+                val accepted = addUsableCheckbox(document, document.getPage(0), form, "accepted")
 
                 FileOutputStream(source).use { document.save(it) }
             }
@@ -97,12 +138,14 @@ class PdfFormFillerRegressionTest {
                 document.addPage(PDPage())
                 val form = PDAcroForm(document)
                 document.documentCatalog.acroForm = form
+                configureAcroForm(document, form)
                 val locked = PDTextField(form).apply {
                     partialName = "locked"
+                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isReadOnly = true
-                    value = "fixed"
                 }
                 form.fields.add(locked)
+                locked.value = "fixed"
                 FileOutputStream(source).use { document.save(it) }
             }
 
