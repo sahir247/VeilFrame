@@ -213,7 +213,6 @@ dependencies {
     // Google AI Edge LiteRT CompiledModel runtime and GPU accelerator (offline, bundled).
     implementation("com.google.ai.edge.litert:litert:2.3.2")
     implementation("com.google.ai.edge.litert:litert-gpu:2.3.2")
-    implementation("")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.1.0")

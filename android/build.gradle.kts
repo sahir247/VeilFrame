@@ -4,7 +4,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-                constraints {
+        constraints {
             classpath("io.netty:netty-codec-http2:4.2.19.Final")
             classpath("io.netty:netty-codec-http:4.2.19.Final")
             classpath("io.netty:netty-handler:4.2.19.Final")

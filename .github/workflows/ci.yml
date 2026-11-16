@@ -1137,7 +1137,7 @@ jobs:
           java -version
           sdkmanager --version
           echo "$ANDROID_HOME"
-          ls -la "$ANDROID_HOME/platforms/android-37"
+          ls -la "$ANDROID_HOME/platforms/android-36"
       - name: Stage Custom OpenCV 4.14.0 Android SDK
         shell: bash
         env:
