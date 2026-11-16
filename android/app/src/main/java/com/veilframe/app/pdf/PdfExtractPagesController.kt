@@ -152,6 +152,12 @@ class PdfExtractPagesController(
 
     fun handlePdfSelected(uri: Uri) {
         taskTracker.cancelAll()
+        activeJob = null
+        isExtracting = false
+        totalPages = 1
+        binding.pbExtractPagesLoading.visibility = View.GONE
+        binding.btnExtractPagesExecute.isEnabled = true
+        binding.btnExtractPagesExecute.text = "Extract & Export"
         activePdfUri = uri
         isSaved = false
         val docName = queryDocumentName(uri)
