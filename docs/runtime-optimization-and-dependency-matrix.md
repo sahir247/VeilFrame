@@ -125,13 +125,14 @@ Version and compatibility checks were made against release documentation and art
 
 - [Kotlin Gradle Plugin compatibility matrix](https://kotlinlang.org/docs/gradle-configure-project.html) — supported Gradle and AGP ranges for KGP 2.4.21.
 - [Android Gradle Plugin 9.3 release notes](https://developer.android.com/build/releases/agp-9-3-0-release-notes) — AGP 9.3.3 D8/R8 fixes, Gradle 9.5 minimum, Build Tools 36.0.0 and JDK 17.
-- [Android Gradle Plugin current releases](https://developer.android.com/reference/tools/gradle-api) — current AGP 9.5.1 and past 9.3.3 release line.
+- [Android Gradle Plugin current releases and compatibility](https://developer.android.com/build/releases/about-agp) — current AGP 9.5.1 and past 9.3.3 release line.
 - [AndroidX stable release channel](https://developer.android.com/jetpack/androidx/versions/stable-channel) — Core, AppCompat, Fragment, CameraX, Media3 and WebKit release versions.
 - [LiteRT for Android](https://developers.google.com/edge/litert/android) — CompiledModel as the modern CPU/GPU/NPU API; LiteRT 2.3.2 is latest and supports API 23.
 - [LiteRT CompiledModel API reference](https://developers.google.com/edge/api/litert/kotlin/com/google/ai/edge/litert/CompiledModel) — model, tensor-buffer and accelerator APIs.
 - [ML Kit release notes](https://developers.google.com/ml-kit/release-notes) and [bundled barcode scanning setup](https://developers.google.com/ml-kit/vision/barcode-scanning/android) — bundled model versions and API requirements.
-- [FFmpegKit maintained releases](https://github.com/ffmpegkit-maintained/ffmpeg/releases) and [Maven Central artifact versions](https://central.sonatype.com/artifact/dev.ffmpegkit-maintained/ffmpeg-kit-full-gpl/versions) — 8.1.9 Android release built with NDK r27c.
+- [Maven Central artifact versions](https://central.sonatype.com/artifact/dev.ffmpegkit-maintained/ffmpeg-kit-full-gpl/versions) — 8.1.9 Android release built with NDK r27c.
 - [Apache POI change history](https://poi.apache.org/changes.html) — POI 6.0.0 Java 17 baseline and aligned Commons/Bouncy Castle/XMLBeans dependency upgrades.
 - [Google Play target API requirements](https://support.google.com/googleplay/android-developer/answer/11926878) — API 36 requirement for new apps and updates from 2026-08-31.
 - [Maven Central org.json versions](https://central.sonatype.com/artifact/org.json/json/versions), [Netty BOM versions](https://central.sonatype.com/artifact/io.netty/netty-bom/versions), [Protobuf Java versions](https://central.sonatype.com/artifact/com.google.protobuf/protobuf-java/versions), [ZXing Core](https://central.sonatype.com/artifact/com.google.zxing/core/versions), and [jose4j](https://central.sonatype.com/artifact/org.bitbucket.b_c/jose4j) — selected artifact releases.
+- [Android NDK revision history](https://developer.android.com/ndk/downloads/revision_history) — NDK r27c package identifier.
 - [OpenCV upstream releases](https://github.com/opencv/opencv/releases) — major-version boundary considered before retaining the app's custom 4.14.0 SDK.
