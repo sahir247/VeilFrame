@@ -5,9 +5,7 @@ import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
-import com.tom_roush.pdfbox.pdmodel.PDResources
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary
@@ -39,14 +37,6 @@ class PdfFormFillerRegressionTest {
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
         if (!PDFBoxResourceLoader.isReady()) PDFBoxResourceLoader.init(context)
-    }
-
-    private fun configureAcroForm(form: PDAcroForm) {
-        val resources = PDResources().apply {
-            put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
-        }
-        form.defaultResources = resources
-        form.defaultAppearance = "/Helv 10 Tf 0 g"
     }
 
     private fun addUsableCheckbox(
@@ -81,11 +71,9 @@ class PdfFormFillerRegressionTest {
                 document.addPage(PDPage())
                 val form = PDAcroForm(document)
                 document.documentCatalog.acroForm = form
-                configureAcroForm(form)
 
                 val name = PDTextField(form).apply {
                     partialName = "name"
-                    defaultAppearance = "/Helv 10 Tf 0 g"
                     isRequired = true
                 }
                 form.fields.add(name)
@@ -95,7 +83,7 @@ class PdfFormFillerRegressionTest {
                     defaultAppearance = "/Helv 10 Tf 0 g"
                     isReadOnly = true
                 }
-                locked.value = "original"
+                locked.cosObject.setString(COSName.V, "original")
                 form.fields.add(locked)
 
                 val accepted = addUsableCheckbox(document, document.getPage(0), form, "accepted")
@@ -145,7 +133,7 @@ class PdfFormFillerRegressionTest {
                     isReadOnly = true
                 }
                 form.fields.add(locked)
-                locked.value = "fixed"
+                locked.cosObject.setString(COSName.V, "fixed")
                 FileOutputStream(source).use { document.save(it) }
             }
 
