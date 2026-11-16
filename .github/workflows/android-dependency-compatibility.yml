@@ -8,6 +8,7 @@ on:
       - 'android/gradle/wrapper/gradle-wrapper.properties'
       - '.github/workflows/android-dependency-compatibility.yml'
       - 'android/app/src/main/**'
+      - 'scripts/audit_android_protobuf.py'
   workflow_dispatch:
 
 permissions:
@@ -46,6 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ../dependency-audit
+          ./gradlew buildEnvironment --no-daemon > ../dependency-audit/buildEnvironment.txt
+          ./gradlew :app:buildEnvironment --no-daemon > ../dependency-audit/app-buildEnvironment.txt
           ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon > ../dependency-audit/releaseRuntimeClasspath.txt
           ./gradlew :app:dependencies --configuration releaseCompileClasspath --no-daemon > ../dependency-audit/releaseCompileClasspath.txt
           for module in tink tink-android protobuf-javalite protobuf-java protobuf-kotlin-lite protobuf-kotlin; do
@@ -56,6 +59,12 @@ jobs:
             > ../dependency-audit/security-relevant-paths.txt || true
           echo "Dependency path audit completed. Inspect artifact for the exact owner of generated Tink classes."
           cat ../dependency-audit/security-relevant-paths.txt
+
+      - name: Scan resolved cache archives for generated Tink protobuf classes
+        run: |
+          python3 scripts/audit_android_protobuf.py --output dependency-audit/tink-class-provenance.json
+          cat dependency-audit/tink-class-provenance.json | head -c 12000
+          echo
 
       - name: Upload dependency security audit
         if: always()
