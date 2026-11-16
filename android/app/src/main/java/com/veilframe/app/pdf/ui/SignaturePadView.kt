@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -331,8 +330,8 @@ class SignaturePadView @JvmOverloads constructor(
 
     /**
      * Renders an ink element with anti-aliasing.
-     * Quadratic Bézier curves are converted to a smooth closed vector ribbon polygon mesh with
-     * normal vectors, eliminating line-cap overlap beads and pixelated staircase artifacts.
+     * Quadratic Bézier curves use native round-cap strokes; segment width follows the
+     * velocity-derived width estimate without constructing a sampled polygon ribbon.
      */
     private fun drawInkElement(
         canvas: Canvas,
@@ -371,49 +370,22 @@ class SignaturePadView @JvmOverloads constructor(
                     return
                 }
 
-                // For variable-width tapered ink strokes: extrude a smooth closed polygon ribbon
-                // along the analytical Bézier tangent normals.
-                val steps = 20
-                val leftPoints = ArrayList<PointF>(steps + 1)
-                val rightPoints = ArrayList<PointF>(steps + 1)
-
-                for (i in 0..steps) {
-                    val t = i / steps.toFloat()
-                    val oneMinusT = 1f - t
-
-                    // B(t) position
-                    val x = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * cpX) + (t * t * endX)
-                    val y = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * cpY) + (t * t * endY)
-
-                    // B'(t) tangent derivative
-                    val dx = 2f * oneMinusT * (cpX - startX) + 2f * t * (endX - cpX)
-                    val dy = 2f * oneMinusT * (cpY - startY) + 2f * t * (endY - cpY)
-
-                    val len = hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(0.0001f)
-                    val nx = -dy / len
-                    val ny = dx / len
-
-                    val halfW = (startW + (endW - startW) * t) / 2f
-                    leftPoints.add(PointF(x + nx * halfW, y + ny * halfW))
-                    rightPoints.add(PointF(x - nx * halfW, y - ny * halfW))
+                // Use Android's native anti-aliased round stroke for every segment.
+                // The previous polygon ribbon sampled each quadratic at only 20 points and
+                // computed independent normals; at higher widths this produced visibly wavy
+                // left/right edges. A native stroked path keeps both edges smooth. Width is
+                // interpolated per segment, retaining the velocity taper without mesh seams.
+                val path = Path().apply {
+                    moveTo(startX, startY)
+                    quadTo(cpX, cpY, endX, endY)
                 }
-
-                val ribbon = Path()
-                if (leftPoints.isNotEmpty()) {
-                    ribbon.moveTo(leftPoints[0].x, leftPoints[0].y)
-                    for (i in 1 until leftPoints.size) {
-                        ribbon.lineTo(leftPoints[i].x, leftPoints[i].y)
-                    }
-                    for (i in rightPoints.size - 1 downTo 0) {
-                        ribbon.lineTo(rightPoints[i].x, rightPoints[i].y)
-                    }
-                    ribbon.close()
+                val strokePaint = Paint(fillPaint).apply {
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    strokeWidth = ((startW + endW) * 0.5f).coerceAtLeast(0.5f)
                 }
-
-                canvas.drawPath(ribbon, fillPaint)
-                // Draw rounded caps at endpoints to guarantee buttery smooth segment joins
-                canvas.drawCircle(startX, startY, startW / 2f, fillPaint)
-                canvas.drawCircle(endX, endY, endW / 2f, fillPaint)
+                canvas.drawPath(path, strokePaint)
             }
         }
     }

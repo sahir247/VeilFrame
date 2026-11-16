@@ -13,6 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.io.OutputStream
 
 /**
  * Represents a form field in the PDF.
@@ -248,7 +249,7 @@ class PdfFormFiller {
             }
             
             // Ensure appearances are generated
-            acroForm.setNeedAppearances(true)
+            acroForm.setNeedAppearances(false)
             
             var fieldsUpdated = 0
             val entries = fieldValues.entries.toList()
@@ -306,6 +307,49 @@ class PdfFormFiller {
         }
     }
     
+    /**
+     * Fill a PDF into a caller-owned stream. This is used by the in-app editor so the
+     * generated PDF can be handed to the document save picker without an intermediate URI.
+     */
+    suspend fun fillFormToStream(
+        context: Context,
+        inputUri: Uri,
+        outputStream: OutputStream,
+        fieldValues: Map<String, FieldValue>,
+        flatten: Boolean = false
+    ): FormFillResult = withContext(Dispatchers.IO) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(inputUri)
+                ?: return@withContext FormFillResult(false, 0, "Cannot open source PDF")
+            inputStream.use { source ->
+                PDDocument.load(source).use { document ->
+                    val acroForm = document.documentCatalog.acroForm
+                        ?: return@withContext FormFillResult(false, 0, "PDF has no AcroForm fields")
+                    if (acroForm.fields.isEmpty()) {
+                        return@withContext FormFillResult(false, 0, "PDF has no AcroForm fields")
+                    }
+                    acroForm.setNeedAppearances(false)
+                    var updated = 0
+                    for ((fieldName, value) in fieldValues) {
+                        val field = acroForm.getField(fieldName) ?: continue
+                        if (!field.isReadOnly && updateField(field, value)) updated++
+                    }
+                    if (updated == 0) {
+                        return@withContext FormFillResult(false, 0, "No editable form fields were updated")
+                    }
+                    if (flatten) acroForm.flatten()
+                    document.save(outputStream)
+                    outputStream.flush()
+                    FormFillResult(true, updated)
+                }
+            }
+        } catch (e: IOException) {
+            FormFillResult(false, 0, "IO Error: ${e.message}")
+        } catch (e: Exception) {
+            FormFillResult(false, 0, "Error: ${e.message}")
+        }
+    }
+
     /**
      * Convert PDFBox field to our FormField type.
      */
