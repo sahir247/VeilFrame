@@ -35,6 +35,8 @@ class PdfFlattenController(
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var activePdfUri: Uri? = null
     private var activePdfName: String = "document.pdf"
     private var beforeBitmap: Bitmap? = null
@@ -51,6 +53,7 @@ class PdfFlattenController(
     override val isProcessing: Boolean get() = isFlattening
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         previewJob?.cancel()
         beforeBitmap?.recycle()
         afterBitmap?.recycle()
@@ -103,7 +106,7 @@ class PdfFlattenController(
             binding.btnFlattenExecute.isEnabled = false
             binding.btnFlattenExecute.text = "Flattening Document..."
 
-            scope.launch(Dispatchers.IO) {
+            taskTracker.launch(Dispatchers.IO) {
                 try {
                     val cacheDir = File(activity.cacheDir, "pdf_flatten_temp")
                     if (!cacheDir.exists()) cacheDir.mkdirs()
@@ -153,6 +156,7 @@ class PdfFlattenController(
     }
 
     fun onPdfSelected(uri: Uri) {
+        taskTracker.cancelAll()
         activePdfUri = uri
         activePdfName = queryPdfDisplayName(uri) ?: "document.pdf"
         isSaved = false
@@ -170,7 +174,7 @@ class PdfFlattenController(
     private fun renderLivePreviews(uri: Uri) {
         previewJob?.cancel()
         binding.pbFlattenLoading.visibility = View.VISIBLE
-        previewJob = scope.launch(Dispatchers.IO) {
+        previewJob = taskTracker.launch(Dispatchers.IO) {
             try {
                 val inputStream = activity.contentResolver.openInputStream(uri) ?: return@launch
                 val document = PDDocument.load(inputStream)
