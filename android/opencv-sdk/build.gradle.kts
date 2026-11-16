@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Deterministic verification of complete custom OpenCV + WeChatQRCode SDK artifacts:
@@ -72,7 +71,7 @@ android {
     // Namespace is org.opencv so AGP generates org.opencv.R and org.opencv.BuildConfig
     // expected by CameraBridgeViewBase, CameraGLSurfaceView, and custom CV native components.
     namespace = "org.opencv"
-    compileSdk = 35
+    compileSdk = 37
 
     buildFeatures {
         buildConfig = true
@@ -97,12 +96,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + listOf(
-            "-opt-in=kotlin.ExperimentalUnsignedTypes",
-            "-opt-in=kotlin.RequiresOptIn",
-        )
+    // AGP 9 built-in Kotlin uses the compilerOptions DSL.
+    kotlin {
+        compilerOptions {
+            optIn.addAll(
+                listOf(
+                    "kotlin.ExperimentalUnsignedTypes",
+                    "kotlin.RequiresOptIn",
+                )
+            )
+        }
     }
 
     packaging {

@@ -1,11 +1,10 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "com.veilframe.app"
-    compileSdk = 35
+    compileSdk = 37
 
     val supportedAbis = setOf("arm64-v8a")
     val customAbis = (project.findProperty("targetAbi") as String?)
@@ -112,12 +111,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + listOf(
-            "-opt-in=kotlin.ExperimentalUnsignedTypes",
-            "-opt-in=kotlin.RequiresOptIn",
-        )
+    // AGP 9 built-in Kotlin uses the compilerOptions DSL.
+    kotlin {
+        compilerOptions {
+            optIn.addAll(
+                listOf(
+                    "kotlin.ExperimentalUnsignedTypes",
+                    "kotlin.RequiresOptIn",
+                )
+            )
+        }
     }
 
     buildFeatures {
@@ -166,17 +169,17 @@ androidComponents {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     // Spring physics for M3 Expressive motion (VfSprings)
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Full Mobile FFmpegKit GPL with all audio/video encoders (including libx264 and libx265)
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
@@ -224,8 +227,8 @@ dependencies {
         exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
         exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
     }
-    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
 
     // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
@@ -239,10 +242,10 @@ dependencies {
         exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
     }
     implementation("org.apache.poi:poi-ooxml-full:6.0.0")
-    implementation("org.apache.commons:commons-compress:1.26.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.json:json:20260719")
     testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
