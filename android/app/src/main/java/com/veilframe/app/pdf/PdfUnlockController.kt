@@ -42,6 +42,8 @@ class PdfUnlockController(
     private val onOpenPdfStudio: (() -> Unit)? = null
 ) : ToolWorkStateContract {
 
+    private val taskTracker = PdfTaskTracker(scope)
+
     private var originalPdfBytes: ByteArray? = null
     private var originalPdfName: String = "document.pdf"
     private var unlockedResult: PdfUnlockResult? = null
@@ -58,6 +60,7 @@ class PdfUnlockController(
     override val isProcessing: Boolean get() = isUnlocking
 
     override fun discardAndReleaseAllResources() {
+        taskTracker.cancelAll()
         activeJob?.cancel()
         activeJob = null
         isUnlocking = false
@@ -107,7 +110,8 @@ class PdfUnlockController(
     }
 
     fun handlePdfSelected(uri: Uri) {
-        scope.launch(Dispatchers.IO) {
+        taskTracker.cancelAll()
+        taskTracker.launch(Dispatchers.IO) {
             val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             } catch (e: Exception) {
@@ -261,7 +265,7 @@ class PdfUnlockController(
 
     private fun shareUnlockedPdf() {
         val res = unlockedResult ?: return
-        scope.launch(Dispatchers.IO) {
+        taskTracker.launch(Dispatchers.IO) {
             try {
                 val shareDir = File(activity.cacheDir, "shared_pdfs").apply { mkdirs() }
                 val shareFile = File(shareDir, "unlocked_$originalPdfName")
