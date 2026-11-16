@@ -7,27 +7,42 @@ android {
     namespace = "com.veilframe.app"
     compileSdk = 35
 
+    val supportedAbis = setOf("arm64-v8a")
     val customAbis = (project.findProperty("targetAbi") as String?)
         ?.split(",")
         ?.map { it.trim() }
         ?.filter { it.isNotEmpty() }
         ?.takeIf { it.isNotEmpty() }
 
+    if (customAbis != null) {
+        val unsupported = customAbis.filter { it !in supportedAbis }
+        if (unsupported.isNotEmpty()) {
+            throw org.gradle.api.GradleException(
+                "Unsupported targetAbi: ${unsupported.joinToString()}. " +
+                "VeilFrame NCNN upscaler subsystem strictly supports arm64-v8a."
+            )
+        }
+    }
+
     defaultConfig {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 229
-        versionName = "2.2.9"
+        versionCode = 231
+        versionName = "2.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            if (customAbis != null) {
-                abiFilters += customAbis
-            } else {
-                abiFilters += "arm64-v8a"
+        externalNativeBuild {
+            cmake {
+                arguments("-DANDROID_STL=c++_static", "-DANDROID_CPP_FEATURES=rtti exceptions")
+                cppFlags("-fexceptions")
             }
+        }
+
+        ndk {
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
         }
     }
 
@@ -75,27 +90,19 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
-            // Production release packages arm64-v8a by default, or the explicit -PtargetAbi override
+            // Production release targets arm64-v8a exclusively
             ndk {
                 abiFilters.clear()
-                if (customAbis != null) {
-                    abiFilters.addAll(customAbis)
-                } else {
-                    abiFilters.add("arm64-v8a")
-                }
+                abiFilters.add("arm64-v8a")
             }
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Debug packages emulator x86_64 + device arm64-v8a by default, or explicit -PtargetAbi
+            // Debug targets arm64-v8a exclusively
             ndk {
                 abiFilters.clear()
-                if (customAbis != null) {
-                    abiFilters.addAll(customAbis)
-                } else {
-                    abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
-                }
+                abiFilters.add("arm64-v8a")
             }
         }
     }
@@ -119,11 +126,31 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite")
+    }
+
+    ndkVersion = "26.1.10909125"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
-        // Base packaging configuration
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/INDEX.LIST",
+                "META-INF/LICENSE.md",
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            )
+        }
     }
 
     testOptions {
@@ -142,7 +169,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.14.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     // Spring physics for M3 Expressive motion (VfSprings)
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -166,10 +193,9 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
 
     // ONNX Runtime Android for AI image super-resolution inference (Plugin EP ABI compatible)
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
 
     // ZXing — QR code encode & decode (QR Studio: generator + scanner)
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // CameraX — QR Studio scanner (camera preview + image analysis)
     val cameraXVersion = "1.3.2"
@@ -184,16 +210,40 @@ dependencies {
     // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
     implementation(project(":opencv-sdk"))
 
-    // TensorFlow Lite runtime for neural document segmentation (FairScan SOTA model)
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    // Google AI Edge LiteRT Core & GPU runtimes (surgically replaces legacy TensorFlow Lite 2.17.0)
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu:1.0.1")
+    implementation("com.google.ai.edge.litert:litert-gpu-api:1.0.1")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")
 
+    // PDFBox Android & BouncyCastle (Offline PDF Engine: Decryption & Digital Signature Validation)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+
+    // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
+    implementation("org.apache.poi:poi:6.0.0")
+    // Replace the reduced schema bundle: D8 cannot dex one of its nested schema
+    // classes because its declared nest host is absent from poi-ooxml-lite.
+    // Apache POI documents poi-ooxml-full as the drop-in alternative to lite.
+    implementation("org.apache.poi:poi-ooxml:6.0.0") {
+        exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
+    }
+    implementation("org.apache.poi:poi-ooxml-full:6.0.0")
+    implementation("org.apache.commons:commons-compress:1.26.1")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("org.json:json:20240303")
-    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.27.0")
+    testImplementation("org.json:json:20260719")
     testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
