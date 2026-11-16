@@ -5,7 +5,13 @@ plugins {
 
 android {
     namespace = "com.veilframe.app"
-    compileSdk = 36
+    // AndroidX Core 1.19.1 requires API 37; use the explicit 37.0 platform hash.
+    // targetSdk stays 36, so Android 17 runtime behavior is not opted into.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     val supportedAbis = setOf("arm64-v8a")
     val customAbis = (project.findProperty("targetAbi") as String?)

@@ -13,7 +13,7 @@ This review is deliberately compatibility-led. A newer version is selected only 
 | Gradle wrapper | 9.5.0 | AGP 9.3.x minimum supported Gradle |
 | Kotlin Gradle Plugin | 2.4.21 | Latest stable KGP in the selected compatibility range |
 | JDK / Java target | 17 | POI 6.0.0 requires Java 17; retains app bytecode target |
-| Compile SDK | 36 | Stable Android 16 SDK; API 37 preview was unnecessary and its CI package install was unreliable |
+| Compile SDK | 37.0 | Stable Android 17 SDK, required by AndroidX Core 1.19.1. Explicit `minorApiLevel = 0` matches the SDK package `platforms;android-37.0`; AGP 9.3.x supports API 37 |
 | Target SDK | 36 | Meets the current Google Play target API requirement; verify Android 16 behavior |
 | minSdk | 26 | Retained: the selected ML Kit, AndroidX and LiteRT artifacts do not require API 30/32 |
 | Android NDK | 27.2.12479018 (r27c) | Aligns app native compilation, custom OpenCV SDK build and maintained FFmpegKit 8.1.9 |
@@ -23,13 +23,15 @@ KGP 2.4.21's published compatibility matrix lists AGP 9.3.1 as its maximum fully
 
 AGP 9's built-in Kotlin and new Android DSL defaults are not yet a clean fit for the external KGP 2.4.21 plugin. The project therefore sets `android.builtInKotlin=false` and `android.newDsl=false` as a compatibility bridge. Revisit these flags when the external KGP supports the new DSL or when the project deliberately migrates to AGP's built-in Kotlin compiler.
 
+Compilation uses the installed stable Android 17 API 37.0 platform, while **targetSdk remains API 36** and minSdk remains 26. This corrects the earlier CI failure in `:app:checkDebugAarMetadata`: `androidx.core:core` and `core-ktx` 1.19.1 both require compiling against API 37 or newer. CI must install `platforms;android-37.0` (not nonexistent `platforms;android-37`) to avoid API 37 platform lookup issues. AGP 9.3.3's supported API range includes 37.0; the app's runtime opt-in does not change.
+
 ## Direct dependency inventory
 
 Versions below reflect the selected stable dependency set as of the review date.
 
 | Area | Dependency | Selected version | Compatibility / decision |
 |---|---|---:|---|
-| AndroidX | Core KTX | 1.19.1 | Current stable |
+| AndroidX | Core KTX | 1.19.1 | Current stable; requires compileSdk 37.0 or newer, while targetSdk can remain 36 |
 | AndroidX | AppCompat | 1.8.0 | Current stable |
 | AndroidX | ConstraintLayout | 2.2.2 | Current stable |
 | AndroidX | DynamicAnimation | 1.1.0 | Current stable |

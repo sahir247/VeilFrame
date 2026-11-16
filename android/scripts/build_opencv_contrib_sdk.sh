@@ -9,7 +9,7 @@
 # Exact Verified Toolchain:
 #   - Linux x86_64 (Ubuntu 22.04 / 24.04 or WSL2)
 #   - Eclipse Temurin JDK 17
-#   - Android SDK API 36 (build-tools 36.0.0)
+#   - Android SDK API 37.0 (build-tools 36.0.0)
 #   - Android NDK 27.2.12479018
 #   - CMake 3.22.1, Ninja, Python 3.10+, Git
 # ==============================================================================

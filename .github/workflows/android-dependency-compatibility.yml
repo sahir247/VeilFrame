@@ -29,7 +29,7 @@ jobs:
       - name: Set up stable Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-36 build-tools;36.0.0'
+          packages: 'platforms;android-37.0 build-tools;36.0.0'
 
       - name: Validate Gradle configuration and direct/transitive dependencies
         working-directory: android
