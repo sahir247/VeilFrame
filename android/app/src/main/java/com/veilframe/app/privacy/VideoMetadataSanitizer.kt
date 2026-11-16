@@ -156,17 +156,20 @@ object VideoMetadataSanitizer {
     fun buildFallbackArguments(
         inputPath: String,
         outputPath: String,
-        scrubAudio: Boolean = true
+        scrubAudio: Boolean = true,
+        stripExif: Boolean = true
     ): List<String> {
         val isWebm = outputPath.endsWith(".webm", ignoreCase = true)
         val cmd = mutableListOf<String>()
         cmd.add("-y")
         cmd.add("-i")
         cmd.add(inputPath)
-        cmd.add("-map_metadata")
-        cmd.add("-1")
-        cmd.add("-map_chapters")
-        cmd.add("-1")
+        if (stripExif) {
+            cmd.add("-map_metadata")
+            cmd.add("-1")
+            cmd.add("-map_chapters")
+            cmd.add("-1")
+        }
 
         if (isWebm) {
             cmd.add("-c:v")
@@ -235,7 +238,7 @@ object VideoMetadataSanitizer {
                 VideoSanitizationResult(VideoSanitizationStatus.TRANSCODED)
             } else {
                 Log.w(TAG, "Primary transcode failed with code ${session.returnCode}; trying metadata-only fallback.")
-                val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
+                val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio, stripExif)
                 val fallbackSession = FFmpegKit.executeWithArguments(fallbackArgs.toTypedArray())
                 if (ReturnCode.isSuccess(fallbackSession.returnCode)) {
                     Log.w(TAG, "Metadata-only fallback completed; requested temporal noise processing was not applied.")
@@ -289,7 +292,7 @@ object VideoMetadataSanitizer {
                         cont.resumeWith(Result.success(VideoSanitizationResult(VideoSanitizationStatus.TRANSCODED)))
                     } else {
                         Log.w(TAG, "Primary transcode failed with code ${completedSession.returnCode}; trying metadata-only fallback.")
-                        val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio)
+                        val fallbackArgs = buildFallbackArguments(inputPath, outputPath, scrubAudio, stripExif)
                         val fallbackSession = FFmpegKit.executeWithArgumentsAsync(fallbackArgs.toTypedArray()) { fallbackCompleted ->
                             if (cont.isActive) {
                                 val result = if (ReturnCode.isSuccess(fallbackCompleted.returnCode)) {
