@@ -15,10 +15,12 @@ import com.veilframe.app.navigation.ToolWorkStateContract
 import com.veilframe.app.pdf.operations.FlattenConfig
 import com.veilframe.app.pdf.operations.FlattenResult
 import com.veilframe.app.pdf.operations.PdfFlattener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -26,12 +28,28 @@ import java.io.File
  * Controller orchestrating interactive AcroForm & annotation flattening with
  * real-time Before vs After live visual comparison and document export.
  */
+/**
+ * Screen-only PDF flatten preview scale. PDF points are converted to pixels via DPI / 72.
+ * The maximum scale prevents tiny pages looking poor while the edge cap prevents huge previews.
+ */
+internal object PdfFlattenPreviewSizing {
+    fun dpi(pageWidthPoints: Float, pageHeightPoints: Float, maxEdgePx: Float = 1280f): Float {
+        if (pageWidthPoints <= 0f || pageHeightPoints <= 0f) return 72f
+        val scale = minOf(
+            1.5f,
+            maxEdgePx / pageWidthPoints,
+            maxEdgePx / pageHeightPoints
+        )
+        return scale * 72f
+    }
+}
+
 class PdfFlattenController(
     private val activity: AppCompatActivity,
     private val binding: LayoutPdfFlattenBinding,
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
-    private val onSavePdfRequest: (ByteArray, String) -> Unit,
+    private val onSavePdfRequest: (File, String) -> Unit,
     private val onNavigateBack: () -> Unit
 ) : ToolWorkStateContract {
 
@@ -107,11 +125,13 @@ class PdfFlattenController(
             binding.btnFlattenExecute.text = "Flattening Document..."
 
             taskTracker.launch(Dispatchers.IO) {
+                var tempOutFile: File? = null
                 try {
                     val cacheDir = File(activity.cacheDir, "pdf_flatten_temp")
                     if (!cacheDir.exists()) cacheDir.mkdirs()
-                    val tempOutFile = File(cacheDir, "flattened_${System.currentTimeMillis()}.pdf")
-                    val outUri = Uri.fromFile(tempOutFile)
+                    val outputFile = File(cacheDir, "flattened_${System.currentTimeMillis()}.pdf")
+                    tempOutFile = outputFile
+                    val outUri = Uri.fromFile(outputFile)
 
                     val result = pdfFlattener.flattenPdf(
                         context = activity,
@@ -125,24 +145,29 @@ class PdfFlattenController(
                         )
                     )
 
+                    val flattenedFile = outputFile.takeIf {
+                        result.success && it.isFile && it.length() > 0L
+                    }
+
                     withContext(Dispatchers.Main) {
                         isFlattening = false
                         binding.btnFlattenExecute.isEnabled = true
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
 
-                        if (result.success && tempOutFile.exists()) {
+                        if (flattenedFile != null) {
                             isSaved = true
-                            val bytes = tempOutFile.readBytes()
-                            tempOutFile.delete()
                             val base = activePdfName.removeSuffix(".pdf")
                             val exportName = "${base}_flattened.pdf"
-                            onSavePdfRequest(bytes, exportName)
+                            // Transfer the temporary file to PdfSuiteCoordinator; it streams it to SAF.
+                            onSavePdfRequest(flattenedFile, exportName)
+                            tempOutFile = null
                         } else {
-                            tempOutFile.delete()
                             val err = result.errorMessage ?: "Failed to flatten PDF"
                             Toast.makeText(activity, err, Toast.LENGTH_LONG).show()
                         }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         isFlattening = false
@@ -150,6 +175,8 @@ class PdfFlattenController(
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
                         Toast.makeText(activity, "Flatten failed: ${e.message}", Toast.LENGTH_LONG).show()
                     }
+                } finally {
+                    tempOutFile?.delete()
                 }
             }
         }
@@ -185,44 +212,58 @@ class PdfFlattenController(
         previewJob?.cancel()
         binding.pbFlattenLoading.visibility = View.VISIBLE
         previewJob = taskTracker.launch(Dispatchers.IO) {
+            var before: Bitmap? = null
+            var after: Bitmap? = null
+            var pageCount = 0
+            var fields = 0
             try {
-                val inputStream = activity.contentResolver.openInputStream(uri) ?: return@launch
-                val document = PDDocument.load(inputStream)
-                inputStream.close()
+                val document = activity.contentResolver.openInputStream(uri)?.use { PDDocument.load(it) }
+                    ?: throw IllegalStateException("Unable to open the selected PDF for preview")
 
-                val pageCount = document.numberOfPages
-                val acroForm = document.documentCatalog.acroForm
-                val fields = acroForm?.fields?.size ?: 0
-                formFieldCount = fields
+                document.use { doc ->
+                    pageCount = doc.numberOfPages
+                    check(pageCount > 0) { "PDF has no pages to preview" }
+                    val acroForm = doc.documentCatalog.acroForm
+                    fields = acroForm?.fields?.size ?: 0
+                    formFieldCount = fields
 
-                val renderer = PDFRenderer(document)
-                // Render before bitmap
-                val before = renderer.renderImageWithDPI(0, 150f)
+                    val renderer = PDFRenderer(doc)
+                    // Preview only needs screen resolution. Bound the longest edge to 1280 px;
+                    // 150-DPI rendering made large-format pages allocate very large bitmaps.
+                    val pageBox = doc.getPage(0).mediaBox
+                    val previewDpi = PdfFlattenPreviewSizing.dpi(pageBox.width, pageBox.height)
+                    before = renderer.renderImageWithDPI(0, previewDpi)
 
-                // Render simulated flattened after bitmap
-                acroForm?.flatten()
-                val after = renderer.renderImageWithDPI(0, 150f)
+                    // Render simulated flattened after bitmap using the same bounded resolution.
+                    acroForm?.flatten()
+                    after = renderer.renderImageWithDPI(0, previewDpi)
+                }
 
-                document.close()
-
+                coroutineContext.ensureActive()
                 withContext(Dispatchers.Main) {
                     binding.pbFlattenLoading.visibility = View.GONE
                     beforeBitmap = before
                     afterBitmap = after
+                    before = null
+                    after = null
 
                     binding.tvFlattenDocMeta.text = "$pageCount pages • $fields form fields detected"
                     binding.tvFlattenSummaryDesc.text =
                         if (fields > 0) "$fields interactive AcroForm fields detected. Flattening will bake them permanently into page streams."
                         else "No form fields detected. Annotations and markups will be permanently flattened."
 
-                    // Default to showing Before
                     showBeforePreview()
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     binding.pbFlattenLoading.visibility = View.GONE
                     binding.tvFlattenDocMeta.text = "Error rendering preview: ${e.message}"
                 }
+            } finally {
+                before?.takeUnless { it.isRecycled }?.recycle()
+                after?.takeUnless { it.isRecycled }?.recycle()
             }
         }
     }

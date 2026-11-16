@@ -30,6 +30,34 @@ class OpenCvSdkBuildConfigurationTest {
     }
 
     @Test
+    fun `OpenCV upstream packaging uses JDK 17 and VeilFrame tests use JDK 21`() {
+        val root = findProjectRoot()
+        val workflow = File(root, ".github/workflows/build-opencv-sdk.yml").readText()
+        val builder = File(root, "android/scripts/build_opencv_contrib_sdk.sh").readText()
+
+        val jdk17 = workflow.indexOf("- name: Set up JDK 17 for upstream OpenCV")
+        val build = workflow.indexOf("- name: Execute OpenCV Android SDK Build")
+        val jdk21 = workflow.indexOf("- name: Set up JDK 21 for VeilFrame and Robolectric")
+        val appCheck = workflow.indexOf("- name: Validate Application Compilation with Custom OpenCV SDK")
+
+        assertTrue(
+            "Upstream OpenCV generation must run on JDK 17 (old Kotlin plugin), not JDK 21",
+            jdk17 >= 0 && build > jdk17 &&
+                workflow.substring(jdk17, build).contains("java-version: '17'")
+        )
+        assertTrue(
+            "VeilFrame's Android and Robolectric tests must restore JDK 21 after SDK generation",
+            jdk21 > build && appCheck > jdk21 &&
+                workflow.substring(jdk21, appCheck).contains("java-version: '21'")
+        )
+        assertTrue(
+            "OpenCV build script must reject an incompatible JDK before native compilation",
+            builder.contains("JAVA_COMPILER_VERSION=\"\$(javac -version 2>&1)\"") &&
+                builder.contains("packaging requires JDK 17")
+        )
+    }
+
+    @Test
     fun `build script explicitly whitelists videoio module`() {
         val root = findProjectRoot()
         val buildScript = File(root, "android/scripts/build_opencv_contrib_sdk.sh")
@@ -274,20 +302,56 @@ class OpenCvSdkBuildConfigurationTest {
         val sdkBuildGradle = File(root, "android/opencv-sdk/build.gradle.kts")
         val appBuildGradle = File(root, "android/app/build.gradle.kts")
 
-        assertTrue("opencv-sdk/build.gradle.kts must exist", sdkBuildGradle.exists())
-        assertTrue("app/build.gradle.kts must exist", appBuildGradle.exists())
+        listOf(sdkBuildGradle, appBuildGradle).forEach { buildFile ->
+            assertTrue("$buildFile must exist", buildFile.exists())
+            val content = buildFile.readText()
+            assertTrue(
+                "$buildFile must opt in to ExperimentalUnsignedTypes through Kotlin compilerOptions",
+                content.contains("compilerOptions {") &&
+                    content.contains("optIn.addAll(\"kotlin.ExperimentalUnsignedTypes\"")
+            )
+        }
+    }
 
-        val sdkContent = sdkBuildGradle.readText()
-        val appContent = appBuildGradle.readText()
+
+    @Test
+    fun `Android modules use AGP built-in Kotlin and the modern DSL`() {
+        val root = findProjectRoot()
+        val gradleProperties = File(root, "android/gradle.properties").readText()
+        val rootBuild = File(root, "android/build.gradle.kts").readText()
+        val moduleBuilds = listOf(
+            File(root, "android/app/build.gradle.kts"),
+            File(root, "android/opencv-sdk/build.gradle.kts"),
+        )
 
         assertTrue(
-            "opencv-sdk build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes for MatAt.kt extensions",
-            sdkContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
+            "AGP built-in Kotlin must not be disabled",
+            !gradleProperties.contains("android.builtInKotlin=false")
         )
         assertTrue(
-            "app build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes",
-            appContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
+            "AGP modern DSL must not be disabled",
+            !gradleProperties.contains("android.newDsl=false")
         )
+        assertTrue(
+            "Kotlin 2.4.21 must remain explicitly selected using AGP's built-in Kotlin classpath",
+            rootBuild.contains("classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21\")")
+        )
+        assertTrue(
+            "Root build must not declare the external Kotlin Android plugin",
+            !rootBuild.contains("id(\"org.jetbrains.kotlin.android\")")
+        )
+        moduleBuilds.forEach { buildFile ->
+            val content = buildFile.readText()
+            assertTrue(
+                "$buildFile must use AGP's built-in Kotlin rather than apply the old plugin",
+                !content.contains("id(\"org.jetbrains.kotlin.android\")")
+            )
+            assertTrue(
+                "$buildFile must preserve Kotlin opt-ins under compilerOptions",
+                content.contains("compilerOptions {") &&
+                    content.contains("optIn.addAll(\"kotlin.ExperimentalUnsignedTypes\"")
+            )
+        }
     }
 
     @Test
@@ -312,23 +376,31 @@ class OpenCvSdkBuildConfigurationTest {
         val root = findProjectRoot()
         val rootProperties = File(root, "gradle/wrapper/gradle-wrapper.properties")
         val rootJar = File(root, "gradle/wrapper/gradle-wrapper.jar")
+        val androidProperties = File(root, "android/gradle/wrapper/gradle-wrapper.properties")
         val submissionWorkflow = File(root, ".github/workflows/dependency-submission.yml")
 
         assertTrue("Root gradle-wrapper.properties must exist", rootProperties.exists())
         assertTrue("Root gradle-wrapper.jar must exist", rootJar.exists())
-        assertTrue(
-            "Root gradle-wrapper.properties must specify gradle-8.10.2",
-            rootProperties.readText().contains("gradle-8.10.2")
-        )
+        assertTrue("Android gradle-wrapper.properties must exist", androidProperties.exists())
         assertTrue("dependency-submission.yml must exist", submissionWorkflow.exists())
+
+        val androidUrl = androidProperties.readText()
+        val gradleVersion = Regex("""gradle-(\d+\.\d+(?:\.\d+)?)-bin\.zip""")
+            .find(androidUrl)?.groupValues?.get(1)
+        assertTrue("Android wrapper must specify a versioned Gradle binary distribution", gradleVersion != null)
+        assertTrue(
+            "Root wrapper must use the same Gradle version as the Android wrapper ($gradleVersion)",
+            rootProperties.readText().contains("gradle-$gradleVersion-bin.zip")
+        )
+
         val submissionContent = submissionWorkflow.readText()
         assertTrue(
             "dependency-submission workflow must configure build-root-directory to ./android",
             submissionContent.contains("build-root-directory: ./android")
         )
         assertTrue(
-            "dependency-submission workflow must configure gradle-version 8.10.2",
-            submissionContent.contains("gradle-version: \"8.10.2\"")
+            "dependency-submission Gradle version must match Android wrapper ($gradleVersion)",
+            submissionContent.contains("gradle-version: \"$gradleVersion\"")
         )
     }
 

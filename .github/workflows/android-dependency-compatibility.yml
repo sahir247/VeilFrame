@@ -1,0 +1,38 @@
+name: Android Dependency Compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'android/**/*.gradle.kts'
+      - 'android/gradle.properties'
+      - 'android/gradle/wrapper/gradle-wrapper.properties'
+      - '.github/workflows/android-dependency-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-compatibility:
+    name: Resolve Android dependency graphs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up stable Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-37.0 build-tools;36.0.0'
+
+      - name: Validate Gradle configuration and direct/transitive dependencies
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace

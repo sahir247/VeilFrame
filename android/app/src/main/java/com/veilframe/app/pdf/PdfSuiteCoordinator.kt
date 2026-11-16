@@ -23,6 +23,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 /**
  * Modular coordinator orchestrating the universal PDF Operations Suite:
@@ -69,7 +71,7 @@ class PdfSuiteCoordinator(
     private var pendingWatermarkSaveBytes: ByteArray? = null
     private var pendingExtractTextSaveBytes: ByteArray? = null
     private var pendingExtractPagesSaveBytes: ByteArray? = null
-    private var pendingFlattenSaveBytes: ByteArray? = null
+    private var pendingFlattenSaveFile: File? = null
     private var pendingImpositionSaveBytes: ByteArray? = null
     private var pendingQuickToolSaveBytes: ByteArray? = null
 
@@ -172,12 +174,18 @@ class PdfSuiteCoordinator(
 
     private val flattenSaveLauncher: ActivityResultLauncher<Pair<String, String>> =
         activity.registerForActivityResult(CreateDocumentWithMime()) { destUri ->
-            val bytes = pendingFlattenSaveBytes
-            pendingFlattenSaveBytes = null
-            if (destUri != null && bytes != null) {
+            val file = pendingFlattenSaveFile
+            pendingFlattenSaveFile = null
+            if (destUri == null || file == null) {
+                file?.delete()
+            } else {
                 scope.launch(Dispatchers.IO) {
                     try {
-                        activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                        val output = activity.contentResolver.openOutputStream(destUri)
+                            ?: throw IOException("Unable to open destination document")
+                        output.use { destination ->
+                            file.inputStream().use { source -> source.copyTo(destination) }
+                        }
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Flattened PDF saved", Toast.LENGTH_LONG).show()
                         }
@@ -185,6 +193,8 @@ class PdfSuiteCoordinator(
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
+                    } finally {
+                        file.delete()
                     }
                 }
             }
@@ -341,9 +351,14 @@ class PdfSuiteCoordinator(
             binding = binding,
             scope = scope,
             onPickPdfRequest = { flattenPickerLauncher.launch(arrayOf("application/pdf")) },
-            onSavePdfRequest = { bytes, fileName ->
-                pendingFlattenSaveBytes = bytes
-                flattenSaveLauncher.launch(fileName to "application/pdf")
+            onSavePdfRequest = { file, fileName ->
+                pendingFlattenSaveFile = file
+                try {
+                    flattenSaveLauncher.launch(fileName to "application/pdf")
+                } catch (error: Exception) {
+                    pendingFlattenSaveFile = null
+                    throw error
+                }
             },
             onNavigateBack = { navigationController.navigateBackFromWorkspace() }
         ).apply { init() }

@@ -19,9 +19,6 @@
 -keep class org.opencv.** { *; }
 -dontwarn org.opencv.**
 
-# TensorFlow Lite (FairScan neural document edge segmentation)
--keep class org.tensorflow.lite.** { *; }
--dontwarn org.tensorflow.lite.**
 
 
 # ML Kit Barcode Scanning

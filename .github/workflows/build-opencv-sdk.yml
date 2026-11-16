@@ -23,10 +23,10 @@ on:
 jobs:
   build-opencv:
     name: Build OpenCV 4.14.0 Android SDK (ARM64 + x86_64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure Swap Space (Prevent Runner OOM)
         continue-on-error: true
@@ -39,16 +39,19 @@ jobs:
           sudo swapon /swapfile || true
           free -h
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      # OpenCV 4.14 generates a standalone Gradle 8.11.1 / Kotlin 1.8.20 project.
+      # Its Kotlin plugin derives jvmTarget from the build JDK, and does not
+      # recognize JVM 21. Use JDK 17 exclusively for upstream SDK generation.
+      - name: Set up JDK 17 for upstream OpenCV
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1 cmdline-tools;latest'
+          packages: 'platforms;android-37.0 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 cmdline-tools;latest'
 
       - name: Install Host Build Dependencies
         run: |
@@ -92,6 +95,15 @@ jobs:
           grep -q "STL=c++_static" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "ARM64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "X86_64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
+
+      # VeilFrame uses AGP 9 / Kotlin 2.4.21 and Robolectric 4.18.
+      # Restore JDK 21 after the upstream OpenCV Gradle project has finished.
+      # App bytecode stays at Java 17 (as configured in android/app/build.gradle.kts).
+      - name: Set up JDK 21 for VeilFrame and Robolectric
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android
@@ -143,7 +155,7 @@ jobs:
 
       - name: Upload Connected Android Test Reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: connected-android-test-reports
           path: |
@@ -153,7 +165,7 @@ jobs:
 
       - name: Upload Custom OpenCV SDK Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: veilframe-custom-opencv-sdk
           path: |

@@ -5,71 +5,57 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.SystemClock
 import android.util.Log
+import com.google.ai.edge.litert.Accelerator
+import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.TensorBuffer
 import com.veilframe.app.cv.core.CvRuntime
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import com.veilframe.app.cv.core.LiteRtEnvironment
+import com.veilframe.app.cv.core.LiteRtModelStorage
+import java.io.File
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
-import org.tensorflow.lite.gpu.GpuDelegateFactory
-import java.io.File
-import java.io.FileInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.channels.FileChannel
 
-/**
- * Continuous probability segmentation mask produced by the FairScan neural model.
- */
+/** Continuous probability segmentation mask produced by the FairScan neural model. */
 data class DocumentSegmentation(
     val probmap: FloatArray,
     override val width: Int = 256,
     override val height: Int = 256
 ) : com.veilframe.app.cv.document.Mask {
     fun get(x: Int, y: Int): Float = probmap[y * width + x]
-
     override fun toMat(): Mat = toProbMat()
 
-    /**
-     * Converts the continuous probability buffer to an OpenCV CV_32FC1 Mat.
-     * Values are normalized in [0.0..1.0].
-     */
     fun toProbMat(): Mat {
         if (!CvRuntime.isNativeAvailable) return Mat()
-        val mat = Mat(height, width, CvType.CV_32FC1)
-        mat.put(0, 0, probmap)
-        return mat
+        return Mat(height, width, CvType.CV_32FC1).also { it.put(0, 0, probmap) }
     }
 
-    /**
-     * Converts to an 8-bit binary OpenCV CV_8UC1 Mat thresholded at [threshold].
-     */
     fun toBinaryMat(threshold: Float = 0.5f): Mat {
         if (!CvRuntime.isNativeAvailable) return Mat()
-        val mask = Mat(height, width, CvType.CV_8UC1)
-        val data = ByteArray(width * height)
-        for (i in probmap.indices) {
-            data[i] = if (probmap[i] >= threshold) 255.toByte() else 0.toByte()
+        val data = ByteArray(width * height) { i ->
+            if (probmap[i] >= threshold) 255.toByte() else 0.toByte()
         }
-        mask.put(0, 0, data)
-        return mask
+        return Mat(height, width, CvType.CV_8UC1).also { it.put(0, 0, data) }
     }
 
-    /**
-     * Visual representation of the segmentation mask as an ARGB Bitmap.
-     */
     fun toBinaryBitmap(threshold: Float = 0.5f): Bitmap {
-        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(width * height)
         for (i in probmap.indices) {
-            val v = if (probmap[i] >= threshold) 255 else 0
-            pixels[i] = Color.rgb(v, v, v)
+            val value = if (probmap[i] >= threshold) 255 else 0
+            pixels[i] = Color.rgb(value, value, value)
         }
-        bmp.setPixels(pixels, 0, width, 0, 0, width, height)
-        return bmp
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        return bitmap
     }
 
     override fun equals(other: Any?): Boolean {
@@ -87,20 +73,16 @@ data class DocumentSegmentation(
     }
 }
 
-/**
- * Segmentation inference result including inference duration in milliseconds.
- */
 data class SegmentationResult(
     val segmentation: DocumentSegmentation,
     val inferenceTimeMs: Long
 )
 
 /**
- * DocumentSegmentationService — neural document boundary segmentation engine
- * using the official FairScan MobileNetV2 segmentation model (`fairscan-segmentation-model.tflite`).
+ * FairScan MobileNetV2 inference using LiteRT CompiledModel.
  *
- * Input: 256x256 RGB image normalized to [-1.0..1.0] via `(x / 127.5) - 1.0`.
- * Output: 256x256 Float32 probability map in [0.0..1.0].
+ * Model creation, warm-up, inference and close are confined to one background thread.
+ * The suspend APIs dispatch internally so callers never accidentally infer on the UI thread.
  */
 class DocumentSegmentationService(
     private val context: Context? = null
@@ -110,6 +92,8 @@ class DocumentSegmentationService(
         const val MODEL_ASSET_NAME = "fairscan-segmentation-model.tflite"
         const val INPUT_WIDTH = 256
         const val INPUT_HEIGHT = 256
+        private const val INPUT_FLOAT_COUNT = INPUT_WIDTH * INPUT_HEIGHT * 3
+        private const val OUTPUT_FLOAT_COUNT = INPUT_WIDTH * INPUT_HEIGHT
 
         @Volatile
         private var instance: DocumentSegmentationService? = null
@@ -117,265 +101,298 @@ class DocumentSegmentationService(
         fun getInstance(context: Context): DocumentSegmentationService {
             return instance ?: synchronized(this) {
                 instance ?: DocumentSegmentationService(context.applicationContext).also {
-                    it.initialize()
                     instance = it
+                    // Compile and warm the model off-main while the scanner is being prepared.
+                    it.prepareAsync()
                 }
             }
         }
     }
 
-    private var interpreter: Interpreter? = null
-    private var gpuDelegate: GpuDelegate? = null
-    private val inferenceLock = ReentrantLock()
+    private val inferenceThread = AtomicReference<Thread?>()
+    private val inferenceExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "vf-fairscan-litert").apply {
+            isDaemon = true
+            inferenceThread.set(this)
+        }
+    }
+    private val inferenceDispatcher = inferenceExecutor.asCoroutineDispatcher()
 
+    private var compiledModel: CompiledModel? = null
+    private var inputBuffers: List<TensorBuffer> = emptyList()
+    private var outputBuffers: List<TensorBuffer> = emptyList()
+    private val inputPixels = IntArray(INPUT_WIDTH * INPUT_HEIGHT)
+    private val inputFloats = FloatArray(INPUT_FLOAT_COUNT)
+
+    @Volatile
     var isModelAvailable: Boolean = false
         private set
+
+    @Volatile
     var isGpuAccelerated: Boolean = false
         private set
+
+    @Volatile
     var lastInferenceTimeMs: Long = 0L
         private set
 
-    /**
-     * Initializes the LiteRT interpreter from Android assets or explicit file.
-     * Tries LiteRT GPU Delegate first with FP16 precision loss allowed,
-     * falling back seamlessly to LiteRT CPU (XNNPACK).
-     */
-    fun initialize(modelFile: File? = null): Boolean {
+    private fun prepareAsync() {
+        inferenceExecutor.execute { initializeOnInferenceThread() }
+    }
+
+    /** Synchronous compatibility entry point; all model work still runs on the model thread. */
+    fun initialize(modelFile: File? = null): Boolean =
+        runOnInferenceThread { initializeOnInferenceThread(modelFile) }
+
+    private fun initializeOnInferenceThread(modelFile: File? = null): Boolean {
+        if (compiledModel != null) return true
+        val appContext = context?.applicationContext
+        if (modelFile == null && appContext == null) {
+            isModelAvailable = false
+            return false
+        }
+
+        val environment = try {
+            LiteRtEnvironment.get(appContext)
+        } catch (error: Throwable) {
+            Log.w(TAG, "LiteRT environment initialization failed", error)
+            isModelAvailable = false
+            return false
+        }
+        val gpuAvailable = runCatching {
+            environment.getAvailableAccelerators().contains(Accelerator.GPU)
+        }.getOrDefault(false)
+        val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
+
+        val modelPath = try {
+            if (modelFile?.isFile == true) modelFile.absolutePath
+            else LiteRtModelStorage.stageBundled(
+                checkNotNull(appContext), MODEL_ASSET_NAME, "fairscan"
+            ).absolutePath
+        } catch (error: Exception) {
+            isModelAvailable = false
+            Log.w(TAG, "Cannot prepare FairScan model file", error)
+            return false
+        }
+
+        fun create(options: CompiledModel.Options): CompiledModel =
+            CompiledModel.create(modelPath, options, environment)
+
+        data class ReadyModel(
+            val model: CompiledModel,
+            val inputs: List<TensorBuffer>,
+            val outputs: List<TensorBuffer>,
+            val gpu: Boolean
+        )
+
+        fun createAndWarm(options: CompiledModel.Options, gpu: Boolean): ReadyModel {
+            var model: CompiledModel? = null
+            var inputs: List<TensorBuffer> = emptyList()
+            var outputs: List<TensorBuffer> = emptyList()
+            try {
+                model = create(options)
+                inputs = model.createInputBuffers()
+                outputs = model.createOutputBuffers()
+                check(inputs.isNotEmpty() && outputs.isNotEmpty()) {
+                    "FairScan model must expose at least one input and one output tensor"
+                }
+                inputFloats.fill(0f)
+                inputs[0].writeFloat(inputFloats)
+                model.run(inputs, outputs)
+                outputs[0].readFloat() // Synchronize GPU work and compile first-run kernels.
+                return ReadyModel(model, inputs, outputs, gpu)
+            } catch (error: Throwable) {
+                outputs.forEach { runCatching { it.close() } }
+                inputs.forEach { runCatching { it.close() } }
+                runCatching { model?.close() }
+                throw error
+            }
+        }
+
         return try {
-            val byteBuffer = when {
-                modelFile != null && modelFile.exists() -> loadMappedFile(modelFile)
-                context != null -> loadMappedAsset(context, MODEL_ASSET_NAME)
-                else -> null
+            val ready = if (gpuAvailable) {
+                try {
+                    val gpuOptions = CompiledModel.Options(Accelerator.GPU, Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(gpuOptions, gpu = true)
+                } catch (gpuError: Throwable) {
+                    Log.w(TAG, "LiteRT GPU model setup failed; using CPU", gpuError)
+                    val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(cpuOptions, gpu = false)
+                }
+            } else {
+                val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
+                    cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                }
+                createAndWarm(cpuOptions, gpu = false)
             }
 
-            if (byteBuffer != null) {
-                var delegate: GpuDelegate? = null
-                try {
-                    val gpuDelegateOptions = GpuDelegateFactory.Options().apply {
-                        setPrecisionLossAllowed(true)
-                        setInferencePreference(GpuDelegateFactory.Options.INFERENCE_PREFERENCE_FAST_SINGLE_ANSWER)
-                    }
-                    delegate = GpuDelegate(gpuDelegateOptions)
-                    val gpuOptions = Interpreter.Options().apply {
-                        addDelegate(delegate)
-                    }
-                    interpreter = Interpreter(byteBuffer, gpuOptions)
-                    gpuDelegate = delegate
-                    isGpuAccelerated = true
-                    Log.i(TAG, "Loaded FairScan document segmentation with LiteRT GPU acceleration!")
-                } catch (t: Throwable) {
-                    Log.w(TAG, "LiteRT GPU acceleration bypassed (${t.message}), falling back to LiteRT CPU (XNNPACK)")
-                    delegate?.close()
-                    gpuDelegate = null
-                    val processors = Runtime.getRuntime().availableProcessors()
-                    val threads = minOf(4, maxOf(2, processors / 2))
-                    val cpuOptions = Interpreter.Options().apply {
-                        numThreads = threads
-                        setUseXNNPACK(true)
-                    }
-                    interpreter = Interpreter(byteBuffer, cpuOptions)
-                    isGpuAccelerated = false
-                    Log.i(TAG, "Loaded FairScan document segmentation with LiteRT CPU (threads=$threads)")
-                }
-                isModelAvailable = true
-                true
-            } else {
-                isModelAvailable = false
-                false
-            }
-        } catch (e: Throwable) {
-            Log.w(TAG, "LiteRT segmentation model initialization skipped: ${e.message}")
-            interpreter = null
-            gpuDelegate?.close()
-            gpuDelegate = null
+            compiledModel = ready.model
+            inputBuffers = ready.inputs
+            outputBuffers = ready.outputs
+            isGpuAccelerated = ready.gpu
+            isModelAvailable = true
+            Log.i(
+                TAG,
+                "FairScan CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
+            )
+            true
+        } catch (error: Throwable) {
+            compiledModel = null
+            inputBuffers = emptyList()
+            outputBuffers = emptyList()
             isGpuAccelerated = false
             isModelAvailable = false
+            Log.w(TAG, "LiteRT segmentation model initialization skipped: ${error.message}", error)
             false
         }
     }
 
-    /**
-     * Executes neural segmentation synchronously on an Android [Bitmap].
-     */
-    fun runSegmentationDirect(bitmap: Bitmap): SegmentationResult? {
-        val interp = interpreter ?: return null
-        return inferenceLock.withLock {
-            try {
-                val startTime = SystemClock.uptimeMillis()
+    /** Runs on the dedicated model dispatcher, never on the caller/UI thread. */
+    suspend fun runSegmentation(bitmap: Bitmap): SegmentationResult? = withContext(inferenceDispatcher) {
+        currentCoroutineContext().ensureActive()
+        if (!isModelAvailable && !initializeOnInferenceThread()) return@withContext null
+        val result = runBitmapOnInferenceThread(bitmap)
+        currentCoroutineContext().ensureActive()
+        result
+    }
 
-                // Resize bitmap to model dimensions
-                val scaledBitmap = if (bitmap.width == INPUT_WIDTH && bitmap.height == INPUT_HEIGHT) {
-                    bitmap
-                } else {
-                    Bitmap.createScaledBitmap(bitmap, INPUT_WIDTH, INPUT_HEIGHT, true)
-                }
+    /** Synchronous compatibility API for existing non-suspending CV callers. */
+    fun runSegmentationDirect(bitmap: Bitmap): SegmentationResult? =
+        runOnInferenceThread {
+            if (!isModelAvailable && !initializeOnInferenceThread()) null
+            else runBitmapOnInferenceThread(bitmap)
+        }
 
-                val pixels = IntArray(INPUT_WIDTH * INPUT_HEIGHT)
-                scaledBitmap.getPixels(pixels, 0, INPUT_WIDTH, 0, 0, INPUT_WIDTH, INPUT_HEIGHT)
-                if (scaledBitmap != bitmap) {
-                    scaledBitmap.recycle()
-                }
-
-                // Preprocess into NCHW/NHWC float buffer: (x / 127.5) - 1.0
-                val inputBuffer = ByteBuffer.allocateDirect(4 * INPUT_WIDTH * INPUT_HEIGHT * 3).apply {
-                    order(ByteOrder.nativeOrder())
-                    rewind()
-                }
-                for (pixel in pixels) {
-                    val r = ((pixel shr 16 and 0xFF) / 127.5f) - 1.0f
-                    val g = ((pixel shr 8 and 0xFF) / 127.5f) - 1.0f
-                    val b = ((pixel and 0xFF) / 127.5f) - 1.0f
-                    inputBuffer.putFloat(r)
-                    inputBuffer.putFloat(g)
-                    inputBuffer.putFloat(b)
-                }
-                inputBuffer.rewind()
-
-                val outputBuffer = ByteBuffer.allocateDirect(4 * INPUT_WIDTH * INPUT_HEIGHT).apply {
-                    order(ByteOrder.nativeOrder())
-                    rewind()
-                }
-
-                interp.run(inputBuffer, outputBuffer)
-                outputBuffer.rewind()
-
-                val probmap = FloatArray(INPUT_WIDTH * INPUT_HEIGHT)
-                outputBuffer.asFloatBuffer()[probmap]
-                for (i in probmap.indices) {
-                    probmap[i] = probmap[i].coerceIn(0f, 1f)
-                }
-
-                val inferenceTimeMs = SystemClock.uptimeMillis() - startTime
-                lastInferenceTimeMs = inferenceTimeMs
-                Log.i(TAG, "FairScan segmentation completed in ${inferenceTimeMs} ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU" else "LiteRT CPU"})")
-                SegmentationResult(
-                    segmentation = DocumentSegmentation(probmap, INPUT_WIDTH, INPUT_HEIGHT),
-                    inferenceTimeMs = inferenceTimeMs
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Segmentation inference failed on Bitmap", e)
-                null
+    private fun runBitmapOnInferenceThread(bitmap: Bitmap): SegmentationResult? {
+        val model = compiledModel ?: return null
+        val startedAt = SystemClock.elapsedRealtime()
+        try {
+            val scaled = if (bitmap.width == INPUT_WIDTH && bitmap.height == INPUT_HEIGHT) {
+                bitmap
+            } else {
+                Bitmap.createScaledBitmap(bitmap, INPUT_WIDTH, INPUT_HEIGHT, true)
             }
+            try {
+                scaled.getPixels(inputPixels, 0, INPUT_WIDTH, 0, 0, INPUT_WIDTH, INPUT_HEIGHT)
+            } finally {
+                if (scaled !== bitmap && !scaled.isRecycled) scaled.recycle()
+            }
+
+            for (i in inputPixels.indices) {
+                val pixel = inputPixels[i]
+                val offset = i * 3
+                inputFloats[offset] = ((pixel shr 16 and 0xFF) / 127.5f) - 1.0f
+                inputFloats[offset + 1] = ((pixel shr 8 and 0xFF) / 127.5f) - 1.0f
+                inputFloats[offset + 2] = ((pixel and 0xFF) / 127.5f) - 1.0f
+            }
+            return runInference(inputFloats, model, startedAt)
+        } catch (error: Exception) {
+            Log.e(TAG, "Segmentation inference failed on Bitmap", error)
+            return null
         }
     }
 
-    /**
-     * Suspend wrapper for neural segmentation on an Android [Bitmap].
-     */
-    suspend fun runSegmentation(bitmap: Bitmap): SegmentationResult? = runSegmentationDirect(bitmap)
+    /** Executes segmentation directly on an OpenCV Mat (BGR, RGBA, or grayscale). */
+    fun runSegmentationDirect(mat: Mat): SegmentationResult? =
+        runOnInferenceThread {
+            if (!isModelAvailable && !initializeOnInferenceThread()) return@runOnInferenceThread null
+            runMatOnInferenceThread(mat)
+        }
 
-    /**
-     * Executes neural segmentation directly and synchronously on an OpenCV [Mat] (BGR, RGBA, or Grayscale).
-     * Avoids intermediate Android Bitmap creation for camera analysis frames.
-     */
-    fun runSegmentationDirect(mat: Mat): SegmentationResult? {
-        val interp = interpreter ?: return null
+    suspend fun runSegmentation(mat: Mat): SegmentationResult? = withContext(inferenceDispatcher) {
+        currentCoroutineContext().ensureActive()
+        if (!isModelAvailable && !initializeOnInferenceThread()) return@withContext null
+        val result = runMatOnInferenceThread(mat)
+        currentCoroutineContext().ensureActive()
+        result
+    }
+
+    private fun runMatOnInferenceThread(mat: Mat): SegmentationResult? {
+        val model = compiledModel ?: return null
         if (!CvRuntime.isNativeAvailable || mat.nativeObj == 0L || mat.empty()) return null
-
-        return inferenceLock.withLock {
-            try {
-                val startTime = SystemClock.uptimeMillis()
-
-                val resized = Mat()
-                Imgproc.resize(mat, resized, Size(INPUT_WIDTH.toDouble(), INPUT_HEIGHT.toDouble()))
-
-                val rgb = Mat()
-                when (resized.channels()) {
-                    4 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_RGBA2RGB)
-                    1 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_GRAY2RGB)
-                    3 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_BGR2RGB)
-                    else -> resized.copyTo(rgb)
-                }
-                resized.release()
-
-                // Normalize: (x / 127.5) - 1.0
-                val rgbF = Mat()
-                rgb.convertTo(rgbF, CvType.CV_32FC3, 1.0 / 127.5, -1.0)
-                rgb.release()
-
-                val inputFloats = FloatArray(INPUT_WIDTH * INPUT_HEIGHT * 3)
-                rgbF.get(0, 0, inputFloats)
-                rgbF.release()
-
-                val inputBuffer = ByteBuffer.allocateDirect(4 * INPUT_WIDTH * INPUT_HEIGHT * 3).apply {
-                    order(ByteOrder.nativeOrder())
-                    asFloatBuffer().put(inputFloats)
-                    rewind()
-                }
-
-                val outputBuffer = ByteBuffer.allocateDirect(4 * INPUT_WIDTH * INPUT_HEIGHT).apply {
-                    order(ByteOrder.nativeOrder())
-                    rewind()
-                }
-
-                interp.run(inputBuffer, outputBuffer)
-                outputBuffer.rewind()
-
-                val probmap = FloatArray(INPUT_WIDTH * INPUT_HEIGHT)
-                outputBuffer.asFloatBuffer()[probmap]
-                for (i in probmap.indices) {
-                    probmap[i] = probmap[i].coerceIn(0f, 1f)
-                }
-
-                val inferenceTimeMs = SystemClock.uptimeMillis() - startTime
-                lastInferenceTimeMs = inferenceTimeMs
-                Log.i(TAG, "FairScan segmentation completed in ${inferenceTimeMs} ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU" else "LiteRT CPU"})")
-                SegmentationResult(
-                    segmentation = DocumentSegmentation(probmap, INPUT_WIDTH, INPUT_HEIGHT),
-                    inferenceTimeMs = inferenceTimeMs
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Segmentation inference failed on Mat", e)
-                null
+        val startedAt = SystemClock.elapsedRealtime()
+        val resized = Mat()
+        val rgb = Mat()
+        val rgbFloat = Mat()
+        try {
+            Imgproc.resize(mat, resized, Size(INPUT_WIDTH.toDouble(), INPUT_HEIGHT.toDouble()))
+            when (resized.channels()) {
+                4 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_RGBA2RGB)
+                1 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_GRAY2RGB)
+                3 -> Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_BGR2RGB)
+                else -> resized.copyTo(rgb)
             }
+            rgb.convertTo(rgbFloat, CvType.CV_32FC3, 1.0 / 127.5, -1.0)
+            rgbFloat.get(0, 0, inputFloats)
+            return runInference(inputFloats, model, startedAt)
+        } catch (error: Exception) {
+            Log.e(TAG, "Segmentation inference failed on Mat", error)
+            return null
+        } finally {
+            resized.release()
+            rgb.release()
+            rgbFloat.release()
         }
     }
 
-    /**
-     * Suspend wrapper for neural segmentation on an OpenCV [Mat].
-     */
-    suspend fun runSegmentation(mat: Mat): SegmentationResult? = runSegmentationDirect(mat)
+    private fun runInference(input: FloatArray, model: CompiledModel, startedAt: Long): SegmentationResult? {
+        return try {
+            inputBuffers[0].writeFloat(input)
+            model.run(inputBuffers, outputBuffers)
+            val probabilities = outputBuffers[0].readFloat()
+            check(probabilities.size == OUTPUT_FLOAT_COUNT) {
+                "Unexpected FairScan output size: ${probabilities.size}"
+            }
+            for (i in probabilities.indices) probabilities[i] = probabilities[i].coerceIn(0f, 1f)
+
+            val duration = SystemClock.elapsedRealtime() - startedAt
+            lastInferenceTimeMs = duration
+            Log.i(
+                TAG,
+                "FairScan segmentation completed in $duration ms (Backend: ${if (isGpuAccelerated) "LiteRT GPU+CPU" else "LiteRT CPU"})"
+            )
+            SegmentationResult(
+                DocumentSegmentation(probabilities, INPUT_WIDTH, INPUT_HEIGHT),
+                duration
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "Segmentation inference failed", error)
+            null
+        }
+    }
 
     fun close() {
-        inferenceLock.lock()
-        try {
-            interpreter?.close()
-            interpreter = null
-            gpuDelegate?.close()
-            gpuDelegate = null
-            isGpuAccelerated = false
-            isModelAvailable = false
-        } finally {
-            inferenceLock.unlock()
+        if (Thread.currentThread() === inferenceThread.get()) {
+            closeOnInferenceThread()
+        } else {
+            inferenceExecutor.execute { closeOnInferenceThread() }
         }
     }
 
-    private fun loadMappedAsset(context: Context, assetName: String): ByteBuffer? {
-        return try {
-            context.assets.openFd(assetName).use { fileDescriptor ->
-                FileInputStream(fileDescriptor.fileDescriptor).use { inputStream ->
-                    val fileChannel = inputStream.channel
-                    fileChannel.map(
-                        FileChannel.MapMode.READ_ONLY,
-                        fileDescriptor.startOffset,
-                        fileDescriptor.declaredLength
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Asset $assetName not found or unreadable: ${e.message}")
-            null
-        }
+    private fun closeOnInferenceThread() {
+        outputBuffers.forEach { runCatching { it.close() } }
+        inputBuffers.forEach { runCatching { it.close() } }
+        outputBuffers = emptyList()
+        inputBuffers = emptyList()
+        runCatching { compiledModel?.close() }
+        compiledModel = null
+        isGpuAccelerated = false
+        isModelAvailable = false
     }
 
-    private fun loadMappedFile(file: File): ByteBuffer? {
+    private fun <T> runOnInferenceThread(block: () -> T): T {
+        if (Thread.currentThread() === inferenceThread.get()) return block()
         return try {
-            FileInputStream(file).use { inputStream ->
-                inputStream.channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "File ${file.absolutePath} unreadable: ${e.message}")
-            null
+            inferenceExecutor.submit(Callable { block() }).get()
+        } catch (error: ExecutionException) {
+            throw (error.cause ?: error)
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw interrupted
         }
     }
 }

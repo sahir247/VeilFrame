@@ -1,11 +1,16 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "com.veilframe.app"
-    compileSdk = 35
+    // AndroidX Core 1.19.1 requires API 37; use the explicit 37.0 platform hash.
+    // targetSdk stays 36, so Android 17 runtime behavior is not opted into.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     val supportedAbis = setOf("arm64-v8a")
     val customAbis = (project.findProperty("targetAbi") as String?)
@@ -27,7 +32,7 @@ android {
     defaultConfig {
         applicationId = "com.veilframe.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 231
         versionName = "2.3.1"
 
@@ -112,14 +117,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + listOf(
-            "-opt-in=kotlin.ExperimentalUnsignedTypes",
-            "-opt-in=kotlin.RequiresOptIn",
-        )
-    }
-
     buildFeatures {
         viewBinding = true
         buildConfig = true
@@ -129,7 +126,7 @@ android {
         noCompress += listOf("tflite")
     }
 
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.2.12479018"
 
     externalNativeBuild {
         cmake {
@@ -159,6 +156,14 @@ android {
     }
 }
 
+// AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        optIn.addAll("kotlin.ExperimentalUnsignedTypes", "kotlin.RequiresOptIn")
+    }
+}
+
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
@@ -166,31 +171,31 @@ androidComponents {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     // Spring physics for M3 Expressive motion (VfSprings)
-    implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("androidx.fragment:fragment-ktx:1.6.2")
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("androidx.dynamicanimation:dynamicanimation:1.1.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
+    implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Full Mobile FFmpegKit GPL with all audio/video encoders (including libx264 and libx265)
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.9")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // AndroidX ExifInterface for native lossless and pixel-level EXIF privacy scrubbing
-    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 
     // AndroidX Media3 ExoPlayer for modern video studio playback and timeline seeking
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
 
     // AndroidX WebKit for secure offline WebView asset loading and security policy
-    implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.webkit:webkit:1.18.0")
 
     // ONNX Runtime Android for AI image super-resolution inference (Plugin EP ABI compatible)
 
@@ -198,7 +203,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.4")
 
     // CameraX — QR Studio scanner (camera preview + image analysis)
-    val cameraXVersion = "1.3.2"
+    val cameraXVersion = "1.6.2"
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
@@ -210,13 +215,12 @@ dependencies {
     // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
     implementation(project(":opencv-sdk"))
 
-    // Google AI Edge LiteRT Core & GPU runtimes (surgically replaces legacy TensorFlow Lite 2.17.0)
-    implementation("com.google.ai.edge.litert:litert:1.0.1")
-    implementation("com.google.ai.edge.litert:litert-gpu:1.0.1")
-    implementation("com.google.ai.edge.litert:litert-gpu-api:1.0.1")
+    // Google AI Edge LiteRT CompiledModel runtime and GPU accelerator (offline, bundled).
+    implementation("com.google.ai.edge.litert:litert:2.3.2")
+    implementation("com.google.ai.edge.litert:litert-gpu:2.3.2")
 
     // ViewPager2 — tab pager in QrStudioFragment
-    implementation("androidx.viewpager2:viewpager2:1.0.0")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
 
     // PDFBox Android & BouncyCastle (Offline PDF Engine: Decryption & Digital Signature Validation)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
@@ -224,8 +228,9 @@ dependencies {
         exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
         exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
     }
-    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.86")
 
     // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
@@ -239,14 +244,60 @@ dependencies {
         exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
     }
     implementation("org.apache.poi:poi-ooxml-full:6.0.0")
-    implementation("org.apache.commons:commons-compress:1.26.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("commons-io:commons-io:2.22.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("org.json:json:20260719")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("org.json:json:20260814")
+    testImplementation("org.robolectric:robolectric:4.18")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+}
+
+// Fast metadata-only compatibility check, independent of the native OpenCV build.
+// Configuration is resolved on demand and missing dependency coordinates fail the task.
+// Avoid artifact transforms here: OpenCV's custom SDK may not be staged yet.
+tasks.register("verifyDependencyResolution") {
+    group = "verification"
+    description = "Resolve Android compile/runtime dependency graphs before costly native builds."
+    doLast {
+        // Android Gradle Plugin names the resolvable test variants
+        // debugUnitTest* and debugAndroidTest*, not testDebug*.
+        // Check both compile and runtime classpaths, including test-only dependencies,
+        // without requiring the custom OpenCV AAR to have been built.
+        val scopes = listOf(
+            "debugCompileClasspath",
+            "debugRuntimeClasspath",
+            "releaseCompileClasspath",
+            "releaseRuntimeClasspath",
+            "debugUnitTestCompileClasspath",
+            "debugUnitTestRuntimeClasspath",
+            "debugAndroidTestCompileClasspath",
+            "debugAndroidTestRuntimeClasspath",
+        )
+        scopes.forEach { scope ->
+            val configuration = configurations.findByName(scope)
+                ?: throw GradleException(
+                    "Expected Android classpath configuration '$scope' was not created. " +
+                        "Available resolvable classpaths: " +
+                        configurations.filter { it.isCanBeResolved && it.name.endsWith("Classpath") }
+                            .joinToString { it.name }
+                )
+            check(configuration.isCanBeResolved) {
+                "Expected '$scope' to be a resolvable Android classpath"
+            }
+            val failures = configuration.incoming.resolutionResult.allDependencies
+                .filterIsInstance<org.gradle.api.artifacts.result.UnresolvedDependencyResult>()
+            if (failures.isNotEmpty()) {
+                val details = failures.joinToString("\n") { failure ->
+                    "${failure.requested.displayName}: ${failure.failure.message}"
+                }
+                throw GradleException("Unresolved dependencies in $scope:\n$details")
+            }
+            logger.lifecycle("Verified dependency graph: $scope")
+        }
+    }
 }
 
 // Fail closed when release packaging tasks are scheduled for :app without release credentials
