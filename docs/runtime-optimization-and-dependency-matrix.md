@@ -127,6 +127,8 @@ Version and compatibility checks were made against release documentation and art
 - [Android Gradle Plugin 9.3 release notes](https://developer.android.com/build/releases/agp-9-3-0-release-notes) — AGP 9.3.3 D8/R8 fixes, Gradle 9.5 minimum, Build Tools 36.0.0 and JDK 17.
 - [Android Gradle Plugin current releases and compatibility](https://developer.android.com/build/releases/about-agp) — current AGP 9.5.1 and past 9.3.3 release line.
 - [AndroidX stable release channel](https://developer.android.com/jetpack/androidx/versions/stable-channel) — Core, AppCompat, Fragment, CameraX, Media3 and WebKit release versions.
+- [Lifecycle release notes](https://developer.android.com/jetpack/androidx/releases/lifecycle) — 2.11.0 is stable; 2.12.0-alpha05 is still pre-release.
+- [Material Components Android releases](https://github.com/material-components/material-components-android/releases) — Material 1.14.0 stable release.
 - [LiteRT for Android](https://developers.google.com/edge/litert/android) — CompiledModel as the modern CPU/GPU/NPU API; LiteRT 2.3.2 is latest and supports API 23.
 - [LiteRT CompiledModel API reference](https://developers.google.com/edge/api/litert/kotlin/com/google/ai/edge/litert/CompiledModel) — model, tensor-buffer and accelerator APIs.
 - [ML Kit release notes](https://developers.google.com/ml-kit/release-notes) and [bundled barcode scanning setup](https://developers.google.com/ml-kit/vision/barcode-scanning/android) — bundled model versions and API requirements.
