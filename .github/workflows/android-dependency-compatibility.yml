@@ -49,6 +49,8 @@ jobs:
           mkdir -p ../dependency-audit
           ./gradlew buildEnvironment --no-daemon > ../dependency-audit/buildEnvironment.txt
           ./gradlew :app:buildEnvironment --no-daemon > ../dependency-audit/app-buildEnvironment.txt
+          echo '=== Buildscript/plugin Tink dependency chains ==='
+          grep -Ein -B 18 -A 5 'com.google.crypto.tink|tink:1\\.7\\.0|protobuf' ../dependency-audit/buildEnvironment.txt ../dependency-audit/app-buildEnvironment.txt || true
           ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon > ../dependency-audit/releaseRuntimeClasspath.txt
           ./gradlew :app:dependencies --configuration releaseCompileClasspath --no-daemon > ../dependency-audit/releaseCompileClasspath.txt
           for module in tink tink-android protobuf-javalite protobuf-java protobuf-kotlin-lite protobuf-kotlin; do
