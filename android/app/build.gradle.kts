@@ -150,15 +150,11 @@ android {
     }
 }
 
-// AGP 9 built-in Kotlin replaces the legacy kotlin-android plugin.
+// Keep the existing Java 17 bytecode target and compiler opt-ins.
 kotlin {
     compilerOptions {
-        optIn.addAll(
-            listOf(
-                "kotlin.ExperimentalUnsignedTypes",
-                "kotlin.RequiresOptIn",
-            )
-        )
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        optIn.addAll("kotlin.ExperimentalUnsignedTypes", "kotlin.RequiresOptIn")
     }
 }
 

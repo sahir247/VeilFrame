@@ -239,7 +239,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-37.0 build-tools;36.0.0'
+          packages: 'platforms;android-37 build-tools;36.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -309,7 +309,7 @@ jobs:
           yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
           sdkmanager --sdk_root="$SDK_ROOT" \
             "platform-tools" \
-            "platforms;android-37.0" \
+            "platforms;android-37" \
             "build-tools;36.0.0" \
             "cmake;3.22.1" \
             "ndk;26.1.10909125"
@@ -325,24 +325,14 @@ jobs:
           # Prefer an artifact built from this exact head or this feature branch.
           # If neither exists, a successful main-branch SDK is safe only when every
           # OpenCV SDK build input is identical between that artifact SHA and HEAD.
-          # The OpenCV SDK workflow is triggered by the same PR. Allow it time to
-          # register before considering a fallback artifact from main.
-          RUN_ID=""
-          RUNS=""
-          for attempt in $(seq 1 18); do
-            RUNS=$(gh run list --repo "${{ github.repository }}" \
-              --workflow "build-opencv-sdk.yml" \
-              --branch "$REQUIRED_BRANCH" \
-              --limit 100 \
-              --json databaseId,headSha,status,conclusion)
-            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
-              '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
-            if [ -n "$RUN_ID" ]; then
-              break
-            fi
-            echo "Waiting for the matching OpenCV SDK workflow to register ($attempt/18)..."
-            sleep 10
-          done
+          RUNS=$(gh run list --repo "${{ github.repository }}" \
+            --workflow "build-opencv-sdk.yml" \
+            --branch "$REQUIRED_BRANCH" \
+            --limit 100 \
+            --json databaseId,headSha,status,conclusion)
+
+          RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
@@ -1136,7 +1126,7 @@ jobs:
           yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
           sdkmanager --sdk_root="$SDK_ROOT" \
             "platform-tools" \
-            "platforms;android-37.0" \
+            "platforms;android-37" \
             "build-tools;36.0.0" \
             "cmake;3.22.1" \
             "ndk;26.1.10909125"
@@ -1147,7 +1137,7 @@ jobs:
           java -version
           sdkmanager --version
           echo "$ANDROID_HOME"
-          ls -la "$ANDROID_HOME/platforms/android-37.0"
+          ls -la "$ANDROID_HOME/platforms/android-37"
       - name: Stage Custom OpenCV 4.14.0 Android SDK
         shell: bash
         env:
