@@ -232,7 +232,13 @@ dependencies {
 
     // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
     implementation("org.apache.poi:poi:6.0.0")
-    implementation("org.apache.poi:poi-ooxml:6.0.0")
+    // Replace the reduced schema bundle: D8 cannot dex one of its nested schema
+    // classes because its declared nest host is absent from poi-ooxml-lite.
+    // Apache POI documents poi-ooxml-full as the drop-in alternative to lite.
+    implementation("org.apache.poi:poi-ooxml:6.0.0") {
+        exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
+    }
+    implementation("org.apache.poi:poi-ooxml-full:6.0.0")
     implementation("org.apache.commons:commons-compress:1.26.1")
 
     testImplementation("junit:junit:4.13.2")
