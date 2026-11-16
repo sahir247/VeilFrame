@@ -101,6 +101,7 @@ class PdfWatermarkController(
         previewJob = null
         basePageBitmap?.recycle()
         basePageBitmap = null
+        binding.ivWatermarkPreview.setImageDrawable(null)
         isApplying = false
         binding.pbWatermarkPreviewLoading.visibility = View.GONE
         binding.btnWatermarkApplyExport.isEnabled = true
