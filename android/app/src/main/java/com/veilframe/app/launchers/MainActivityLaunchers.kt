@@ -33,6 +33,7 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     private var pendingBgRemoverExportFile: File? = null
     private var pendingPdfSignatureSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
+    private var pendingPdfUnlockSaveFile: File? = null
 
     // Markdown file picker & Save As
     private val markdownPickerLauncher = activity.registerForActivityResult(
@@ -458,11 +459,23 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         CreateDocumentWithMime()
     ) { destUri ->
         val bytes = pendingPdfUnlockSaveBytes
+        val sourceFile = pendingPdfUnlockSaveFile
         pendingPdfUnlockSaveBytes = null
-        if (destUri != null && bytes != null) {
+        pendingPdfUnlockSaveFile = null
+        if (destUri != null && (bytes != null || sourceFile != null)) {
             activity.lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                    if (sourceFile != null) {
+                        if (!sourceFile.isFile || sourceFile.length() <= 0L ||
+                            !activity.safStorageManager.copyFileToUri(sourceFile, destUri)
+                        ) {
+                            throw java.io.IOException("Failed to copy the unlocked PDF to storage")
+                        }
+                    } else {
+                        activity.contentResolver.openOutputStream(destUri)?.use { out ->
+                            out.write(requireNotNull(bytes))
+                        } ?: throw java.io.IOException("Unable to open selected destination")
+                    }
                     withContext(Dispatchers.Main) {
                         Toast.makeText(activity, "Unlocked PDF saved to storage", Toast.LENGTH_LONG).show()
                     }
@@ -743,7 +756,14 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     }
 
     fun launchPdfUnlockSave(fileName: String, bytes: ByteArray) {
+        pendingPdfUnlockSaveFile = null
         pendingPdfUnlockSaveBytes = bytes
+        pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+    }
+
+    fun launchPdfUnlockSave(fileName: String, sourceFile: File) {
+        pendingPdfUnlockSaveBytes = null
+        pendingPdfUnlockSaveFile = sourceFile
         pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
     }
 
