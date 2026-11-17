@@ -22,6 +22,7 @@ import com.veilframe.app.pdf.operations.WatermarkType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -45,6 +46,7 @@ class PdfWatermarkController(
     private var activePdfUri: Uri? = null
     private var activePdfName: String = "document.pdf"
     private var basePageBitmap: Bitmap? = null
+    private var livePreviewBitmap: Bitmap? = null
     private var previewJob: Job? = null
     private var isApplying: Boolean = false
     private var isSaved: Boolean = false
@@ -59,6 +61,9 @@ class PdfWatermarkController(
     override fun discardAndReleaseAllResources() {
         taskTracker.cancelAll()
         previewJob?.cancel()
+        binding.ivWatermarkPreview.setImageDrawable(null)
+        livePreviewBitmap?.recycle()
+        livePreviewBitmap = null
         basePageBitmap?.recycle()
         basePageBitmap = null
         activePdfUri = null
@@ -100,9 +105,11 @@ class PdfWatermarkController(
     fun onPdfSelected(uri: Uri) {
         taskTracker.cancelAll()
         previewJob = null
+        binding.ivWatermarkPreview.setImageDrawable(null)
+        livePreviewBitmap?.recycle()
+        livePreviewBitmap = null
         basePageBitmap?.recycle()
         basePageBitmap = null
-        binding.ivWatermarkPreview.setImageDrawable(null)
         isApplying = false
         binding.pbWatermarkPreviewLoading.visibility = View.GONE
         binding.btnWatermarkApplyExport.isEnabled = true
@@ -125,21 +132,31 @@ class PdfWatermarkController(
         binding.pbWatermarkPreviewLoading.visibility = View.VISIBLE
         taskTracker.launch(Dispatchers.IO) {
             try {
-                val inputStream = activity.contentResolver.openInputStream(uri) ?: return@launch
-                val document = PDDocument.load(inputStream)
-                inputStream.close()
+                val preview = activity.contentResolver.openInputStream(uri)?.use { stream ->
+                    PDDocument.load(stream).use { document ->
+                        val pageCount = document.numberOfPages
+                        require(pageCount > 0) { "PDF contains no pages" }
+                        val box = document.getPage(0).mediaBox
+                        // Previews are display-only: cap the largest raster edge to 1280px.
+                        val dpi = PdfFlattenPreviewSizing.dpi(box.width, box.height)
+                        pageCount to PDFRenderer(document).renderImageWithDPI(0, dpi)
+                    }
+                } ?: throw java.io.IOException("Unable to open PDF for preview")
 
-                totalPages = document.numberOfPages
-                val renderer = PDFRenderer(document)
-                val bitmap = renderer.renderImageWithDPI(0, 150f)
-                document.close()
-
-                withContext(Dispatchers.Main) {
-                    binding.pbWatermarkPreviewLoading.visibility = View.GONE
-                    basePageBitmap = bitmap
-                    binding.tvWatermarkDocMeta.text = "$totalPages pages • Page 1 preview ready"
-                    binding.tvWatermarkPageIndicator.text = "PAGE 1 OF $totalPages"
-                    triggerLivePreviewUpdate()
+                val (pageCount, bitmap) = preview
+                var displayed = false
+                try {
+                    withContext(Dispatchers.Main) {
+                        binding.pbWatermarkPreviewLoading.visibility = View.GONE
+                        totalPages = pageCount
+                        basePageBitmap = bitmap
+                        displayed = true
+                        binding.tvWatermarkDocMeta.text = "$pageCount pages • Page 1 preview ready"
+                        binding.tvWatermarkPageIndicator.text = "PAGE 1 OF $pageCount"
+                        triggerLivePreviewUpdate()
+                    }
+                } finally {
+                    if (!displayed) bitmap.recycle()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -214,12 +231,30 @@ class PdfWatermarkController(
 
     private fun triggerLivePreviewUpdate() {
         val bmp = basePageBitmap ?: return
+        // Capture view values on Main and coalesce rapid slider/text updates.
+        val config = getCurrentConfig()
         previewJob?.cancel()
         previewJob = taskTracker.launch(Dispatchers.Default) {
-            val config = getCurrentConfig()
-            val watermarked = pdfWatermarker.renderLivePreview(bmp, config)
-            withContext(Dispatchers.Main) {
-                binding.ivWatermarkPreview.setImageBitmap(watermarked)
+            var rendered: Bitmap? = null
+            try {
+                delay(75)
+                if (bmp.isRecycled) return@launch
+                rendered = pdfWatermarker.renderLivePreview(bmp, config)
+                withContext(Dispatchers.Main) {
+                    val previous = livePreviewBitmap
+                    binding.ivWatermarkPreview.setImageBitmap(rendered)
+                    livePreviewBitmap = rendered
+                    rendered = null
+                    previous?.recycle()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: RuntimeException) {
+                // A workspace switch may recycle the source before a late preview starts.
+                android.util.Log.w("VeilFrame.PdfWatermark", "Preview rendering failed", error)
+            } finally {
+                // Cancellation after rendering but before the Main-thread swap must not leak a bitmap.
+                rendered?.recycle()
             }
         }
     }
