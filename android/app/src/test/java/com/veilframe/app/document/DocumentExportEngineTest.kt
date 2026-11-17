@@ -1,14 +1,25 @@
 package com.veilframe.app.document
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import java.io.IOException
+import java.util.UUID
+import java.util.zip.ZipFile
 
 /**
  * Unit tests for [DocumentExportEngine] options, dimensions math, orientation mapping,
  * and filename sanitization.
  */
+@RunWith(RobolectricTestRunner::class)
 class DocumentExportEngineTest {
 
     @Test
@@ -105,4 +116,71 @@ class DocumentExportEngineTest {
         assertEquals("image/png", DocumentExportEngine.ImageFormat.PNG.mimeType)
         assertEquals("image/webp", DocumentExportEngine.ImageFormat.WEBP.mimeType)
     }
+
+    @Test
+    fun `image zip streams each page with valid decodable entries`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val pages = (0 until 4).map { index ->
+            Bitmap.createBitmap(24 + index, 18 + index, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(if (index % 2 == 0) Color.RED else Color.BLUE)
+            }
+        }
+        val session = DocumentSession(title = "zip_stream_${UUID.randomUUID()}")
+        session.addPages(pages.map { ScannedPage(processedBitmapCache = it) })
+        var exported: java.io.File? = null
+        try {
+            val result = DocumentExportEngine.exportDocument(
+                context, session,
+                DocumentExportEngine.ExportOptions(
+                    format = DocumentExportEngine.OutputFormat.IMAGES_ZIP,
+                    imageFormat = DocumentExportEngine.ImageFormat.PNG
+                )
+            )
+            exported = result.file
+            assertEquals(4, result.pageCount)
+            ZipFile(result.file).use { zip ->
+                val entries = java.util.Collections.list(zip.entries())
+                assertEquals(4, entries.size)
+                entries.forEachIndexed { index, entry ->
+                    assertEquals("Page_${index + 1}.png", entry.name)
+                    val encoded = zip.getInputStream(entry).use { it.readBytes() }
+                    assertTrue(encoded.size > 8)
+                    val decoded = android.graphics.BitmapFactory.decodeByteArray(encoded, 0, encoded.size)
+                    assertTrue("Invalid PNG at page ${index + 1}", decoded != null)
+                    assertEquals(24 + index, decoded!!.width)
+                    assertEquals(18 + index, decoded.height)
+                    decoded.recycle()
+                }
+            }
+        } finally {
+            exported?.delete()
+            pages.forEach { it.recycle() }
+        }
+    }
+
+    @Test
+    fun `failed zip page removes incomplete archive instead of reporting success`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val validBitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+        val name = "zip_missing_${UUID.randomUUID()}"
+        val session = DocumentSession(title = name)
+        session.addPage(ScannedPage(processedBitmapCache = validBitmap))
+        session.addPage(ScannedPage(originalImagePath = "/nonexistent/veilframe-page.png"))
+        val exportDir = java.io.File(context.filesDir, "exports")
+        try {
+            try {
+                DocumentExportEngine.exportDocument(
+                    context, session,
+                    DocumentExportEngine.ExportOptions(format = DocumentExportEngine.OutputFormat.IMAGES_ZIP)
+                )
+                fail("An undecodable page must not produce an apparently valid ZIP")
+            } catch (expected: IOException) {
+                assertTrue(expected.message?.contains("page 2") == true)
+            }
+            assertFalse(exportDir.listFiles().orEmpty().any { it.name.startsWith(name) })
+        } finally {
+            validBitmap.recycle()
+        }
+    }
+
 }
