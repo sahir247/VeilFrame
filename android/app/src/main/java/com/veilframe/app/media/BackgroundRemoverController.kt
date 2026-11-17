@@ -1220,19 +1220,24 @@ class BackgroundRemoverController(
                 }
             }
             var success = false
+            var savedUri: Uri? = null
             try {
-                val savedUri = resolver.insert(collection, values)
+                val target = resolver.insert(collection, values)
                     ?: throw java.io.IOException("MediaStore insert failed")
-                resolver.openOutputStream(savedUri)?.use { out ->
-                    trimmed.compress(Bitmap.CompressFormat.PNG, 100, out)
+                savedUri = target
+                resolver.openOutputStream(target)?.use { out ->
+                    if (!trimmed.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                        throw java.io.IOException("Sticker PNG encoding failed")
+                    }
                 } ?: throw java.io.IOException("openOutputStream failed")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(savedUri, values, null, null)
+                    resolver.update(target, values, null, null)
                 }
                 success = true
             } catch (e: Exception) {
+                savedUri?.let { runCatching { resolver.delete(it, null, null) } }
                 Log.e(TAG, "Save sticker failed", e)
             } finally {
                 if (trimmed !== bmp) {
@@ -1260,7 +1265,9 @@ class BackgroundRemoverController(
                 val cacheDir = File(activity.cacheDir, "clipboard").apply { mkdirs() }
                 val cacheFile = File(cacheDir, "cutout_clipboard.png")
                 FileOutputStream(cacheFile).use { fos ->
-                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
+                        throw java.io.IOException("Cutout PNG encoding failed")
+                    }
                 }
                 val uri = FileProvider.getUriForFile(
                     activity,
@@ -1292,7 +1299,9 @@ class BackgroundRemoverController(
                 val cacheDir = File(activity.cacheDir, "shares").apply { mkdirs() }
                 val cacheFile = File(cacheDir, "${sourceFileName}_cutout.png")
                 FileOutputStream(cacheFile).use { fos ->
-                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
+                        throw java.io.IOException("Cutout PNG encoding failed")
+                    }
                 }
                 val uri = FileProvider.getUriForFile(
                     activity,
@@ -1332,16 +1341,19 @@ class BackgroundRemoverController(
         updateSaveCutoutButton()
 
         val isJpg = binding.chipFormatJpg.isChecked
+        // View state is owned by the main thread; never inspect it in the encoder worker.
+        val backgroundMode = binding.splitViewBgCompare.backgroundMode
+        val exportBaseName = sourceFileName
         scope.launch(Dispatchers.IO) {
             val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
             val ext = if (isJpg) "jpg" else "png"
             val mimeType = if (isJpg) "image/jpeg" else "image/png"
-            val outFile = File(exportDir, "${sourceFileName}_BGREMOVED_${System.currentTimeMillis()}.$ext")
+            val outFile = File(exportDir, "${exportBaseName}_BGREMOVED_${System.currentTimeMillis()}.$ext")
 
             val finalExportBmp = if (isJpg) {
                 val flat = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(flat)
-                val bgColor = when (binding.splitViewBgCompare.backgroundMode) {
+                val bgColor = when (backgroundMode) {
                     BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> Color.BLACK
                     else -> Color.WHITE
                 }
@@ -1349,7 +1361,7 @@ class BackgroundRemoverController(
                 canvas.drawBitmap(bmp, 0f, 0f, null)
                 flat
             } else {
-                when (binding.splitViewBgCompare.backgroundMode) {
+                when (backgroundMode) {
                     BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> {
                         val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(comp)
@@ -1370,13 +1382,15 @@ class BackgroundRemoverController(
 
             var savedToGallery = false
             var saveErrorMessage: String? = null
+            var galleryUri: Uri? = null
             try {
-                FileOutputStream(outFile).use { fos ->
-                    if (isJpg) {
-                        finalExportBmp.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+                FileOutputStream(outFile).buffered().use { output ->
+                    val encoded = if (isJpg) {
+                        finalExportBmp.compress(Bitmap.CompressFormat.JPEG, 90, output)
                     } else {
-                        finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                        finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, output)
                     }
+                    if (!encoded) throw java.io.IOException("Cutout image encoding failed")
                 }
 
                 // MediaStore gallery save
@@ -1396,8 +1410,9 @@ class BackgroundRemoverController(
                 }
                 val savedUri = resolver.insert(collection, values)
                     ?: throw java.io.IOException("MediaStore insert refused")
+                galleryUri = savedUri
                 resolver.openOutputStream(savedUri)?.use { out ->
-                    outFile.inputStream().use { inp -> inp.copyTo(out) }
+                    outFile.inputStream().buffered().use { inp -> inp.copyTo(out, 64 * 1024) }
                 } ?: throw java.io.IOException("openOutputStream returned null")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
@@ -1406,6 +1421,7 @@ class BackgroundRemoverController(
                 }
                 savedToGallery = true
             } catch (e: Exception) {
+                galleryUri?.let { runCatching { activity.contentResolver.delete(it, null, null) } }
                 Log.e(TAG, "Gallery save failed, falling back to SAF", e)
                 saveErrorMessage = e.message
             } finally {
