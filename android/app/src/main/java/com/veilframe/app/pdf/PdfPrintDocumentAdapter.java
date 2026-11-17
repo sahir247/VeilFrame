@@ -15,6 +15,7 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintDocumentInfo;
 import android.print.pdf.PrintedPdfDocument;
 
+import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
 import com.tom_roush.pdfbox.pdmodel.PDPage;
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
@@ -26,7 +27,11 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDSignatureField;
 import com.tom_roush.pdfbox.rendering.PDFRenderer;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -45,6 +50,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
 
     private final Context context;
     private final byte[] pdfBytes;
+    private File pdfFile;
     private final String password;
     private final String documentName;
     private final boolean isVerified;
@@ -66,6 +72,29 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
         this.signingDate = signingDate;
     }
 
+    /**
+     * File-backed print source for decrypted PDFs. Retains the legacy byte-array
+     * constructor for signature and other existing callers.
+     */
+    public PdfPrintDocumentAdapter(Context context, File pdfFile, String password, String documentName,
+                                   boolean isVerified, String signerName, String signingDate) {
+        this(context, (byte[]) null, password, documentName, isVerified, signerName, signingDate);
+        if (pdfFile == null) throw new IllegalArgumentException("pdfFile cannot be null");
+        this.pdfFile = pdfFile;
+    }
+
+    private InputStream openPdfInput() throws IOException {
+        if (pdfFile != null) return new FileInputStream(pdfFile);
+        if (pdfBytes == null) throw new IOException("PDF print input is missing");
+        return new ByteArrayInputStream(pdfBytes);
+    }
+
+    private PDDocument loadPdf(InputStream input) throws IOException {
+        return password != null && !password.isEmpty()
+                ? PDDocument.load(input, password, MemoryUsageSetting.setupTempFileOnly())
+                : PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly());
+    }
+
     @Override
     public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                          CancellationSignal cancellationSignal, LayoutResultCallback callback, Bundle extras) {
@@ -74,9 +103,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
             return;
         }
 
-        try (PDDocument doc = (password != null && !password.isEmpty())
-                ? PDDocument.load(new ByteArrayInputStream(pdfBytes), password)
-                : PDDocument.load(new ByteArrayInputStream(pdfBytes))) {
+        try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
             totalPages = doc.getNumberOfPages();
         } catch (Exception e) {
             callback.onLayoutFailed("Failed to read document for printing: " + e.getMessage());
@@ -96,9 +123,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
     @Override
     public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                         CancellationSignal cancellationSignal, WriteResultCallback callback) {
-        try (PDDocument doc = (password != null && !password.isEmpty())
-                ? PDDocument.load(new ByteArrayInputStream(pdfBytes), password)
-                : PDDocument.load(new ByteArrayInputStream(pdfBytes))) {
+        try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
 
             PDFRenderer renderer = new PDFRenderer(doc);
 
