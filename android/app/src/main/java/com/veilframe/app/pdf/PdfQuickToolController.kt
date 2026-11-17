@@ -2874,7 +2874,7 @@ class PdfQuickToolController(
     private suspend fun finishPdfOutputOnDisk(
         fileName: String,
         originalButtonText: String,
-        generate: (java.io.OutputStream) -> Boolean
+        generate: suspend (java.io.OutputStream) -> Boolean
     ) {
         val file = File.createTempFile("veilframe_pdf_", ".pdf", activity.cacheDir)
         var handedOff = false
