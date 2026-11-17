@@ -36,7 +36,8 @@ class PdfWatermarkController(
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
     private val onSavePdfRequest: (ByteArray, String) -> Unit,
-    private val onNavigateBack: () -> Unit
+    private val onNavigateBack: () -> Unit,
+    private val onSaveFileFromDiskRequest: ((File, String) -> Unit)? = null
 ) : ToolWorkStateContract {
 
     private val taskTracker = PdfTaskTracker(scope)
@@ -232,11 +233,12 @@ class PdfWatermarkController(
             binding.btnWatermarkApplyExport.isEnabled = false
             binding.btnWatermarkApplyExport.text = "Applying Watermark..."
 
+            // Read view configuration on the UI thread, before background processing.
+            val config = getCurrentConfig()
             taskTracker.launch(Dispatchers.IO) {
                 var tempOut: File? = null
                 try {
-                    val config = getCurrentConfig()
-                    val outputFile = File(activity.cacheDir, "watermarked_${System.currentTimeMillis()}.pdf")
+                    val outputFile = File.createTempFile("watermarked_", ".pdf", activity.cacheDir)
                     tempOut = outputFile
                     val outUri = Uri.fromFile(outputFile)
                     val result = pdfWatermarker.addWatermark(
@@ -246,20 +248,26 @@ class PdfWatermarkController(
                         config = config
                     )
 
-                    val outputBytes = if (result.success && outputFile.exists()) {
-                        outputFile.readBytes()
-                    } else null
+                    val complete = result.success && outputFile.isFile && outputFile.length() > 0L
+                    // Legacy consumers still receive bytes; the app itself uses a disk-backed save.
+                    val outputBytes = if (complete && onSaveFileFromDiskRequest == null) outputFile.readBytes() else null
 
                     withContext(Dispatchers.Main) {
                         isApplying = false
                         binding.btnWatermarkApplyExport.isEnabled = true
                         binding.btnWatermarkApplyExport.text = "Apply Watermark & Export"
 
-                        if (outputBytes != null) {
-                            isSaved = true
+                        if (complete) {
                             val base = activePdfName.removeSuffix(".pdf")
                             val exportName = "${base}_watermarked.pdf"
-                            onSavePdfRequest(outputBytes, exportName)
+                            val diskSave = onSaveFileFromDiskRequest
+                            if (diskSave != null) {
+                                diskSave(outputFile, exportName)
+                                tempOut = null // The SAF picker now owns the temporary file.
+                            } else {
+                                onSavePdfRequest(requireNotNull(outputBytes), exportName)
+                            }
+                            isSaved = true
                         } else {
                             val err = result.errorMessage ?: "Failed to watermark document"
                             Toast.makeText(activity, err, Toast.LENGTH_LONG).show()
