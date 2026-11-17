@@ -65,6 +65,15 @@ python scripts/profile_android_runtime.py --runs 7 --workflow "300 page PDF to P
 
 Use Perfetto slices with prefix `VF.` to determine whether PDFBox initialization, crypto provider, hierarchy inflation, haptic recursion, NCNN model load, or inference actually dominates runtime. Compare identical input files and thermal conditions. The manual `--workflow` snapshot is *not* an automated operation-duration benchmark.
 
+## PDF Unlock correctness hardening (17 November 2026)
+
+- **Versioned source ownership:** a monotonically increasing generation invalidates encrypted-PDF inspection results, password dialogs, legacy byte-array unlocks and file-backed unlock completions when the document is changed/discarded; reselecting the *same* URI cannot revive an old job.
+- **No stale file publication:** the file-backed decrypt, bounded preview render and metadata query all finish before the document claims ownership of the temporary PDF. Cancelled or stale jobs clean up their own preview and output file.
+- **Correct save status:** launching the SAF picker no longer means the PDF is saved; only the matching picker-write result updates the unsaved-work state.
+- **Corrupt input handling:** unparseable streams are failures rather than silently classified as unencrypted; the legacy Boolean inspection overload remains for compatibility.
+- **Regression coverage:** unit tests for clear, encrypted/password-required, and invalid PDF streams, plus streamed decryption producing an unencrypted readable PDF.
+- **Validation:** source changes committed; current head CI is **pending**, and real-device navigation, slow-provider cancellation, hardlink-fallback, print-after-discard and picker lifecycle tests are **not verified**.
+
 ## Priority 0 — finish and verify first
 
 1. **End-to-end export continuity:** review remaining PDF conversion and export paths still using in-memory buffers; signing, metadata, and form filling now use disk-backed exports. Route large outputs through file callbacks, then migrate controllers to a shared typed output contract; preserve simple small outputs where appropriate. Test picker cancel, navigation during export, >300-page PDF, 150/300 DPI image ZIP, free-space exhaustion, invalid PDFs, repeated exports, and ZIP integrity.
