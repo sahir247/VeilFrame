@@ -1170,7 +1170,17 @@ object VideoProcessor {
         )
         val activeSessionId = asyncSession?.sessionId ?: -1L
         onSessionId?.invoke(activeSessionId)
-        latch.await()
+        try {
+            latch.await()
+        } catch (interrupted: InterruptedException) {
+            // An interrupted export worker must not leave a native encoder running.
+            // Cancel only this session, never all FFmpegKit sessions globally.
+            if (activeSessionId >= 0L) {
+                FFmpegKit.cancel(activeSessionId)
+            }
+            Thread.currentThread().interrupt()
+            throw interrupted
+        }
         return resultHolder[0]
     }
 
