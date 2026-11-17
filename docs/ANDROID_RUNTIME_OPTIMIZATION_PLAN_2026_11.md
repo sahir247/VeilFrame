@@ -20,7 +20,7 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 ## Earlier FFmpeg follow-up (17 November 2026)
 
 - **FFmpeg worker interruption:** `VideoProcessor.runFFmpegSession` now cancels only its active FFmpegKit session when the blocking worker is interrupted, restores the interrupt flag, and propagates the interruption. This is **not yet CI/device verified**.
-- **Still outstanding:** Coroutine cancellation must reach synchronous FFmpeg workers; test cancellation races and cleanup. Typed file-backed PDF sinks, image export fidelity, NCNN/Vulkan profiling, startup benchmarking and real-device acceptance checks remain open.
+- **Still outstanding:** test coroutine-to-FFmpeg cancellation races and cleanup, complete cross-controller typed file-backed PDF sink consistency, full-resolution image export fidelity, native model/thermal profiling, startup benchmarking and real-device acceptance checks. Disk-backed unlocking and printing have now been added for picked PDFs; legacy byte callers remain.
 
 ## Earlier PDF/video implementation on PR #45 (17 November 2026)
 
@@ -35,6 +35,8 @@ This pass changes real code and adds host regression tests; **the latest commits
 | Subsystem | Code change | Status |
 | --- | --- | --- |
 | Document Scanner exports | Offload to IO; stream per-page PNG and PDF entries directly into ZIP instead of per-page `ByteArrayOutputStream`; check `Bitmap.compress` results; reject undecodable pages; delete partial PDF/ZIP/individual files on failure; check cancellation at each page | Implemented; CI/device pending |
+| PDF Unlock picker/export | Picked PDF stays a SAF URI rather than a full input byte array; decrypt using the existing stream engine into a private temp file; bounded 1280px first-page preview; save/share/print from disk. SAF owns a hardlink (or IO-thread copy fallback) until picker result; stale orphaned files aged over 24h are swept asynchronously; older `loadPdfBytes` integrations remain supported | Implemented; CI/device pending |
+| PDF printing | Java print adapter accepts file-backed input, uses PDFBox scratch files and always recycles rendered page bitmaps even when drawing fails | Implemented; CI/device pending |
 | PDF merge thumbnails | Bounded page-count LRU reusing `PdfRenderer` counts rather than repeatedly loading a PDF with PDFBox during RecyclerView binds; skip invalid image-as-PDF attempts | Implemented; CI/device pending |
 | PDF reorder thumbnails | Cache reordered-state flag across binds; recompute only when page order changes | Implemented; CI/device pending |
 | PDF OCR | Check cancellation between pages; always recycle the rendered page in `finally`; propagate coroutine cancellation instead of showing a failure toast | Implemented; CI/device pending |
@@ -44,10 +46,11 @@ This pass changes real code and adds host regression tests; **the latest commits
 | Startup and NCNN | Added Perfetto trace sections for PDFBox, crypto, layout, controller, listener, haptics and native model-load/inference; no speculative changes to native allocator/mutexes or model precision | Instrumented; actual bottleneck selection requires traces |
 | Profiling | `scripts/profile_android_runtime.py` now captures PSS distributions, battery temperature/level and a device-validated startup-baseline comparison with `--baseline` | Harness implemented; no device measurements supplied |
 
-**Tests added:** image ZIP decoding and exact entry counts; cleanup on a missing scanned page; parity of max-alpha ROI fusion for odd dimensions, offset placement, strip boundaries and invalid rectangles.
+**Tests added:** image ZIP decoding and exact entry counts; cleanup on a missing scanned page; parity of max-alpha ROI fusion for odd dimensions, offset placement, strip boundaries and invalid rectangles; six-page file-backed PDF unlock stream result and corrupt PDF rejection.
 
 **Unverified or dependent on device data (do not mark complete):**
 - True end-to-end abort of synchronous FFmpeg/native/C++ work across all service callers; concurrency and session-owner races under slow callback delivery.
+- File-backed PDF unlock is newly implemented but has not yet been stress-tested with password-protected 300-page inputs, scanner free-space failures, process death while the picker is open or asynchronous print cancellation. Verify it preserves cryptographic permission-removal semantics, page counts, and all buttons.
 - Full-resolution 48/108MP matting export beyond the present 4096px working cap. This requires separately tiled full-resolution alpha application, EXIF/ICC parity, and peak-memory tests; blindly raising the cap could introduce OOM.
 - Vulkan/CPU numerical parity, RIFE/RealSR model hot-switching, GPU fallback, model-load benchmarks, 10-minute thermal/battery, 4K rotated-video PII coordinates, PDF free-space/picker process-death scenarios, R8 signed release startup, and real-device p50/p95.
 - These test/device/release gates cannot be declared passed from source inspection.
