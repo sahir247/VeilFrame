@@ -187,10 +187,11 @@ class PdfSignatureController(
             val check = PdfUnlockEngine.checkEncryption(bytes)
             withContext(Dispatchers.Main) {
                 binding.progressPdfPreview.visibility = View.GONE
-                if (check is PdfInitialCheck.PasswordRequired) {
-                    showPasswordDialog(bytes, fileName)
-                } else {
-                    runInspection(bytes, fileName, "")
+                when (check) {
+                    is PdfInitialCheck.PasswordRequired -> showPasswordDialog(bytes, fileName)
+                    is PdfInitialCheck.Clear -> runInspection(bytes, fileName, "")
+                    is PdfInitialCheck.Failed ->
+                        Toast.makeText(activity, check.error, Toast.LENGTH_LONG).show()
                 }
             }
         }
