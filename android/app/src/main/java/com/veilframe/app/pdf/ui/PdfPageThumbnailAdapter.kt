@@ -31,6 +31,10 @@ class PdfPageThumbnailAdapter(
     private var totalPages: Int = 0
     private val pageOrder = mutableListOf<Int>()
     private var isOrderModified = false
+
+    private companion object {
+        const val ORDER_LABEL_PAYLOAD = "order_label_only"
+    }
     private val selectedPages = mutableSetOf<Int>()
     private val deletedPages = mutableSetOf<Int>()
     private val pageRotations = mutableMapOf<Int, Int>()
@@ -87,6 +91,8 @@ class PdfPageThumbnailAdapter(
         pageOrder.add(toPosition, item)
         refreshReorderedState()
         notifyItemMoved(fromPosition, toPosition)
+        val start = minOf(fromPosition, toPosition)
+        notifyItemRangeChanged(start, kotlin.math.abs(fromPosition - toPosition) + 1, ORDER_LABEL_PAYLOAD)
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
@@ -212,8 +218,15 @@ class PdfPageThumbnailAdapter(
     }
 
     override fun onBindViewHolder(holder: ThumbnailViewHolder, position: Int) {
-        val pageNumber = if (position in pageOrder.indices) pageOrder[position] else position + 1
-        holder.bind(pageNumber)
+        holder.bind(pageOrder[position], position)
+    }
+
+    override fun onBindViewHolder(
+        holder: ThumbnailViewHolder, position: Int, payloads: MutableList<Any>
+    ) {
+        if (payloads.isNotEmpty() && payloads.all { it == ORDER_LABEL_PAYLOAD }) {
+            holder.updateOrderLabel(pageOrder[position], position)
+        } else super.onBindViewHolder(holder, position, payloads)
     }
 
     inner class ThumbnailViewHolder(
@@ -225,19 +238,8 @@ class PdfPageThumbnailAdapter(
         private var boundUri: Uri? = null
         private var boundPageNumber: Int = RecyclerView.NO_POSITION
 
-        fun bind(pageNumber: Int) {
-            renderJob?.cancel()
-            val uri = pdfUri
-            boundUri = uri
-            boundPageNumber = pageNumber
-            binding.pbThumbLoading.visibility = View.GONE
-            binding.ivPageThumbnail.setImageDrawable(null)
-            if (uri == null) {
-                binding.ivPageThumbnail.setImageResource(R.drawable.ic_pdf_file)
-                return
-            }
-
-            val currentPos = bindingAdapterPosition
+        fun updateOrderLabel(pageNumber: Int, position: Int) {
+            val currentPos = position
             val isReordered = isOrderModified
             val isMoved = isReordered && currentPos >= 0 && (currentPos + 1 != pageNumber)
 
@@ -253,6 +255,22 @@ class PdfPageThumbnailAdapter(
             } else {
                 binding.tvSequenceBadge.visibility = View.GONE
             }
+
+        }
+
+        fun bind(pageNumber: Int, position: Int) {
+            renderJob?.cancel()
+            val uri = pdfUri
+            boundUri = uri
+            boundPageNumber = pageNumber
+            binding.pbThumbLoading.visibility = View.GONE
+            binding.ivPageThumbnail.setImageDrawable(null)
+            if (uri == null) {
+                binding.ivPageThumbnail.setImageResource(R.drawable.ic_pdf_file)
+                return
+            }
+
+            updateOrderLabel(pageNumber, position)
 
             val isSelected = pageNumber in selectedPages
             val isDeleted = pageNumber in deletedPages
