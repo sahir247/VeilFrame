@@ -135,16 +135,32 @@ class MainActivity : AppCompatActivity() {
     internal val launchers = com.veilframe.app.launchers.MainActivityLaunchers(this)
 
 
+    /** Visible in Perfetto startup traces; keeps dependency ordering unchanged. */
+    private inline fun <T> traceStartup(name: String, block: () -> T): T {
+        android.os.Trace.beginSection(name)
+        try {
+            return block()
+        } finally {
+            android.os.Trace.endSection()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
-        try {
-            java.security.Security.removeProvider("BC")
-            java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
-        } catch (ignored: Exception) {}
+        traceStartup("VF.PDFBox.resources") {
+            com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
+        }
+        traceStartup("VF.crypto.provider") {
+            try {
+                java.security.Security.removeProvider("BC")
+                java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+            } catch (ignored: Exception) {}
+        }
         com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        traceStartup("VF.inflate.MainActivity") {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        }
 
         // Seamless settings theme restoration: immediately reveal container to eliminate 1-frame background reveal
         val wasSettingsOpen = (savedInstanceState?.getBoolean(KEY_SETTINGS_OPEN, false) == true) || pendingSeamlessSettingsRestore
@@ -245,11 +261,13 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        initSubControllers()
-        initStudioWorkspaces()
-        setupListeners()
-        VeilFrameInteraction.bindWorkspace(binding.root)
-        com.veilframe.app.ui.haptics.SliderHapticsHelper.attachRecursively(binding.root)
+        traceStartup("VF.controllers.init") { initSubControllers() }
+        traceStartup("VF.workspaces.init") { initStudioWorkspaces() }
+        traceStartup("VF.listeners.init") { setupListeners() }
+        traceStartup("VF.interactions.bind") { VeilFrameInteraction.bindWorkspace(binding.root) }
+        traceStartup("VF.haptics.scan") {
+            com.veilframe.app.ui.haptics.SliderHapticsHelper.attachRecursively(binding.root)
+        }
 
         binding.layoutSettingsPanel.tvSettingsUpdateStatus.text = "Installed: ${com.veilframe.app.util.AppVersionProvider.getDisplayVersion(this)} • Local Engine"
 
