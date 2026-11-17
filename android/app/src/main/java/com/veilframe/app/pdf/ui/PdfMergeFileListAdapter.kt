@@ -143,7 +143,6 @@ class PdfMergeFileListAdapter(
             // Load first page thumbnail & page count
             binding.pbMergeThumb.visibility = View.VISIBLE
             renderJob = scope.launch(Dispatchers.IO) {
-                val bmp = thumbnailLoader.loadPageThumbnail(uri, 0, 160)
                 val mime = context.contentResolver.getType(uri) ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
@@ -151,15 +150,16 @@ class PdfMergeFileListAdapter(
                     uri.toString().endsWith(".png", true) ||
                     uri.toString().endsWith(".webp", true)
 
-                var pageCount = 1
-                if (!isImg) {
-                    try {
-                        context.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc ->
-                                pageCount = doc.numberOfPages
-                            }
-                        }
-                    } catch (_: Exception) {}
+                // Do not try to parse gallery images as PDFs. Reuse the renderer's page
+                // count (recorded during thumbnail generation) instead of opening each
+                // PDF through PDFBox on every RecyclerView bind.
+                val bmp = if (isImg) null else thumbnailLoader.loadPageThumbnail(uri, 0, 160)
+                val pageCount = if (isImg) 1 else thumbnailLoader.loadPageCount(uri) ?: try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        PDDocument.load(stream).use { it.numberOfPages }
+                    } ?: 1
+                } catch (_: Exception) {
+                    1
                 }
 
                 withContext(Dispatchers.Main) {
