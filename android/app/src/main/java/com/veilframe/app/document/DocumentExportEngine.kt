@@ -116,7 +116,7 @@ object DocumentExportEngine {
             options.format
         }
 
-        return when (effectiveFormat) {
+        when (effectiveFormat) {
             OutputFormat.SINGLE_PDF -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_$timestamp.pdf")
                 deletePartialOutput(outFile) { createSinglePdf(context, session, options, outFile) }
@@ -152,7 +152,7 @@ object DocumentExportEngine {
         val timestamp = System.currentTimeMillis()
         val bmp = page.getDisplayBitmap(context) ?: throw IllegalStateException("Page bitmap could not be decoded")
 
-        return when (options.format) {
+        when (options.format) {
             OutputFormat.SINGLE_PDF, OutputFormat.SEPARATE_PDFS -> {
                 val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.pdf")
                 val pdfDoc = PdfDocument()
