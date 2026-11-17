@@ -93,7 +93,8 @@ class PdfQuickToolController(
     private val scope: CoroutineScope,
     private val onPickFileRequest: (mimeTypes: Array<String>, multiple: Boolean) -> Unit,
     private val onSaveFileRequest: (ByteArray, String) -> Unit,
-    private val onNavigateBack: () -> Unit
+    private val onNavigateBack: () -> Unit,
+    private val onSaveFileFromDiskRequest: ((File, String) -> Unit)? = null
 ) : ToolWorkStateContract {
 
     enum class QuickMode(val title: String, val subtitle: String, val buttonText: String) {
@@ -2463,39 +2464,50 @@ class PdfQuickToolController(
                     }
                     QuickMode.PDF_TO_IMAGE -> {
                         val uri = selectedUris.first()
-                        val tempZip = File(activity.cacheDir, "quick_images_${System.currentTimeMillis()}.zip")
-                        var zipOk = false
+                        val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
+                        var handedOff = false
                         try {
-                            java.io.FileOutputStream(tempZip).buffered().use { fos ->
-                                ZipOutputStream(fos).use { zos ->
-                                    val result = imageConverter.pdfToImages(
-                                        context = activity,
-                                        inputUri = uri,
-                                        format = ImageFormat.WEBP,
-                                        dpi = 150,
-                                        outputCallback = { pageNum, bmp ->
-                                            val entry = ZipEntry("${base}_page_${pageNum}.webp")
-                                            zos.putNextEntry(entry)
-                                            bmp.compress(Bitmap.CompressFormat.WEBP, 90, zos)
-                                            zos.closeEntry()
+                            val zipOk = ZipOutputStream(tempZip.outputStream().buffered()).use { zip ->
+                                imageConverter.pdfToImages(
+                                    context = activity,
+                                    inputUri = uri,
+                                    format = ImageFormat.WEBP,
+                                    dpi = 150,
+                                    outputCallback = { pageNumber, bitmap ->
+                                        zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.webp"))
+                                        check(bitmap.compress(Bitmap.CompressFormat.WEBP, 90, zip)) {
+                                            "Could not compress PDF page $pageNumber"
                                         }
-                                    )
-                                    zipOk = result.isSuccess
-                                }
+                                        zip.closeEntry()
+                                    }
+                                ).isSuccess
                             }
-                            val zipBytes = if (zipOk && tempZip.isFile && tempZip.length() > 0L) {
+                            val complete = zipOk && tempZip.length() > 0L
+                            val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) {
                                 tempZip.readBytes()
                             } else null
-
                             withContext(Dispatchers.Main) {
-                                if (zipBytes != null) {
-                                    finishExecution(true, zipBytes, "${base}_images.zip", origText)
+                                isExecuting = false
+                                binding.btnQuickToolExecute.isEnabled = true
+                                binding.btnQuickToolExecute.text = origText
+                                if (complete) {
+                                    val exportName = "${base}_images.zip"
+                                    val diskSave = onSaveFileFromDiskRequest
+                                    if (diskSave != null) {
+                                        diskSave(tempZip, exportName)
+                                        handedOff = true
+                                    } else {
+                                        onSaveFileRequest(requireNotNull(legacyBytes), exportName)
+                                    }
+                                    isSaved = true
                                 } else {
-                                    finishExecution(false, ByteArray(0), "", origText)
+                                    Toast.makeText(
+                                        activity, "PDF-to-image export failed", Toast.LENGTH_LONG
+                                    ).show()
                                 }
                             }
                         } finally {
-                            tempZip.delete()
+                            if (!handedOff) tempZip.delete()
                         }
                     }
                     else -> {
@@ -2506,7 +2518,9 @@ class PdfQuickToolController(
                         }
                     }
                 }
-            } catch (e: Throwable) {
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isExecuting = false
                     binding.btnQuickToolExecute.isEnabled = true
