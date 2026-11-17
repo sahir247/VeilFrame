@@ -19,6 +19,7 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.DialogPdfPasswordBinding
 import com.veilframe.app.databinding.LayoutPdfUnlockBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import android.provider.OpenableColumns
 import java.util.Locale
 
 /**
@@ -39,12 +41,15 @@ class PdfUnlockController(
     private val onPickPdfRequest: () -> Unit,
     private val onSavePdfRequest: (ByteArray, String) -> Unit,
     private val onNavigateBack: () -> Unit,
-    private val onOpenPdfStudio: (() -> Unit)? = null
+    private val onOpenPdfStudio: (() -> Unit)? = null,
+    private val onSavePdfFromDiskRequest: ((File, String) -> Unit)? = null
 ) : ToolWorkStateContract {
 
     private val taskTracker = PdfTaskTracker(scope)
 
     private var originalPdfBytes: ByteArray? = null
+    private var originalPdfUri: Uri? = null
+    private var unlockedPdfFile: File? = null
     private var originalPdfName: String = "document.pdf"
     private var unlockedResult: PdfUnlockResult? = null
     private var currentPreviewBitmap: Bitmap? = null
@@ -53,9 +58,9 @@ class PdfUnlockController(
     private var isSaved: Boolean = false
     private var activeJob: Job? = null
 
-    override fun hasPickedMedia(): Boolean = originalPdfBytes != null
+    override fun hasPickedMedia(): Boolean = originalPdfBytes != null || originalPdfUri != null
 
-    override fun hasUnsavedWork(): Boolean = unlockedResult != null && !isSaved
+    override fun hasUnsavedWork(): Boolean = (unlockedResult != null || unlockedPdfFile != null) && !isSaved
 
     override val isProcessing: Boolean get() = isUnlocking
 
@@ -69,7 +74,10 @@ class PdfUnlockController(
         currentPreviewBitmap = null
 
         originalPdfBytes = null
+        originalPdfUri = null
         unlockedResult = null
+        unlockedPdfFile?.delete()
+        unlockedPdfFile = null
         isSaved = false
 
         binding.ivPdfUnlockPreview.setImageDrawable(null)
@@ -115,31 +123,45 @@ class PdfUnlockController(
         currentPreviewBitmap?.recycle()
         currentPreviewBitmap = null
         originalPdfBytes = null
+        originalPdfUri = uri
         unlockedResult = null
+        unlockedPdfFile?.delete()
+        unlockedPdfFile = null
         isUnlocking = false
         isSaved = false
-        binding.progressPdfUnlockPreview.visibility = View.GONE
+        binding.progressPdfUnlockPreview.visibility = View.VISIBLE
         binding.ivPdfUnlockPreview.setImageDrawable(null)
+        val fileName = queryDisplayName(uri) ?: "encrypted_document.pdf"
+        originalPdfName = fileName
+
+        // Inspect the picker URI directly: no full-document ByteArray on import.
         taskTracker.launch(Dispatchers.IO) {
-            val bytes = try {
-                activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            val encrypted = try {
+                activity.contentResolver.openInputStream(uri)?.use { input ->
+                    PdfUnlockEngine.checkEncryption(input)
+                } ?: throw java.io.IOException("Could not open selected PDF")
             } catch (e: Exception) {
-                null
-            }
-
-            val fileName = queryDisplayName(uri) ?: "encrypted_document.pdf"
-
-            withContext(Dispatchers.Main) {
-                if (bytes == null || bytes.isEmpty()) {
-                    Toast.makeText(activity, "Failed to read PDF file.", Toast.LENGTH_SHORT).show()
-                    return@withContext
+                withContext(Dispatchers.Main) {
+                    if (originalPdfUri == uri) {
+                        binding.progressPdfUnlockPreview.visibility = View.GONE
+                        Toast.makeText(activity, "Failed to inspect PDF: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                 }
-                loadPdfBytes(bytes, fileName)
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                if (originalPdfUri != uri) return@withContext
+                binding.progressPdfUnlockPreview.visibility = View.GONE
+                if (encrypted) showPasswordDialogForUri(uri, fileName)
+                else executeUnlockFromUri(uri, fileName, "")
             }
         }
     }
 
     fun loadPdfBytes(bytes: ByteArray, fileName: String) {
+        originalPdfUri = null
+        unlockedPdfFile?.delete()
+        unlockedPdfFile = null
         originalPdfBytes = bytes
         originalPdfName = fileName
         unlockedResult = null
@@ -167,6 +189,14 @@ class PdfUnlockController(
     }
 
     private fun showPasswordDialog(bytes: ByteArray, fileName: String) {
+        showPasswordDialogForSource(fileName) { password -> executeUnlock(bytes, fileName, password) }
+    }
+
+    private fun showPasswordDialogForUri(uri: Uri, fileName: String) {
+        showPasswordDialogForSource(fileName) { password -> executeUnlockFromUri(uri, fileName, password) }
+    }
+
+    private fun showPasswordDialogForSource(fileName: String, unlock: (String) -> Unit) {
         val dialogBinding = DialogPdfPasswordBinding.inflate(LayoutInflater.from(activity))
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogBinding.root)
@@ -188,7 +218,7 @@ class PdfUnlockController(
             }
             dialogBinding.tvPasswordError.visibility = View.GONE
             dialog.dismiss()
-            executeUnlock(bytes, fileName, pwd)
+            unlock(pwd)
         }
 
         dialog.show()
