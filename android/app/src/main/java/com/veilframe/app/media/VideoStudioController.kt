@@ -92,13 +92,13 @@ class VideoStudioController(
     val originalFile: File? get() = currentItem?.file
     val originalBytes: Long get() = currentItem?.originalBytes ?: 0L
     private var lastResultFile: File? = null
-    private var activeFFmpegSessionId: Long = -1L
+    @Volatile private var activeFFmpegSessionId: Long = -1L
 
     private var compressionJob: Job? = null
     private var piiScanJob: Job? = null
     private var reframeJob: Job? = null
     private var isScrubbing: Boolean = false
-    private var activeGeneration: Long = 0L
+    @Volatile private var activeGeneration: Long = 0L
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
     private lateinit var floatingDockController: FloatingDockStateController
 
@@ -1473,6 +1473,15 @@ class VideoStudioController(
         } catch (ignored: Throwable) {}
     }
 
+    private fun trackEncodingSession(id: Long, ownerJob: Job?) {
+        activeFFmpegSessionId = id
+        // A worker can be cancelled before FFmpegKit reports its session id.
+        // Cancel that late-started session rather than leaving its encoder running.
+        if (id >= 0L && ownerJob?.isActive == false) {
+            FFmpegKit.cancel(id)
+        }
+    }
+
     private fun handleExecute() {
         if (selectedUri == null) {
             onPickVideoRequest()
@@ -1520,6 +1529,7 @@ class VideoStudioController(
         VideoStudioForegroundService.start(activity, "Compressing ${itemsToProcess.size} video(s)")
 
         compressionJob = scope.launch(Dispatchers.IO) {
+            val ownerJob = kotlin.coroutines.coroutineContext[Job]
             try {
                 var successCount = 0
                 var exportedCount = 0
@@ -1589,7 +1599,7 @@ class VideoStudioController(
                         outFile = outFile,
                         editState = itemEditState,
                         outputConfig = outputConfig,
-                        onSessionId = { id -> activeFFmpegSessionId = id },
+                        onSessionId = { id -> trackEncodingSession(id, ownerJob) },
                         onProgressPhase = { phaseLabel, encMs, pct ->
                             val encSec = encMs / 1000.0
                             VideoStudioForegroundService.updateProgress(
@@ -2497,6 +2507,7 @@ class VideoStudioController(
         val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
+            val ownerJob = kotlin.coroutines.coroutineContext[Job]
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
@@ -2506,7 +2517,7 @@ class VideoStudioController(
                     srcFile = item.file,
                     outFile = tempStabilizedFile,
                     eisConfig = config,
-                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onSessionId = { sid -> trackEncodingSession(sid, ownerJob) },
                     onProgressPhase = { phaseLabel, _, pct ->
                         if (activeGeneration != gen) return@stabilizeVideoStandalone
                         launch(Dispatchers.Main) {
@@ -2807,6 +2818,7 @@ class VideoStudioController(
         val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
+            val ownerJob = kotlin.coroutines.coroutineContext[Job]
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
@@ -2816,7 +2828,7 @@ class VideoStudioController(
                     srcFile = item.file,
                     outFile = tempRedactedFile,
                     filterChain = filterChain,
-                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onSessionId = { sid -> trackEncodingSession(sid, ownerJob) },
                     onProgress = { phaseLabel, _, pct ->
                         if (activeGeneration != gen) return@redactVideoStandalone
                         launch(Dispatchers.Main) {
