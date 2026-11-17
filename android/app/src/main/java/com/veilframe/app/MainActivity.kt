@@ -148,6 +148,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A system picker can outlive the process. Reclaim only old orphaned
+        // private unlock outputs; never touch recent files used by live exports.
+        lifecycleScope.launch(Dispatchers.IO) {
+            val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+            cacheDir.listFiles()?.forEach { candidate ->
+                if (candidate.isFile && candidate.lastModified() < cutoff &&
+                    candidate.name.endsWith(".pdf") &&
+                    (candidate.name.startsWith("veilframe_unlocked_") ||
+                        candidate.name.startsWith("veilframe_unlock_save_"))
+                ) {
+                    candidate.delete()
+                }
+            }
+        }
         traceStartup("VF.PDFBox.resources") {
             com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
         }
