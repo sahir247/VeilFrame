@@ -75,6 +75,34 @@ def summarize(samples: list[int]) -> dict[str, float | int] | None:
     }
 
 
+def summarize_metric(samples: list[int]) -> dict[str, float | int] | None:
+    """Unit-independent distribution used for memory and jank snapshots."""
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    return {
+        "runs": len(ordered),
+        "median": statistics.median(ordered),
+        "p95": ordered[math.ceil(len(ordered) * 0.95) - 1],
+        "max": ordered[-1],
+    }
+
+
+def capture_battery(serial: str | None) -> dict[str, int | float | None]:
+    """Snapshot battery and temperature, if reported by the device vendor."""
+    try:
+        output = adb(serial, "shell", "dumpsys", "battery")
+        temperature_decicelsius = extract_int(r"^\s*temperature:\s*(\d+)", output)
+        return {
+            "level_percent": extract_int(r"^\s*level:\s*(\d+)", output),
+            "temperature_celsius": (
+                temperature_decicelsius / 10.0 if temperature_decicelsius is not None else None
+            ),
+        }
+    except (RuntimeError, subprocess.TimeoutExpired):
+        return {"level_percent": None, "temperature_celsius": None}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", help="adb device serial; omit for single connected device")
@@ -83,6 +111,7 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--settle-seconds", type=float, default=1.5)
     parser.add_argument("--workflow", help="Optional manual scenario to capture after startups")
+    parser.add_argument("--baseline", type=Path, help="Previously saved report to compare against; requires matching device, package, SDK")
     parser.add_argument("--out", type=Path, default=Path("android_runtime_profile.json"))
     args = parser.parse_args()
     if args.runs < 1 or args.settle_seconds < 0:
@@ -109,6 +138,7 @@ def main() -> None:
             "cold_start_total_ms": total_ms,
             "memory": capture_meminfo(args.serial, args.package),
             "graphics": capture_gfxinfo(args.serial, args.package),
+            "battery": capture_battery(args.serial),
         })
         print(f"Cold launch {number}/{args.runs}: {total_ms} ms")
 
@@ -119,6 +149,14 @@ def main() -> None:
         "component": component,
         "method": "am force-stop + am start -W; PSS measured after settle",
         "cold_start": summarize([int(x["cold_start_total_ms"]) for x in launches]),
+        "memory_pss_kib": summarize_metric([
+            int(x["memory"]["total_pss_kib"]) for x in launches
+            if x["memory"]["total_pss_kib"] is not None
+        ]),
+        "native_pss_kib": summarize_metric([
+            int(x["memory"]["native_pss_kib"]) for x in launches
+            if x["memory"]["native_pss_kib"] is not None
+        ]),
         "launches": launches,
     }
     if args.workflow:
@@ -130,6 +168,26 @@ def main() -> None:
             "label": args.workflow,
             "memory": capture_meminfo(args.serial, args.package),
             "graphics": capture_gfxinfo(args.serial, args.package),
+            "battery": capture_battery(args.serial),
+        }
+
+    if args.baseline:
+        previous = json.loads(args.baseline.read_text(encoding="utf-8"))
+        if previous.get("device") != device or previous.get("package") != args.package:
+            parser.error("baseline device/package differs; do not compare incompatible runs")
+        old = previous.get("cold_start") or {}
+        new = report["cold_start"] or {}
+        old_median = old.get("median_ms")
+        new_median = new.get("median_ms")
+        if not isinstance(old_median, (int, float)) or old_median <= 0:
+            parser.error("baseline has no valid positive startup median")
+        report["comparison"] = {
+            "baseline": str(args.baseline),
+            "cold_start_median_delta_ms": new_median - old_median,
+            "cold_start_median_delta_percent": round(
+                (new_median - old_median) / old_median * 100, 2
+            ),
+            "note": "Negative deltas are improvements; verify identical APK mode, workload and thermal conditions.",
         }
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
