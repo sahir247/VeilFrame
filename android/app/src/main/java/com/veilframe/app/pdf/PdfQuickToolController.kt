@@ -75,7 +75,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Collections
@@ -2132,7 +2131,6 @@ class PdfQuickToolController(
 
         activeJob = launchTransient {
             try {
-                val outStream = ByteArrayOutputStream()
                 val base = operationBase
 
                 when (operationMode) {
@@ -2379,26 +2377,43 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.SIGN -> {
-                        val uri = selectedUris.first()
+                        val uri = operationUris.first()
                         val canvasPlacements = withContext(Dispatchers.Main) {
-                            binding.pdfSignCanvasView.getAllPlacements()
+                            binding.pdfSignCanvasView.getAllPlacements().toList()
                         }
-
-                        val result = if (canvasPlacements.isNotEmpty()) {
-                            pdfSigner.signPdfWithItems(
-                                inputUri = uri,
-                                outputStream = outStream,
-                                items = canvasPlacements
-                            )
-                        } else {
-                            val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-                            val sigBmp = withContext(Dispatchers.Main) {
-                                binding.viewSignaturePad.getSignatureBitmap(
-                                    targetColor = selectedSignColor,
-                                    opacity = opacity
-                                )
+                        if (canvasPlacements.isNotEmpty()) {
+                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
+                                pdfSigner.signPdfWithItems(
+                                    inputUri = uri, outputStream = output, items = canvasPlacements
+                                ).success
                             }
-                            if (sigBmp == null) {
+                        } else {
+                            // Read all view controls on Main before invoking PDFBox on IO.
+                            val inputs = withContext(Dispatchers.Main) {
+                                val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+                                val bitmap = binding.viewSignaturePad.getSignatureBitmap(
+                                    targetColor = selectedSignColor, opacity = opacity
+                                )
+                                val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
+                                val pages = when {
+                                    binding.chipSignPageFirst.isChecked -> listOf(0)
+                                    binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
+                                    binding.chipSignPageCustom.isChecked -> {
+                                        val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                                        listOf((requested - 1).coerceIn(0, lastPage))
+                                    }
+                                    else -> listOf(lastPage)
+                                }
+                                val width = 180f * signScaleFactor
+                                val height = 60f * signScaleFactor
+                                val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+                                val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+                                bitmap to pages.map { page ->
+                                    SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
+                                }
+                            }
+                            val bitmap = inputs.first
+                            if (bitmap == null) {
                                 withContext(Dispatchers.Main) {
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
@@ -2407,43 +2422,12 @@ class PdfQuickToolController(
                                 }
                                 return@launchTransient
                             }
-
-                            val targetPages = when {
-                                binding.chipSignPageFirst.isChecked -> listOf(0)
-                                binding.chipSignPageAll.isChecked -> (0 until primaryDocPages).toList()
-                                binding.chipSignPageCustom.isChecked -> {
-                                    val inputPage = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                                    listOf((inputPage - 1).coerceIn(0, primaryDocPages - 1))
-                                }
-                                else -> listOf((primaryDocPages - 1).coerceAtLeast(0))
+                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
+                                pdfSigner.addSignatureBitmaps(
+                                    inputUri = uri, outputStream = output,
+                                    signatureBitmap = bitmap, placements = inputs.second
+                                ).success
                             }
-
-                            val sigWidth = 180f * signScaleFactor
-                            val sigHeight = 60f * signScaleFactor
-                            val xPct = (signPosXPercent / 100f).coerceIn(0f, 1f)
-                            val yPct = (signPosYPercent / 100f).coerceIn(0f, 1f)
-                            val posX = ((595f - sigWidth) * xPct).coerceAtLeast(0f)
-                            val posY = ((842f - sigHeight) * yPct).coerceAtLeast(0f)
-
-                            val placements = targetPages.map { pIndex ->
-                                SignaturePlacement(
-                                    pageIndex = pIndex,
-                                    x = posX,
-                                    y = posY,
-                                    width = sigWidth,
-                                    height = sigHeight
-                                )
-                            }
-
-                            pdfSigner.addSignatureBitmaps(
-                                inputUri = uri,
-                                outputStream = outStream,
-                                signatureBitmap = sigBmp,
-                                placements = placements
-                            )
-                        }
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.success, outStream.toByteArray(), "${base}_signed.pdf", origText)
                         }
                     }
                     QuickMode.HTML_TO_PDF -> {
