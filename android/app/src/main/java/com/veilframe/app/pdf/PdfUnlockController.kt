@@ -390,40 +390,66 @@ class PdfUnlockController(
     }
 
     private fun saveUnlockedPdf() {
-        val res = unlockedResult ?: return
+        val file = unlockedPdfFile
+        val result = unlockedResult
+        if (file == null && result == null) return
         val outName = if (originalPdfName.endsWith(".pdf", ignoreCase = true)) {
             originalPdfName.substring(0, originalPdfName.length - 4) + "_unlocked.pdf"
         } else {
             "${originalPdfName}_unlocked.pdf"
         }
 
-        isSaved = true
-        onSavePdfRequest(res.unlockedBytes, outName)
+        if (file != null) {
+            val diskSave = onSavePdfFromDiskRequest
+            if (diskSave != null) {
+                diskSave(file, outName)
+                isSaved = true
+            } else {
+                // Preserve existing byte-only integrations without blocking Main.
+                taskTracker.launch(Dispatchers.IO) {
+                    val bytes = file.readBytes()
+                    withContext(Dispatchers.Main) {
+                        onSavePdfRequest(bytes, outName)
+                        isSaved = true
+                    }
+                }
+            }
+        } else {
+            onSavePdfRequest(requireNotNull(result).unlockedBytes, outName)
+            isSaved = true
+        }
     }
 
     private fun shareUnlockedPdf() {
-        val res = unlockedResult ?: return
+        val file = unlockedPdfFile
+        val result = unlockedResult
+        if (file == null && result == null) return
         taskTracker.launch(Dispatchers.IO) {
             try {
-                val shareDir = File(activity.cacheDir, "shared_pdfs").apply { mkdirs() }
-                val shareFile = File(shareDir, "unlocked_$originalPdfName")
-                FileOutputStream(shareFile).use { it.write(res.unlockedBytes) }
-
-                val uri = FileProvider.getUriForFile(
-                    activity,
-                    "${activity.packageName}.provider",
-                    shareFile
+                val shareFile = if (file != null) {
+                    file
+                } else {
+                    val shareDir = File(activity.cacheDir, "shared_pdfs").apply { mkdirs() }
+                    File(shareDir, "unlocked_$originalPdfName").also { target ->
+                        FileOutputStream(target).buffered().use { it.write(requireNotNull(result).unlockedBytes) }
+                    }
+                }
+                if (!shareFile.isFile || shareFile.length() == 0L) {
+                    throw java.io.IOException("Unlocked PDF is missing")
+                }
+                val shareUri = FileProvider.getUriForFile(
+                    activity, "${activity.packageName}.provider", shareFile
                 )
-
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_STREAM, shareUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-
                 withContext(Dispatchers.Main) {
                     activity.startActivity(Intent.createChooser(intent, "Share Unlocked PDF"))
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Failed to share PDF: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -433,22 +459,21 @@ class PdfUnlockController(
     }
 
     private fun printUnlockedPdf() {
-        val res = unlockedResult ?: return
+        val file = unlockedPdfFile
+        val result = unlockedResult
+        if (file == null && result == null) return
         val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
         if (printManager != null) {
-            printManager.print(
-                "Unlocked PDF - $originalPdfName",
+            val printAdapter = if (file != null) {
                 PdfPrintDocumentAdapter(
-                    activity,
-                    res.unlockedBytes,
-                    null,
-                    originalPdfName,
-                    false,
-                    null,
-                    null
-                ),
-                null
-            )
+                    activity, file, null, originalPdfName, false, null, null
+                )
+            } else {
+                PdfPrintDocumentAdapter(
+                    activity, requireNotNull(result).unlockedBytes, null, originalPdfName, false, null, null
+                )
+            }
+            printManager.print("Unlocked PDF - $originalPdfName", printAdapter, null)
         } else {
             Toast.makeText(activity, "Printing is not available on this device.", Toast.LENGTH_SHORT).show()
         }
