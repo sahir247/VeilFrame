@@ -768,6 +768,9 @@ class MainActivity : AppCompatActivity() {
             onSavePdfRequest = { bytes, fileName ->
                 launchers.launchPdfUnlockSave(fileName, bytes)
             },
+            onSavePdfFromDiskRequest = { file, fileName ->
+                launchers.launchPdfUnlockSave(fileName, file)
+            },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
             },
