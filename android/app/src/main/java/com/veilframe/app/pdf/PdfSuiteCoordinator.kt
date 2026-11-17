@@ -413,13 +413,14 @@ class PdfSuiteCoordinator(
                 pendingExtractPagesSaveFile = file
                 pendingExtractPagesSaveBytes = null
                 try {
-                    extractPagesSaveLauncher.launch(fileName to when {
-                    fileName.endsWith(".zip", true) -> "application/zip"
-                    fileName.endsWith(".webp", true) -> "image/webp"
-                    fileName.endsWith(".png", true) -> "image/png"
-                    fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
-                    else -> "application/pdf"
-                })
+                    val mime = when {
+                        fileName.endsWith(".zip", true) -> "application/zip"
+                        fileName.endsWith(".webp", true) -> "image/webp"
+                        fileName.endsWith(".png", true) -> "image/png"
+                        fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+                        else -> "application/pdf"
+                    }
+                    extractPagesSaveLauncher.launch(fileName to mime)
                 } catch (error: Exception) {
                     pendingExtractPagesSaveFile = null
                     file.delete()
@@ -507,13 +508,14 @@ class PdfSuiteCoordinator(
                 pendingQuickToolSaveFile = file
                 pendingQuickToolSaveBytes = null
                 try {
-                    quickToolSaveLauncher.launch(fileName to when {
-                    fileName.endsWith(".zip", true) -> "application/zip"
-                    fileName.endsWith(".webp", true) -> "image/webp"
-                    fileName.endsWith(".png", true) -> "image/png"
-                    fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
-                    else -> "application/pdf"
-                })
+                    val mime = when {
+                        fileName.endsWith(".zip", true) -> "application/zip"
+                        fileName.endsWith(".webp", true) -> "image/webp"
+                        fileName.endsWith(".png", true) -> "image/png"
+                        fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+                        else -> "application/pdf"
+                    }
+                    quickToolSaveLauncher.launch(fileName to mime)
                 } catch (error: Exception) {
                     pendingQuickToolSaveFile = null
                     file.delete()
