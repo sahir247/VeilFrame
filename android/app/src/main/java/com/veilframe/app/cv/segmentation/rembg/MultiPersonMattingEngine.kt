@@ -248,25 +248,7 @@ object MultiPersonMattingEngine {
                 subjectMask = NcnnMattingNative.nativeProcess(subjectCrop, roiModelType, useGpu, letterbox = false)
 
                 if (subjectMask != null) {
-                    // Merge in bounded strips: a 4K RoI no longer needs two
-                    // additional full-resolution IntArray allocations.
-                    val stripHeight = min(64, cropH)
-                    val cropPixels = IntArray(cropW * stripHeight)
-                    val basePixels = IntArray(cropW * stripHeight)
-                    var row = 0
-                    while (row < cropH) {
-                        val rows = min(stripHeight, cropH - row)
-                        val count = cropW * rows
-                        subjectMask.getPixels(cropPixels, 0, cropW, 0, row, cropW, rows)
-                        baseMask.getPixels(basePixels, 0, cropW, cropLeft, cropTop + row, cropW, rows)
-                        for (i in 0 until count) {
-                            val subAlpha = (cropPixels[i] ushr 24) and 0xFF
-                            val baseAlpha = (basePixels[i] ushr 24) and 0xFF
-                            basePixels[i] = (max(baseAlpha, subAlpha) shl 24) or 0x00FFFFFF
-                        }
-                        baseMask.setPixels(basePixels, 0, cropW, cropLeft, cropTop + row, cropW, rows)
-                        row += rows
-                    }
+                    mergeAlphaRegion(baseMask, subjectMask, cropLeft, cropTop)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "Failed RoI pass for subject #$idx (${roi.label}): ${t.message}")
@@ -276,6 +258,43 @@ object MultiPersonMattingEngine {
                 }
                 subjectMask?.recycle()
             }
+        }
+    }
+
+    /**
+     * Composes a subject's alpha into a global mask without allocating whole-crop
+     * pixel arrays. The max-alpha rule matches the original full-array merge.
+     */
+    internal fun mergeAlphaRegion(
+        baseMask: Bitmap,
+        subjectMask: Bitmap,
+        left: Int,
+        top: Int,
+        maxStripRows: Int = 64
+    ) {
+        val width = subjectMask.width
+        val height = subjectMask.height
+        require(width > 0 && height > 0 && maxStripRows > 0)
+        require(left >= 0 && top >= 0 &&
+            left.toLong() + width <= baseMask.width &&
+            top.toLong() + height <= baseMask.height) { "Subject mask is outside the global mask" }
+
+        val stripeRows = min(maxStripRows, height)
+        val subjectPixels = IntArray(width * stripeRows)
+        val basePixels = IntArray(width * stripeRows)
+        var row = 0
+        while (row < height) {
+            val rows = min(stripeRows, height - row)
+            val count = width * rows
+            subjectMask.getPixels(subjectPixels, 0, width, 0, row, width, rows)
+            baseMask.getPixels(basePixels, 0, width, left, top + row, width, rows)
+            for (i in 0 until count) {
+                val subjectAlpha = (subjectPixels[i] ushr 24) and 0xFF
+                val baseAlpha = (basePixels[i] ushr 24) and 0xFF
+                basePixels[i] = (max(baseAlpha, subjectAlpha) shl 24) or 0x00FFFFFF
+            }
+            baseMask.setPixels(basePixels, 0, width, left, top + row, width, rows)
+            row += rows
         }
     }
 
