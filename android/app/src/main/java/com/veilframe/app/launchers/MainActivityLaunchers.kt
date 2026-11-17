@@ -477,10 +477,12 @@ class MainActivityLaunchers(private val activity: MainActivity) {
                         } ?: throw java.io.IOException("Unable to open selected destination")
                     }
                     withContext(Dispatchers.Main) {
+                        if (activity.isPdfUnlockControllerInitialized) activity.pdfUnlockController.onSaveResult(true)
                         Toast.makeText(activity, "Unlocked PDF saved to storage", Toast.LENGTH_LONG).show()
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
+                        if (activity.isPdfUnlockControllerInitialized) activity.pdfUnlockController.onSaveResult(false)
                         Toast.makeText(activity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 } finally {
@@ -492,6 +494,7 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         } else {
             // User dismissed the system picker without selecting a destination.
             sourceFile?.delete()
+            if (activity.isPdfUnlockControllerInitialized) activity.pdfUnlockController.onSaveResult(false)
         }
     }
 
@@ -802,6 +805,7 @@ class MainActivityLaunchers(private val activity: MainActivity) {
                 } catch (e: Exception) {
                     staged.delete()
                     withContext(Dispatchers.Main) {
+                        if (activity.isPdfUnlockControllerInitialized) activity.pdfUnlockController.onSaveResult(false)
                         Toast.makeText(activity, "Could not prepare unlocked PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
