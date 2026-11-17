@@ -158,6 +158,12 @@ class PdfUnlockController(
     }
 
     fun loadPdfBytes(bytes: ByteArray, fileName: String) {
+        taskTracker.cancelAll()
+        activeJob?.cancel()
+        activeJob = null
+        currentPreviewBitmap?.recycle()
+        currentPreviewBitmap = null
+        binding.ivPdfUnlockPreview.setImageDrawable(null)
         originalPdfUri = null
         unlockedPdfFile?.delete()
         unlockedPdfFile = null
