@@ -2447,7 +2447,9 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.HTML_TO_PDF -> {
-                        val input = binding.etSourceInput.text?.toString()?.trim() ?: ""
+                        val input = withContext(Dispatchers.Main) {
+                            binding.etSourceInput.text?.toString()?.trim().orEmpty()
+                        }
                         if (input.isEmpty()) {
                             withContext(Dispatchers.Main) {
                                 isExecuting = false
@@ -2464,9 +2466,8 @@ class PdfQuickToolController(
                             input
                         }
 
-                        val result = htmlConverter.convertHtmlToPdf(activity, htmlContent, outStream)
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "html_document.pdf", origText)
+                        finishPdfOutputOnDisk("html_document.pdf", origText) { output ->
+                            htmlConverter.convertHtmlToPdf(activity, htmlContent, output).isSuccess
                         }
                     }
                     QuickMode.DOC_TO_PDF -> {
@@ -2483,6 +2484,7 @@ class PdfQuickToolController(
                         val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
                         var conversionError: String? = null
                         var success = false
+                        var handedOff = false
                         try {
                             activity.contentResolver.openInputStream(uri)?.use { input ->
                                 tempInput.outputStream().use { output -> input.copyTo(output) }
@@ -2513,18 +2515,18 @@ class PdfQuickToolController(
                             }
                             success = tempPdf.exists() && tempPdf.length() > 0
                             if (success) {
-                                tempPdf.inputStream().use { it.copyTo(outStream) }
+                                handedOff = finishDiskExecution(true, tempPdf, "${base}.pdf", origText)
                             }
-                        } catch (t: Throwable) {
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (t: Exception) {
                             conversionError = t.message ?: "Failed to convert document"
                         } finally {
                             tempInput.delete()
-                            tempPdf.delete()
+                            if (!handedOff) tempPdf.delete()
                         }
-                        withContext(Dispatchers.Main) {
-                            if (success) {
-                                finishExecution(true, outStream.toByteArray(), "${base}.pdf", origText)
-                            } else {
+                        if (!success) {
+                            withContext(Dispatchers.Main) {
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
