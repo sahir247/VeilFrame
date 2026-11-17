@@ -148,6 +148,33 @@ object PdfUnlockEngine {
     }
 
     /**
+     * Bounded on-disk preview for the file-backed unlock workspace.
+     * Limits only preview resolution, never decrypted PDF output quality.
+     */
+    suspend fun renderPagePreview(
+        file: File,
+        pageIndex: Int = 0,
+        maxDimension: Int = 1280
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        require(maxDimension > 0)
+        try {
+            file.inputStream().buffered().use { input ->
+                PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) return@use null
+                    val pageBox = doc.getPage(pageIndex).cropBox
+                    val longestPt = maxOf(pageBox.width, pageBox.height).coerceAtLeast(1f)
+                    val scale = minOf(150f / 72f, maxDimension / longestPt)
+                    PDFRenderer(doc).renderImage(pageIndex, scale)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Renders a preview bitmap of a specific page for an unencrypted or unlocked document.
      */
     suspend fun renderPagePreview(
