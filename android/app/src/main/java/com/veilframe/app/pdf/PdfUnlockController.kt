@@ -274,6 +274,99 @@ class PdfUnlockController(
     }
 
     /**
+     * Decrypt directly from the SAF URI to a private temporary file. Neither
+     * original nor unlocked PDF is retained as a whole in the Java heap.
+     * File and preview ownership are transferred only on full success.
+     */
+    private fun executeUnlockFromUri(uri: Uri, fileName: String, password: String) {
+        activeJob?.cancel()
+        unlockedResult = null
+        unlockedPdfFile?.delete()
+        unlockedPdfFile = null
+        isUnlocking = true
+        isSaved = false
+        binding.cardPdfUnlockPick.visibility = View.GONE
+        binding.containerPdfUnlockContent.visibility = View.VISIBLE
+        binding.btnPdfUnlockReset.visibility = View.VISIBLE
+        binding.progressPdfUnlockPreview.visibility = View.VISIBLE
+        binding.tvPdfUnlockDocName.text = fileName
+
+        activeJob = taskTracker.launch {
+            var tempFile: File? = null
+            var preview: Bitmap? = null
+            var accepted = false
+            try {
+                val pages = withContext(Dispatchers.IO) {
+                    val file = File.createTempFile("veilframe_unlocked_", ".pdf", activity.cacheDir)
+                    tempFile = file
+                    val pageCount = activity.contentResolver.openInputStream(uri)?.use { input ->
+                        file.outputStream().buffered().use { output ->
+                            PdfUnlockEngine.unlockPdfStream(input, output, password).getOrThrow()
+                        }
+                    } ?: throw java.io.IOException("Cannot reopen the selected PDF")
+                    if (!file.isFile || file.length() == 0L) {
+                        throw java.io.IOException("Decrypted PDF output is empty")
+                    }
+                    preview = PdfUnlockEngine.renderPagePreview(file)
+                    pageCount
+                }
+                val file = requireNotNull(tempFile)
+                if (originalPdfUri != uri) return@launch
+                unlockedPdfFile = file
+                currentPreviewBitmap?.recycle()
+                currentPreviewBitmap = preview
+                accepted = true
+                preview?.let { binding.ivPdfUnlockPreview.setImageBitmap(it) }
+                binding.tvPdfUnlockPageCount.text = "$pages page${if (pages != 1) "s" else ""}"
+                binding.tvUnlockSecurityDetails.text =
+                    "Protection: Fully Stripped • Permissions: Unrestricted Access"
+
+                val originalLength = withContext(Dispatchers.IO) {
+                    try {
+                        activity.contentResolver.query(
+                            uri, arrayOf(OpenableColumns.SIZE), null, null, null
+                        )?.use { cursor ->
+                            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                            if (sizeIndex >= 0 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) {
+                                cursor.getLong(sizeIndex)
+                            } else -1L
+                        } ?: -1L
+                    } catch (_: Exception) {
+                        -1L
+                    }
+                }
+                if (originalPdfUri == uri) {
+                    val originalLabel = if (originalLength >= 0L) formatFileSize(originalLength) else "Unknown"
+                    binding.tvUnlockSizeDetails.text =
+                        "Original Encrypted Size: $originalLabel • Decrypted Size: ${formatFileSize(file.length())}"
+                    playUnlockedAnimation()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (originalPdfUri == uri) {
+                    if (e.message?.contains("password", ignoreCase = true) == true ||
+                        e.message?.contains("decrypt", ignoreCase = true) == true) {
+                        Toast.makeText(activity, "Incorrect password. Please try again.", Toast.LENGTH_SHORT).show()
+                        showPasswordDialogForUri(uri, fileName)
+                    } else {
+                        Toast.makeText(activity, "Failed to unlock PDF: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } finally {
+                if (!accepted) {
+                    tempFile?.delete()
+                    preview?.recycle()
+                }
+                if (originalPdfUri == uri) {
+                    isUnlocking = false
+                    binding.progressPdfUnlockPreview.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    /**
      * Plays a smooth bounce and scale animation on the unlocked lock icon.
      */
     private fun playUnlockedAnimation() {
