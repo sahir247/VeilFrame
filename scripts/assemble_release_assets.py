@@ -26,9 +26,11 @@ def assemble(repo, downloaded, output):
     # Read only the declared project version; do not require Python 3.11's
     # tomllib (or an optional TOML dependency) on the supported Python 3.10 CI.
     project_text = (repo / "pyproject.toml").read_text(encoding="utf-8")
-    project_section = re.search(r"(?ms)^\\[project\\]\\s*$(.*?)(?=^\\[|\\Z)", project_text)
+    project_section = re.search(r"(?ms)^\[project\]\s*$(.*?)(?=^\[|\Z)", project_text)
     require(project_section is not None, "Missing [project] in pyproject.toml")
-    version_match = re.search(r'(?m)^\\s*version\\s*=\\s*"([^"]+)"\\s*
+    version_match = re.search(r'(?m)^\s*version\s*=\s*"([^"]+)"\s*$', project_section.group(1))
+    require(version_match is not None, "Missing [project].version in pyproject.toml")
+    version = version_match.group(1)
     updater = json.loads((repo / "android/update.json").read_text(encoding="utf-8"))
     gradle = (repo / "android/app/build.gradle.kts").read_text(encoding="utf-8")
     code = re.search(r"(?m)^\s*versionCode\s*=\s*(\d+)\s*$", gradle)
