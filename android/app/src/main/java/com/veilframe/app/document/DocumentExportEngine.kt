@@ -7,9 +7,13 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.math.roundToInt
@@ -101,7 +105,8 @@ object DocumentExportEngine {
         context: Context,
         session: DocumentSession,
         options: ExportOptions = ExportOptions()
-    ): ExportResult {
+    ): ExportResult = withContext(Dispatchers.IO) {
+        currentCoroutineContext().ensureActive()
         val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
 
@@ -114,17 +119,17 @@ object DocumentExportEngine {
         return when (effectiveFormat) {
             OutputFormat.SINGLE_PDF -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_$timestamp.pdf")
-                createSinglePdf(context, session, options, outFile)
+                deletePartialOutput(outFile) { createSinglePdf(context, session, options, outFile) }
                 ExportResult(outFile, listOf(outFile), session.pageCount, options.format.mimeType)
             }
             OutputFormat.SEPARATE_PDFS -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_Separate_PDFs_$timestamp.zip")
-                createSeparatePdfsZip(context, session, options, outFile)
+                deletePartialOutput(outFile) { createSeparatePdfsZip(context, session, options, outFile) }
                 ExportResult(outFile, listOf(outFile), session.pageCount, options.format.mimeType)
             }
             OutputFormat.IMAGES_ZIP -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_Images_$timestamp.zip")
-                createImagesZip(context, session, options, outFile)
+                deletePartialOutput(outFile) { createImagesZip(context, session, options, outFile) }
                 ExportResult(outFile, listOf(outFile), session.pageCount, "application/zip")
             }
             OutputFormat.IMAGES -> {
@@ -141,7 +146,8 @@ object DocumentExportEngine {
         pageIndex: Int,
         title: String,
         options: ExportOptions = ExportOptions()
-    ): ExportResult {
+    ): ExportResult = withContext(Dispatchers.IO) {
+        currentCoroutineContext().ensureActive()
         val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
         val bmp = page.getDisplayBitmap(context) ?: throw IllegalStateException("Page bitmap could not be decoded")
@@ -156,7 +162,9 @@ object DocumentExportEngine {
                     val pdfPage = pdfDoc.startPage(pageInfo)
                     renderBitmapToCanvas(pdfPage.canvas, bmp, pageW, pageH, options)
                     pdfDoc.finishPage(pdfPage)
-                    FileOutputStream(outFile).use { fos -> pdfDoc.writeTo(fos) }
+                    deletePartialOutput(outFile) {
+                        FileOutputStream(outFile).buffered().use { pdfDoc.writeTo(it) }
+                    }
                 } finally {
                     pdfDoc.close()
                 }
@@ -166,15 +174,19 @@ object DocumentExportEngine {
                 val ext = options.imageFormat.extension
                 val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
                 val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.$ext")
-                FileOutputStream(outFile).use { fos ->
-                    bmp.compress(options.imageFormat.compressFormat, quality, fos)
+                deletePartialOutput(outFile) {
+                    FileOutputStream(outFile).buffered().use { output ->
+                        if (!bmp.compress(options.imageFormat.compressFormat, quality, output)) {
+                            throw IOException("Failed to encode page ${pageIndex + 1}")
+                        }
+                    }
                 }
                 ExportResult(outFile, listOf(outFile), 1, options.imageFormat.mimeType)
             }
         }
     }
 
-    private fun createSinglePdf(
+    private suspend fun createSinglePdf(
         context: Context,
         session: DocumentSession,
         options: ExportOptions,
@@ -183,7 +195,9 @@ object DocumentExportEngine {
         val pdfDoc = PdfDocument()
         try {
             for ((index, page) in session.pages.withIndex()) {
-                val bmp = page.getDisplayBitmap(context) ?: continue
+                currentCoroutineContext().ensureActive()
+                val bmp = page.getDisplayBitmap(context)
+                    ?: throw IOException("Unable to decode page ${index + 1}")
                 val (pageW, pageH) = resolvePageDimensions(bmp, options)
                 val pageInfo = PdfDocument.PageInfo.Builder(pageW, pageH, index + 1).create()
                 val pdfPage = pdfDoc.startPage(pageInfo)
@@ -192,23 +206,24 @@ object DocumentExportEngine {
                 pdfDoc.finishPage(pdfPage)
             }
 
-            FileOutputStream(outFile).use { fos ->
-                pdfDoc.writeTo(fos)
-            }
+            currentCoroutineContext().ensureActive()
+            FileOutputStream(outFile).buffered().use { pdfDoc.writeTo(it) }
         } finally {
             pdfDoc.close()
         }
     }
 
-    private fun createSeparatePdfsZip(
+    private suspend fun createSeparatePdfsZip(
         context: Context,
         session: DocumentSession,
         options: ExportOptions,
         outFile: File
     ) {
-        ZipOutputStream(FileOutputStream(outFile)).use { zos ->
+        ZipOutputStream(FileOutputStream(outFile).buffered()).use { zos ->
             for ((index, page) in session.pages.withIndex()) {
-                val bmp = page.getDisplayBitmap(context) ?: continue
+                currentCoroutineContext().ensureActive()
+                val bmp = page.getDisplayBitmap(context)
+                    ?: throw IOException("Unable to decode page ${index + 1}")
                 val singlePdf = PdfDocument()
                 try {
                     val (pageW, pageH) = resolvePageDimensions(bmp, options)
@@ -218,13 +233,13 @@ object DocumentExportEngine {
                     renderBitmapToCanvas(pdfPage.canvas, bmp, pageW, pageH, options)
                     singlePdf.finishPage(pdfPage)
 
-                    val baos = ByteArrayOutputStream()
-                    singlePdf.writeTo(baos)
-
                     val entryName = "Page_${index + 1}.pdf"
                     zos.putNextEntry(ZipEntry(entryName))
-                    zos.write(baos.toByteArray())
-                    zos.closeEntry()
+                    try {
+                        singlePdf.writeTo(zos)
+                    } finally {
+                        zos.closeEntry()
+                    }
                 } finally {
                     singlePdf.close()
                 }
@@ -232,7 +247,7 @@ object DocumentExportEngine {
         }
     }
 
-    private fun createImagesZip(
+    private suspend fun createImagesZip(
         context: Context,
         session: DocumentSession,
         options: ExportOptions,
@@ -241,21 +256,25 @@ object DocumentExportEngine {
         val ext = options.imageFormat.extension
         val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
 
-        ZipOutputStream(FileOutputStream(outFile)).use { zos ->
+        ZipOutputStream(FileOutputStream(outFile).buffered()).use { zos ->
             for ((index, page) in session.pages.withIndex()) {
-                val bmp = page.getDisplayBitmap(context) ?: continue
-                val baos = ByteArrayOutputStream()
-                bmp.compress(options.imageFormat.compressFormat, quality, baos)
-
+                currentCoroutineContext().ensureActive()
+                val bmp = page.getDisplayBitmap(context)
+                    ?: throw IOException("Unable to decode page ${index + 1}")
                 val entryName = "Page_${index + 1}.$ext"
                 zos.putNextEntry(ZipEntry(entryName))
-                zos.write(baos.toByteArray())
-                zos.closeEntry()
+                try {
+                    if (!bmp.compress(options.imageFormat.compressFormat, quality, zos)) {
+                        throw IOException("Failed to encode page ${index + 1}")
+                    }
+                } finally {
+                    zos.closeEntry()
+                }
             }
         }
     }
 
-    private fun createIndividualImages(
+    private suspend fun createIndividualImages(
         context: Context,
         session: DocumentSession,
         options: ExportOptions,
@@ -267,16 +286,34 @@ object DocumentExportEngine {
         val ext = options.imageFormat.extension
         val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
 
-        for ((index, page) in session.pages.withIndex()) {
-            val bmp = page.getDisplayBitmap(context) ?: continue
+        try {
+            for ((index, page) in session.pages.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val bmp = page.getDisplayBitmap(context)
+                    ?: throw IOException("Unable to decode page ${index + 1}")
             val outFile = File(exportDir, "${baseTitle}_page_${index + 1}_$timestamp.$ext")
-            FileOutputStream(outFile).use { fos ->
-                bmp.compress(options.imageFormat.compressFormat, quality, fos)
+                files.add(outFile)
+                FileOutputStream(outFile).buffered().use { output ->
+                    if (!bmp.compress(options.imageFormat.compressFormat, quality, output)) {
+                        throw IOException("Failed to encode page ${index + 1}")
+                    }
+                }
             }
-            files.add(outFile)
+            return files
+        } catch (failure: Throwable) {
+            files.forEach { it.delete() }
+            throw failure
         }
-        return files
     }
+
+    /** Remove partial archives/PDFs if an encoder, stream, or storage provider fails. */
+    private inline fun <T> deletePartialOutput(file: File, generate: () -> T): T =
+        try {
+            generate()
+        } catch (failure: Throwable) {
+            file.delete()
+            throw failure
+        }
 
     private fun resolvePageDimensions(bitmap: Bitmap, options: ExportOptions): Pair<Int, Int> {
         return resolvePageDimensions(bitmap.width, bitmap.height, options)
