@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     lateinit var pdfSignatureController: PdfSignatureController
     lateinit var pdfUnlockController: PdfUnlockController
     val isPdfSignatureControllerInitialized: Boolean get() = ::pdfSignatureController.isInitialized
+    val isPdfUnlockControllerInitialized: Boolean get() = ::pdfUnlockController.isInitialized
     val isMotionLabControllerInitialized: Boolean get() = ::motionLabController.isInitialized
     val isMotionLabProcessing: Boolean get() = ::motionLabController.isInitialized && motionLabController.isProcessing
     fun syncMotionLabIfActive() {
