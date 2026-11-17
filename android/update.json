@@ -11,6 +11,13 @@
     "Model Integrity: Cryptographic SHA-256 verification and size bounds enforcement for all on-demand neural weights",
     "Privacy Scanner Assurance: Reliable multimodal scan diagnostics with transparent status reporting",
     "Classification Precision: Enhanced vehicle and electronic device detection for accurate redactions",
-    "Memory & Stability: Comprehensive native memory optimizations and full GPL-3.0 licensing compliance"
+    "Memory & Stability: Comprehensive native memory optimizations and full GPL-3.0 licensing compliance",
+    "PDF Processing: File-backed merge, split, signing, Office/HTML conversion, form filling and image ZIP exports reduce large in-memory output buffers",
+    "PDF Save & Unlock: Save confirmation waits for successful system document write; disk-backed unlock and bounded previews improve cancellation and memory safety",
+    "PDF Print & Reorder: Asynchronous printing with repeated-write cleanup, correct drag insertion and fewer thumbnail rerenders",
+    "Document Scanner: Stream page-by-page ZIP/PDF exports, release temporary bitmap memory and clean up incomplete outputs",
+    "Video Studio: Job-owned FFmpeg sessions prevent cross-operation cancellations and clean up abandoned stabilization/redaction outputs",
+    "Image Matting: Preserve morphology-enhanced masks during connected-component cleanup and harden image export error handling",
+    "Reliability: Expanded regression coverage and runtime diagnostics, with no unverified performance-speedup claims"
   ]
 }

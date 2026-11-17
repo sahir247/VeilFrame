@@ -42,6 +42,22 @@ VeilFrame **v2.3.1** introduces an advanced on-device neural sensor fingerprint 
 
 ---
 
+### Maintenance refresh — 17 November 2026 (PR #45)
+
+This main-branch maintenance update improves existing Android workflows without introducing a new tool or changing the Android minimum version. The changes below are included in the latest source and become available in the refreshed release assets when the `main` release workflow finishes.
+
+- **PDF exports and saves:** Large PDF operations now use file-backed handoff instead of retaining entire encoded results in memory, including split/merge, image ZIP, standard signing, form filling, metadata sanitization, and HTML/Office conversion. Save state is confirmed only after the Android system document picker successfully writes the output.
+- **PDF unlock and printing:** Disk-backed PDF decryption and bounded previews reduce in-memory copies. Print layout and rendering run off the UI thread, with improved cancellation, signature overlay cleanup, and repeated-write handling.
+- **PDF page management:** Reordering uses stable insert-style moves; manual page orders reject duplicates; drag operations avoid unnecessary thumbnail rerenders. Stale recycled-holder results and slow document-provider name lookups are handled more safely.
+- **Document Scanner:** Page-by-page image/PDF ZIP output and temporary bitmap ownership reduce retained full-resolution images. Incomplete files are removed on cancellation or failure.
+- **Video Studio:** FFmpeg sessions are owned by their respective jobs, so cancelling compression, EIS stabilization, or PII redaction targets the correct encoder. Late native session startup, discarded output files, and stale stabilization review actions are handled more safely.
+- **Image and AI processing:** Refined multi-person alpha masks preserve OpenCV morphological cleanup; image export and native resource handling are more defensive.
+- **Diagnostics and validation:** Added targeted regression coverage, profiling instrumentation, and Android-native alignment checks. PR #45 passed Android unit tests, ARM64 debug assembly, NCNN/OpenCV checks, and the applicable CI matrix. Real-device performance gains have not been quantified.
+
+These notes describe the refreshed app code, not a claim of measured speedup. See [the Android runtime optimization ledger](docs/ANDROID_RUNTIME_OPTIMIZATION_PLAN_2026_11.md) for validation limits and remaining device-level work.
+
+---
+
 ### <img src="docs/images/icons/downloads.svg" width="18" height="18" alt="" /> Downloads & Installation
 
 Download production release packages from the [GitHub Releases page](https://github.com/Sahir247/VeilFrame/releases/tag/v2.3.1):
