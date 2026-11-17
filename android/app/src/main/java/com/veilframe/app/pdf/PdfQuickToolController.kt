@@ -72,6 +72,7 @@ import com.veilframe.app.pdf.ui.PdfThumbnailLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -2091,6 +2092,11 @@ class PdfQuickToolController(
         binding.btnQuickToolExecute.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
         binding.btnQuickToolExecute.text = "Processing..."
+        // Never read split controls from a background thread.
+        val splitAllPages = binding.chipSplitAllPages.isChecked
+        val splitSelectedMode = binding.chipSplitSelected.isChecked
+        val splitSelectedPages = splitThumbnailAdapter?.getSelectedPages()?.toList()?.sorted().orEmpty()
+        val splitRangeText = binding.etSplitRanges.text?.toString().orEmpty()
 
         activeJob = launchTransient {
             try {
@@ -2112,102 +2118,128 @@ class PdfQuickToolController(
                     }
                     QuickMode.SPLIT -> {
                         val uri = selectedUris.first()
-                        if (binding.chipSplitAllPages.isChecked) {
-                            // Burst each page into individual PDF in a zip archive
-                            val singlePdfs = mutableListOf<Pair<Int, ByteArray>>()
-                            val result = pdfSplitter.splitAllPages(
-                                context = activity,
-                                inputUri = uri,
-                                outputCallback = { pageNum, stream ->
-                                    val pageOut = ByteArrayOutputStream()
-                                    stream.copyTo(pageOut)
-                                    singlePdfs.add(pageNum to pageOut.toByteArray())
-                                }
-                            )
-
-                            withContext(Dispatchers.Main) {
-                                if (result.isSuccess && singlePdfs.isNotEmpty()) {
-                                    val zipOut = ByteArrayOutputStream()
-                                    ZipOutputStream(zipOut).use { zos ->
-                                        for ((num, bytes) in singlePdfs) {
-                                            val entry = ZipEntry("${base}_page_${num}.pdf")
-                                            zos.putNextEntry(entry)
-                                            zos.write(bytes)
-                                            zos.closeEntry()
+                        val workJob = coroutineContext[Job]
+                        if (splitAllPages) {
+                            // Stream each produced PDF directly into ZIP: no O(page count)
+                            // collection of page-sized ByteArrays or main-thread packaging.
+                            val zipFile = File.createTempFile("split_pages_", ".zip", activity.cacheDir)
+                            var handedOff = false
+                            try {
+                                var pagesWritten = 0
+                                val result = ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
+                                    pdfSplitter.splitAllPages(
+                                        context = activity,
+                                        inputUri = uri,
+                                        outputCallback = { pageNumber, pdfStream ->
+                                            workJob?.ensureActive()
+                                            zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.pdf"))
+                                            pdfStream.copyTo(zip)
+                                            zip.closeEntry()
+                                            pagesWritten++
                                         }
-                                    }
-                                    finishExecution(true, zipOut.toByteArray(), "${base}_split_pages.zip", origText)
-                                } else {
-                                    finishExecution(false, ByteArray(0), "", origText)
+                                    )
                                 }
+                                workJob?.ensureActive()
+                                handedOff = finishDiskExecution(
+                                    result.isSuccess && pagesWritten > 0,
+                                    zipFile, "${base}_split_pages.zip", origText
+                                )
+                            } finally {
+                                if (!handedOff) zipFile.delete()
                             }
-                        } else if (binding.chipSplitSelected.isChecked) {
-                            // Extract selected pages as PDF
-                            val selected = splitThumbnailAdapter?.getSelectedPages()?.toList()?.sorted() ?: emptyList()
-                            if (selected.isEmpty()) {
+                        } else if (splitSelectedMode) {
+                            if (splitSelectedPages.isEmpty()) {
                                 withContext(Dispatchers.Main) {
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(activity, "Please select at least one page to split", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        activity, "Please select at least one page to split",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                                 return@launchTransient
                             }
-
-                            val result = pdfOrganizer.extractPagesAsPdf(
-                                context = activity,
-                                inputUri = uri,
-                                outputStream = outStream,
-                                pagesToExtract = selected
-                            )
-                            withContext(Dispatchers.Main) {
-                                finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_split_selected.pdf", origText)
+                            val pdfFile = File.createTempFile("split_selected_", ".pdf", activity.cacheDir)
+                            var handedOff = false
+                            try {
+                                val result = pdfFile.outputStream().buffered().use { output ->
+                                    pdfOrganizer.extractPagesAsPdf(
+                                        context = activity,
+                                        inputUri = uri,
+                                        outputStream = output,
+                                        pagesToExtract = splitSelectedPages
+                                    )
+                                }
+                                workJob?.ensureActive()
+                                handedOff = finishDiskExecution(
+                                    result.isSuccess, pdfFile, "${base}_split_selected.pdf", origText
+                                )
+                            } finally {
+                                if (!handedOff) pdfFile.delete()
                             }
                         } else {
-                            // Split by custom ranges
-                            val rangeStr = binding.etSplitRanges.text?.toString().orEmpty()
-                            val ranges = parsePageRanges(rangeStr)
+                            val ranges = parsePageRanges(splitRangeText)
                             if (ranges.isEmpty()) {
                                 withContext(Dispatchers.Main) {
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(activity, "Please enter valid page ranges (e.g. 1-2, 3-5)", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        activity, "Please enter valid page ranges (e.g. 1-2, 3-5)",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                                 return@launchTransient
                             }
-
-                            val partPdfs = mutableListOf<Pair<Int, ByteArray>>()
-                            val result = pdfSplitter.splitByRanges(
-                                context = activity,
-                                inputUri = uri,
-                                ranges = ranges,
-                                outputCallback = { rangeIndex, stream ->
-                                    val partOut = ByteArrayOutputStream()
-                                    stream.copyTo(partOut)
-                                    partPdfs.add(rangeIndex to partOut.toByteArray())
-                                }
+                            val singlePart = ranges.size == 1
+                            val tempFile = File.createTempFile(
+                                "split_ranges_", if (singlePart) ".pdf" else ".zip", activity.cacheDir
                             )
-
-                            withContext(Dispatchers.Main) {
-                                if (result.isSuccess && partPdfs.isNotEmpty()) {
-                                    if (partPdfs.size == 1) {
-                                        finishExecution(true, partPdfs.first().second, "${base}_split_part1.pdf", origText)
-                                    } else {
-                                        val zipOut = ByteArrayOutputStream()
-                                        ZipOutputStream(zipOut).use { zos ->
-                                            for ((num, bytes) in partPdfs) {
-                                                val entry = ZipEntry("${base}_part_${num}.pdf")
-                                                zos.putNextEntry(entry)
-                                                zos.write(bytes)
-                                                zos.closeEntry()
+                            var handedOff = false
+                            try {
+                                var partsWritten = 0
+                                val result = if (singlePart) {
+                                    tempFile.outputStream().buffered().use { output ->
+                                        pdfSplitter.splitByRanges(
+                                            context = activity,
+                                            inputUri = uri,
+                                            ranges = ranges,
+                                            outputCallback = { _, pdfStream ->
+                                                workJob?.ensureActive()
+                                                pdfStream.copyTo(output)
+                                                partsWritten++
                                             }
-                                        }
-                                        finishExecution(true, zipOut.toByteArray(), "${base}_split_ranges.zip", origText)
+                                        )
                                     }
                                 } else {
-                                    finishExecution(false, ByteArray(0), "", origText)
+                                    ZipOutputStream(tempFile.outputStream().buffered()).use { zip ->
+                                        pdfSplitter.splitByRanges(
+                                            context = activity,
+                                            inputUri = uri,
+                                            ranges = ranges,
+                                            outputCallback = { partNumber, pdfStream ->
+                                                workJob?.ensureActive()
+                                                zip.putNextEntry(ZipEntry("${base}_part_$partNumber.pdf"))
+                                                pdfStream.copyTo(zip)
+                                                zip.closeEntry()
+                                                partsWritten++
+                                            }
+                                        )
+                                    }
                                 }
+                                workJob?.ensureActive()
+                                val name = if (singlePart) {
+                                    "${base}_split_part1.pdf"
+                                } else {
+                                    "${base}_split_ranges.zip"
+                                }
+                                handedOff = finishDiskExecution(
+                                    result.isSuccess && partsWritten == ranges.size,
+                                    tempFile, name, origText
+                                )
+                            } finally {
+                                if (!handedOff) tempFile.delete()
                             }
                         }
                     }
@@ -2464,9 +2496,11 @@ class PdfQuickToolController(
                     }
                     QuickMode.PDF_TO_IMAGE -> {
                         val uri = selectedUris.first()
+                        val workJob = coroutineContext[Job]
                         val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
                         var handedOff = false
                         try {
+                            var imagesWritten = 0
                             val zipOk = ZipOutputStream(tempZip.outputStream().buffered()).use { zip ->
                                 imageConverter.pdfToImages(
                                     context = activity,
@@ -2474,38 +2508,21 @@ class PdfQuickToolController(
                                     format = ImageFormat.WEBP,
                                     dpi = 150,
                                     outputCallback = { pageNumber, bitmap ->
+                                        workJob?.ensureActive()
                                         zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.webp"))
                                         check(bitmap.compress(Bitmap.CompressFormat.WEBP, 90, zip)) {
                                             "Could not compress PDF page $pageNumber"
                                         }
                                         zip.closeEntry()
+                                        imagesWritten++
                                     }
                                 ).isSuccess
                             }
-                            val complete = zipOk && tempZip.length() > 0L
-                            val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) {
-                                tempZip.readBytes()
-                            } else null
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                if (complete) {
-                                    val exportName = "${base}_images.zip"
-                                    val diskSave = onSaveFileFromDiskRequest
-                                    if (diskSave != null) {
-                                        diskSave(tempZip, exportName)
-                                        handedOff = true
-                                    } else {
-                                        onSaveFileRequest(requireNotNull(legacyBytes), exportName)
-                                    }
-                                    isSaved = true
-                                } else {
-                                    Toast.makeText(
-                                        activity, "PDF-to-image export failed", Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
+                            workJob?.ensureActive()
+                            handedOff = finishDiskExecution(
+                                zipOk && imagesWritten > 0,
+                                tempZip, "${base}_images.zip", origText
+                            )
                         } finally {
                             if (!handedOff) tempZip.delete()
                         }
@@ -2834,6 +2851,37 @@ class PdfQuickToolController(
             }
         }
         return result
+    }
+
+    /**
+     * Deliver a generated export to the SAF picker without reading large PDFs or ZIPs
+     * back into heap. Returns true only when picker ownership is transferred.
+     */
+    private suspend fun finishDiskExecution(
+        success: Boolean, file: File, fileName: String, origBtnText: String
+    ): Boolean {
+        val complete = success && file.isFile && file.length() > 0L
+        val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) file.readBytes() else null
+        return withContext(Dispatchers.Main) {
+            isExecuting = false
+            binding.btnQuickToolExecute.isEnabled = true
+            binding.btnQuickToolExecute.text = origBtnText
+            if (!complete) {
+                Toast.makeText(activity, "Operation completed with errors or empty output", Toast.LENGTH_LONG).show()
+                false
+            } else {
+                val diskSave = onSaveFileFromDiskRequest
+                if (diskSave != null) {
+                    diskSave(file, fileName)
+                    isSaved = true
+                    true
+                } else {
+                    onSaveFileRequest(requireNotNull(legacyBytes), fileName)
+                    isSaved = true
+                    false
+                }
+            }
+        }
     }
 
     private fun finishExecution(success: Boolean, data: ByteArray, fileName: String, origBtnText: String) {
