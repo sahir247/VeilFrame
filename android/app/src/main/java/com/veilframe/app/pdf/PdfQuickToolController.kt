@@ -2076,6 +2076,8 @@ class PdfQuickToolController(
                         metadataManager.removeMetadata(activity, uri, output)
                     }
                     kotlin.coroutines.coroutineContext.ensureActive()
+                    val legacyBytes = if (res.isSuccess && file.length() > 0L &&
+                        onSaveFileFromDiskRequest == null) file.readBytes() else null
                     withContext(Dispatchers.Main) {
                         if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
                             activeMode == QuickMode.METADATA
@@ -2086,12 +2088,21 @@ class PdfQuickToolController(
                                     diskSave(file, exportName)
                                     handedOff = true
                                 } else {
-                                    onSaveFileRequest(file.readBytes(), exportName)
+                                    onSaveFileRequest(requireNotNull(legacyBytes), exportName)
                                 }
                                 markExportPending()
                             } else {
                                 Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
                             }
+                        }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    withContext(Dispatchers.Main) {
+                        if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
+                            activeMode == QuickMode.METADATA) {
+                            Toast.makeText(activity, "Metadata export failed: ${error.message}", Toast.LENGTH_LONG).show()
                         }
                     }
                 } finally {
@@ -2840,6 +2851,8 @@ class PdfQuickToolController(
                             )
                         }
                         kotlin.coroutines.coroutineContext.ensureActive()
+                        val legacyBytes = if (result.success && file.length() > 0L &&
+                            onSaveFileFromDiskRequest == null) file.readBytes() else null
                         withContext(Dispatchers.Main) {
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
@@ -2851,7 +2864,7 @@ class PdfQuickToolController(
                                         diskSave(file, outputName)
                                         handedOff = true
                                     } else {
-                                        onSaveFileRequest(file.readBytes(), outputName)
+                                        onSaveFileRequest(requireNotNull(legacyBytes), outputName)
                                     }
                                     markExportPending()
                                     dialog.dismiss()
@@ -2859,6 +2872,17 @@ class PdfQuickToolController(
                                 } else {
                                     Toast.makeText(activity, result.errorMessage ?: "Unable to fill this PDF form", Toast.LENGTH_LONG).show()
                                 }
+                            }
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        withContext(Dispatchers.Main) {
+                            if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                isExecuting = false
+                                binding.btnQuickToolExecute.isEnabled = true
+                                binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
+                                Toast.makeText(activity, "Form export failed: ${error.message}", Toast.LENGTH_LONG).show()
                             }
                         }
                     } finally {
