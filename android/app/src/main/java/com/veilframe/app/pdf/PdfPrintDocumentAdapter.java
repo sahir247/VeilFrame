@@ -33,6 +33,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Android PrintDocumentAdapter replicating Adobe Acrobat's print rendering pipeline.
@@ -59,6 +63,14 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
 
     private PrintedPdfDocument printedPdfDocument;
     private int totalPages = 0;
+    // Android invokes onLayout/onWrite on Main. PDFBox parsing and page rasterization
+    // must run on a private serialized worker, not block UI input or animations.
+    private final ExecutorService printWorker = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "VeilFrame-PDF-Print");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicBoolean finished = new AtomicBoolean(false);
 
     public PdfPrintDocumentAdapter(Context context, byte[] pdfBytes, String password, String documentName,
                                    boolean isVerified, String signerName, String signingDate) {
@@ -98,77 +110,138 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
     @Override
     public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                          CancellationSignal cancellationSignal, LayoutResultCallback callback, Bundle extras) {
-        if (cancellationSignal.isCanceled()) {
+        if (cancellationSignal.isCanceled() || finished.get()) {
             callback.onLayoutCancelled();
             return;
         }
 
-        try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
-            totalPages = doc.getNumberOfPages();
-        } catch (Exception e) {
-            callback.onLayoutFailed("Failed to read document for printing: " + e.getMessage());
-            return;
+        try {
+            printWorker.execute(() -> {
+                if (cancellationSignal.isCanceled() || finished.get()) {
+                    callback.onLayoutCancelled();
+                    return;
+                }
+                try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
+                    final int pages = doc.getNumberOfPages();
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onLayoutCancelled();
+                        return;
+                    }
+
+                    if (printedPdfDocument != null) printedPdfDocument.close();
+                    printedPdfDocument = new PrintedPdfDocument(context, newAttributes);
+                    totalPages = pages;
+                    PrintDocumentInfo info = new PrintDocumentInfo.Builder(documentName)
+                            .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                            .setPageCount(pages)
+                            .build();
+                    callback.onLayoutFinished(info, !newAttributes.equals(oldAttributes));
+                } catch (Exception error) {
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onLayoutCancelled();
+                    } else {
+                        callback.onLayoutFailed("Failed to read document for printing: " + error.getMessage());
+                    }
+                }
+            });
+        } catch (RejectedExecutionException ignored) {
+            callback.onLayoutCancelled();
         }
-
-        printedPdfDocument = new PrintedPdfDocument(context, newAttributes);
-
-        PrintDocumentInfo info = new PrintDocumentInfo.Builder(documentName)
-                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                .setPageCount(totalPages)
-                .build();
-
-        callback.onLayoutFinished(info, !newAttributes.equals(oldAttributes));
     }
 
     @Override
     public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                         CancellationSignal cancellationSignal, WriteResultCallback callback) {
-        try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
+        if (cancellationSignal.isCanceled() || finished.get()) {
+            callback.onWriteCancelled();
+            return;
+        }
 
-            PDFRenderer renderer = new PDFRenderer(doc);
-
-            for (int i = 0; i < totalPages; i++) {
-                if (!containsPage(pages, i)) continue;
-
-                if (cancellationSignal.isCanceled()) {
+        try {
+            printWorker.execute(() -> {
+                if (cancellationSignal.isCanceled() || finished.get()) {
                     callback.onWriteCancelled();
                     return;
                 }
-
-                PdfDocument.Page page = printedPdfDocument.startPage(i);
-                Canvas canvas = page.getCanvas();
-
-                // Render pages sequentially. Always release page memory if
-                // drawing or signature overlay fails partway through a print.
-                Bitmap pageBmp = renderer.renderImage(i, 2.0f);
-                try {
-                    Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
-                    Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
-                    canvas.drawBitmap(pageBmp, src, dst, null);
-
-                    // Dynamically overlay verified green checkmark badge if cryptographically valid
-                    if (isVerified) {
-                        overlaySignatureWidgetsForPage(doc, i, canvas, canvas.getWidth(), canvas.getHeight());
+                try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
+                    if (printedPdfDocument == null) {
+                        callback.onWriteFailed("Print layout was not initialized");
+                        return;
                     }
-                    printedPdfDocument.finishPage(page);
+
+                    PDFRenderer renderer = new PDFRenderer(doc);
+                    for (int i = 0; i < totalPages; i++) {
+                        if (!containsPage(pages, i)) continue;
+                        if (cancellationSignal.isCanceled() || finished.get() ||
+                                Thread.currentThread().isInterrupted()) {
+                            callback.onWriteCancelled();
+                            return;
+                        }
+
+                        PdfDocument.Page page = printedPdfDocument.startPage(i);
+                        Canvas canvas = page.getCanvas();
+                        Bitmap pageBmp = renderer.renderImage(i, 2.0f);
+                        try {
+                            Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
+                            Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
+                            canvas.drawBitmap(pageBmp, src, dst, null);
+                            if (isVerified) {
+                                overlaySignatureWidgetsForPage(doc, i, canvas,
+                                        canvas.getWidth(), canvas.getHeight());
+                            }
+                            printedPdfDocument.finishPage(page);
+                        } finally {
+                            pageBmp.recycle();
+                        }
+                    }
+
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                        return;
+                    }
+                    try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
+                        printedPdfDocument.writeTo(out);
+                    }
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                    } else {
+                        callback.onWriteFinished(pages != null ? pages : new PageRange[]{PageRange.ALL_PAGES});
+                    }
+                } catch (Exception error) {
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                    } else {
+                        callback.onWriteFailed("Print write failed: " + error.getMessage());
+                    }
                 } finally {
-                    pageBmp.recycle();
+                    if (printedPdfDocument != null) {
+                        printedPdfDocument.close();
+                        printedPdfDocument = null;
+                    }
                 }
-            }
-
-            try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
-                printedPdfDocument.writeTo(out);
-            }
-
-            callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-        } catch (Exception e) {
-            callback.onWriteFailed("Print write failed: " + e.getMessage());
-        } finally {
-            if (printedPdfDocument != null) {
-                printedPdfDocument.close();
-                printedPdfDocument = null;
-            }
+            });
+        } catch (RejectedExecutionException ignored) {
+            callback.onWriteCancelled();
         }
+    }
+
+    @Override
+    public void onFinish() {
+        finished.set(true);
+        try {
+            // Serialize document cleanup behind any in-flight layout/write.
+            printWorker.execute(() -> {
+                if (printedPdfDocument != null) {
+                    printedPdfDocument.close();
+                    printedPdfDocument = null;
+                }
+            });
+        } catch (RejectedExecutionException ignored) {
+            // Already terminated.
+        } finally {
+            printWorker.shutdown();
+        }
+        super.onFinish();
     }
 
     private void overlaySignatureWidgetsForPage(PDDocument doc, int pageIndex, Canvas canvas, int canvasWidth, int canvasHeight) {
