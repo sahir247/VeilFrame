@@ -17,6 +17,12 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 - Video Studio: use Android API 27+ scaled frame decoding for preview thumbnails, keeping source metadata and full-resolution rendering unchanged.
 - Background removal: read EXIF orientation once per decoded image.
 
+## Follow-up implementation (17 November 2026)
+
+- **FFmpeg interruption safety (follow-up branch):** `VideoProcessor.runFFmpegSession` now cancels its own FFmpegKit session if the blocking worker is interrupted, restores the thread interrupt flag and propagates `InterruptedException`. It does not cancel unrelated sessions or impose a fixed timeout on legitimate long encodes. **Not yet CI/device validated.**
+- **Important limitation:** coroutine cancellation does not necessarily interrupt the Java thread executing this synchronous method. Callers must still be audited to propagate cancellation to the session; do not mark full FFmpeg cancellation complete.
+- **Not completed in this follow-up:** remaining typed PDF sinks, process-death cleanup, image export fidelity, NCNN/Vulkan profiling, Macrobenchmark/Baseline Profiles and device performance validation. These remain open until implemented and tested.
+
 ## Priority 0 — finish and verify first
 
 1. **End-to-end export continuity:** review every remaining Quick Tool path still using `ByteArrayOutputStream` (merge, rotate, delete, compression, office conversion, signing, metadata). Route large outputs through file callbacks, then migrate controllers to a shared typed output contract; preserve simple small outputs where appropriate. Test picker cancel, navigation during export, >300-page PDF, 150/300 DPI image ZIP, free-space exhaustion, invalid PDFs, repeated exports, and ZIP integrity.
@@ -38,7 +44,7 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 
 ### Video suite
 - Profile FFmpeg startup, full video ingest/copy, MediaMetadataRetriever calls, transcoding and frame extraction. Avoid decoding full video frames solely for previews; use scaled retrieval wherever coordinate mapping is proven correct.
-- Review the blocking `CountDownLatch.await()` inside `MediaProcessor.runFFmpegSession`. Make cancellation observable to the waiting worker and release native sessions exactly once; do not add a short fixed timeout to legitimate long video exports.
+- The blocking `CountDownLatch.await()` now cancels its specific FFmpegKit session on thread interruption. Audit all synchronous callers and coroutine cancellation paths so cancellation actually interrupts or cancels active work; verify callback races and native cleanup on-device. Do not add a short fixed timeout to legitimate long video exports.
 - For video PII scanning, measure the full-frame decode → analysis downscale cost. Any scaled-frame change must retain accurate source coordinates and redaction locations, verified against video rotation and aspect ratio.
 
 ### NCNN, RIFE, RealSR, matting
