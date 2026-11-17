@@ -1170,7 +1170,14 @@ object VideoProcessor {
         )
         val activeSessionId = asyncSession?.sessionId ?: -1L
         onSessionId?.invoke(activeSessionId)
-        latch.await()
+        try {
+            latch.await()
+        } catch (interrupted: InterruptedException) {
+            // Stop only this native encode when its waiting worker is interrupted.
+            if (activeSessionId >= 0L) FFmpegKit.cancel(activeSessionId)
+            Thread.currentThread().interrupt()
+            throw interrupted
+        }
         return resultHolder[0]
     }
 
