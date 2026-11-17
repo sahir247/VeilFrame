@@ -77,17 +77,24 @@ jobs:
           GRADLE_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
           mkdir -p "$GRADLE_DIR/init.d"
           cat > "$GRADLE_DIR/init.d/veilframe-opencv-maven.gradle" <<'GRADLE'
+          // Only the OpenCV-generated Gradle project needs this workaround.
+          // The VeilFrame root project uses FAIL_ON_PROJECT_REPOS and rejects
+          // project-level repository injections during its own build.
           gradle.beforeSettings { settings ->
-              settings.pluginManagement.repositories {
-                  maven { url = uri('https://repo.maven.apache.org/maven2/') }
+              if (settings.settingsDir.absolutePath.contains('/.opencv_build/')) {
+                  settings.pluginManagement.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
               }
           }
           gradle.beforeProject { project ->
-              project.buildscript.repositories {
-                  maven { url = uri('https://repo.maven.apache.org/maven2/') }
-              }
-              project.repositories {
-                  maven { url = uri('https://repo.maven.apache.org/maven2/') }
+              if (project.rootDir.absolutePath.contains('/.opencv_build/')) {
+                  project.buildscript.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
+                  project.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
               }
           }
           GRADLE
