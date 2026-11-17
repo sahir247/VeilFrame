@@ -49,8 +49,8 @@ def capture_meminfo(serial: str | None, package: str) -> dict[str, int | None]:
         pss = extract_int(r"^\s*TOTAL\s+([\d,]+)\s+", output)
     return {
         "total_pss_kib": pss,
-        "native_heap_kib": extract_int(r"^\s*Native Heap\s+([\d,]+)", output),
-        "dalvik_heap_kib": extract_int(r"^\s*Dalvik Heap\s+([\d,]+)", output),
+        "native_pss_kib": extract_int(r"^\s*Native Heap\s+([\d,]+)", output),
+        "dalvik_pss_kib": extract_int(r"^\s*Dalvik Heap\s+([\d,]+)", output),
     }
 
 
