@@ -30,6 +30,7 @@ class PdfPageThumbnailAdapter(
     private var pdfUri: Uri? = null
     private var totalPages: Int = 0
     private val pageOrder = mutableListOf<Int>()
+    private var isOrderModified = false
     private val selectedPages = mutableSetOf<Int>()
     private val deletedPages = mutableSetOf<Int>()
     private val pageRotations = mutableMapOf<Int, Int>()
@@ -56,6 +57,7 @@ class PdfPageThumbnailAdapter(
         totalPages = count
         pageOrder.clear()
         for (i in 1..count) pageOrder.add(i)
+        isOrderModified = false
         selectedPages.clear()
         selectedPages.addAll(initialSelectedPages)
         deletedPages.clear()
@@ -69,6 +71,7 @@ class PdfPageThumbnailAdapter(
         pdfUri = null
         totalPages = 0
         pageOrder.clear()
+        isOrderModified = false
         selectedPages.clear()
         deletedPages.clear()
         pageRotations.clear()
@@ -81,11 +84,17 @@ class PdfPageThumbnailAdapter(
         if (fromPosition < 0 || fromPosition >= pageOrder.size || toPosition < 0 || toPosition >= pageOrder.size) return
         val item = pageOrder.removeAt(fromPosition)
         pageOrder.add(toPosition, item)
+        refreshReorderedState()
         notifyItemMoved(fromPosition, toPosition)
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
 
     fun getPageOrder(): List<Int> = pageOrder.toList()
+
+    private fun refreshReorderedState() {
+        // Run once per reorder operation, never once per recycled ViewHolder bind.
+        isOrderModified = pageOrder.indices.any { pageOrder[it] != it + 1 }
+    }
 
     fun setPageOrder(newOrder: List<Int>) {
         pageOrder.clear()
@@ -94,6 +103,7 @@ class PdfPageThumbnailAdapter(
             val remaining = (1..totalPages).filter { it !in pageOrder }
             pageOrder.addAll(remaining)
         }
+        refreshReorderedState()
         notifyDataSetChanged()
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
@@ -101,6 +111,7 @@ class PdfPageThumbnailAdapter(
     fun resetOrder() {
         pageOrder.clear()
         for (i in 1..totalPages) pageOrder.add(i)
+        isOrderModified = false
         notifyDataSetChanged()
         onPageOrderChanged?.invoke(pageOrder.toList())
     }
@@ -223,7 +234,7 @@ class PdfPageThumbnailAdapter(
             }
 
             val currentPos = bindingAdapterPosition
-            val isReordered = pageOrder != (1..totalPages).toList()
+            val isReordered = isOrderModified
             val isMoved = isReordered && currentPos >= 0 && (currentPos + 1 != pageNumber)
 
             binding.tvPageNumber.text = if (isReordered && currentPos >= 0) {
