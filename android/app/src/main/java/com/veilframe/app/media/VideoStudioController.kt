@@ -2497,9 +2497,10 @@ class VideoStudioController(
             isIndeterminate = false,
             cancelable = true,
             onCancel = {
-                stabilizationJob?.cancel()
+                val jobToCancel = stabilizationJob
+                jobToCancel?.cancel()
+                videoSessionRegistry.cancel(jobToCancel)
                 stabilizationJob = null
-                videoSessionRegistry.cancel(stabilizationJob)
             }
         )
 
@@ -2820,9 +2821,10 @@ class VideoStudioController(
             isIndeterminate = false,
             cancelable = true,
             onCancel = {
-                videoRedactionJob?.cancel()
+                val jobToCancel = videoRedactionJob
+                jobToCancel?.cancel()
+                videoSessionRegistry.cancel(jobToCancel)
                 videoRedactionJob = null
-                videoSessionRegistry.cancel(videoRedactionJob)
             }
         )
 
