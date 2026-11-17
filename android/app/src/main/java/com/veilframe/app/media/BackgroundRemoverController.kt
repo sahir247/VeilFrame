@@ -343,7 +343,7 @@ class BackgroundRemoverController(
             }
 
             val decoded = try {
-                RembgImageUtils.decodeOrientedBitmap(bytes)
+                RembgImageUtils.decodeOrientedBitmap(bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX)
             } catch (e: Exception) {
                 Log.e(TAG, "Decoding oriented bitmap failed", e)
                 null

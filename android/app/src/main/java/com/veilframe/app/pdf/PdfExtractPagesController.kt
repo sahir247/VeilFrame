@@ -23,6 +23,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -319,58 +321,78 @@ class PdfExtractPagesController(
                             else -> 150
                         }
 
-                        val compressedImages = mutableListOf<Pair<Int, ByteArray>>()
-                        val result = pdfOrganizer.extractPagesAsImages(
-                            context = activity,
-                            inputUri = uri,
-                            pagesToExtract = selectedPages,
-                            format = format,
-                            dpi = dpi,
-                            outputCallback = { pageNum, bmp ->
-                                val out = ByteArrayOutputStream()
-                                val compressFormat = when (format) {
-                                    ImageFormat.PNG -> Bitmap.CompressFormat.PNG
-                                    ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
-                                    ImageFormat.WEBP -> Bitmap.CompressFormat.WEBP
+                        val ext = when (format) {
+                            ImageFormat.PNG -> "png"
+                            ImageFormat.JPEG -> "jpg"
+                            ImageFormat.WEBP -> "webp"
+                        }
+                        val compressFormat = when (format) {
+                            ImageFormat.PNG -> Bitmap.CompressFormat.PNG
+                            ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
+                            ImageFormat.WEBP -> Bitmap.CompressFormat.WEBP
+                        }
+
+                        val exportName: String
+                        val exportBytes: ByteArray?
+
+                        if (selectedPages.size == 1) {
+                            var singleBytes: ByteArray? = null
+                            val result = pdfOrganizer.extractPagesAsImages(
+                                context = activity,
+                                inputUri = uri,
+                                pagesToExtract = selectedPages,
+                                format = format,
+                                dpi = dpi,
+                                outputCallback = { _, bmp ->
+                                    val out = ByteArrayOutputStream()
+                                    bmp.compress(compressFormat, 90, out)
+                                    singleBytes = out.toByteArray()
                                 }
-                                bmp.compress(compressFormat, 90, out)
-                                compressedImages.add(pageNum to out.toByteArray())
+                            )
+                            val pageNum = selectedPages.first()
+                            exportName = "${base}_page_${pageNum}.$ext"
+                            exportBytes = if (result.isSuccess) singleBytes else null
+                        } else {
+                            val tempZip = File(activity.cacheDir, "extracted_${System.currentTimeMillis()}.zip")
+                            var zipOk = false
+                            try {
+                                java.io.FileOutputStream(tempZip).buffered().use { fos ->
+                                    ZipOutputStream(fos).use { zos ->
+                                        val result = pdfOrganizer.extractPagesAsImages(
+                                            context = activity,
+                                            inputUri = uri,
+                                            pagesToExtract = selectedPages,
+                                            format = format,
+                                            dpi = dpi,
+                                            outputCallback = { pageNum, bmp ->
+                                                val entry = ZipEntry("${base}_page_${pageNum}.$ext")
+                                                zos.putNextEntry(entry)
+                                                bmp.compress(compressFormat, 90, zos)
+                                                zos.closeEntry()
+                                            }
+                                        )
+                                        zipOk = result.isSuccess
+                                    }
+                                }
+                                exportName = "${base}_extracted_images.zip"
+                                exportBytes = if (zipOk && tempZip.isFile && tempZip.length() > 0L) {
+                                    tempZip.readBytes()
+                                } else null
+                            } finally {
+                                tempZip.delete()
                             }
-                        )
+                        }
 
                         withContext(Dispatchers.Main) {
                             isExtracting = false
                             binding.btnExtractPagesExecute.isEnabled = true
                             binding.btnExtractPagesExecute.text = "Extract as Images & Export"
 
-                            if (result.isSuccess && compressedImages.isNotEmpty()) {
+                            if (exportBytes != null) {
                                 isSaved = true
-                                val ext = when (format) {
-                                    ImageFormat.PNG -> "png"
-                                    ImageFormat.JPEG -> "jpg"
-                                    ImageFormat.WEBP -> "webp"
-                                }
-
-                                if (compressedImages.size == 1) {
-                                    val (num, bytes) = compressedImages.first()
-                                    val exportName = "${base}_page_${num}.$ext"
-                                    onSaveFileRequest(bytes, exportName)
-                                } else {
-                                    val zipOut = ByteArrayOutputStream()
-                                    ZipOutputStream(zipOut).use { zos ->
-                                        for ((num, bytes) in compressedImages) {
-                                            val entry = ZipEntry("${base}_page_${num}.$ext")
-                                            zos.putNextEntry(entry)
-                                            zos.write(bytes)
-                                            zos.closeEntry()
-                                        }
-                                    }
-                                    val exportName = "${base}_extracted_images.zip"
-                                    onSaveFileRequest(zipOut.toByteArray(), exportName)
-                                }
+                                onSaveFileRequest(exportBytes, exportName)
                             } else {
-                                val err = result.exceptionOrNull()?.message ?: "Unknown rendering error"
-                                Toast.makeText(activity, "Failed to render images: $err", Toast.LENGTH_LONG).show()
+                                Toast.makeText(activity, "Failed to render images", Toast.LENGTH_LONG).show()
                             }
                         }
                     }

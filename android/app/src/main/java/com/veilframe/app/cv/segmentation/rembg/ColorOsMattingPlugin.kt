@@ -189,7 +189,11 @@ object ColorOsMattingPlugin {
         onProgress(RembgProgress(30, "Decoding image…"))
         ensureActive()
 
-        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes, inMutable = true)
+        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
+            imageBytes,
+            maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
+            inMutable = true
+        )
         var cutoutBitmap: Bitmap? = null
         try {
             val srcW = sourceBitmap.width

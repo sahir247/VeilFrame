@@ -1,6 +1,8 @@
 package com.veilframe.app.cv.core
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import com.veilframe.app.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
@@ -18,7 +20,16 @@ internal object LiteRtModelStorage {
         require(key.matches(Regex("[a-z0-9-]+"))) { "Invalid LiteRT model cache key" }
         val app = context.applicationContext
         val directory = app.noBackupFilesDir
-        val apkRevision = app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            app.packageManager.getPackageInfo(
+                app.packageName,
+                PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            app.packageManager.getPackageInfo(app.packageName, 0)
+        }
+        val apkRevision = packageInfo.lastUpdateTime
         val prefix = "vf-litert-$key-"
         val destination = File(directory, "$prefix${BuildConfig.VERSION_CODE}-$apkRevision.tflite")
         if (destination.isFile && destination.length() > 0L) return destination

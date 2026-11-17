@@ -80,7 +80,11 @@ class CelBackgroundRemover(
 
         onProgress(RembgProgress(30, "Decoding image…"))
         ensureActive()
-        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(imageBytes, inMutable = true)
+        val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
+            imageBytes,
+            maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
+            inMutable = true
+        )
 
         val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
             sourceBitmap

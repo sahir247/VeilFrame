@@ -345,6 +345,7 @@ class PdfImpositionController(
             binding.btnImpositionExecute.text = "Calculating & Imposing..."
 
             activeJob = taskTracker.launch(Dispatchers.IO) {
+                var tempOut: File? = null
                 try {
                     val config = getCurrentConfig()
                     val layouts = ImpositionEngine.calculateLayout(
@@ -354,16 +355,16 @@ class PdfImpositionController(
                         config = config
                     )
 
-                    val tempOut = File(activity.cacheDir, "imposed_${System.currentTimeMillis()}.pdf")
+                    val outputFile = File(activity.cacheDir, "imposed_${System.currentTimeMillis()}.pdf")
+                    tempOut = outputFile
                     ImpositionPdfExporter.exportImposedPdf(
                         context = activity,
                         inputUri = uri,
                         sheetLayouts = layouts,
-                        outputFile = tempOut
+                        outputFile = outputFile
                     )
 
-                    val bytes = tempOut.readBytes()
-                    tempOut.delete()
+                    val bytes = outputFile.readBytes()
 
                     withContext(Dispatchers.Main) {
                         isGenerating = false
@@ -375,6 +376,8 @@ class PdfImpositionController(
                         val exportName = "${base}_imposed.pdf"
                         onSavePdfRequest(bytes, exportName)
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         isGenerating = false
@@ -382,6 +385,8 @@ class PdfImpositionController(
                         binding.btnImpositionExecute.text = "Generate Imposed Print PDF"
                         Toast.makeText(activity, "Imposition failed: ${e.message}", Toast.LENGTH_LONG).show()
                     }
+                } finally {
+                    tempOut?.delete()
                 }
             }
         }

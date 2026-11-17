@@ -15,6 +15,7 @@ import kotlin.math.min
 object RembgImageUtils {
 
     const val MAX_DISPLAY_PX = 2048
+    const val MAX_MATTING_DIMENSION = 4096
 
     fun decodeOrientedBitmap(bytes: ByteArray, maxDimension: Int? = null, inMutable: Boolean = false): Bitmap {
         val options = BitmapFactory.Options().apply {

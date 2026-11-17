@@ -145,17 +145,23 @@ class PdfUnlockController(
         unlockedResult = null
         isSaved = false
 
-        val check = PdfUnlockEngine.checkEncryption(bytes)
-        when (check) {
-            is PdfInitialCheck.PasswordRequired -> {
-                showPasswordDialog(bytes, fileName)
-            }
-            is PdfInitialCheck.Clear -> {
-                // Document not encrypted, decrypt directly with empty password
-                executeUnlock(bytes, fileName, "")
-            }
-            is PdfInitialCheck.Failed -> {
-                Toast.makeText(activity, check.error, Toast.LENGTH_LONG).show()
+        binding.progressPdfUnlockPreview.visibility = View.VISIBLE
+        taskTracker.launch(Dispatchers.IO) {
+            val check = PdfUnlockEngine.checkEncryption(bytes)
+            withContext(Dispatchers.Main) {
+                binding.progressPdfUnlockPreview.visibility = View.GONE
+                when (check) {
+                    is PdfInitialCheck.PasswordRequired -> {
+                        showPasswordDialog(bytes, fileName)
+                    }
+                    is PdfInitialCheck.Clear -> {
+                        // Document not encrypted, decrypt directly with empty password
+                        executeUnlock(bytes, fileName, "")
+                    }
+                    is PdfInitialCheck.Failed -> {
+                        Toast.makeText(activity, check.error, Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
     }
@@ -313,7 +319,7 @@ class PdfUnlockController(
                     activity,
                     res.unlockedBytes,
                     null,
-                    originalPdfName ?: "Unlocked Document",
+                    originalPdfName,
                     false,
                     null,
                     null

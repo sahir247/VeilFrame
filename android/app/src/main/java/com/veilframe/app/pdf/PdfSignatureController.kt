@@ -182,12 +182,17 @@ class PdfSignatureController(
             return
         }
 
-        // Check if password protected
-        val check = PdfUnlockEngine.checkEncryption(bytes)
-        if (check is PdfInitialCheck.PasswordRequired) {
-            showPasswordDialog(bytes, fileName)
-        } else {
-            runInspection(bytes, fileName, "")
+        binding.progressPdfPreview.visibility = View.VISIBLE
+        taskTracker.launch(Dispatchers.IO) {
+            val check = PdfUnlockEngine.checkEncryption(bytes)
+            withContext(Dispatchers.Main) {
+                binding.progressPdfPreview.visibility = View.GONE
+                if (check is PdfInitialCheck.PasswordRequired) {
+                    showPasswordDialog(bytes, fileName)
+                } else {
+                    runInspection(bytes, fileName, "")
+                }
+            }
         }
     }
 
@@ -598,7 +603,7 @@ class PdfSignatureController(
                     activity,
                     bytes,
                     currentPassword,
-                    currentPdfName ?: "Document",
+                    currentPdfName,
                     isVerified,
                     firstSig?.signerName,
                     firstSig?.signingDate

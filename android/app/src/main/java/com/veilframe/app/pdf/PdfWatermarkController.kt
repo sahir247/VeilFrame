@@ -233,10 +233,12 @@ class PdfWatermarkController(
             binding.btnWatermarkApplyExport.text = "Applying Watermark..."
 
             taskTracker.launch(Dispatchers.IO) {
+                var tempOut: File? = null
                 try {
                     val config = getCurrentConfig()
-                    val tempOut = File(activity.cacheDir, "watermarked_${System.currentTimeMillis()}.pdf")
-                    val outUri = Uri.fromFile(tempOut)
+                    val outputFile = File(activity.cacheDir, "watermarked_${System.currentTimeMillis()}.pdf")
+                    tempOut = outputFile
+                    val outUri = Uri.fromFile(outputFile)
                     val result = pdfWatermarker.addWatermark(
                         context = activity,
                         inputUri = uri,
@@ -244,24 +246,27 @@ class PdfWatermarkController(
                         config = config
                     )
 
+                    val outputBytes = if (result.success && outputFile.exists()) {
+                        outputFile.readBytes()
+                    } else null
+
                     withContext(Dispatchers.Main) {
                         isApplying = false
                         binding.btnWatermarkApplyExport.isEnabled = true
                         binding.btnWatermarkApplyExport.text = "Apply Watermark & Export"
 
-                        if (result.success && tempOut.exists()) {
+                        if (outputBytes != null) {
                             isSaved = true
-                            val bytes = tempOut.readBytes()
-                            tempOut.delete()
                             val base = activePdfName.removeSuffix(".pdf")
                             val exportName = "${base}_watermarked.pdf"
-                            onSavePdfRequest(bytes, exportName)
+                            onSavePdfRequest(outputBytes, exportName)
                         } else {
-                            tempOut.delete()
                             val err = result.errorMessage ?: "Failed to watermark document"
                             Toast.makeText(activity, err, Toast.LENGTH_LONG).show()
                         }
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         isApplying = false
@@ -269,6 +274,8 @@ class PdfWatermarkController(
                         binding.btnWatermarkApplyExport.text = "Apply Watermark & Export"
                         Toast.makeText(activity, "Watermarking failed: ${e.message}", Toast.LENGTH_LONG).show()
                     }
+                } finally {
+                    tempOut?.delete()
                 }
             }
         }

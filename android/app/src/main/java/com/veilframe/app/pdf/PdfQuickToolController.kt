@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Collections
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -2408,13 +2409,13 @@ class PdfQuickToolController(
                         }
 
                         val tempInput = File(activity.cacheDir, "temp_doc_${System.currentTimeMillis()}$ext")
-                        activity.contentResolver.openInputStream(uri)?.use { input ->
-                            tempInput.outputStream().use { output -> input.copyTo(output) }
-                        }
                         val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
-
                         var conversionError: String? = null
+                        var success = false
                         try {
+                            activity.contentResolver.openInputStream(uri)?.use { input ->
+                                tempInput.outputStream().use { output -> input.copyTo(output) }
+                            }
                             when (ext) {
                                 ".xlsx" -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
                                 ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
@@ -2439,16 +2440,16 @@ class PdfQuickToolController(
                                     }
                                 }
                             }
+                            success = tempPdf.exists() && tempPdf.length() > 0
+                            if (success) {
+                                tempPdf.inputStream().use { it.copyTo(outStream) }
+                            }
                         } catch (t: Throwable) {
                             conversionError = t.message ?: "Failed to convert document"
+                        } finally {
+                            tempInput.delete()
+                            tempPdf.delete()
                         }
-
-                        val success = tempPdf.exists() && tempPdf.length() > 0
-                        if (success) {
-                            tempPdf.inputStream().use { it.copyTo(outStream) }
-                        }
-                        tempInput.delete()
-                        tempPdf.delete()
                         withContext(Dispatchers.Main) {
                             if (success) {
                                 finishExecution(true, outStream.toByteArray(), "${base}.pdf", origText)
@@ -2462,32 +2463,39 @@ class PdfQuickToolController(
                     }
                     QuickMode.PDF_TO_IMAGE -> {
                         val uri = selectedUris.first()
-                        val bitmaps = mutableListOf<Pair<Int, Bitmap>>()
-                        val result = imageConverter.pdfToImages(
-                            context = activity,
-                            inputUri = uri,
-                            format = ImageFormat.WEBP,
-                            dpi = 150,
-                            outputCallback = { pageNum, bmp ->
-                                bitmaps.add(pageNum to bmp)
-                            }
-                        )
-
-                        withContext(Dispatchers.Main) {
-                            if (result.isSuccess && bitmaps.isNotEmpty()) {
-                                val zipOut = ByteArrayOutputStream()
-                                ZipOutputStream(zipOut).use { zos ->
-                                    for ((num, bmp) in bitmaps) {
-                                        val entry = ZipEntry("${base}_page_${num}.webp")
-                                        zos.putNextEntry(entry)
-                                        bmp.compress(Bitmap.CompressFormat.WEBP, 90, zos)
-                                        zos.closeEntry()
-                                    }
+                        val tempZip = File(activity.cacheDir, "quick_images_${System.currentTimeMillis()}.zip")
+                        var zipOk = false
+                        try {
+                            java.io.FileOutputStream(tempZip).buffered().use { fos ->
+                                ZipOutputStream(fos).use { zos ->
+                                    val result = imageConverter.pdfToImages(
+                                        context = activity,
+                                        inputUri = uri,
+                                        format = ImageFormat.WEBP,
+                                        dpi = 150,
+                                        outputCallback = { pageNum, bmp ->
+                                            val entry = ZipEntry("${base}_page_${pageNum}.webp")
+                                            zos.putNextEntry(entry)
+                                            bmp.compress(Bitmap.CompressFormat.WEBP, 90, zos)
+                                            zos.closeEntry()
+                                        }
+                                    )
+                                    zipOk = result.isSuccess
                                 }
-                                finishExecution(true, zipOut.toByteArray(), "${base}_images.zip", origText)
-                            } else {
-                                finishExecution(false, ByteArray(0), "", origText)
                             }
+                            val zipBytes = if (zipOk && tempZip.isFile && tempZip.length() > 0L) {
+                                tempZip.readBytes()
+                            } else null
+
+                            withContext(Dispatchers.Main) {
+                                if (zipBytes != null) {
+                                    finishExecution(true, zipBytes, "${base}_images.zip", origText)
+                                } else {
+                                    finishExecution(false, ByteArray(0), "", origText)
+                                }
+                            }
+                        } finally {
+                            tempZip.delete()
                         }
                     }
                     else -> {
