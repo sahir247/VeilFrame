@@ -91,10 +91,9 @@ class PdfSuiteCoordinator(
         }
         scope.launch(Dispatchers.IO) {
             try {
-                val stream = activity.contentResolver.openOutputStream(destination)
-                    ?: throw IOException("Unable to open destination document")
-                stream.use { output ->
-                    file.inputStream().use { input -> input.copyTo(output) }
+                PdfFileExport.copyAndDelete(file) {
+                    activity.contentResolver.openOutputStream(destination)
+                        ?: throw IOException("Unable to open destination document")
                 }
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, successMessage, Toast.LENGTH_LONG).show()
