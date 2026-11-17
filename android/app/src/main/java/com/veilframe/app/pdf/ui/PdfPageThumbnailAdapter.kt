@@ -82,6 +82,7 @@ class PdfPageThumbnailAdapter(
 
     fun moveItem(fromPosition: Int, toPosition: Int) {
         if (fromPosition < 0 || fromPosition >= pageOrder.size || toPosition < 0 || toPosition >= pageOrder.size) return
+        if (fromPosition == toPosition) return
         val item = pageOrder.removeAt(fromPosition)
         pageOrder.add(toPosition, item)
         refreshReorderedState()
@@ -97,12 +98,15 @@ class PdfPageThumbnailAdapter(
     }
 
     fun setPageOrder(newOrder: List<Int>) {
-        pageOrder.clear()
-        pageOrder.addAll(newOrder.filter { it in 1..totalPages })
-        if (pageOrder.size < totalPages) {
-            val remaining = (1..totalPages).filter { it !in pageOrder }
-            pageOrder.addAll(remaining)
+        // Manual sequences can include duplicates or invalid page numbers.
+        // Normalize to a permutation: each original page appears exactly once.
+        val normalized = LinkedHashSet<Int>(totalPages)
+        for (page in newOrder) {
+            if (page in 1..totalPages) normalized.add(page)
         }
+        for (page in 1..totalPages) normalized.add(page)
+        pageOrder.clear()
+        pageOrder.addAll(normalized)
         refreshReorderedState()
         notifyDataSetChanged()
         onPageOrderChanged?.invoke(pageOrder.toList())
@@ -307,7 +311,8 @@ class PdfPageThumbnailAdapter(
                     } else {
                         deletedPages.add(pageNumber)
                     }
-                    notifyItemChanged(bindingAdapterPosition)
+                    val current = bindingAdapterPosition
+                    if (current != RecyclerView.NO_POSITION) notifyItemChanged(current)
                 } else if (isReorderMode) {
                     onPagePreviewRequested?.invoke(pageNumber)
                 } else {
@@ -316,7 +321,8 @@ class PdfPageThumbnailAdapter(
                     } else {
                         selectedPages.add(pageNumber)
                     }
-                    notifyItemChanged(bindingAdapterPosition)
+                    val current = bindingAdapterPosition
+                    if (current != RecyclerView.NO_POSITION) notifyItemChanged(current)
                     onPageSelectionChanged(selectedPages)
                 }
             }
@@ -328,7 +334,8 @@ class PdfPageThumbnailAdapter(
                 } else {
                     selectedPages.add(pageNumber)
                 }
-                notifyItemChanged(bindingAdapterPosition)
+                val current = bindingAdapterPosition
+                if (current != RecyclerView.NO_POSITION) notifyItemChanged(current)
                 onPageSelectionChanged(selectedPages)
             }
 
