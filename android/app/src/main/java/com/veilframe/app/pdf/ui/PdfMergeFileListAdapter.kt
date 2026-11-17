@@ -16,7 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Collections
 
 /**
  * RecyclerView adapter managing multi-file list items for Merge PDF and Image to PDF compilation.
@@ -46,7 +45,9 @@ class PdfMergeFileListAdapter(
 
     fun moveItem(fromPosition: Int, toPosition: Int) {
         if (fromPosition < 0 || fromPosition >= uris.size || toPosition < 0 || toPosition >= uris.size) return
-        Collections.swap(uris, fromPosition, toPosition)
+        if (fromPosition == toPosition) return
+        val item = uris.removeAt(fromPosition)
+        uris.add(toPosition, item)
         notifyItemMoved(fromPosition, toPosition)
         val start = minOf(fromPosition, toPosition)
         val count = kotlin.math.abs(fromPosition - toPosition) + 1
@@ -93,9 +94,12 @@ class PdfMergeFileListAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var renderJob: Job? = null
+        private var boundUri: Uri? = null
 
         fun bind(uri: Uri, position: Int) {
             renderJob?.cancel()
+            boundUri = uri
+            binding.ivMergeThumb.setImageDrawable(null)
             val name = queryDocumentName(uri)
 
             binding.tvMergeSequence.text = "#${position + 1}"
@@ -114,18 +118,16 @@ class PdfMergeFileListAdapter(
             binding.btnMergeMoveUp.isEnabled = (position > 0)
             binding.btnMergeMoveUp.alpha = if (position > 0) 1.0f else 0.35f
             binding.btnMergeMoveUp.setOnClickListener {
-                if (position > 0) {
-                    moveItem(position, position - 1)
-                }
+                val currentPosition = bindingAdapterPosition
+                if (currentPosition > 0) moveItem(currentPosition, currentPosition - 1)
             }
 
             // Move Down button
             binding.btnMergeMoveDown.isEnabled = (position < uris.size - 1)
             binding.btnMergeMoveDown.alpha = if (position < uris.size - 1) 1.0f else 0.35f
             binding.btnMergeMoveDown.setOnClickListener {
-                if (position < uris.size - 1) {
-                    moveItem(position, position + 1)
-                }
+                val currentPosition = bindingAdapterPosition
+                if (currentPosition in 0 until uris.lastIndex) moveItem(currentPosition, currentPosition + 1)
             }
 
             // Remove button
@@ -143,7 +145,7 @@ class PdfMergeFileListAdapter(
             // Load first page thumbnail & page count
             binding.pbMergeThumb.visibility = View.VISIBLE
             renderJob = scope.launch(Dispatchers.IO) {
-                val mime = context.contentResolver.getType(uri) ?: ""
+                val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull() ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
                     uri.toString().endsWith(".jpeg", true) ||
@@ -163,6 +165,9 @@ class PdfMergeFileListAdapter(
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (boundUri != uri || bindingAdapterPosition == RecyclerView.NO_POSITION ||
+                        uris.getOrNull(bindingAdapterPosition) != uri
+                    ) return@withContext
                     binding.pbMergeThumb.visibility = View.GONE
                     if (bmp != null) {
                         binding.ivMergeThumb.setImageBitmap(bmp)
@@ -173,6 +178,17 @@ class PdfMergeFileListAdapter(
                 }
             }
         }
+
+        fun cancelRender() {
+            renderJob?.cancel()
+            renderJob = null
+            boundUri = null
+        }
+    }
+
+    override fun onViewRecycled(holder: MergeFileViewHolder) {
+        holder.cancelRender()
+        super.onViewRecycled(holder)
     }
 
     private fun queryDocumentName(uri: Uri): String {
