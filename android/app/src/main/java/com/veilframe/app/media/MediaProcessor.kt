@@ -528,10 +528,12 @@ object VideoProcessor {
             Log.d(TAG, "Executing Standalone EIS Pass 2 (vidstabtransform): -vf $transformVf")
             val durMs = try {
                 val mmr = android.media.MediaMetadataRetriever()
-                mmr.setDataSource(srcFile.absolutePath)
-                val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-                mmr.release()
-                d
+                try {
+                    mmr.setDataSource(srcFile.absolutePath)
+                    (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L).coerceAtLeast(1L)
+                } finally {
+                    mmr.release()
+                }
             } catch (_: Throwable) { 1000L }
 
             val pass2Session = runFFmpegSession(
@@ -593,10 +595,12 @@ object VideoProcessor {
     ): CompressionResult {
         val durMs = try {
             val mmr = android.media.MediaMetadataRetriever()
-            mmr.setDataSource(srcFile.absolutePath)
-            val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-            mmr.release()
-            d
+            try {
+                mmr.setDataSource(srcFile.absolutePath)
+                (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L).coerceAtLeast(1L)
+            } finally {
+                mmr.release()
+            }
         } catch (_: Throwable) { 1000L }
 
         val isComplex = filterChain.contains("[") && filterChain.contains("]")
