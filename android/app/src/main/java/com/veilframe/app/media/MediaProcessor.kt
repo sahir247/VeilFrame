@@ -1172,15 +1172,21 @@ object VideoProcessor {
                 onStatistics?.invoke(encMs)
             }
         )
-        val activeSessionId = asyncSession?.sessionId ?: -1L
-        onSessionId?.invoke(activeSessionId)
+        val activeSessionId = asyncSession?.sessionId
+            ?: throw IllegalStateException("FFmpegKit failed to create a session")
         try {
+            onSessionId?.invoke(activeSessionId)
             latch.await()
-        } catch (interrupted: InterruptedException) {
-            // Stop only this native encode when its waiting worker is interrupted.
-            if (activeSessionId >= 0L) FFmpegKit.cancel(activeSessionId)
-            Thread.currentThread().interrupt()
-            throw interrupted
+        } catch (failure: Throwable) {
+            // Stop only the session owned by this worker, including when the
+            // registration callback throws. Never cancel all sessions globally.
+            try {
+                FFmpegKit.cancel(activeSessionId)
+            } catch (cancelError: Throwable) {
+                failure.addSuppressed(cancelError)
+            }
+            if (failure is InterruptedException) Thread.currentThread().interrupt()
+            throw failure
         }
         return resultHolder[0]
     }
