@@ -160,11 +160,14 @@ object PdfUnlockEngine {
         try {
             file.inputStream().buffered().use { input ->
                 PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
-                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) return@use null
-                    val pageBox = doc.getPage(pageIndex).cropBox
-                    val longestPt = maxOf(pageBox.width, pageBox.height).coerceAtLeast(1f)
-                    val scale = minOf(150f / 72f, maxDimension / longestPt)
-                    PDFRenderer(doc).renderImage(pageIndex, scale)
+                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) {
+                        null
+                    } else {
+                        val pageBox = doc.getPage(pageIndex).cropBox
+                        val longestPt = maxOf(pageBox.width, pageBox.height).coerceAtLeast(1f)
+                        val scale = minOf(150f / 72f, maxDimension / longestPt)
+                        PDFRenderer(doc).renderImage(pageIndex, scale)
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
