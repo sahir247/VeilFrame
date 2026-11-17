@@ -113,19 +113,22 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
                 PdfDocument.Page page = printedPdfDocument.startPage(i);
                 Canvas canvas = page.getCanvas();
 
-                // Render page content at high fidelity
+                // Render pages sequentially. Always release page memory if
+                // drawing or signature overlay fails partway through a print.
                 Bitmap pageBmp = renderer.renderImage(i, 2.0f);
-                Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
-                Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
-                canvas.drawBitmap(pageBmp, src, dst, null);
+                try {
+                    Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
+                    Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
+                    canvas.drawBitmap(pageBmp, src, dst, null);
 
-                // Dynamically overlay verified green checkmark badge if cryptographically valid
-                if (isVerified) {
-                    overlaySignatureWidgetsForPage(doc, i, canvas, canvas.getWidth(), canvas.getHeight());
+                    // Dynamically overlay verified green checkmark badge if cryptographically valid
+                    if (isVerified) {
+                        overlaySignatureWidgetsForPage(doc, i, canvas, canvas.getWidth(), canvas.getHeight());
+                    }
+                    printedPdfDocument.finishPage(page);
+                } finally {
+                    pageBmp.recycle();
                 }
-
-                printedPdfDocument.finishPage(page);
-                pageBmp.recycle();
             }
 
             try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
