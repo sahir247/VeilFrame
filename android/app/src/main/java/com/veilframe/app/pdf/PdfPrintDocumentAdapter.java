@@ -178,18 +178,25 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
                             return;
                         }
 
-                        PdfDocument.Page page = printedPdfDocument.startPage(i);
-                        Canvas canvas = page.getCanvas();
+                        // Render before creating an Android print page: PDFBox may fail on
+                        // malformed content, and leaving an open PdfDocument.Page makes
+                        // PrintedPdfDocument.close() throw on the worker thread.
                         Bitmap pageBmp = renderer.renderImage(i, 2.0f);
                         try {
-                            Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
-                            Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
-                            canvas.drawBitmap(pageBmp, src, dst, null);
-                            if (isVerified) {
-                                overlaySignatureWidgetsForPage(doc, i, canvas,
-                                        canvas.getWidth(), canvas.getHeight());
+                            PdfDocument.Page page = printedPdfDocument.startPage(i);
+                            try {
+                                Canvas canvas = page.getCanvas();
+                                Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
+                                Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
+                                canvas.drawBitmap(pageBmp, src, dst, null);
+                                if (isVerified) {
+                                    overlaySignatureWidgetsForPage(doc, i, canvas,
+                                            canvas.getWidth(), canvas.getHeight());
+                                }
+                            } finally {
+                                // Finish even if drawing the dynamic signature badge fails.
+                                printedPdfDocument.finishPage(page);
                             }
-                            printedPdfDocument.finishPage(page);
                         } finally {
                             pageBmp.recycle();
                         }
