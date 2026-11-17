@@ -2505,6 +2505,7 @@ class VideoStudioController(
         val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
+            var outputHandedToComparison = false
             val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
             ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
@@ -2563,6 +2564,7 @@ class VideoStudioController(
                                 Toast.makeText(activity, "Stabilized footage discarded", Toast.LENGTH_SHORT).show()
                             }
                         )
+                        outputHandedToComparison = true
                     } else {
                         if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
                         Toast.makeText(
@@ -2572,6 +2574,8 @@ class VideoStudioController(
                         ).show()
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Immediate stabilization error", e)
                 withContext(Dispatchers.Main) {
@@ -2580,6 +2584,8 @@ class VideoStudioController(
                     if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
                     Toast.makeText(activity, "Stabilization failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                if (!outputHandedToComparison) tempStabilizedFile.delete()
             }
         }
     }
@@ -2814,6 +2820,7 @@ class VideoStudioController(
         val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
+            var outputHandedToWorkspace = false
             val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
             ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
@@ -2846,6 +2853,7 @@ class VideoStudioController(
                             originalBytes = tempRedactedFile.length()
                         )
                         selectedMediaList[currentMediaIndex] = updatedItem
+                        outputHandedToWorkspace = true
                         editState.isPiiBaked = true
                         editState.piiRedactionFilter = null // Baked directly into preview & base video!
                         editState.piiRedactionSummary = "$targetCount target(s) • ${style.label}"
@@ -2872,6 +2880,8 @@ class VideoStudioController(
                         ).show()
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Immediate video redaction error", e)
                 withContext(Dispatchers.Main) {
@@ -2880,6 +2890,8 @@ class VideoStudioController(
                     if (tempRedactedFile.exists()) tempRedactedFile.delete()
                     Toast.makeText(activity, "Video redaction failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                if (!outputHandedToWorkspace) tempRedactedFile.delete()
             }
         }
     }
