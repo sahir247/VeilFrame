@@ -143,7 +143,7 @@ class PdfUnlockController(
             val fileName = queryDisplayName(uri) ?: "encrypted_document.pdf"
             val encrypted = try {
                 activity.contentResolver.openInputStream(uri)?.use { input ->
-                    PdfUnlockEngine.checkEncryption(input)
+                    PdfUnlockEngine.checkEncryptionStrict(input).getOrThrow()
                 } ?: throw java.io.IOException("Could not open selected PDF")
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
