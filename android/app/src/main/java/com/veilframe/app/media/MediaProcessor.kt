@@ -435,16 +435,21 @@ object VideoProcessor {
             add("-")
         }
         Log.d(TAG, "Executing EIS Pass 1 (vidstabdetect): -vf ${VideoStabilizerEngine.buildVidstabDetectFilter("[TRF_PATH]", eisConfig)}")
-        val pass1Session = runFFmpegSession(
-            cmdArray = pass1Cmd.toTypedArray(),
-            onStatistics = { encMs ->
-                val rawRatio = (encMs / effectiveDurMs).coerceIn(0.0, 1.0)
-                val weightedPct = (rawRatio * 45.0).toInt().coerceIn(0, 45)
-                onProgressPhase?.invoke("Step 1/2: Analyzing motion", encMs, weightedPct)
-                onStatistics?.invoke((encMs * 0.45).toLong())
-            },
-            onSessionId = onSessionId
-        )
+        val pass1Session = try {
+            runFFmpegSession(
+                cmdArray = pass1Cmd.toTypedArray(),
+                onStatistics = { encMs ->
+                    val rawRatio = (encMs / effectiveDurMs).coerceIn(0.0, 1.0)
+                    val weightedPct = (rawRatio * 45.0).toInt().coerceIn(0, 45)
+                    onProgressPhase?.invoke("Step 1/2: Analyzing motion", encMs, weightedPct)
+                    onStatistics?.invoke((encMs * 0.45).toLong())
+                },
+                onSessionId = onSessionId
+            )
+        } catch (failure: Throwable) {
+            trfFile.delete()
+            throw failure
+        }
         val p1Rc = pass1Session?.returnCode
         if (!ReturnCode.isSuccess(p1Rc) || !trfFile.exists() || trfFile.length() == 0L) {
             if (trfFile.exists()) trfFile.delete()
