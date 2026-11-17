@@ -2018,22 +2018,22 @@ class PdfQuickToolController(
 
         activeJob = launchTransient {
             try {
-                val outStream = ByteArrayOutputStream()
                 val base = primaryDocName.removeSuffix(".pdf")
-                val result = pdfSigner.signPdfWithItems(
-                    inputUri = uri,
-                    outputStream = outStream,
-                    items = placements
-                )
-                withContext(Dispatchers.Main) {
-                    binding.btnSignCanvasSave.isEnabled = true
-                    if (result.success) {
-                        binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
-                        finishExecution(true, outStream.toByteArray(), "${base}_signed.pdf", origText)
-                    } else {
-                        isExecuting = false
-                        Toast.makeText(activity, "Export failed: ${result.errorMessage}", Toast.LENGTH_LONG).show()
+                finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
+                    val result = pdfSigner.signPdfWithItems(
+                        inputUri = uri,
+                        outputStream = output,
+                        items = placements
+                    )
+                    withContext(Dispatchers.Main) {
+                        binding.btnSignCanvasSave.isEnabled = true
+                        if (result.success) {
+                            binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+                        } else {
+                            Toast.makeText(activity, "Export failed: ${result.errorMessage}", Toast.LENGTH_LONG).show()
+                        }
                     }
+                    result.success
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2055,19 +2055,34 @@ class PdfQuickToolController(
             val generation = selectionGeneration
             val sourceName = primaryDocName
             launchTransient {
-                val out = ByteArrayOutputStream()
-                val res = metadataManager.removeMetadata(activity, uri, out)
-                withContext(Dispatchers.Main) {
-                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri ||
-                        activeMode != QuickMode.METADATA
-                    ) return@withContext
-                    if (res.isSuccess) {
-                        isSaved = true
-                        val exportName = "${sourceName.removeSuffix(".pdf")}_sanitized.pdf"
-                        onSaveFileRequest(out.toByteArray(), exportName)
-                    } else {
-                        Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
+                val exportName = "${sourceName.removeSuffix(".pdf")}_sanitized.pdf"
+                val file = File.createTempFile("metadata_clean_", ".pdf", activity.cacheDir)
+                var handedOff = false
+                try {
+                    val res = file.outputStream().buffered().use { output ->
+                        metadataManager.removeMetadata(activity, uri, output)
                     }
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    withContext(Dispatchers.Main) {
+                        if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
+                            activeMode == QuickMode.METADATA
+                        ) {
+                            if (res.isSuccess && file.length() > 0L) {
+                                val diskSave = onSaveFileFromDiskRequest
+                                if (diskSave != null) {
+                                    diskSave(file, exportName)
+                                    handedOff = true
+                                } else {
+                                    onSaveFileRequest(file.readBytes(), exportName)
+                                }
+                                isSaved = true
+                            } else {
+                                Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } finally {
+                    if (!handedOff) file.delete()
                 }
             }
         }
@@ -2807,27 +2822,43 @@ class PdfQuickToolController(
                 binding.btnQuickToolExecute.text = "Applying form values..."
                 val outputName = "${primaryDocName.substringBeforeLast('.', primaryDocName)}_filled.pdf"
                 activeJob = launchTransient {
-                    val output = ByteArrayOutputStream()
-                    val result = pdfFormFiller.fillFormToStream(
-                        context = activity,
-                        inputUri = uri,
-                        outputStream = output,
-                        fieldValues = values,
-                        flatten = flatten.isChecked
-                    )
-                    withContext(Dispatchers.Main) {
-                        isExecuting = false
-                        binding.btnQuickToolExecute.isEnabled = true
-                        binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
-                        if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
-                        if (result.success && output.size() > 0) {
-                            isSaved = true
-                            dialog.dismiss()
-                            onSaveFileRequest(output.toByteArray(), outputName)
-                            Toast.makeText(activity, "${result.fieldsUpdated} field(s) filled", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(activity, result.errorMessage ?: "Unable to fill this PDF form", Toast.LENGTH_LONG).show()
+                    val shouldFlatten = flatten.isChecked
+                    val file = File.createTempFile("form_filled_", ".pdf", activity.cacheDir)
+                    var handedOff = false
+                    try {
+                        val result = file.outputStream().buffered().use { output ->
+                            pdfFormFiller.fillFormToStream(
+                                context = activity,
+                                inputUri = uri,
+                                outputStream = output,
+                                fieldValues = values,
+                                flatten = shouldFlatten
+                            )
                         }
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        withContext(Dispatchers.Main) {
+                            isExecuting = false
+                            binding.btnQuickToolExecute.isEnabled = true
+                            binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
+                            if (generation == selectionGeneration && selectedUris.firstOrNull() == uri) {
+                                if (result.success && file.length() > 0L) {
+                                    val diskSave = onSaveFileFromDiskRequest
+                                    if (diskSave != null) {
+                                        diskSave(file, outputName)
+                                        handedOff = true
+                                    } else {
+                                        onSaveFileRequest(file.readBytes(), outputName)
+                                    }
+                                    isSaved = true
+                                    dialog.dismiss()
+                                    Toast.makeText(activity, "${result.fieldsUpdated} field(s) filled", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(activity, result.errorMessage ?: "Unable to fill this PDF form", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    } finally {
+                        if (!handedOff) file.delete()
                     }
                 }
             }
