@@ -92,7 +92,7 @@ class VideoStudioController(
     val originalFile: File? get() = currentItem?.file
     val originalBytes: Long get() = currentItem?.originalBytes ?: 0L
     private var lastResultFile: File? = null
-    @Volatile private var activeFFmpegSessionId: Long = -1L
+    private val videoSessionRegistry = VideoSessionRegistry { id -> FFmpegKit.cancel(id) }
 
     private var compressionJob: Job? = null
     private var piiScanJob: Job? = null
@@ -876,7 +876,14 @@ class VideoStudioController(
         piiScanJob?.cancel()
         piiScanJob = null
         compressionJob?.cancel()
+        videoSessionRegistry.cancel(compressionJob)
         compressionJob = null
+        stabilizationJob?.cancel()
+        videoSessionRegistry.cancel(stabilizationJob)
+        stabilizationJob = null
+        videoRedactionJob?.cancel()
+        videoSessionRegistry.cancel(videoRedactionJob)
+        videoRedactionJob = null
         lastResultFile = null
 
         // Save current edits into currently selected item
@@ -1463,23 +1470,15 @@ class VideoStudioController(
         piiScanJob = null
         compressionJob?.cancel()
         compressionJob = null
-        if (activeFFmpegSessionId >= 0L) {
-            FFmpegKit.cancel(activeFFmpegSessionId)
-            activeFFmpegSessionId = -1L
-        }
+        videoSessionRegistry.cancelAll()
         try {
             piiEngine?.close()
             piiEngine = null
         } catch (ignored: Throwable) {}
     }
 
-    private fun trackEncodingSession(id: Long, ownerJob: Job?) {
-        activeFFmpegSessionId = id
-        // A worker can be cancelled before FFmpegKit reports its session id.
-        // Cancel that late-started session rather than leaving its encoder running.
-        if (id >= 0L && ownerJob?.isActive == false) {
-            FFmpegKit.cancel(id)
-        }
+    private fun trackEncodingSession(id: Long, ownerJob: Job) {
+        videoSessionRegistry.register(ownerJob, id)
     }
 
     private fun handleExecute() {
@@ -1490,11 +1489,7 @@ class VideoStudioController(
 
         if (compressionJob?.isActive == true) {
             compressionJob?.cancel()
-            // Also cancel the running FFmpeg session to immediately free resources
-            if (activeFFmpegSessionId >= 0L) {
-                FFmpegKit.cancel(activeFFmpegSessionId)
-                activeFFmpegSessionId = -1L
-            }
+            videoSessionRegistry.cancel(compressionJob)
             binding.layoutVidProgress.visibility = View.GONE
             binding.btnVidExecute.text = "Compress"
             Toast.makeText(activity, "Compression cancelled", Toast.LENGTH_SHORT).show()
@@ -1529,7 +1524,8 @@ class VideoStudioController(
         VideoStudioForegroundService.start(activity, "Compressing ${itemsToProcess.size} video(s)")
 
         compressionJob = scope.launch(Dispatchers.IO) {
-            val ownerJob = kotlin.coroutines.coroutineContext[Job]
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 var successCount = 0
                 var exportedCount = 0
@@ -1707,7 +1703,8 @@ class VideoStudioController(
     override fun hasPickedMedia(): Boolean = selectedMediaList.isNotEmpty()
     override fun hasUnsavedWork(): Boolean = selectedMediaList.isNotEmpty() || lastResultFile != null
     override val isProcessing: Boolean
-        get() = compressionJob?.isActive == true
+        get() = compressionJob?.isActive == true || stabilizationJob?.isActive == true ||
+            videoRedactionJob?.isActive == true
     override val supportsBackgroundExecution: Boolean
         get() = true
 
@@ -1725,11 +1722,8 @@ class VideoStudioController(
     fun cancelProcessing() {
         VideoStudioForegroundService.stop(activity)
         compressionJob?.cancel()
+        videoSessionRegistry.cancel(compressionJob)
         compressionJob = null
-        if (activeFFmpegSessionId >= 0L) {
-            FFmpegKit.cancel(activeFFmpegSessionId)
-            activeFFmpegSessionId = -1L
-        }
         binding.layoutVidProgress.visibility = View.GONE
         binding.btnVidExecute.text = "Compress"
         syncFloatingDockState()
@@ -1743,6 +1737,13 @@ class VideoStudioController(
         piiScanJob?.cancel()
         piiScanJob = null
         cancelProcessing()
+        stabilizationJob?.cancel()
+        videoSessionRegistry.cancel(stabilizationJob)
+        stabilizationJob = null
+        videoRedactionJob?.cancel()
+        videoSessionRegistry.cancel(videoRedactionJob)
+        videoRedactionJob = null
+        videoSessionRegistry.cancelAll()
         selectedMediaList.forEach {
             it.copyJob?.cancel()
             it.thumbnailBitmap?.recycle()
@@ -2497,17 +2498,15 @@ class VideoStudioController(
             onCancel = {
                 stabilizationJob?.cancel()
                 stabilizationJob = null
-                val sid = activeFFmpegSessionId
-                if (sid >= 0L) {
-                    FFmpegKit.cancel(sid)
-                }
+                videoSessionRegistry.cancel(stabilizationJob)
             }
         )
 
         val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
-            val ownerJob = kotlin.coroutines.coroutineContext[Job]
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
@@ -2808,17 +2807,15 @@ class VideoStudioController(
             onCancel = {
                 videoRedactionJob?.cancel()
                 videoRedactionJob = null
-                val sid = activeFFmpegSessionId
-                if (sid >= 0L) {
-                    FFmpegKit.cancel(sid)
-                }
+                videoSessionRegistry.cancel(videoRedactionJob)
             }
         )
 
         val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
-            val ownerJob = kotlin.coroutines.coroutineContext[Job]
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
