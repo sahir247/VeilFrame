@@ -17,6 +17,11 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 - Video Studio: use Android API 27+ scaled frame decoding for preview thumbnails, keeping source metadata and full-resolution rendering unchanged.
 - Background removal: read EXIF orientation once per decoded image.
 
+## Follow-up implementation (17 November 2026)
+
+- **FFmpeg worker interruption:** `VideoProcessor.runFFmpegSession` now cancels only its active FFmpegKit session when the blocking worker is interrupted, restores the interrupt flag, and propagates the interruption. This is **not yet CI/device verified**.
+- **Still outstanding:** Coroutine cancellation must reach synchronous FFmpeg workers; test cancellation races and cleanup. Typed file-backed PDF sinks, image export fidelity, NCNN/Vulkan profiling, startup benchmarking and real-device acceptance checks remain open.
+
 ## Priority 0 — finish and verify first
 
 1. **End-to-end export continuity:** review every remaining Quick Tool path still using `ByteArrayOutputStream` (merge, rotate, delete, compression, office conversion, signing, metadata). Route large outputs through file callbacks, then migrate controllers to a shared typed output contract; preserve simple small outputs where appropriate. Test picker cancel, navigation during export, >300-page PDF, 150/300 DPI image ZIP, free-space exhaustion, invalid PDFs, repeated exports, and ZIP integrity.
@@ -38,7 +43,7 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 
 ### Video suite
 - Profile FFmpeg startup, full video ingest/copy, MediaMetadataRetriever calls, transcoding and frame extraction. Avoid decoding full video frames solely for previews; use scaled retrieval wherever coordinate mapping is proven correct.
-- Review the blocking `CountDownLatch.await()` inside `MediaProcessor.runFFmpegSession`. Make cancellation observable to the waiting worker and release native sessions exactly once; do not add a short fixed timeout to legitimate long video exports.
+- Thread interruption now cancels the active FFmpegKit session at `CountDownLatch.await()`. Verify coroutine cancellation reaches the waiting worker, callback races, and native cleanup; do not impose a short timeout on legitimate long video exports.
 - For video PII scanning, measure the full-frame decode → analysis downscale cost. Any scaled-frame change must retain accurate source coordinates and redaction locations, verified against video rotation and aspect ratio.
 
 ### NCNN, RIFE, RealSR, matting
