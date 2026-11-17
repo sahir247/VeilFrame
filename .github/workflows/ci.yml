@@ -1335,7 +1335,7 @@ jobs:
             "$APK")
           printf '%s\n' "$VERIFY_OUTPUT"
 
-          # Verify release publisher identity, not only the APK signature syntax.
+          # Verify the publisher identity, not only the signature syntax.
           ACTUAL_CERT=$(printf '%s\n' "$VERIFY_OUTPUT" |
             sed -nE 's/^Signer #1 certificate SHA-256 digest: ([A-Fa-f0-9]{64})$/\1/p' |
             tr '[:upper:]' '[:lower:]')
@@ -1603,42 +1603,8 @@ jobs:
           TMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TMP_DIR"' EXIT
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$TMP_DIR/release.json"
-          # Remove debug binaries and Python distributions from older versions.
-          while IFS=
-
-          APK_DIGEST=$(jq -r '[.assets[] | select(.name == "VeilFrame-android-arm64.apk") | .digest] | first // empty' "$TMP_DIR/release.json")
-          UPDATE_ID=$(jq -r '[.assets[] | select(.name == "update.json") | .id] | first // empty' "$TMP_DIR/release.json")
-          if [[ ! "$APK_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || [ -z "$UPDATE_ID" ]; then
-            echo "::warning::No release APK digest or updater; cannot reconcile checksum."
-            exit 0
-          fi
-
-          APK_SHA=$(printf '%s' "$APK_DIGEST" | cut -d: -f2)
-          gh release download "$TAG" --pattern update.json --dir "$TMP_DIR"
-          RESULT=$(python3 - "$TMP_DIR/update.json" "$APK_SHA" "$VERSION" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-          path = Path(sys.argv[1])
-          digest, version = sys.argv[2:]
-          data = json.loads(path.read_text(encoding="utf-8"))
-          if data.get("versionName") != version or data.get("tag") != "v" + version:
-              raise SystemExit("Published updater version does not match release; refusing repair")
-          if data.get("apk") != "VeilFrame-android-arm64.apk":
-              raise SystemExit("Published updater references an unexpected APK")
-          if data.get("sha256") == digest:
-              print("unchanged")
-          else:
-              data["sha256"] = digest
-              path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-              print("repaired")
-          PY
-          )
-          if [ "$RESULT" = "repaired" ]; then
-            gh release upload "$TAG" --clobber "$TMP_DIR/update.json"
-            echo "::warning::Corrected old updater checksum to match published production APK."
-          fi
-\t' read -r ASSET_ID ASSET_NAME; do
+          # Purge debug APKs and stale Python distributions from this release.
+          while IFS=$'\t' read -r ASSET_ID ASSET_NAME; do
             if [ -n "$ASSET_ID" ]; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" >/dev/null
               echo "::notice::Removed invalid release asset $ASSET_NAME from $TAG."
@@ -1685,8 +1651,8 @@ jobs:
             echo "::warning::Corrected old updater checksum to match published production APK."
           fi
 
-          # Restore the release checksum manifest from GitHub's verified
-          # per-asset digests; do not fetch GBs of release packages.
+          # Rebuild the checksum manifest from GitHub's verified asset digests
+          # without downloading the existing production installers.
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$TMP_DIR/current.json"
           python3 - "$TMP_DIR/current.json" "$TMP_DIR/SHA256SUMS.txt" "$VERSION" <<'PY'
           import json
@@ -1718,4 +1684,4 @@ jobs:
           ), encoding="utf-8")
           PY
           gh release upload "$TAG" --clobber "$TMP_DIR/SHA256SUMS.txt"
-          echo "Published SHA256SUMS.txt using actual release asset digests."
+          echo "Published SHA256SUMS.txt from actual release asset digests."
