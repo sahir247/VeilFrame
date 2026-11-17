@@ -342,6 +342,10 @@ object MultiPersonMattingEngine {
             } finally {
                 kernel.release()
             }
+            // Keep the post-morphology alpha as the source of truth. Previously
+            // speckle removal wrote the ORIGINAL alpha array over this result,
+            // silently undoing edge/whisker gap closing whenever a small blob existed.
+            working.get(0, 0, alphaBytes)
 
             val binary = Mat()
             val labelMap = Mat()
@@ -377,8 +381,8 @@ object MultiPersonMattingEngine {
                             }
                         }
                     }
-                    // Retain the previous pipeline's behavior: if speckles are
-                    // removed, they are applied to the pre-blur alpha channel.
+                    // Remove speckles from the morphologically refined alpha,
+                    // preserving gap closing and subsequent Gaussian feathering.
                     if (modified) working.put(0, 0, alphaBytes)
                 }
             }
@@ -397,7 +401,7 @@ object MultiPersonMattingEngine {
                 y += rows
             }
             return maskBitmap
-        } catch (t: Throwable) {
+        } catch (t: Exception) {
             Log.w(TAG, "OpenCV mask refinement bypassed: ${t.message}")
             return maskBitmap
         } finally {
