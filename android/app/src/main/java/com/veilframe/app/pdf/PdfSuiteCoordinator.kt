@@ -84,17 +84,23 @@ class PdfSuiteCoordinator(
      * Ownership transfers from the producing controller to this coordinator.
      * A cancelled picker, failed destination or successful copy all release the temp file.
      */
-    private fun savePendingFile(file: File, destination: Uri?, successMessage: String) {
+    private fun savePendingFile(
+        file: File, destination: Uri?, successMessage: String,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
         if (destination == null) {
             file.delete()
+            onComplete?.invoke(false)
             return
         }
         scope.launch(Dispatchers.IO) {
+            var successful = false
             try {
                 PdfFileExport.copyAndDelete(file) {
                     activity.contentResolver.openOutputStream(destination)
                         ?: throw IOException("Unable to open destination document")
                 }
+                successful = true
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, successMessage, Toast.LENGTH_LONG).show()
                 }
@@ -106,6 +112,9 @@ class PdfSuiteCoordinator(
                 }
             } finally {
                 file.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    onComplete?.invoke(successful)
+                }
             }
         }
     }
@@ -301,11 +310,16 @@ class PdfSuiteCoordinator(
             pendingQuickToolSaveBytes = null
             pendingQuickToolSaveFile = null
             if (file != null) {
-                savePendingFile(file, destUri, "Processed PDF saved")
+                savePendingFile(file, destUri, "Processed PDF saved") { success ->
+                    quickToolController.onSaveResult(success)
+                }
             } else if (destUri != null && bytes != null) {
                 scope.launch(Dispatchers.IO) {
+                    var successful = false
                     try {
                         activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                            ?: throw IOException("Unable to open destination document")
+                        successful = true
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Processed PDF saved", Toast.LENGTH_LONG).show()
                         }
@@ -313,8 +327,14 @@ class PdfSuiteCoordinator(
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
+                    } finally {
+                        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                            quickToolController.onSaveResult(successful)
+                        }
                     }
                 }
+            } else {
+                quickToolController.onSaveResult(false)
             }
         }
 
