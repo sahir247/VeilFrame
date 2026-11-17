@@ -62,6 +62,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
     private final String signingDate;
 
     private PrintedPdfDocument printedPdfDocument;
+    private PrintAttributes layoutAttributes;
     private int totalPages = 0;
     // Android invokes onLayout/onWrite on Main. PDFBox parsing and page rasterization
     // must run on a private serialized worker, not block UI input or animations.
@@ -128,8 +129,9 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
                         return;
                     }
 
-                    if (printedPdfDocument != null) printedPdfDocument.close();
-                    printedPdfDocument = new PrintedPdfDocument(context, newAttributes);
+                    // onWrite may run multiple times for one layout. Create a fresh
+                    // spool document per write instead of reusing a closed instance.
+                    layoutAttributes = newAttributes;
                     totalPages = pages;
                     PrintDocumentInfo info = new PrintDocumentInfo.Builder(documentName)
                             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
@@ -164,11 +166,11 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
                     return;
                 }
                 try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
-                    if (printedPdfDocument == null) {
+                    if (layoutAttributes == null) {
                         callback.onWriteFailed("Print layout was not initialized");
                         return;
                     }
-
+                    printedPdfDocument = new PrintedPdfDocument(context, layoutAttributes);
                     PDFRenderer renderer = new PDFRenderer(doc);
                     for (int i = 0; i < totalPages; i++) {
                         if (!containsPage(pages, i)) continue;
@@ -221,10 +223,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
                         callback.onWriteFailed("Print write failed: " + error.getMessage());
                     }
                 } finally {
-                    if (printedPdfDocument != null) {
-                        printedPdfDocument.close();
-                        printedPdfDocument = null;
-                    }
+                    closePrintedDocument();
                 }
             });
         } catch (RejectedExecutionException ignored) {
@@ -237,18 +236,26 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
         finished.set(true);
         try {
             // Serialize document cleanup behind any in-flight layout/write.
-            printWorker.execute(() -> {
-                if (printedPdfDocument != null) {
-                    printedPdfDocument.close();
-                    printedPdfDocument = null;
-                }
-            });
+            printWorker.execute(this::closePrintedDocument);
         } catch (RejectedExecutionException ignored) {
             // Already terminated.
         } finally {
             printWorker.shutdown();
         }
         super.onFinish();
+    }
+
+    private void closePrintedDocument() {
+        PrintedPdfDocument previous = printedPdfDocument;
+        printedPdfDocument = null;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (IllegalStateException error) {
+                // A malformed page must not terminate the Android printing worker.
+                android.util.Log.w("VeilFrame.PdfPrint", "Print document cleanup failed", error);
+            }
+        }
     }
 
     private void overlaySignatureWidgetsForPage(PDDocument doc, int pageIndex, Canvas canvas, int canvasWidth, int canvasHeight) {
