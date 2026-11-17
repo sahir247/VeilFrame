@@ -1381,6 +1381,7 @@ class BackgroundRemoverController(
             }
 
             var savedToGallery = false
+            var encodedSuccessfully = false
             var saveErrorMessage: String? = null
             var galleryUri: Uri? = null
             try {
@@ -1392,6 +1393,7 @@ class BackgroundRemoverController(
                     }
                     if (!encoded) throw java.io.IOException("Cutout image encoding failed")
                 }
+                encodedSuccessfully = true
 
                 // MediaStore gallery save
                 val resolver = activity.contentResolver
@@ -1422,6 +1424,7 @@ class BackgroundRemoverController(
                 savedToGallery = true
             } catch (e: Exception) {
                 galleryUri?.let { runCatching { activity.contentResolver.delete(it, null, null) } }
+                if (!encodedSuccessfully) outFile.delete()
                 Log.e(TAG, "Gallery save failed, falling back to SAF", e)
                 saveErrorMessage = e.message
             } finally {
