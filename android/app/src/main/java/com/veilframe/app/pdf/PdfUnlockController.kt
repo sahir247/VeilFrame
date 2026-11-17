@@ -131,11 +131,9 @@ class PdfUnlockController(
         isSaved = false
         binding.progressPdfUnlockPreview.visibility = View.VISIBLE
         binding.ivPdfUnlockPreview.setImageDrawable(null)
-        val fileName = queryDisplayName(uri) ?: "encrypted_document.pdf"
-        originalPdfName = fileName
-
-        // Inspect the picker URI directly: no full-document ByteArray on import.
+        // Provider metadata queries and encrypted-file parsing can block: keep both off Main.
         taskTracker.launch(Dispatchers.IO) {
+            val fileName = queryDisplayName(uri) ?: "encrypted_document.pdf"
             val encrypted = try {
                 activity.contentResolver.openInputStream(uri)?.use { input ->
                     PdfUnlockEngine.checkEncryption(input)
@@ -151,6 +149,7 @@ class PdfUnlockController(
             }
             withContext(Dispatchers.Main) {
                 if (originalPdfUri != uri) return@withContext
+                originalPdfName = fileName
                 binding.progressPdfUnlockPreview.visibility = View.GONE
                 if (encrypted) showPasswordDialogForUri(uri, fileName)
                 else executeUnlockFromUri(uri, fileName, "")
