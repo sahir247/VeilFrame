@@ -37,7 +37,8 @@ class PdfImpositionController(
     private val scope: CoroutineScope,
     private val onPickPdfRequest: () -> Unit,
     private val onSavePdfRequest: (ByteArray, String) -> Unit,
-    private val onNavigateBack: () -> Unit
+    private val onNavigateBack: () -> Unit,
+    private val onSaveFileFromDiskRequest: ((File, String) -> Unit)? = null
 ) : ToolWorkStateContract {
 
     private val taskTracker = PdfTaskTracker(scope)
@@ -344,10 +345,11 @@ class PdfImpositionController(
             binding.btnImpositionExecute.isEnabled = false
             binding.btnImpositionExecute.text = "Calculating & Imposing..."
 
+            // Snapshot view configuration on Main, never read view controls from IO.
+            val config = getCurrentConfig()
             activeJob = taskTracker.launch(Dispatchers.IO) {
                 var tempOut: File? = null
                 try {
-                    val config = getCurrentConfig()
                     val layouts = ImpositionEngine.calculateLayout(
                         pageCount = totalPages,
                         sourceWidthPt = sourceWidthPt,
@@ -355,7 +357,7 @@ class PdfImpositionController(
                         config = config
                     )
 
-                    val outputFile = File(activity.cacheDir, "imposed_${System.currentTimeMillis()}.pdf")
+                    val outputFile = File.createTempFile("imposed_", ".pdf", activity.cacheDir)
                     tempOut = outputFile
                     ImpositionPdfExporter.exportImposedPdf(
                         context = activity,
@@ -364,17 +366,25 @@ class PdfImpositionController(
                         outputFile = outputFile
                     )
 
-                    val bytes = outputFile.readBytes()
+                    val complete = outputFile.isFile && outputFile.length() > 0L
+                    val bytes = if (complete && onSaveFileFromDiskRequest == null) outputFile.readBytes() else null
 
                     withContext(Dispatchers.Main) {
                         isGenerating = false
                         binding.btnImpositionExecute.isEnabled = true
                         binding.btnImpositionExecute.text = "Generate Imposed Print PDF"
 
-                        isSaved = true
+                        check(complete) { "Imposition generated an empty PDF" }
                         val base = activePdfName.removeSuffix(".pdf")
                         val exportName = "${base}_imposed.pdf"
-                        onSavePdfRequest(bytes, exportName)
+                        val diskSave = onSaveFileFromDiskRequest
+                        if (diskSave != null) {
+                            diskSave(outputFile, exportName)
+                            tempOut = null // File ownership transferred to the SAF picker.
+                        } else {
+                            onSavePdfRequest(requireNotNull(bytes), exportName)
+                        }
+                        isSaved = true
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled

@@ -40,6 +40,15 @@ class NcnnUpscaleEngine(
         private const val TAG = "VeilFrame.NcnnEngine"
         private val executionMutex = Mutex()
 
+        private inline fun <T> traceNativeStage(label: String, action: () -> T): T {
+            android.os.Trace.beginSection(label)
+            try {
+                return action()
+            } finally {
+                android.os.Trace.endSection()
+            }
+        }
+
         // Upper safety limits to guard against arithmetic overflow or device exhaustion
         const val MAX_SOURCE_DIMENSION = UpscaleResourceEstimator.MAX_SOURCE_DIMENSION
         const val MAX_OUTPUT_DIMENSION = UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION
@@ -451,14 +460,16 @@ class NcnnUpscaleEngine(
                             }
                         }
                         try {
-                            val loadRet = NcnnNative.loadModel(
+                            val loadRet = traceNativeStage("VF.NCNN.loadModel") {
+                                NcnnNative.loadModel(
                                 handle = handle,
                                 paramPath = paramFile.absolutePath,
                                 binPath = binFile.absolutePath,
                                 scale = model.nativeScale,
                                 tilesize = plan.tileSize,
                                 prepadding = plan.prepadding
-                            )
+                                )
+                            }
                             when (loadRet) {
                                 0 -> Unit
                                 NcnnNative.STATUS_VULKAN_FAILURE -> throw DeviceInferenceException(
@@ -495,7 +506,8 @@ class NcnnUpscaleEngine(
                             val stripRowBytes = ByteArray(Math.multiplyExact(source.width, channels))
                             var writtenRows = 0
 
-                            val execRet = NcnnNative.processStripStreaming(
+                            val execRet = traceNativeStage("VF.NCNN.streamingInference") {
+                                NcnnNative.processStripStreaming(
                                 handle = handle,
                                 width = source.width,
                                 height = source.height,
@@ -550,7 +562,8 @@ class NcnnUpscaleEngine(
                                     listener?.onStage("Neural Inference (NCNN)", current, total)
                                     if (!coroutineContext.isActive) 1 else 0
                                 }
-                            )
+                                )
+                            }
 
                             when (execRet) {
                                 0 -> Unit

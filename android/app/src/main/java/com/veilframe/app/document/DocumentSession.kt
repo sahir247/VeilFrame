@@ -10,7 +10,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.Closeable
 import java.util.UUID
+
+/** Borrowed cached image or temporary export decode with explicit ownership. */
+internal class ExportPageBitmap(val bitmap: Bitmap, private val temporary: Boolean) : Closeable {
+    override fun close() {
+        if (temporary && !bitmap.isRecycled) bitmap.recycle()
+    }
+}
 
 /**
  * Single scanned page inside a multi-page document scanning session with disk persistence.
@@ -57,6 +65,41 @@ data class ScannedPage(
                 DocumentScanner.DocumentMode.ENHANCED
             }
         }
+
+    /**
+     * Export without filling this page's persistent full-resolution bitmap caches.
+     * A temporary bitmap must be closed by the export after it finishes with that page.
+     * Already-cached UI bitmaps are borrowed and are never recycled by the export.
+     */
+    internal fun openBitmapForExport(context: Context): ExportPageBitmap? {
+        processedBitmapCache?.takeUnless { it.isRecycled }?.let {
+            return ExportPageBitmap(it, temporary = false)
+        }
+        processedImagePath?.takeIf { File(it).isFile }?.let { path ->
+            BitmapFactory.decodeFile(path)?.let { return ExportPageBitmap(it, temporary = true) }
+        }
+
+        // Render using a detached page object. Native rendering may decode the original,
+        // but that decode is retained only by the detached object and freed in finally.
+        val borrowedOriginal = originalBitmapCache?.takeUnless { it.isRecycled }
+        val copyForExport = copy(
+            originalBitmapCache = if (originalImagePath.isNotEmpty() && File(originalImagePath).isFile) {
+                null
+            } else borrowedOriginal,
+            processedBitmapCache = null,
+            thumbnailBitmapCache = null
+        )
+        return try {
+            val rendered = copyForExport.render(context, updateCaches = false)
+            if (rendered != null) {
+                ExportPageBitmap(rendered, temporary = rendered !== borrowedOriginal)
+            } else {
+                borrowedOriginal?.let { ExportPageBitmap(it, temporary = false) }
+            }
+        } finally {
+            copyForExport.originalBitmapCache?.takeIf { it !== borrowedOriginal && !it.isRecycled }?.recycle()
+        }
+    }
 
     fun getDisplayBitmap(context: Context): Bitmap? {
         if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
@@ -205,6 +248,7 @@ data class ScannedPage(
                     ))
                     paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
+                    if (wBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = wBmp
                 } catch (_: Exception) {}
             }
@@ -252,6 +296,7 @@ data class ScannedPage(
                     }
                     paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
+                    if (fBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = fBmp
                 } catch (_: Exception) {}
             }
@@ -266,7 +311,9 @@ data class ScannedPage(
                     watermarkOpacity = watermarkOpacity,
                     watermarkFont = watermarkFont
                 )
-                resultBmp = com.veilframe.app.media.watermark.WatermarkEngine.applyWatermark(resultBmp, state)
+                val stamped = com.veilframe.app.media.watermark.WatermarkEngine.applyWatermark(resultBmp, state)
+                if (stamped !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
+                resultBmp = stamped
             }
 
             if (updateCaches) {

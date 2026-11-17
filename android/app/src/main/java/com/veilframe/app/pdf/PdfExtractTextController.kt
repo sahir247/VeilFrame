@@ -14,9 +14,11 @@ import com.veilframe.app.databinding.LayoutPdfExtractTextBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
 import com.veilframe.app.pdf.operations.OcrEngine
 import com.veilframe.app.pdf.operations.TextExtractor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
@@ -156,18 +158,24 @@ class PdfExtractTextController(
         extractionJob = scope.launch(Dispatchers.IO) {
             val fullTextBuilder = StringBuilder()
             try {
-                activity.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val input = activity.contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("Cannot open PDF input stream")
+                input.use { inputStream ->
                     PDDocument.load(inputStream).use { doc ->
                         val renderer = PDFRenderer(doc)
                         val total = doc.numberOfPages
                         for (i in 0 until total) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
                             withContext(Dispatchers.Main) {
                                 binding.tvExtractTextLoadingStatus.text =
                                     "Google ML Kit OCR: Processing page ${i + 1} of $total..."
                             }
                             val pageBmp = renderer.renderImageWithDPI(i, 150f)
-                            val pageText = ocrEngine.recognizeFullText(pageBmp)
-                            pageBmp.recycle()
+                            val pageText = try {
+                                ocrEngine.recognizeFullText(pageBmp)
+                            } finally {
+                                pageBmp.recycle()
+                            }
 
                             if (pageText.isNotBlank()) {
                                 if (fullTextBuilder.isNotEmpty()) {
@@ -193,6 +201,8 @@ class PdfExtractTextController(
                         displayResults(finalOcrText, words, finalOcrText.length)
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isExtracting = false

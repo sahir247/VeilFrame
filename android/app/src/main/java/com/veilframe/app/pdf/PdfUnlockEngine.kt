@@ -7,6 +7,7 @@ import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.rendering.PDFRenderer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -42,19 +43,23 @@ object PdfUnlockEngine {
     }
 
     /**
-     * Inspects the encryption state directly from a stream.
+     * Inspects a PDF stream without treating corrupted or unreadable data as an
+     * unencrypted document. The legacy Boolean overload is retained for callers.
      */
-    fun checkEncryption(inputStream: InputStream): Boolean {
-        return try {
+    fun checkEncryptionStrict(inputStream: InputStream): Result<Boolean> =
+        try {
             PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
-                doc.isEncrypted
+                Result.success(doc.isEncrypted)
             }
         } catch (e: InvalidPasswordException) {
-            true
+            Result.success(true)
         } catch (e: Exception) {
-            false
+            Result.failure(e)
         }
-    }
+
+    /** Legacy Boolean API; use [checkEncryptionStrict] for untrusted picker input. */
+    fun checkEncryption(inputStream: InputStream): Boolean =
+        checkEncryptionStrict(inputStream).getOrDefault(false)
 
     /**
      * Unlocks and strips all encryption/security from the PDF using the supplied password.
@@ -103,6 +108,8 @@ object PdfUnlockEngine {
                     )
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: InvalidPasswordException) {
             Result.failure(IllegalArgumentException("Incorrect password. Please verify the document password and try again."))
         } catch (e: Exception) {
@@ -135,10 +142,42 @@ object PdfUnlockEngine {
                 loadedDoc.save(outputStream)
                 Result.success(loadedDoc.numberOfPages)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: InvalidPasswordException) {
             Result.failure(IllegalArgumentException("Incorrect password"))
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Bounded on-disk preview for the file-backed unlock workspace.
+     * Limits only preview resolution, never decrypted PDF output quality.
+     */
+    suspend fun renderPagePreview(
+        file: File,
+        pageIndex: Int = 0,
+        maxDimension: Int = 1280
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        require(maxDimension > 0)
+        try {
+            file.inputStream().buffered().use { input ->
+                PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) {
+                        null
+                    } else {
+                        val pageBox = doc.getPage(pageIndex).cropBox
+                        val longestPt = maxOf(pageBox.width, pageBox.height).coerceAtLeast(1f)
+                        val scale = minOf(150f / 72f, maxDimension / longestPt)
+                        PDFRenderer(doc).renderImage(pageIndex, scale)
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -157,6 +196,8 @@ object PdfUnlockEngine {
                     renderer.renderImageWithDPI(pageIndex, dpi)
                 } else null
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             null
         }

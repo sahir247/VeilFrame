@@ -74,6 +74,50 @@ class PdfSuiteCoordinator(
     private var pendingFlattenSaveFile: File? = null
     private var pendingImpositionSaveBytes: ByteArray? = null
     private var pendingQuickToolSaveBytes: ByteArray? = null
+    private var pendingWatermarkSaveFile: File? = null
+    private var pendingExtractPagesSaveFile: File? = null
+    private var pendingImpositionSaveFile: File? = null
+    private var pendingQuickToolSaveFile: File? = null
+
+    /**
+     * Keep generated outputs on disk until the system document picker returns.
+     * Ownership transfers from the producing controller to this coordinator.
+     * A cancelled picker, failed destination or successful copy all release the temp file.
+     */
+    private fun savePendingFile(
+        file: File, destination: Uri?, successMessage: String,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        if (destination == null) {
+            file.delete()
+            onComplete?.invoke(false)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            var successful = false
+            try {
+                PdfFileExport.copyAndDelete(file) {
+                    activity.contentResolver.openOutputStream(destination)
+                        ?: throw IOException("Unable to open destination document")
+                }
+                successful = true
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, successMessage, Toast.LENGTH_LONG).show()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Save failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                file.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    onComplete?.invoke(successful)
+                }
+            }
+        }
+    }
 
     // Activity Result Launchers registered at creation time
     private val watermarkPickerLauncher: ActivityResultLauncher<Array<String>> =
@@ -88,8 +132,12 @@ class PdfSuiteCoordinator(
     private val watermarkSaveLauncher: ActivityResultLauncher<Pair<String, String>> =
         activity.registerForActivityResult(CreateDocumentWithMime()) { destUri ->
             val bytes = pendingWatermarkSaveBytes
+            val file = pendingWatermarkSaveFile
             pendingWatermarkSaveBytes = null
-            if (destUri != null && bytes != null) {
+            pendingWatermarkSaveFile = null
+            if (file != null) {
+                savePendingFile(file, destUri, "Watermarked PDF saved")
+            } else if (destUri != null && bytes != null) {
                 scope.launch(Dispatchers.IO) {
                     try {
                         activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
@@ -146,8 +194,12 @@ class PdfSuiteCoordinator(
     private val extractPagesSaveLauncher: ActivityResultLauncher<Pair<String, String>> =
         activity.registerForActivityResult(CreateDocumentWithMime()) { destUri ->
             val bytes = pendingExtractPagesSaveBytes
+            val file = pendingExtractPagesSaveFile
             pendingExtractPagesSaveBytes = null
-            if (destUri != null && bytes != null) {
+            pendingExtractPagesSaveFile = null
+            if (file != null) {
+                savePendingFile(file, destUri, "Extracted pages saved")
+            } else if (destUri != null && bytes != null) {
                 scope.launch(Dispatchers.IO) {
                     try {
                         activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
@@ -212,8 +264,12 @@ class PdfSuiteCoordinator(
     private val impositionSaveLauncher: ActivityResultLauncher<Pair<String, String>> =
         activity.registerForActivityResult(CreateDocumentWithMime()) { destUri ->
             val bytes = pendingImpositionSaveBytes
+            val file = pendingImpositionSaveFile
             pendingImpositionSaveBytes = null
-            if (destUri != null && bytes != null) {
+            pendingImpositionSaveFile = null
+            if (file != null) {
+                savePendingFile(file, destUri, "Print imposition PDF saved")
+            } else if (destUri != null && bytes != null) {
                 scope.launch(Dispatchers.IO) {
                     try {
                         activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
@@ -250,11 +306,20 @@ class PdfSuiteCoordinator(
     private val quickToolSaveLauncher: ActivityResultLauncher<Pair<String, String>> =
         activity.registerForActivityResult(CreateDocumentWithMime()) { destUri ->
             val bytes = pendingQuickToolSaveBytes
+            val file = pendingQuickToolSaveFile
             pendingQuickToolSaveBytes = null
-            if (destUri != null && bytes != null) {
+            pendingQuickToolSaveFile = null
+            if (file != null) {
+                savePendingFile(file, destUri, "Processed PDF saved") { success ->
+                    quickToolController.onSaveResult(success)
+                }
+            } else if (destUri != null && bytes != null) {
                 scope.launch(Dispatchers.IO) {
+                    var successful = false
                     try {
                         activity.contentResolver.openOutputStream(destUri)?.use { it.write(bytes) }
+                            ?: throw IOException("Unable to open destination document")
+                        successful = true
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Processed PDF saved", Toast.LENGTH_LONG).show()
                         }
@@ -262,8 +327,14 @@ class PdfSuiteCoordinator(
                         withContext(Dispatchers.Main) {
                             Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
+                    } finally {
+                        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                            quickToolController.onSaveResult(successful)
+                        }
                     }
                 }
+            } else {
+                quickToolController.onSaveResult(false)
             }
         }
 
@@ -303,8 +374,22 @@ class PdfSuiteCoordinator(
             scope = scope,
             onPickPdfRequest = { watermarkPickerLauncher.launch(arrayOf("application/pdf")) },
             onSavePdfRequest = { bytes, fileName ->
+                pendingWatermarkSaveFile?.delete()
+                pendingWatermarkSaveFile = null
                 pendingWatermarkSaveBytes = bytes
                 watermarkSaveLauncher.launch(fileName to "application/pdf")
+            },
+            onSaveFileFromDiskRequest = { file, fileName ->
+                pendingWatermarkSaveFile?.delete()
+                pendingWatermarkSaveFile = file
+                pendingWatermarkSaveBytes = null
+                try {
+                    watermarkSaveLauncher.launch(fileName to "application/pdf")
+                } catch (error: Exception) {
+                    pendingWatermarkSaveFile = null
+                    file.delete()
+                    throw error
+                }
             },
             onNavigateBack = { navigationController.navigateBackFromWorkspace() }
         ).apply { init() }
@@ -331,6 +416,8 @@ class PdfSuiteCoordinator(
             scope = scope,
             onPickPdfRequest = { extractPagesPickerLauncher.launch(arrayOf("application/pdf")) },
             onSaveFileRequest = { bytes, fileName ->
+                pendingExtractPagesSaveFile?.delete()
+                pendingExtractPagesSaveFile = null
                 pendingExtractPagesSaveBytes = bytes
                 val mime = when {
                     fileName.endsWith(".zip", true) -> "application/zip"
@@ -340,6 +427,25 @@ class PdfSuiteCoordinator(
                     else -> "application/pdf"
                 }
                 extractPagesSaveLauncher.launch(fileName to mime)
+            },
+            onSaveFileFromDiskRequest = { file, fileName ->
+                pendingExtractPagesSaveFile?.delete()
+                pendingExtractPagesSaveFile = file
+                pendingExtractPagesSaveBytes = null
+                try {
+                    val mime = when {
+                        fileName.endsWith(".zip", true) -> "application/zip"
+                        fileName.endsWith(".webp", true) -> "image/webp"
+                        fileName.endsWith(".png", true) -> "image/png"
+                        fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+                        else -> "application/pdf"
+                    }
+                    extractPagesSaveLauncher.launch(fileName to mime)
+                } catch (error: Exception) {
+                    pendingExtractPagesSaveFile = null
+                    file.delete()
+                    throw error
+                }
             },
             onNavigateBack = { navigationController.navigateBackFromWorkspace() }
         ).apply { init() }
@@ -371,8 +477,22 @@ class PdfSuiteCoordinator(
             scope = scope,
             onPickPdfRequest = { impositionPickerLauncher.launch(arrayOf("application/pdf")) },
             onSavePdfRequest = { bytes, fileName ->
+                pendingImpositionSaveFile?.delete()
+                pendingImpositionSaveFile = null
                 pendingImpositionSaveBytes = bytes
                 impositionSaveLauncher.launch(fileName to "application/pdf")
+            },
+            onSaveFileFromDiskRequest = { file, fileName ->
+                pendingImpositionSaveFile?.delete()
+                pendingImpositionSaveFile = file
+                pendingImpositionSaveBytes = null
+                try {
+                    impositionSaveLauncher.launch(fileName to "application/pdf")
+                } catch (error: Exception) {
+                    pendingImpositionSaveFile = null
+                    file.delete()
+                    throw error
+                }
             },
             onNavigateBack = { navigationController.navigateBackFromWorkspace() }
         ).apply { init() }
@@ -391,6 +511,8 @@ class PdfSuiteCoordinator(
                 }
             },
             onSaveFileRequest = { bytes, fileName ->
+                pendingQuickToolSaveFile?.delete()
+                pendingQuickToolSaveFile = null
                 pendingQuickToolSaveBytes = bytes
                 val mime = when {
                     fileName.endsWith(".zip", true) -> "application/zip"
@@ -400,6 +522,25 @@ class PdfSuiteCoordinator(
                     else -> "application/pdf"
                 }
                 quickToolSaveLauncher.launch(fileName to mime)
+            },
+            onSaveFileFromDiskRequest = { file, fileName ->
+                pendingQuickToolSaveFile?.delete()
+                pendingQuickToolSaveFile = file
+                pendingQuickToolSaveBytes = null
+                try {
+                    val mime = when {
+                        fileName.endsWith(".zip", true) -> "application/zip"
+                        fileName.endsWith(".webp", true) -> "image/webp"
+                        fileName.endsWith(".png", true) -> "image/png"
+                        fileName.endsWith(".jpg", true) || fileName.endsWith(".jpeg", true) -> "image/jpeg"
+                        else -> "application/pdf"
+                    }
+                    quickToolSaveLauncher.launch(fileName to mime)
+                } catch (error: Exception) {
+                    pendingQuickToolSaveFile = null
+                    file.delete()
+                    throw error
+                }
             },
             onNavigateBack = { navigationController.navigateBackFromWorkspace() }
         ).apply { init() }

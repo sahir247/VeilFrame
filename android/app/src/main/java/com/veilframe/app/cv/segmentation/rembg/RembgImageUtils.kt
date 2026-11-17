@@ -18,16 +18,23 @@ object RembgImageUtils {
     const val MAX_MATTING_DIMENSION = 4096
 
     fun decodeOrientedBitmap(bytes: ByteArray, maxDimension: Int? = null, inMutable: Boolean = false): Bitmap {
+        require(maxDimension == null || maxDimension > 0) { "maxDimension must be positive" }
+        // EXIF parsing traverses metadata: read it once for bounds and orientation.
+        val orientation = readOrientation(bytes)
         val options = BitmapFactory.Options().apply {
             this.inMutable = inMutable
         }
         if (maxDimension != null) {
-            val (orientW, orientH) = orientedDimensions(bytes)
-            options.inSampleSize = sampleSizeForMax(orientW, orientH, maxDimension)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val orientedWidth = if (requiresSwap(orientation)) bounds.outHeight else bounds.outWidth
+            val orientedHeight = if (requiresSwap(orientation)) bounds.outWidth else bounds.outHeight
+            require(orientedWidth > 0 && orientedHeight > 0) { "Could not read image dimensions" }
+            options.inSampleSize = sampleSizeForMax(orientedWidth, orientedHeight, maxDimension)
         }
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             ?: throw IllegalArgumentException("Could not decode image")
-        val oriented = applyOrientation(bytes, bitmap)
+        val oriented = applyOrientation(orientation, bitmap)
         if (maxDimension == null || (oriented.width <= maxDimension && oriented.height <= maxDimension)) {
             return oriented
         }
@@ -58,8 +65,7 @@ object RembgImageUtils {
         return Bitmap.createScaledBitmap(bitmap, nw, nh, true)
     }
 
-    private fun applyOrientation(bytes: ByteArray, bitmap: Bitmap): Bitmap {
-        val orientation = readOrientation(bytes)
+    private fun applyOrientation(orientation: Int, bitmap: Bitmap): Bitmap {
         if (orientation == ExifInterface.ORIENTATION_NORMAL ||
             orientation == ExifInterface.ORIENTATION_UNDEFINED
         ) {

@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.media.MediaMetadataRetriever
+import android.os.Build
+import com.veilframe.app.media.VideoThumbnailPolicy
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiDetection
 import com.veilframe.app.privacy.PiiMultiModalDetector
@@ -106,9 +108,34 @@ object VideoPiiRedactionEngine {
         for (i in 0 until sampleCount) {
             if (isCancelled()) break
             val timestampMs = (trimStartMs + (i * stepMs)).toLong().coerceIn(trimStartMs, safeEndMs)
-            val rawBmp = try {
+            // Request a bounded frame from the decoder itself. Previously every
+            // sampled 4K/8K frame was decoded at full resolution and *then*
+            // downscaled, causing repeated large native/Java bitmap allocations.
+            // Preserve the source coordinate system for FFmpeg redaction.
+            val scaledBmp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                val (sampleWidth, sampleHeight) = VideoThumbnailPolicy.fitWithin(
+                    frameW, frameH, MAX_ANALYSIS_EDGE_PX
+                )
+                try {
+                    retriever.getScaledFrameAtTime(
+                        timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST,
+                        sampleWidth, sampleHeight
+                    )
+                } catch (_: RuntimeException) {
+                    null
+                }
+            } else null
+            val scaledCompatible = scaledBmp != null && VideoThumbnailPolicy.matchesSourceAspect(
+                frameW, frameH, scaledBmp.width, scaledBmp.height
+            )
+            if (!scaledCompatible) {
+                scaledBmp?.recycle()
+            }
+            // A failed/rotated/scaled decode falls back to the original path, so
+            // a metadata orientation mismatch cannot silently misplace redactions.
+            val rawBmp = if (scaledCompatible) scaledBmp else try {
                 retriever.getFrameAtTime(timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-            } catch (_: Throwable) {
+            } catch (_: RuntimeException) {
                 null
             }
             if (rawBmp == null) {
@@ -119,8 +146,12 @@ object VideoPiiRedactionEngine {
 
             var analysisBmp: Bitmap? = null
             try {
-                frameW = rawBmp.width.coerceAtLeast(2)
-                frameH = rawBmp.height.coerceAtLeast(2)
+                if (!scaledCompatible) {
+                    frameW = rawBmp.width.coerceAtLeast(2)
+                    frameH = rawBmp.height.coerceAtLeast(2)
+                }
+                // For scaled frames frameW/H remain the original dimensions, so
+                // PiiMultiModalDetector maps observations to full video coordinates.
                 sampledCount++
 
                 analysisBmp = downsampleForAnalysis(rawBmp, MAX_ANALYSIS_EDGE_PX)

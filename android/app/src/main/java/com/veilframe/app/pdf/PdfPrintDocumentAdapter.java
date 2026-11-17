@@ -15,6 +15,7 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintDocumentInfo;
 import android.print.pdf.PrintedPdfDocument;
 
+import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
 import com.tom_roush.pdfbox.pdmodel.PDPage;
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
@@ -26,8 +27,16 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDSignatureField;
 import com.tom_roush.pdfbox.rendering.PDFRenderer;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Android PrintDocumentAdapter replicating Adobe Acrobat's print rendering pipeline.
@@ -45,6 +54,7 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
 
     private final Context context;
     private final byte[] pdfBytes;
+    private File pdfFile;
     private final String password;
     private final String documentName;
     private final boolean isVerified;
@@ -52,7 +62,16 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
     private final String signingDate;
 
     private PrintedPdfDocument printedPdfDocument;
+    private PrintAttributes layoutAttributes;
     private int totalPages = 0;
+    // Android invokes onLayout/onWrite on Main. PDFBox parsing and page rasterization
+    // must run on a private serialized worker, not block UI input or animations.
+    private final ExecutorService printWorker = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "VeilFrame-PDF-Print");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicBoolean finished = new AtomicBoolean(false);
 
     public PdfPrintDocumentAdapter(Context context, byte[] pdfBytes, String password, String documentName,
                                    boolean isVerified, String signerName, String signingDate) {
@@ -66,79 +85,175 @@ public final class PdfPrintDocumentAdapter extends PrintDocumentAdapter {
         this.signingDate = signingDate;
     }
 
+    /**
+     * File-backed print source for decrypted PDFs. Retains the legacy byte-array
+     * constructor for signature and other existing callers.
+     */
+    public PdfPrintDocumentAdapter(Context context, File pdfFile, String password, String documentName,
+                                   boolean isVerified, String signerName, String signingDate) {
+        this(context, (byte[]) null, password, documentName, isVerified, signerName, signingDate);
+        if (pdfFile == null) throw new IllegalArgumentException("pdfFile cannot be null");
+        this.pdfFile = pdfFile;
+    }
+
+    private InputStream openPdfInput() throws IOException {
+        if (pdfFile != null) return new FileInputStream(pdfFile);
+        if (pdfBytes == null) throw new IOException("PDF print input is missing");
+        return new ByteArrayInputStream(pdfBytes);
+    }
+
+    private PDDocument loadPdf(InputStream input) throws IOException {
+        return password != null && !password.isEmpty()
+                ? PDDocument.load(input, password, MemoryUsageSetting.setupTempFileOnly())
+                : PDDocument.load(input, MemoryUsageSetting.setupTempFileOnly());
+    }
+
     @Override
     public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                          CancellationSignal cancellationSignal, LayoutResultCallback callback, Bundle extras) {
-        if (cancellationSignal.isCanceled()) {
+        if (cancellationSignal.isCanceled() || finished.get()) {
             callback.onLayoutCancelled();
             return;
         }
 
-        try (PDDocument doc = (password != null && !password.isEmpty())
-                ? PDDocument.load(new ByteArrayInputStream(pdfBytes), password)
-                : PDDocument.load(new ByteArrayInputStream(pdfBytes))) {
-            totalPages = doc.getNumberOfPages();
-        } catch (Exception e) {
-            callback.onLayoutFailed("Failed to read document for printing: " + e.getMessage());
-            return;
+        try {
+            printWorker.execute(() -> {
+                if (cancellationSignal.isCanceled() || finished.get()) {
+                    callback.onLayoutCancelled();
+                    return;
+                }
+                try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
+                    final int pages = doc.getNumberOfPages();
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onLayoutCancelled();
+                        return;
+                    }
+
+                    // onWrite may run multiple times for one layout. Create a fresh
+                    // spool document per write instead of reusing a closed instance.
+                    layoutAttributes = newAttributes;
+                    totalPages = pages;
+                    PrintDocumentInfo info = new PrintDocumentInfo.Builder(documentName)
+                            .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                            .setPageCount(pages)
+                            .build();
+                    callback.onLayoutFinished(info, !newAttributes.equals(oldAttributes));
+                } catch (Exception error) {
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onLayoutCancelled();
+                    } else {
+                        callback.onLayoutFailed("Failed to read document for printing: " + error.getMessage());
+                    }
+                }
+            });
+        } catch (RejectedExecutionException ignored) {
+            callback.onLayoutCancelled();
         }
-
-        printedPdfDocument = new PrintedPdfDocument(context, newAttributes);
-
-        PrintDocumentInfo info = new PrintDocumentInfo.Builder(documentName)
-                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                .setPageCount(totalPages)
-                .build();
-
-        callback.onLayoutFinished(info, !newAttributes.equals(oldAttributes));
     }
 
     @Override
     public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                         CancellationSignal cancellationSignal, WriteResultCallback callback) {
-        try (PDDocument doc = (password != null && !password.isEmpty())
-                ? PDDocument.load(new ByteArrayInputStream(pdfBytes), password)
-                : PDDocument.load(new ByteArrayInputStream(pdfBytes))) {
+        if (cancellationSignal.isCanceled() || finished.get()) {
+            callback.onWriteCancelled();
+            return;
+        }
 
-            PDFRenderer renderer = new PDFRenderer(doc);
-
-            for (int i = 0; i < totalPages; i++) {
-                if (!containsPage(pages, i)) continue;
-
-                if (cancellationSignal.isCanceled()) {
+        try {
+            printWorker.execute(() -> {
+                if (cancellationSignal.isCanceled() || finished.get()) {
                     callback.onWriteCancelled();
                     return;
                 }
+                try (InputStream input = openPdfInput(); PDDocument doc = loadPdf(input)) {
+                    if (layoutAttributes == null) {
+                        callback.onWriteFailed("Print layout was not initialized");
+                        return;
+                    }
+                    printedPdfDocument = new PrintedPdfDocument(context, layoutAttributes);
+                    PDFRenderer renderer = new PDFRenderer(doc);
+                    for (int i = 0; i < totalPages; i++) {
+                        if (!containsPage(pages, i)) continue;
+                        if (cancellationSignal.isCanceled() || finished.get() ||
+                                Thread.currentThread().isInterrupted()) {
+                            callback.onWriteCancelled();
+                            return;
+                        }
 
-                PdfDocument.Page page = printedPdfDocument.startPage(i);
-                Canvas canvas = page.getCanvas();
+                        // Render before creating an Android print page: PDFBox may fail on
+                        // malformed content, and leaving an open PdfDocument.Page makes
+                        // PrintedPdfDocument.close() throw on the worker thread.
+                        Bitmap pageBmp = renderer.renderImage(i, 2.0f);
+                        try {
+                            PdfDocument.Page page = printedPdfDocument.startPage(i);
+                            try {
+                                Canvas canvas = page.getCanvas();
+                                Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
+                                Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
+                                canvas.drawBitmap(pageBmp, src, dst, null);
+                                if (isVerified) {
+                                    overlaySignatureWidgetsForPage(doc, i, canvas,
+                                            canvas.getWidth(), canvas.getHeight());
+                                }
+                            } finally {
+                                // Finish even if drawing the dynamic signature badge fails.
+                                printedPdfDocument.finishPage(page);
+                            }
+                        } finally {
+                            pageBmp.recycle();
+                        }
+                    }
 
-                // Render page content at high fidelity
-                Bitmap pageBmp = renderer.renderImage(i, 2.0f);
-                Rect src = new Rect(0, 0, pageBmp.getWidth(), pageBmp.getHeight());
-                Rect dst = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
-                canvas.drawBitmap(pageBmp, src, dst, null);
-
-                // Dynamically overlay verified green checkmark badge if cryptographically valid
-                if (isVerified) {
-                    overlaySignatureWidgetsForPage(doc, i, canvas, canvas.getWidth(), canvas.getHeight());
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                        return;
+                    }
+                    try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
+                        printedPdfDocument.writeTo(out);
+                    }
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                    } else {
+                        callback.onWriteFinished(pages != null ? pages : new PageRange[]{PageRange.ALL_PAGES});
+                    }
+                } catch (Exception error) {
+                    if (cancellationSignal.isCanceled() || finished.get()) {
+                        callback.onWriteCancelled();
+                    } else {
+                        callback.onWriteFailed("Print write failed: " + error.getMessage());
+                    }
+                } finally {
+                    closePrintedDocument();
                 }
+            });
+        } catch (RejectedExecutionException ignored) {
+            callback.onWriteCancelled();
+        }
+    }
 
-                printedPdfDocument.finishPage(page);
-                pageBmp.recycle();
-            }
-
-            try (FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
-                printedPdfDocument.writeTo(out);
-            }
-
-            callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-        } catch (Exception e) {
-            callback.onWriteFailed("Print write failed: " + e.getMessage());
+    @Override
+    public void onFinish() {
+        finished.set(true);
+        try {
+            // Serialize document cleanup behind any in-flight layout/write.
+            printWorker.execute(this::closePrintedDocument);
+        } catch (RejectedExecutionException ignored) {
+            // Already terminated.
         } finally {
-            if (printedPdfDocument != null) {
-                printedPdfDocument.close();
-                printedPdfDocument = null;
+            printWorker.shutdown();
+        }
+        super.onFinish();
+    }
+
+    private void closePrintedDocument() {
+        PrintedPdfDocument previous = printedPdfDocument;
+        printedPdfDocument = null;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (IllegalStateException error) {
+                // A malformed page must not terminate the Android printing worker.
+                android.util.Log.w("VeilFrame.PdfPrint", "Print document cleanup failed", error);
             }
         }
     }

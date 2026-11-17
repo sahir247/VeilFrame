@@ -71,6 +71,43 @@ class PdfEngineTest {
     }
 
     @Test
+    fun testStreamEncryptionCheck_preservesClearEncryptedAndInvalidStates() {
+        val clear = PdfUnlockEngine.checkEncryptionStrict(ByteArrayInputStream(createSamplePdf()))
+        assertTrue("Unencrypted PDF should parse cleanly", clear.isSuccess)
+        assertFalse(clear.getOrThrow())
+
+        val encrypted = PdfUnlockEngine.checkEncryptionStrict(
+            ByteArrayInputStream(createEncryptedPdf("read123"))
+        )
+        assertTrue("A password-required PDF is not a parsing failure", encrypted.isSuccess)
+        assertTrue("Password-required PDF must be classified as encrypted", encrypted.getOrThrow())
+
+        val corrupt = PdfUnlockEngine.checkEncryptionStrict(
+            ByteArrayInputStream("not a PDF".toByteArray())
+        )
+        assertTrue("Invalid content must not be misclassified as a clear PDF", corrupt.isFailure)
+    }
+
+    @Test
+    fun testStreamUnlock_writesCompleteUnencryptedDocument() = runBlocking {
+        val secret = "stream-password"
+        val encryptedBytes = createEncryptedPdf(secret)
+        val out = ByteArrayOutputStream()
+
+        val result = PdfUnlockEngine.unlockPdfStream(
+            ByteArrayInputStream(encryptedBytes), out, secret
+        )
+
+        assertTrue("Streaming decryption must succeed", result.isSuccess)
+        assertEquals(1, result.getOrThrow())
+        assertTrue(out.size() > 0)
+        PDDocument.load(ByteArrayInputStream(out.toByteArray())).use { doc ->
+            assertFalse("Stream output must open without a password", doc.isEncrypted)
+            assertTrue("Stream output must permit printing", doc.currentAccessPermission.canPrint())
+        }
+    }
+
+    @Test
     fun testUnlockPdf_withCorrectPassword_removesSecurityPermanently() = runBlocking {
         val secret = "P@ssword2026"
         val encryptedPdf = createEncryptedPdf(secret)

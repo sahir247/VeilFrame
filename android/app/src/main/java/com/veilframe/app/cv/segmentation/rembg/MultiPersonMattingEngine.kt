@@ -140,9 +140,11 @@ object MultiPersonMattingEngine {
     private fun detectSalientSubjects(context: Context, bitmap: Bitmap): List<SalientSubject> {
         return try {
             val piiEngine = PiiNcnnEngine(context)
-            val detections = piiEngine.detectSalientSubjects(bitmap, confThreshold = 0.25f, iouThreshold = 0.45f)
-            piiEngine.close()
-            detections
+            try {
+                piiEngine.detectSalientSubjects(bitmap, confThreshold = 0.25f, iouThreshold = 0.45f)
+            } finally {
+                piiEngine.close()
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "Salient subject detection failed: ${t.message}. Falling back to global matting.")
             emptyList()
@@ -246,20 +248,7 @@ object MultiPersonMattingEngine {
                 subjectMask = NcnnMattingNative.nativeProcess(subjectCrop, roiModelType, useGpu, letterbox = false)
 
                 if (subjectMask != null) {
-                    val cropPixels = IntArray(cropW * cropH)
-                    val basePixels = IntArray(cropW * cropH)
-
-                    subjectMask.getPixels(cropPixels, 0, cropW, 0, 0, cropW, cropH)
-                    baseMask.getPixels(basePixels, 0, cropW, cropLeft, cropTop, cropW, cropH)
-
-                    for (i in 0 until cropW * cropH) {
-                        val subAlpha = (cropPixels[i] ushr 24) and 0xFF
-                        val baseAlpha = (basePixels[i] ushr 24) and 0xFF
-                        val mergedAlpha = max(baseAlpha, subAlpha)
-                        basePixels[i] = (mergedAlpha shl 24) or 0x00FFFFFF
-                    }
-
-                    baseMask.setPixels(basePixels, 0, cropW, cropLeft, cropTop, cropW, cropH)
+                    mergeAlphaRegion(baseMask, subjectMask, cropLeft, cropTop)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "Failed RoI pass for subject #$idx (${roi.label}): ${t.message}")
@@ -273,88 +262,155 @@ object MultiPersonMattingEngine {
     }
 
     /**
+     * Composes a subject's alpha into a global mask without allocating whole-crop
+     * pixel arrays. The max-alpha rule matches the original full-array merge.
+     */
+    internal fun mergeAlphaRegion(
+        baseMask: Bitmap,
+        subjectMask: Bitmap,
+        left: Int,
+        top: Int,
+        maxStripRows: Int = 64
+    ) {
+        val width = subjectMask.width
+        val height = subjectMask.height
+        require(width > 0 && height > 0 && maxStripRows > 0)
+        require(left >= 0 && top >= 0 &&
+            left.toLong() + width <= baseMask.width &&
+            top.toLong() + height <= baseMask.height) { "Subject mask is outside the global mask" }
+
+        val stripeRows = min(maxStripRows, height)
+        val subjectPixels = IntArray(width * stripeRows)
+        val basePixels = IntArray(width * stripeRows)
+        var row = 0
+        while (row < height) {
+            val rows = min(stripeRows, height - row)
+            val count = width * rows
+            subjectMask.getPixels(subjectPixels, 0, width, 0, row, width, rows)
+            baseMask.getPixels(basePixels, 0, width, left, top + row, width, rows)
+            for (i in 0 until count) {
+                val subjectAlpha = (subjectPixels[i] ushr 24) and 0xFF
+                val baseAlpha = (basePixels[i] ushr 24) and 0xFF
+                basePixels[i] = (max(baseAlpha, subjectAlpha) shl 24) or 0x00FFFFFF
+            }
+            baseMask.setPixels(basePixels, 0, width, left, top + row, width, rows)
+            row += rows
+        }
+    }
+
+    /**
      * Leverages in-tree OpenCV to apply:
      * 1. Morphological closing (bridges thin chair legs, fingers, whiskers, limbs).
      * 2. Connected-component speckle noise suppression in background regions.
      * 3. Subtle edge smoothing for film-like alpha transition.
      */
     fun refineWithOpenCv(maskBitmap: Bitmap, sourceBitmap: Bitmap? = null, isObjectOrAnimal: Boolean = false): Bitmap {
-        if (!CvRuntime.initialize()) {
-            return maskBitmap
-        }
+        if (!CvRuntime.initialize()) return maskBitmap
 
+        var alphaMat: Mat? = null
+        var binaryMat: Mat? = null
+        var labels: Mat? = null
+        var stats: Mat? = null
+        var centroids: Mat? = null
         try {
             val w = maskBitmap.width
             val h = maskBitmap.height
+            val pixelCount = Math.multiplyExact(w, h)
 
-            val alphaPixels = IntArray(w * h)
-            maskBitmap.getPixels(alphaPixels, 0, w, 0, 0, w, h)
-
-            val alphaBytes = ByteArray(w * h)
-            for (i in 0 until w * h) {
-                alphaBytes[i] = ((alphaPixels[i] ushr 24) and 0xFF).toByte()
+            // Keep only one full-sized alpha channel in Java. Recycling and
+            // native Mat cleanup are guaranteed even when OpenCV throws.
+            val alphaBytes = ByteArray(pixelCount)
+            val stripeHeight = min(64, h)
+            val argbStripe = IntArray(w * stripeHeight)
+            var y = 0
+            while (y < h) {
+                val rows = min(stripeHeight, h - y)
+                maskBitmap.getPixels(argbStripe, 0, w, 0, y, w, rows)
+                for (i in 0 until w * rows) {
+                    alphaBytes[y * w + i] = ((argbStripe[i] ushr 24) and 0xFF).toByte()
+                }
+                y += rows
             }
 
-            val alphaMat = Mat(h, w, CvType.CV_8UC1)
-            alphaMat.put(0, 0, alphaBytes)
+            val working = Mat(h, w, CvType.CV_8UC1)
+            alphaMat = working
+            working.put(0, 0, alphaBytes)
 
-            // 1. Morphological Closing (3x3 ellipse) bridges micro-gaps without distorting silhouettes
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
-            Imgproc.morphologyEx(alphaMat, alphaMat, Imgproc.MORPH_CLOSE, kernel)
-            kernel.release()
+            try {
+                Imgproc.morphologyEx(working, working, Imgproc.MORPH_CLOSE, kernel)
+            } finally {
+                kernel.release()
+            }
+            // Keep the post-morphology alpha as the source of truth. Previously
+            // speckle removal wrote the ORIGINAL alpha array over this result,
+            // silently undoing edge/whisker gap closing whenever a small blob existed.
+            working.get(0, 0, alphaBytes)
 
-            // 2. Connected Components Noise Suppression:
-            // Remove tiny isolated specks (< 64px) in the background that are floating debris
-            val binaryMat = Mat()
-            Imgproc.threshold(alphaMat, binaryMat, 40.0, 255.0, Imgproc.THRESH_BINARY)
-            val labels = Mat()
-            val stats = Mat()
-            val centroids = Mat()
-            val numLabels = Imgproc.connectedComponentsWithStats(binaryMat, labels, stats, centroids)
+            val binary = Mat()
+            val labelMap = Mat()
+            val labelStats = Mat()
+            val labelCentroids = Mat()
+            binaryMat = binary
+            labels = labelMap
+            stats = labelStats
+            centroids = labelCentroids
+            Imgproc.threshold(working, binary, 40.0, 255.0, Imgproc.THRESH_BINARY)
+            val numLabels = Imgproc.connectedComponentsWithStats(binary, labelMap, labelStats, labelCentroids)
 
             if (numLabels > 2) {
-                val labelsData = IntArray(w * h)
-                labels.get(0, 0, labelsData)
                 val minAreaToKeep = if (isObjectOrAnimal) 24 else 32
-                var modified = false
-
+                val removeLabel = BooleanArray(numLabels)
                 for (label in 1 until numLabels) {
-                    val area = stats.get(label, Imgproc.CC_STAT_AREA)[0].toInt()
-                    if (area < minAreaToKeep) {
-                        for (idx in 0 until w * h) {
-                            if (labelsData[idx] == label) {
-                                alphaBytes[idx] = 0.toByte()
+                    removeLabel[label] = labelStats.get(label, Imgproc.CC_STAT_AREA)[0].toInt() < minAreaToKeep
+                }
+
+                if (removeLabel.any { it }) {
+                    // O(pixels + labels), not O(pixels * labels). A 4K frame
+                    // uses one scanline of labels instead of a second 64MB array.
+                    val labelRow = IntArray(w)
+                    var modified = false
+                    for (row in 0 until h) {
+                        labelMap.get(row, 0, labelRow)
+                        val offset = row * w
+                        for (x in 0 until w) {
+                            val label = labelRow[x]
+                            if (label in 1 until numLabels && removeLabel[label]) {
+                                alphaBytes[offset + x] = 0
                                 modified = true
                             }
                         }
                     }
-                }
-                if (modified) {
-                    alphaMat.put(0, 0, alphaBytes)
+                    // Remove speckles from the morphologically refined alpha,
+                    // preserving gap closing and subsequent Gaussian feathering.
+                    if (modified) working.put(0, 0, alphaBytes)
                 }
             }
-            binaryMat.release()
-            labels.release()
-            stats.release()
-            centroids.release()
 
-            // 3. Subtle Gaussian blur (1px radius) for smooth film-like alpha transition
-            Imgproc.GaussianBlur(alphaMat, alphaMat, Size(3.0, 3.0), 0.5)
+            Imgproc.GaussianBlur(working, working, Size(3.0, 3.0), 0.5)
+            working.get(0, 0, alphaBytes)
 
-            // Read refined alpha back into mask bitmap
-            alphaMat.get(0, 0, alphaBytes)
-            alphaMat.release()
-
-            for (i in 0 until w * h) {
-                val a = alphaBytes[i].toInt() and 0xFF
-                alphaPixels[i] = (a shl 24) or 0x00FFFFFF
+            y = 0
+            while (y < h) {
+                val rows = min(stripeHeight, h - y)
+                for (i in 0 until w * rows) {
+                    val a = alphaBytes[y * w + i].toInt() and 0xFF
+                    argbStripe[i] = (a shl 24) or 0x00FFFFFF
+                }
+                maskBitmap.setPixels(argbStripe, 0, w, 0, y, w, rows)
+                y += rows
             }
-
-            maskBitmap.setPixels(alphaPixels, 0, w, 0, 0, w, h)
             return maskBitmap
-        } catch (t: Throwable) {
+        } catch (t: Exception) {
             Log.w(TAG, "OpenCV mask refinement bypassed: ${t.message}")
             return maskBitmap
+        } finally {
+            runCatching { alphaMat?.release() }
+            runCatching { binaryMat?.release() }
+            runCatching { labels?.release() }
+            runCatching { stats?.release() }
+            runCatching { centroids?.release() }
         }
     }
+
 }

@@ -8,17 +8,21 @@ on:
       - '.github/workflows/build-opencv-sdk.yml'
       - '.github/workflows/ci.yml'
       - 'android/opencv-sdk/**'
-      - 'android/app/src/androidTest/**'
-      - 'android/app/src/main/java/com/veilframe/app/cv/**'
   # Build SDK artifacts from feature-branch changes as well.
   # CI prefers the exact head SHA and only permits same-branch reuse when SDK inputs are unchanged.
   push:
+    branches: [main]
     paths:
       - 'android/scripts/build_opencv_contrib_sdk.sh'
       - '.github/workflows/build-opencv-sdk.yml'
       - 'android/opencv-sdk/**'
-      - 'android/app/src/androidTest/**'
-      - 'android/app/src/main/java/com/veilframe/app/cv/**'
+
+# Only the newest revision of a PR needs a full custom SDK rebuild.
+# Earlier revisions are superseded; cancelling them avoids repeated upstream
+# Maven requests and Gradle jobs on hosted runner IPs.
+concurrency:
+  group: opencv-sdk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-opencv:
@@ -62,6 +66,45 @@ jobs:
           ninja --version
           python3 --version
           git --version
+
+      # The standalone OpenCV SDK Gradle build resolves AGP 8.6/Kotlin 1.8.20
+      # independently from the app. Preserve downloaded artifacts across builds
+      # to avoid repeated Maven Central bursts on hosted runner IPs.
+      - name: Cache upstream and app Gradle dependencies
+        uses: gradle/actions/setup-gradle@v6
+
+      # The pinned upstream OpenCV Gradle project references JCenter, which
+      # redirects some artifact requests to repo1.maven.org. On shared CI runners
+      # that endpoint frequently returns HTTP 429. Prepend Maven Central's
+      # canonical endpoint *before* the generated project is evaluated.
+      - name: Prefer canonical Maven Central for upstream OpenCV Gradle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          GRADLE_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$GRADLE_DIR/init.d"
+          cat > "$GRADLE_DIR/init.d/veilframe-opencv-maven.gradle" <<'GRADLE'
+          // Only the OpenCV-generated Gradle project needs this workaround.
+          // The VeilFrame root project uses FAIL_ON_PROJECT_REPOS and rejects
+          // project-level repository injections during its own build.
+          gradle.beforeSettings { settings ->
+              if (settings.settingsDir.absolutePath.contains('/.opencv_build/')) {
+                  settings.pluginManagement.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
+              }
+          }
+          gradle.beforeProject { project ->
+              if (project.rootDir.absolutePath.contains('/.opencv_build/')) {
+                  project.buildscript.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
+                  project.repositories {
+                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                  }
+              }
+          }
+          GRADLE
 
       - name: Execute OpenCV Android SDK Build
         run: |

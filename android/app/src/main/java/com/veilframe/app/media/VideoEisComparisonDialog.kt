@@ -221,19 +221,27 @@ object VideoEisComparisonDialog {
         summaryCard.addView(summaryDetails)
         root.addView(summaryCard)
 
+        var decisionHandled = false
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle("Stabilization Review")
             .setView(root)
             .setPositiveButton("Use Stabilized Video") { _, _ ->
+                decisionHandled = true
                 exoPlayer?.release()
                 onAccept()
             }
             .setNegativeButton("Revert to Original") { _, _ ->
+                decisionHandled = true
                 exoPlayer?.release()
                 onDiscard()
             }
             .setOnDismissListener {
                 exoPlayer?.release()
+                // Back/outside dismiss is also a discard: never orphan a large MP4.
+                if (!decisionHandled) {
+                    decisionHandled = true
+                    onDiscard()
+                }
             }
             .create()
 

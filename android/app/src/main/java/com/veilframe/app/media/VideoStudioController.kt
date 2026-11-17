@@ -92,13 +92,13 @@ class VideoStudioController(
     val originalFile: File? get() = currentItem?.file
     val originalBytes: Long get() = currentItem?.originalBytes ?: 0L
     private var lastResultFile: File? = null
-    private var activeFFmpegSessionId: Long = -1L
+    private val videoSessionRegistry = VideoSessionRegistry { id -> FFmpegKit.cancel(id) }
 
     private var compressionJob: Job? = null
     private var piiScanJob: Job? = null
     private var reframeJob: Job? = null
     private var isScrubbing: Boolean = false
-    private var activeGeneration: Long = 0L
+    @Volatile private var activeGeneration: Long = 0L
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
     private lateinit var floatingDockController: FloatingDockStateController
 
@@ -729,7 +729,26 @@ class VideoStudioController(
                         width = height
                         height = tmp
                     }
-                    thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    // This bitmap is only a studio thumbnail/preview. Decoding a full
+                    // 4K/8K frame can allocate tens or hundreds of MB unnecessarily.
+                    thumbFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+                        width > 0 && height > 0
+                    ) {
+                        val (targetWidth, targetHeight) = VideoThumbnailPolicy.fitWithin(width, height)
+                        runCatching {
+                            retriever.getScaledFrameAtTime(
+                                0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                targetWidth, targetHeight
+                            )
+                        }.getOrNull()
+                    } else null
+                    // Retain a codec compatibility fallback for devices that cannot
+                    // supply a scaled thumbnail directly.
+                    if (thumbFrame == null) {
+                        thumbFrame = retriever.getFrameAtTime(
+                            0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+                    }
                 } catch (e: Exception) {
                     Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
                 } finally {
@@ -857,7 +876,14 @@ class VideoStudioController(
         piiScanJob?.cancel()
         piiScanJob = null
         compressionJob?.cancel()
+        videoSessionRegistry.cancel(compressionJob)
         compressionJob = null
+        stabilizationJob?.cancel()
+        videoSessionRegistry.cancel(stabilizationJob)
+        stabilizationJob = null
+        videoRedactionJob?.cancel()
+        videoSessionRegistry.cancel(videoRedactionJob)
+        videoRedactionJob = null
         lastResultFile = null
 
         // Save current edits into currently selected item
@@ -1444,14 +1470,15 @@ class VideoStudioController(
         piiScanJob = null
         compressionJob?.cancel()
         compressionJob = null
-        if (activeFFmpegSessionId >= 0L) {
-            FFmpegKit.cancel(activeFFmpegSessionId)
-            activeFFmpegSessionId = -1L
-        }
+        videoSessionRegistry.cancelAll()
         try {
             piiEngine?.close()
             piiEngine = null
         } catch (ignored: Throwable) {}
+    }
+
+    private fun trackEncodingSession(id: Long, ownerJob: Job) {
+        videoSessionRegistry.register(ownerJob, id)
     }
 
     private fun handleExecute() {
@@ -1462,11 +1489,7 @@ class VideoStudioController(
 
         if (compressionJob?.isActive == true) {
             compressionJob?.cancel()
-            // Also cancel the running FFmpeg session to immediately free resources
-            if (activeFFmpegSessionId >= 0L) {
-                FFmpegKit.cancel(activeFFmpegSessionId)
-                activeFFmpegSessionId = -1L
-            }
+            videoSessionRegistry.cancel(compressionJob)
             binding.layoutVidProgress.visibility = View.GONE
             binding.btnVidExecute.text = "Compress"
             Toast.makeText(activity, "Compression cancelled", Toast.LENGTH_SHORT).show()
@@ -1501,6 +1524,8 @@ class VideoStudioController(
         VideoStudioForegroundService.start(activity, "Compressing ${itemsToProcess.size} video(s)")
 
         compressionJob = scope.launch(Dispatchers.IO) {
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 var successCount = 0
                 var exportedCount = 0
@@ -1570,7 +1595,7 @@ class VideoStudioController(
                         outFile = outFile,
                         editState = itemEditState,
                         outputConfig = outputConfig,
-                        onSessionId = { id -> activeFFmpegSessionId = id },
+                        onSessionId = { id -> trackEncodingSession(id, ownerJob) },
                         onProgressPhase = { phaseLabel, encMs, pct ->
                             val encSec = encMs / 1000.0
                             VideoStudioForegroundService.updateProgress(
@@ -1678,7 +1703,8 @@ class VideoStudioController(
     override fun hasPickedMedia(): Boolean = selectedMediaList.isNotEmpty()
     override fun hasUnsavedWork(): Boolean = selectedMediaList.isNotEmpty() || lastResultFile != null
     override val isProcessing: Boolean
-        get() = compressionJob?.isActive == true
+        get() = compressionJob?.isActive == true || stabilizationJob?.isActive == true ||
+            videoRedactionJob?.isActive == true
     override val supportsBackgroundExecution: Boolean
         get() = true
 
@@ -1696,11 +1722,8 @@ class VideoStudioController(
     fun cancelProcessing() {
         VideoStudioForegroundService.stop(activity)
         compressionJob?.cancel()
+        videoSessionRegistry.cancel(compressionJob)
         compressionJob = null
-        if (activeFFmpegSessionId >= 0L) {
-            FFmpegKit.cancel(activeFFmpegSessionId)
-            activeFFmpegSessionId = -1L
-        }
         binding.layoutVidProgress.visibility = View.GONE
         binding.btnVidExecute.text = "Compress"
         syncFloatingDockState()
@@ -1714,6 +1737,13 @@ class VideoStudioController(
         piiScanJob?.cancel()
         piiScanJob = null
         cancelProcessing()
+        stabilizationJob?.cancel()
+        videoSessionRegistry.cancel(stabilizationJob)
+        stabilizationJob = null
+        videoRedactionJob?.cancel()
+        videoSessionRegistry.cancel(videoRedactionJob)
+        videoRedactionJob = null
+        videoSessionRegistry.cancelAll()
         selectedMediaList.forEach {
             it.copyJob?.cancel()
             it.thumbnailBitmap?.recycle()
@@ -2459,6 +2489,7 @@ class VideoStudioController(
         }
 
         val gen = activeGeneration
+        val sourceIndex = currentMediaIndex
         val progressDialog = M3ExpressiveProgressDialog(activity)
         progressDialog.show(
             title = "Video EIS Stabilization",
@@ -2466,18 +2497,19 @@ class VideoStudioController(
             isIndeterminate = false,
             cancelable = true,
             onCancel = {
-                stabilizationJob?.cancel()
+                val jobToCancel = stabilizationJob
+                jobToCancel?.cancel()
+                videoSessionRegistry.cancel(jobToCancel)
                 stabilizationJob = null
-                val sid = activeFFmpegSessionId
-                if (sid >= 0L) {
-                    FFmpegKit.cancel(sid)
-                }
             }
         )
 
         val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
+            var outputHandedToComparison = false
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
@@ -2487,7 +2519,7 @@ class VideoStudioController(
                     srcFile = item.file,
                     outFile = tempStabilizedFile,
                     eisConfig = config,
-                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onSessionId = { sid -> trackEncodingSession(sid, ownerJob) },
                     onProgressPhase = { phaseLabel, _, pct ->
                         if (activeGeneration != gen) return@stabilizeVideoStandalone
                         launch(Dispatchers.Main) {
@@ -2509,6 +2541,12 @@ class VideoStudioController(
                             stabilizedFile = tempStabilizedFile,
                             config = config,
                             onAccept = {
+                                if (gen != activeGeneration || currentMediaIndex != sourceIndex ||
+                                    selectedMediaList.getOrNull(sourceIndex) !== item
+                                ) {
+                                    // The review may outlive its original workspace.
+                                    tempStabilizedFile.delete()
+                                } else {
                                 val updatedItem = item.copy(
                                     file = tempStabilizedFile,
                                     originalBytes = tempStabilizedFile.length()
@@ -2528,12 +2566,15 @@ class VideoStudioController(
                                     floatingDockController.onEditApplied()
                                 }
                                 Toast.makeText(activity, "Stabilized footage applied to workspace!", Toast.LENGTH_SHORT).show()
+
+                                }
                             },
                             onDiscard = {
                                 if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
                                 Toast.makeText(activity, "Stabilized footage discarded", Toast.LENGTH_SHORT).show()
                             }
                         )
+                        outputHandedToComparison = true
                     } else {
                         if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
                         Toast.makeText(
@@ -2543,6 +2584,8 @@ class VideoStudioController(
                         ).show()
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Immediate stabilization error", e)
                 withContext(Dispatchers.Main) {
@@ -2551,6 +2594,8 @@ class VideoStudioController(
                     if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
                     Toast.makeText(activity, "Stabilization failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                if (!outputHandedToComparison) tempStabilizedFile.delete()
             }
         }
     }
@@ -2776,18 +2821,19 @@ class VideoStudioController(
             isIndeterminate = false,
             cancelable = true,
             onCancel = {
-                videoRedactionJob?.cancel()
+                val jobToCancel = videoRedactionJob
+                jobToCancel?.cancel()
+                videoSessionRegistry.cancel(jobToCancel)
                 videoRedactionJob = null
-                val sid = activeFFmpegSessionId
-                if (sid >= 0L) {
-                    FFmpegKit.cancel(sid)
-                }
             }
         )
 
         val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
+            var outputHandedToWorkspace = false
+            val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
+            ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
@@ -2797,7 +2843,7 @@ class VideoStudioController(
                     srcFile = item.file,
                     outFile = tempRedactedFile,
                     filterChain = filterChain,
-                    onSessionId = { sid -> activeFFmpegSessionId = sid },
+                    onSessionId = { sid -> trackEncodingSession(sid, ownerJob) },
                     onProgress = { phaseLabel, _, pct ->
                         if (activeGeneration != gen) return@redactVideoStandalone
                         launch(Dispatchers.Main) {
@@ -2818,6 +2864,7 @@ class VideoStudioController(
                             originalBytes = tempRedactedFile.length()
                         )
                         selectedMediaList[currentMediaIndex] = updatedItem
+                        outputHandedToWorkspace = true
                         editState.isPiiBaked = true
                         editState.piiRedactionFilter = null // Baked directly into preview & base video!
                         editState.piiRedactionSummary = "$targetCount target(s) • ${style.label}"
@@ -2844,6 +2891,8 @@ class VideoStudioController(
                         ).show()
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Immediate video redaction error", e)
                 withContext(Dispatchers.Main) {
@@ -2852,6 +2901,8 @@ class VideoStudioController(
                     if (tempRedactedFile.exists()) tempRedactedFile.delete()
                     Toast.makeText(activity, "Video redaction failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                if (!outputHandedToWorkspace) tempRedactedFile.delete()
             }
         }
     }

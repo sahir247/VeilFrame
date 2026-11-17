@@ -435,16 +435,21 @@ object VideoProcessor {
             add("-")
         }
         Log.d(TAG, "Executing EIS Pass 1 (vidstabdetect): -vf ${VideoStabilizerEngine.buildVidstabDetectFilter("[TRF_PATH]", eisConfig)}")
-        val pass1Session = runFFmpegSession(
-            cmdArray = pass1Cmd.toTypedArray(),
-            onStatistics = { encMs ->
-                val rawRatio = (encMs / effectiveDurMs).coerceIn(0.0, 1.0)
-                val weightedPct = (rawRatio * 45.0).toInt().coerceIn(0, 45)
-                onProgressPhase?.invoke("Step 1/2: Analyzing motion", encMs, weightedPct)
-                onStatistics?.invoke((encMs * 0.45).toLong())
-            },
-            onSessionId = onSessionId
-        )
+        val pass1Session = try {
+            runFFmpegSession(
+                cmdArray = pass1Cmd.toTypedArray(),
+                onStatistics = { encMs ->
+                    val rawRatio = (encMs / effectiveDurMs).coerceIn(0.0, 1.0)
+                    val weightedPct = (rawRatio * 45.0).toInt().coerceIn(0, 45)
+                    onProgressPhase?.invoke("Step 1/2: Analyzing motion", encMs, weightedPct)
+                    onStatistics?.invoke((encMs * 0.45).toLong())
+                },
+                onSessionId = onSessionId
+            )
+        } catch (failure: Throwable) {
+            trfFile.delete()
+            throw failure
+        }
         val p1Rc = pass1Session?.returnCode
         if (!ReturnCode.isSuccess(p1Rc) || !trfFile.exists() || trfFile.length() == 0L) {
             if (trfFile.exists()) trfFile.delete()
@@ -528,10 +533,12 @@ object VideoProcessor {
             Log.d(TAG, "Executing Standalone EIS Pass 2 (vidstabtransform): -vf $transformVf")
             val durMs = try {
                 val mmr = android.media.MediaMetadataRetriever()
-                mmr.setDataSource(srcFile.absolutePath)
-                val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-                mmr.release()
-                d
+                try {
+                    mmr.setDataSource(srcFile.absolutePath)
+                    (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L).coerceAtLeast(1L)
+                } finally {
+                    mmr.release()
+                }
             } catch (_: Throwable) { 1000L }
 
             val pass2Session = runFFmpegSession(
@@ -593,10 +600,12 @@ object VideoProcessor {
     ): CompressionResult {
         val durMs = try {
             val mmr = android.media.MediaMetadataRetriever()
-            mmr.setDataSource(srcFile.absolutePath)
-            val d = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-            mmr.release()
-            d
+            try {
+                mmr.setDataSource(srcFile.absolutePath)
+                (mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L).coerceAtLeast(1L)
+            } finally {
+                mmr.release()
+            }
         } catch (_: Throwable) { 1000L }
 
         val isComplex = filterChain.contains("[") && filterChain.contains("]")
@@ -1168,9 +1177,22 @@ object VideoProcessor {
                 onStatistics?.invoke(encMs)
             }
         )
-        val activeSessionId = asyncSession?.sessionId ?: -1L
-        onSessionId?.invoke(activeSessionId)
-        latch.await()
+        val activeSessionId = asyncSession?.sessionId
+            ?: throw IllegalStateException("FFmpegKit failed to create a session")
+        try {
+            onSessionId?.invoke(activeSessionId)
+            latch.await()
+        } catch (failure: Throwable) {
+            // Stop only the session owned by this worker, including when the
+            // registration callback throws. Never cancel all sessions globally.
+            try {
+                FFmpegKit.cancel(activeSessionId)
+            } catch (cancelError: Throwable) {
+                failure.addSuppressed(cancelError)
+            }
+            if (failure is InterruptedException) Thread.currentThread().interrupt()
+            throw failure
+        }
         return resultHolder[0]
     }
 
