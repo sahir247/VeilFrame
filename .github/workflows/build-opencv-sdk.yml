@@ -17,6 +17,13 @@ on:
       - '.github/workflows/build-opencv-sdk.yml'
       - 'android/opencv-sdk/**'
 
+# Only the newest revision of a PR needs a full custom SDK rebuild.
+# Earlier revisions are superseded; cancelling them avoids repeated upstream
+# Maven requests and Gradle jobs on hosted runner IPs.
+concurrency:
+  group: opencv-sdk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-opencv:
     name: Build OpenCV 4.14.0 Android SDK (ARM64 + x86_64)
