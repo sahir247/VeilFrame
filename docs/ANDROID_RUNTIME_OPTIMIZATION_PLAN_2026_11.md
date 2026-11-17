@@ -6,7 +6,7 @@
 
 Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata/privacy guarantees, output file format, existing offline processing, and release minification. Do not silently downgrade native model quality, image export dimensions, PDF page continuity, video timestamps, or crypto correctness. No arbitrary dependency upgrades, minSdk increases, or library swaps without compatibility testing.
 
-## Completed in PR #45 (pending CI/device verification)
+## Earlier completed implementation in PR #45 (historical CI passed; latest CI/device pending)
 
 - PDF Extract Pages: single PDF, single image, and multi-image ZIP generation write to cache files directly. No list of rendered pages or whole ZIP/PDF loaded into heap in the app's SAF path.
 - PDF Quick Tool: PDF-to-image ZIP and all three split modes (all pages, selected pages, custom ranges) write to files and transfer ownership to the system document picker. Checks bitmap compression results.
@@ -17,16 +17,50 @@ Optimize app *runtime*, not build speed alone. Maintain pixel fidelity, metadata
 - Video Studio: use Android API 27+ scaled frame decoding for preview thumbnails, keeping source metadata and full-resolution rendering unchanged.
 - Background removal: read EXIF orientation once per decoded image.
 
-## Follow-up implementation (17 November 2026)
+## Earlier FFmpeg follow-up (17 November 2026)
 
 - **FFmpeg worker interruption:** `VideoProcessor.runFFmpegSession` now cancels only its active FFmpegKit session when the blocking worker is interrupted, restores the interrupt flag, and propagates the interruption. This is **not yet CI/device verified**.
 - **Still outstanding:** Coroutine cancellation must reach synchronous FFmpeg workers; test cancellation races and cleanup. Typed file-backed PDF sinks, image export fidelity, NCNN/Vulkan profiling, startup benchmarking and real-device acceptance checks remain open.
 
-## Additional implementation on PR #45 (17 November 2026)
+## Earlier PDF/video implementation on PR #45 (17 November 2026)
 
 - **PDF Quick Tool:** canvas-signing, metadata sanitization, and form-filling exports now write to buffered temporary PDF files. The existing disk-save callback avoids materializing full PDF byte arrays; the legacy callback remains supported when no disk callback is configured. Temporary files are deleted when not handed to the save picker. Form flatten preference is captured before background work.
 - **Video:** both standalone stabilization and redaction duration probes release `MediaMetadataRetriever` in `finally`, including when metadata extraction fails; durations are clamped to positive values to avoid zero-duration progress division.
 - **Validation:** these follow-up commits have **not yet been confirmed by CI or real-device tests**. In particular, exercise form/sign/metadata save, picker cancellation, navigation, and exception paths.
+
+## Latest implementation pass on PR #45 (17 November 2026)
+
+This pass changes real code and adds host regression tests; **the latest commits still require CI and device acceptance**. Earlier green checks do not validate newer commits.
+
+| Subsystem | Code change | Status |
+| --- | --- | --- |
+| Document Scanner exports | Offload to IO; stream per-page PNG and PDF entries directly into ZIP instead of per-page `ByteArrayOutputStream`; check `Bitmap.compress` results; reject undecodable pages; delete partial PDF/ZIP/individual files on failure; check cancellation at each page | Implemented; CI/device pending |
+| PDF merge thumbnails | Bounded page-count LRU reusing `PdfRenderer` counts rather than repeatedly loading a PDF with PDFBox during RecyclerView binds; skip invalid image-as-PDF attempts | Implemented; CI/device pending |
+| PDF reorder thumbnails | Cache reordered-state flag across binds; recompute only when page order changes | Implemented; CI/device pending |
+| PDF OCR | Check cancellation between pages; always recycle the rendered page in `finally`; propagate coroutine cancellation instead of showing a failure toast | Implemented; CI/device pending |
+| Cutout Gallery / sticker / share / clipboard | Capture presentation settings on Main before IO export, fail on false encoder result, delete failed MediaStore insertions, use fixed-size disk copy | Implemented; CI/device pending |
+| Multi-subject matting | Alpha-fuse ROI regions using 64-row strips; connected-component tiny-blob filtering is linear rather than pixel × label; release OpenCV Mats and PII detector on all paths | Implemented; CI/device pending; verify model output parity |
+| FFmpeg sessions | Reject a missing async session rather than waiting forever; cancel owned native session on callback/interruption error; cancel sessions reported after coroutine cancellation; clean motion-analysis temporary files on setup failures | Implemented; CI/device pending; stress cancellation races |
+| Startup and NCNN | Added Perfetto trace sections for PDFBox, crypto, layout, controller, listener, haptics and native model-load/inference; no speculative changes to native allocator/mutexes or model precision | Instrumented; actual bottleneck selection requires traces |
+| Profiling | `scripts/profile_android_runtime.py` now captures PSS distributions, battery temperature/level and a device-validated startup-baseline comparison with `--baseline` | Harness implemented; no device measurements supplied |
+
+**Tests added:** image ZIP decoding and exact entry counts; cleanup on a missing scanned page; parity of max-alpha ROI fusion for odd dimensions, offset placement, strip boundaries and invalid rectangles.
+
+**Unverified or dependent on device data (do not mark complete):**
+- True end-to-end abort of synchronous FFmpeg/native/C++ work across all service callers; concurrency and session-owner races under slow callback delivery.
+- Full-resolution 48/108MP matting export beyond the present 4096px working cap. This requires separately tiled full-resolution alpha application, EXIF/ICC parity, and peak-memory tests; blindly raising the cap could introduce OOM.
+- Vulkan/CPU numerical parity, RIFE/RealSR model hot-switching, GPU fallback, model-load benchmarks, 10-minute thermal/battery, 4K rotated-video PII coordinates, PDF free-space/picker process-death scenarios, R8 signed release startup, and real-device p50/p95.
+- These test/device/release gates cannot be declared passed from source inspection.
+
+**Suggested measurements on the same ARM64 phone and build mode:**
+
+```bash
+python scripts/profile_android_runtime.py --runs 7 --out baseline.json
+python scripts/profile_android_runtime.py --runs 7 --baseline baseline.json --out after.json
+python scripts/profile_android_runtime.py --runs 7 --workflow "300 page PDF to PNG ZIP" --out pdf-workflow.json
+```
+
+Use Perfetto slices with prefix `VF.` to determine whether PDFBox initialization, crypto provider, hierarchy inflation, haptic recursion, NCNN model load, or inference actually dominates runtime. Compare identical input files and thermal conditions. The manual `--workflow` snapshot is *not* an automated operation-duration benchmark.
 
 ## Priority 0 — finish and verify first
 
