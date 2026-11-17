@@ -483,8 +483,15 @@ class MainActivityLaunchers(private val activity: MainActivity) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(activity, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
+                } finally {
+                    // The picker owns only this hardlink/staged file, not the
+                    // unlocked source retained by the workspace for printing.
+                    sourceFile?.delete()
                 }
             }
+        } else {
+            // User dismissed the system picker without selecting a destination.
+            sourceFile?.delete()
         }
     }
 
@@ -762,9 +769,44 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     }
 
     fun launchPdfUnlockSave(fileName: String, sourceFile: File) {
-        pendingPdfUnlockSaveBytes = null
-        pendingPdfUnlockSaveFile = sourceFile
-        pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+        require(sourceFile.isFile && sourceFile.length() > 0L) { "Missing decrypted PDF" }
+        val staged = File(
+            activity.cacheDir, "veilframe_unlock_save_${java.util.UUID.randomUUID()}.pdf"
+        )
+        // Internal cache is on one filesystem; hardlinking is normally O(1)
+        // and keeps the SAF handoff valid even if the workspace is discarded.
+        val linked = try {
+            java.nio.file.Files.createLink(staged.toPath(), sourceFile.toPath())
+            true
+        } catch (_: Exception) {
+            false
+        }
+        if (linked) {
+            pendingPdfUnlockSaveBytes = null
+            pendingPdfUnlockSaveFile = staged
+            pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+        } else {
+            // FAT/emulated providers can reject hardlinks. Copy on IO, never Main.
+            activity.lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    sourceFile.inputStream().buffered().use { input ->
+                        staged.outputStream().buffered().use { output ->
+                            input.copyTo(output, 64 * 1024)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        pendingPdfUnlockSaveBytes = null
+                        pendingPdfUnlockSaveFile = staged
+                        pdfUnlockSaveLauncher.launch(fileName to "application/pdf")
+                    }
+                } catch (e: Exception) {
+                    staged.delete()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(activity, "Could not prepare unlocked PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
     }
 
     fun launchNotificationPermission() {
