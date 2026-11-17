@@ -729,7 +729,26 @@ class VideoStudioController(
                         width = height
                         height = tmp
                     }
-                    thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    // This bitmap is only a studio thumbnail/preview. Decoding a full
+                    // 4K/8K frame can allocate tens or hundreds of MB unnecessarily.
+                    thumbFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+                        width > 0 && height > 0
+                    ) {
+                        val (targetWidth, targetHeight) = VideoThumbnailPolicy.fitWithin(width, height)
+                        runCatching {
+                            retriever.getScaledFrameAtTime(
+                                0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                targetWidth, targetHeight
+                            )
+                        }.getOrNull()
+                    } else null
+                    // Retain a codec compatibility fallback for devices that cannot
+                    // supply a scaled thumbnail directly.
+                    if (thumbFrame == null) {
+                        thumbFrame = retriever.getFrameAtTime(
+                            0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+                    }
                 } catch (e: Exception) {
                     Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
                 } finally {
