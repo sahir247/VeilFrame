@@ -2489,6 +2489,7 @@ class VideoStudioController(
         }
 
         val gen = activeGeneration
+        val sourceIndex = currentMediaIndex
         val progressDialog = M3ExpressiveProgressDialog(activity)
         progressDialog.show(
             title = "Video EIS Stabilization",
@@ -2539,6 +2540,12 @@ class VideoStudioController(
                             stabilizedFile = tempStabilizedFile,
                             config = config,
                             onAccept = {
+                                if (gen != activeGeneration || currentMediaIndex != sourceIndex ||
+                                    selectedMediaList.getOrNull(sourceIndex) !== item
+                                ) {
+                                    // The review may outlive its original workspace.
+                                    tempStabilizedFile.delete()
+                                } else {
                                 val updatedItem = item.copy(
                                     file = tempStabilizedFile,
                                     originalBytes = tempStabilizedFile.length()
@@ -2558,6 +2565,8 @@ class VideoStudioController(
                                     floatingDockController.onEditApplied()
                                 }
                                 Toast.makeText(activity, "Stabilized footage applied to workspace!", Toast.LENGTH_SHORT).show()
+
+                                }
                             },
                             onDiscard = {
                                 if (tempStabilizedFile.exists()) tempStabilizedFile.delete()
