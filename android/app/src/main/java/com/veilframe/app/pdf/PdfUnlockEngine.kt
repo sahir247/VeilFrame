@@ -43,19 +43,23 @@ object PdfUnlockEngine {
     }
 
     /**
-     * Inspects the encryption state directly from a stream.
+     * Inspects a PDF stream without treating corrupted or unreadable data as an
+     * unencrypted document. The legacy Boolean overload is retained for callers.
      */
-    fun checkEncryption(inputStream: InputStream): Boolean {
-        return try {
+    fun checkEncryptionStrict(inputStream: InputStream): Result<Boolean> =
+        try {
             PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
-                doc.isEncrypted
+                Result.success(doc.isEncrypted)
             }
         } catch (e: InvalidPasswordException) {
-            true
+            Result.success(true)
         } catch (e: Exception) {
-            false
+            Result.failure(e)
         }
-    }
+
+    /** Legacy Boolean API; use [checkEncryptionStrict] for untrusted picker input. */
+    fun checkEncryption(inputStream: InputStream): Boolean =
+        checkEncryptionStrict(inputStream).getOrDefault(false)
 
     /**
      * Unlocks and strips all encryption/security from the PDF using the supplied password.
