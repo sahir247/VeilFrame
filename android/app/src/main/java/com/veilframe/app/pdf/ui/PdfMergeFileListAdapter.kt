@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * RecyclerView adapter managing multi-file list items for Merge PDF and Image to PDF compilation.
@@ -29,12 +30,20 @@ class PdfMergeFileListAdapter(
 ) : RecyclerView.Adapter<PdfMergeFileListAdapter.MergeFileViewHolder>() {
 
     private val uris = mutableListOf<Uri>()
+    private val documentNameCache = ConcurrentHashMap<Uri, String>()
+    private var orderRevision = 0L
+
+    private companion object {
+        const val SEQUENCE_PAYLOAD = "sequence_only"
+    }
 
     var onOrderChanged: ((List<Uri>) -> Unit)? = null
     var onItemRemoved: ((Int) -> Unit)? = null
     var onStartDrag: ((RecyclerView.ViewHolder) -> Unit)? = null
 
     fun setUris(newUris: List<Uri>) {
+        orderRevision++
+        documentNameCache.clear()
         uris.clear()
         uris.addAll(newUris)
         notifyDataSetChanged()
@@ -48,28 +57,51 @@ class PdfMergeFileListAdapter(
         if (fromPosition == toPosition) return
         val item = uris.removeAt(fromPosition)
         uris.add(toPosition, item)
+        orderRevision++
         notifyItemMoved(fromPosition, toPosition)
         val start = minOf(fromPosition, toPosition)
         val count = kotlin.math.abs(fromPosition - toPosition) + 1
-        notifyItemRangeChanged(start, count)
+        notifyItemRangeChanged(start, count, SEQUENCE_PAYLOAD)
         onOrderChanged?.invoke(uris.toList())
     }
 
     fun reverseOrder() {
         if (uris.size <= 1) return
         uris.reverse()
+        orderRevision++
         notifyDataSetChanged()
         onOrderChanged?.invoke(uris.toList())
     }
 
     fun sortByName() {
         if (uris.size <= 1) return
-        uris.sortBy { queryDocumentName(it).lowercase() }
-        notifyDataSetChanged()
-        onOrderChanged?.invoke(uris.toList())
+        val snapshot = uris.toList()
+        val revision = orderRevision
+        scope.launch(Dispatchers.IO) {
+            // ContentResolver.query can block for cloud document providers.
+            // Resolve names and sort off Main; reject the result after any drag/removal.
+            val byName = snapshot.associateWith { uri ->
+                documentNameCache[uri] ?: queryDocumentName(uri).also {
+                    documentNameCache[uri] = it
+                }
+            }
+            val sorted = snapshot.sortedWith(
+                compareBy<Uri> { byName[it]?.lowercase(java.util.Locale.ROOT).orEmpty() }
+            )
+            withContext(Dispatchers.Main) {
+                if (revision != orderRevision || uris != snapshot) return@withContext
+                uris.clear()
+                uris.addAll(sorted)
+                orderRevision++
+                notifyDataSetChanged()
+                onOrderChanged?.invoke(uris.toList())
+            }
+        }
     }
 
     fun clearAll() {
+        orderRevision++
+        documentNameCache.clear()
         uris.clear()
         notifyDataSetChanged()
         onOrderChanged?.invoke(emptyList())
@@ -85,8 +117,17 @@ class PdfMergeFileListAdapter(
     }
 
     override fun onBindViewHolder(holder: MergeFileViewHolder, position: Int) {
-        val uri = uris[position]
-        holder.bind(uri, position)
+        holder.bind(uris[position], position)
+    }
+
+    override fun onBindViewHolder(
+        holder: MergeFileViewHolder, position: Int, payloads: MutableList<Any>
+    ) {
+        if (payloads.isNotEmpty() && payloads.all { it == SEQUENCE_PAYLOAD }) {
+            holder.updateSequence(position)
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
     }
 
     inner class MergeFileViewHolder(
@@ -100,10 +141,9 @@ class PdfMergeFileListAdapter(
             renderJob?.cancel()
             boundUri = uri
             binding.ivMergeThumb.setImageDrawable(null)
-            val name = queryDocumentName(uri)
-
-            binding.tvMergeSequence.text = "#${position + 1}"
-            binding.tvMergeFileName.text = name
+            binding.tvMergeFileName.text = documentNameCache[uri]
+                ?: uri.lastPathSegment ?: "document.pdf"
+            updateSequence(position)
             binding.tvMergeFileMeta.text = "Loading..."
 
             // Touch handle starts drag immediately
@@ -115,17 +155,13 @@ class PdfMergeFileListAdapter(
             }
 
             // Move Up button
-            binding.btnMergeMoveUp.isEnabled = (position > 0)
-            binding.btnMergeMoveUp.alpha = if (position > 0) 1.0f else 0.35f
-            binding.btnMergeMoveUp.setOnClickListener {
+             binding.btnMergeMoveUp.setOnClickListener {
                 val currentPosition = bindingAdapterPosition
                 if (currentPosition > 0) moveItem(currentPosition, currentPosition - 1)
             }
 
             // Move Down button
-            binding.btnMergeMoveDown.isEnabled = (position < uris.size - 1)
-            binding.btnMergeMoveDown.alpha = if (position < uris.size - 1) 1.0f else 0.35f
-            binding.btnMergeMoveDown.setOnClickListener {
+             binding.btnMergeMoveDown.setOnClickListener {
                 val currentPosition = bindingAdapterPosition
                 if (currentPosition in 0 until uris.lastIndex) moveItem(currentPosition, currentPosition + 1)
             }
@@ -135,8 +171,9 @@ class PdfMergeFileListAdapter(
                 val currentPos = bindingAdapterPosition
                 if (currentPos in uris.indices) {
                     uris.removeAt(currentPos)
+                    orderRevision++
                     notifyItemRemoved(currentPos)
-                    notifyItemRangeChanged(currentPos, uris.size - currentPos)
+                    notifyItemRangeChanged(currentPos, uris.size - currentPos, SEQUENCE_PAYLOAD)
                     onItemRemoved?.invoke(currentPos)
                     onOrderChanged?.invoke(uris.toList())
                 }
@@ -145,6 +182,9 @@ class PdfMergeFileListAdapter(
             // Load first page thumbnail & page count
             binding.pbMergeThumb.visibility = View.VISIBLE
             renderJob = scope.launch(Dispatchers.IO) {
+                val fullName = documentNameCache[uri] ?: queryDocumentName(uri).also {
+                    documentNameCache[uri] = it
+                }
                 val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull() ?: ""
                 val isImg = mime.startsWith("image/") ||
                     uri.toString().endsWith(".jpg", true) ||
@@ -169,6 +209,7 @@ class PdfMergeFileListAdapter(
                         uris.getOrNull(bindingAdapterPosition) != uri
                     ) return@withContext
                     binding.pbMergeThumb.visibility = View.GONE
+                    binding.tvMergeFileName.text = fullName
                     if (bmp != null) {
                         binding.ivMergeThumb.setImageBitmap(bmp)
                     } else {
@@ -177,6 +218,14 @@ class PdfMergeFileListAdapter(
                     binding.tvMergeFileMeta.text = if (isImg) "Image" else "$pageCount ${if (pageCount == 1) "page" else "pages"}"
                 }
             }
+        }
+
+        fun updateSequence(position: Int) {
+            binding.tvMergeSequence.text = "#${position + 1}"
+            binding.btnMergeMoveUp.isEnabled = position > 0
+            binding.btnMergeMoveUp.alpha = if (position > 0) 1.0f else 0.35f
+            binding.btnMergeMoveDown.isEnabled = position < uris.lastIndex
+            binding.btnMergeMoveDown.alpha = if (position < uris.lastIndex) 1.0f else 0.35f
         }
 
         fun cancelRender() {
