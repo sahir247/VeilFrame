@@ -2127,6 +2127,7 @@ class PdfQuickToolController(
         val splitRangeText = binding.etSplitRanges.text?.toString().orEmpty()
         val operationMode = activeMode
         val operationUris = selectedUris.toList()
+        val operationFileName = primaryDocName
         val operationBase = primaryDocName.removeSuffix(".pdf")
 
         activeJob = launchTransient {
@@ -2455,8 +2456,8 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.DOC_TO_PDF -> {
-                        val uri = selectedUris.first()
-                        val lowerName = primaryDocName.lowercase()
+                        val uri = operationUris.first()
+                        val lowerName = operationFileName.lowercase()
                         val ext = when {
                             lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") -> ".xlsx"
                             lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt") -> ".pptx"
@@ -2480,7 +2481,9 @@ class PdfQuickToolController(
                                 else -> {
                                     try {
                                         officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                                    } catch (t: Throwable) {
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (t: Exception) {
                                         Log.w(TAG, "DOCX conversion failed: ${t.message}; using fallback text extractor", t)
                                         val extracted = officeConverter.extractDocxTextViaZip(tempInput)
                                         if (extracted.isNotBlank()) {
@@ -2504,6 +2507,7 @@ class PdfQuickToolController(
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
                             throw cancelled
                         } catch (t: Exception) {
+                            success = false
                             conversionError = t.message ?: "Failed to convert document"
                         } finally {
                             tempInput.delete()
