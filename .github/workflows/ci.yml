@@ -1563,9 +1563,9 @@ jobs:
   release-asset-hygiene:
     name: Clean leaked debug release asset and repair updater hash
     runs-on: ubuntu-24.04
-    needs: [publish-release]
-    # Run even when the producer was skipped, but only for main branch updates.
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Independent of the long test/release matrix: clean an already-tainted
+    # release promptly, even when production packaging is still running.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
