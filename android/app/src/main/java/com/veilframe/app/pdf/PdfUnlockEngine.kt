@@ -7,6 +7,7 @@ import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.rendering.PDFRenderer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -103,6 +104,8 @@ object PdfUnlockEngine {
                     )
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: InvalidPasswordException) {
             Result.failure(IllegalArgumentException("Incorrect password. Please verify the document password and try again."))
         } catch (e: Exception) {
@@ -135,6 +138,8 @@ object PdfUnlockEngine {
                 loadedDoc.save(outputStream)
                 Result.success(loadedDoc.numberOfPages)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: InvalidPasswordException) {
             Result.failure(IllegalArgumentException("Incorrect password"))
         } catch (e: Exception) {
@@ -157,6 +162,8 @@ object PdfUnlockEngine {
                     renderer.renderImageWithDPI(pageIndex, dpi)
                 } else null
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             null
         }
