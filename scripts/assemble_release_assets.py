@@ -5,7 +5,10 @@ import hashlib
 import json
 import re
 import shutil
-import tomllib
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib  # Python 3.10 (declared dependency)
 import zipfile
 from pathlib import Path
 
@@ -17,8 +20,11 @@ def require(ok, message):
         raise ReleaseAssetError(message)
 
 def checksum(path):
+    digest = hashlib.sha256()
     with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 def assemble(repo, downloaded, output):
     project = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
