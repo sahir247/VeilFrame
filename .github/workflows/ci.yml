@@ -552,10 +552,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  release-contract-tests:
+    name: Release artifact contract regression tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release code
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Verify production-only release artifact rules
+        run: python3 -m unittest discover -s tests -p 'test_release_assets_gate.py' -v
+
   release-gate:
     name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [test, tier4-matrix-oracle, android-upscaler-verify]
+    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
@@ -1372,7 +1385,7 @@ jobs:
   publish-release:
     name: Aggregate & Publish Release
     runs-on: ubuntu-24.04
-    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
+    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-contract-tests, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
     # A skipped release build is not a failure(). Explicitly require every production gate.
     if: >
       ${{
@@ -1380,6 +1393,7 @@ jobs:
         needs.test.result == 'success' &&
         needs.tier4-matrix-oracle.result == 'success' &&
         needs.android-upscaler-verify.result == 'success' &&
+        needs.release-contract-tests.result == 'success' &&
         needs.release-gate.result == 'success' &&
         needs.build-windows.result == 'success' &&
         needs.build-linux.result == 'success' &&
