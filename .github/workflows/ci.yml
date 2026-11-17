@@ -1138,70 +1138,127 @@ jobs:
           sdkmanager --version
           echo "$ANDROID_HOME"
           ls -la "$ANDROID_HOME/platforms/android-37.0"
-      - name: Stage Custom OpenCV 4.14.0 Android SDK
+      - name: Stage verified OpenCV 4.14.0 SDK for signed release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRED_BRANCH: ${{ github.head_ref || github.ref_name }}
+          REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          echo "==> Resolving latest verified custom OpenCV SDK artifact..."
-          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+          set -Eeuo pipefail
+          # Prefer an artifact built from this exact head or this feature branch.
+          # If neither exists, a successful main-branch SDK is safe only when every
+          # OpenCV SDK build input is identical between that artifact SHA and HEAD.
+          RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
-            --status success \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+            --branch "$REQUIRED_BRANCH" \
+            --limit 100 \
+            --json databaseId,headSha,status,conclusion)
 
-          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No successful OpenCV SDK build found! Run build-opencv-sdk.yml first."
+          RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+          ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
+
+          if [ -z "$RUN_ID" ]; then
+            CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
+              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
+            RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
+            ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
+          fi
+
+          # Dependency-only and app-only PRs do not trigger an OpenCV SDK build.
+          # Reuse the latest successful main artifact only after checking its source
+          # tree against this exact PR head for all SDK-defining inputs below.
+          if [ -z "$RUN_ID" ]; then
+            MAIN_RUNS=$(gh run list --repo "${{ github.repository }}" \
+              --workflow "build-opencv-sdk.yml" \
+              --branch main \
+              --limit 100 \
+              --json databaseId,headSha,status,conclusion)
+            MAIN_CANDIDATE=$(printf '%s' "$MAIN_RUNS" | jq -c \
+              '[.[] | select(.status == "completed" and .conclusion == "success")] | first // {}')
+            RUN_ID=$(printf '%s' "$MAIN_CANDIDATE" | jq -r '.databaseId // empty')
+            ARTIFACT_SHA=$(printf '%s' "$MAIN_CANDIDATE" | jq -r '.headSha // empty')
+            if [ -z "$RUN_ID" ] || [ -z "$ARTIFACT_SHA" ]; then
+              echo "::error::No successful OpenCV SDK build exists on this branch or main."
+              exit 1
+            fi
+            echo "Checking main-branch OpenCV SDK artifact $RUN_ID at $ARTIFACT_SHA."
+          fi
+
+          git fetch --no-tags --depth=1 origin "$ARTIFACT_SHA"
+          CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
+            grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
+          if [ -n "$CHANGED_INPUTS" ]; then
+            echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+            echo "$CHANGED_INPUTS"
+            exit 1
+          fi
+          echo "Verified OpenCV SDK build inputs are unchanged from artifact source $ARTIFACT_SHA."
+          if [ "$ARTIFACT_SHA" != "$REQUIRED_HEAD_SHA" ]; then
+            echo "Reusing verified SDK artifact $RUN_ID from $ARTIFACT_SHA."
+          fi
+
+          echo "Waiting for verified OpenCV SDK build $RUN_ID at $ARTIFACT_SHA..."
+          STATUS=""
+          CONCLUSION=""
+          for i in $(seq 1 90); do
+            RUN_INFO=$(gh run view "$RUN_ID" --repo "${{ github.repository }}" --json status,conclusion 2>/dev/null || true)
+            STATUS=$(printf '%s' "$RUN_INFO" | jq -r '.status // empty' 2>/dev/null || true)
+            CONCLUSION=$(printf '%s' "$RUN_INFO" | jq -r '.conclusion // empty' 2>/dev/null || true)
+            echo "[$i/90] OpenCV SDK build $RUN_ID status: ${STATUS:-unknown} (conclusion: ${CONCLUSION:-none})"
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" != "success" ]; then
+                echo "::error::OpenCV SDK build $RUN_ID finished with conclusion: $CONCLUSION"
+                exit 1
+              fi
+              break
+            fi
+            sleep 30
+          done
+
+          if [ "$STATUS" != "completed" ] || [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Timed out or failed waiting for OpenCV SDK build $RUN_ID."
             exit 1
           fi
 
-          echo "Found successful OpenCV SDK workflow run: $RUN_ID"
           mkdir -p /tmp/opencv_artifact
-          gh run download "$RUN_ID" \
-            --repo "${{ github.repository }}" \
-            --name veilframe-custom-opencv-sdk \
-            --dir /tmp/opencv_artifact
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" \
+            --name veilframe-custom-opencv-sdk --dir /tmp/opencv_artifact
 
+          ARM64_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/arm64-v8a/libopencv_java4.so" -print -quit)
+          X86_SO=$(find /tmp/opencv_artifact -path "*/jniLibs/x86_64/libopencv_java4.so" -print -quit)
+          MAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/core/Mat.java" -print -quit)
+          WECHAT_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/wechat_qrcode/WeChatQRCode.java" -print -quit)
+          VIDEOIO_JAVA=$(find /tmp/opencv_artifact -path "*/java/org/opencv/videoio/Videoio.java" -print -quit)
+          ATTRS_XML=$(find /tmp/opencv_artifact -path "*/res/values/attrs.xml" -print -quit)
+          MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
+          test -n "$ARM64_SO" && test -s "$ARM64_SO"
+          test -n "$X86_SO" && test -s "$X86_SO"
+          test -n "$MAT_JAVA" && test -s "$MAT_JAVA"
+          test -n "$WECHAT_JAVA" && test -s "$WECHAT_JAVA"
+          test -n "$VIDEOIO_JAVA" && test -s "$VIDEOIO_JAVA"
+          test -n "$ATTRS_XML" && test -s "$ATTRS_XML"
+          test -n "$MARKER" && test -s "$MARKER"
+
+          # The artifact root may include src/main/ because its AAR path is also uploaded;
+          # derive the exact SDK root from the verified Java binding path instead of assuming it.
+          SDK_ROOT="${MAT_JAVA%/java/org/opencv/core/Mat.java}"
           mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
           mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
-
-          ARM64_SO=$(find /tmp/opencv_artifact -path "*/arm64-v8a/libopencv_java4.so" -print -quit)
-          X86_SO=$(find /tmp/opencv_artifact -path "*/x86_64/libopencv_java4.so" -print -quit)
-          MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
-
-          if [ -n "$ARM64_SO" ]; then
-            cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
-          fi
-          if [ -n "$X86_SO" ]; then
-            cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
-          fi
-          if [ -n "$MARKER" ]; then
-            cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
-          fi
-
-          if [ ! -s android/opencv-sdk/src/main/.opencv-sdk-complete ]; then
-            echo "Generating .opencv-sdk-complete marker..."
-            ARM_SHA=$(sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so | awk '{print $1}')
-            X86_SHA=$(sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so | awk '{print $1}')
-            {
-              echo "OpenCV=4.14.0"
-              echo "OpenCV_SHA=0654a42e19215ef25b1d367d822f3c630447e7c7"
-              echo "Contrib_SHA=a8e9acd62cabd30419dba83007f2ac0d07de5e2c"
-              echo "NDK=27.2.12479018"
-              echo "STL=c++_static"
-              echo "ABIs=arm64-v8a,x86_64"
-              echo "ARM64_SHA256=${ARM_SHA}"
-              echo "X86_64_SHA256=${X86_SHA}"
-              echo "GeneratedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-              echo "Status=VERIFIED_COMPLETE"
-            } > android/opencv-sdk/src/main/.opencv-sdk-complete
-          fi
-
-          echo "==> Staged OpenCV SDK status:"
-          ls -lh android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
-          ls -lh android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
-          cat android/opencv-sdk/src/main/.opencv-sdk-complete
+          mkdir -p android/opencv-sdk/src/main/java android/opencv-sdk/src/main/res
+          cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          cp -a "$SDK_ROOT/java/." android/opencv-sdk/src/main/java/
+          cp -a "$SDK_ROOT/res/." android/opencv-sdk/src/main/res/
+          cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
+          test -s android/opencv-sdk/src/main/.opencv-sdk-complete
+          test -s android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
+          test -s android/opencv-sdk/src/main/java/org/opencv/videoio/Videoio.java
+          test -s android/opencv-sdk/src/main/res/values/attrs.xml
+          sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
 
       - name: Build Android Release Packages
         shell: bash
@@ -1315,11 +1372,20 @@ jobs:
   publish-release:
     name: Aggregate & Publish Release
     runs-on: ubuntu-24.04
-    needs: [build-windows, build-linux, build-macos, build-python, build-android]
+    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
+    # A skipped release build is not a failure(). Explicitly require every production gate.
     if: >
       ${{
-        !failure() &&
-        !cancelled() &&
+        success() &&
+        needs.test.result == 'success' &&
+        needs.tier4-matrix-oracle.result == 'success' &&
+        needs.android-upscaler-verify.result == 'success' &&
+        needs.release-gate.result == 'success' &&
+        needs.build-windows.result == 'success' &&
+        needs.build-linux.result == 'success' &&
+        needs.build-macos.result == 'success' &&
+        needs.build-python.result == 'success' &&
+        needs.build-android.result == 'success' &&
         (
           github.event_name == 'release' ||
           github.event_name == 'workflow_dispatch' ||
@@ -1333,67 +1399,57 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
 
-      - name: Download All Binary, Android & Python Artifacts
+      - name: Set up Python for release validation
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Download only the release build jobs, never the Android debug verification artifact.
+      - name: Download Windows release
         uses: actions/download-artifact@v8
         with:
-          path: downloaded_artifacts
+          name: VeilFrame-windows-x86_64
+          path: downloaded_artifacts/VeilFrame-windows-x86_64
 
-      - name: Assemble Release Assets & Compute SHA-256 Checksums
+      - name: Download Linux release
+        uses: actions/download-artifact@v8
+        with:
+          name: VeilFrame-linux-x86_64
+          path: downloaded_artifacts/VeilFrame-linux-x86_64
+
+      - name: Download macOS tar release
+        uses: actions/download-artifact@v8
+        with:
+          name: VeilFrame-macos-arm64-tar
+          path: downloaded_artifacts/VeilFrame-macos-arm64-tar
+
+      - name: Download macOS DMG release
+        uses: actions/download-artifact@v8
+        with:
+          name: VeilFrame-macos-arm64-dmg
+          path: downloaded_artifacts/VeilFrame-macos-arm64-dmg
+
+      - name: Download Python release distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: VeilFrame-python-dist
+          path: downloaded_artifacts/VeilFrame-python-dist
+
+      - name: Download signed Android production APK
+        uses: actions/download-artifact@v8
+        with:
+          name: VeilFrame-android-packages
+          path: downloaded_artifacts/VeilFrame-android-packages
+
+      - name: Validate complete production artifacts and create checksums
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          mkdir -p final_release
-
-          find downloaded_artifacts -type f \
-            \( -name "*.exe" \
-            -o -name "*.deb" \
-            -o -name "*.dmg" \
-            -o -name "*.tar.gz" \
-            -o -name "*.whl" \
-            -o -name "*.apk" \
-            -o -name "*.aab" \) \
-            -exec cp {} final_release/ \;
-
-          shopt -s nullglob
-          assets=(final_release/*)
-
-          if ((${#assets[@]} == 0)); then
-            echo "::error::No build artifacts were copied into final_release"
-            find downloaded_artifacts -maxdepth 3 -type f -print
-            exit 1
-          fi
-
-          if [ -f final_release/VeilFrame-android-arm64.apk ]; then
-            APK_SHA256=$(sha256sum final_release/VeilFrame-android-arm64.apk | awk '{print $1}')
-
-            python3 - "$APK_SHA256" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          source = Path("android/update.json")
-          destination = Path("final_release/update.json")
-
-          data = json.loads(source.read_text(encoding="utf-8"))
-          data["sha256"] = sys.argv[1]
-          destination.write_text(
-              json.dumps(data, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
-          else
-            cp android/update.json final_release/update.json
-          fi
-
-          (
-            cd final_release
-            rm -f SHA256SUMS.txt
-            for file in *; do
-              [ -f "$file" ] && sha256sum "$file"
-            done
-          ) > final_release/SHA256SUMS.txt
-
+          python3 -m unittest discover -s tests -p 'test_release_assets_gate.py' -v
+          python3 scripts/assemble_release_assets.py \
+            --repo-root . \
+            --download-root downloaded_artifacts \
+            --output final_release
           ls -lah final_release
 
       - name: Upload Aggregate Workflow Artifact
@@ -1431,6 +1487,21 @@ jobs:
               "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
           fi
 
+          EXPECTED_TAG="v$(python3 -c \
+            "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "$TAG" != "$EXPECTED_TAG" ]; then
+            echo "::error::Release tag $TAG does not match build version $EXPECTED_TAG"
+            exit 1
+          fi
+
+          # Do not let a slower, obsolete main workflow replace a newer release.
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            CURRENT_HEAD=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+            if [ "$CURRENT_HEAD" != "$GITHUB_SHA" ]; then
+              echo "::notice::Stale main workflow $GITHUB_SHA; current head is $CURRENT_HEAD. Skipping publication."
+              exit 0
+            fi
+          fi
           echo "Publishing release: ${TAG}"
 
           # Format release name as v.<version> (e.g. v.2.2.6)
@@ -1474,3 +1545,70 @@ jobs:
             "${assets[@]}"
 
           echo "Release ${TAG} published successfully."
+
+  release-asset-hygiene:
+    name: Clean leaked debug release asset and repair updater hash
+    runs-on: ubuntu-24.04
+    needs: [publish-release]
+    # Run even when the producer was skipped, but only for main branch updates.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout metadata
+        uses: actions/checkout@v7
+
+      - name: Remove debug APK and match updater to published release APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          TAG="v$VERSION"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG not present; no existing assets to reconcile."
+            exit 0
+          fi
+
+          TMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TMP_DIR"' EXIT
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$TMP_DIR/release.json"
+          DEBUG_ID=$(jq -r '[.assets[] | select(.name == "app-debug.apk") | .id] | first // empty' "$TMP_DIR/release.json")
+          if [ -n "$DEBUG_ID" ]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$DEBUG_ID" >/dev/null
+            echo "::notice::Removed leaked debug APK from $TAG."
+          fi
+
+          APK_DIGEST=$(jq -r '[.assets[] | select(.name == "VeilFrame-android-arm64.apk") | .digest] | first // empty' "$TMP_DIR/release.json")
+          UPDATE_ID=$(jq -r '[.assets[] | select(.name == "update.json") | .id] | first // empty' "$TMP_DIR/release.json")
+          if [[ ! "$APK_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || [ -z "$UPDATE_ID" ]; then
+            echo "::warning::No release APK digest or updater; cannot reconcile checksum."
+            exit 0
+          fi
+
+          APK_SHA=$(printf '%s' "$APK_DIGEST" | cut -d: -f2)
+          gh release download "$TAG" --pattern update.json --dir "$TMP_DIR"
+          RESULT=$(python3 - "$TMP_DIR/update.json" "$APK_SHA" "$VERSION" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          path = Path(sys.argv[1])
+          digest, version = sys.argv[2:]
+          data = json.loads(path.read_text(encoding="utf-8"))
+          if data.get("versionName") != version or data.get("tag") != "v" + version:
+              raise SystemExit("Published updater version does not match release; refusing repair")
+          if data.get("apk") != "VeilFrame-android-arm64.apk":
+              raise SystemExit("Published updater references an unexpected APK")
+          if data.get("sha256") == digest:
+              print("unchanged")
+          else:
+              data["sha256"] = digest
+              path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+              print("repaired")
+          PY
+          )
+          if [ "$RESULT" = "repaired" ]; then
+            gh release upload "$TAG" --clobber "$TMP_DIR/update.json"
+            echo "::warning::Corrected old updater checksum to match published production APK."
+          fi
