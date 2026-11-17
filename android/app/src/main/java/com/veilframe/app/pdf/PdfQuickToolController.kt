@@ -2097,23 +2097,29 @@ class PdfQuickToolController(
         val splitSelectedMode = binding.chipSplitSelected.isChecked
         val splitSelectedPages = splitThumbnailAdapter?.getSelectedPages()?.toList()?.sorted().orEmpty()
         val splitRangeText = binding.etSplitRanges.text?.toString().orEmpty()
+        val operationMode = activeMode
+        val operationUris = selectedUris.toList()
+        val operationBase = primaryDocName.removeSuffix(".pdf")
 
         activeJob = launchTransient {
             try {
                 val outStream = ByteArrayOutputStream()
-                val base = primaryDocName.removeSuffix(".pdf")
+                val base = operationBase
 
-                when (activeMode) {
+                when (operationMode) {
                     QuickMode.MERGE -> {
-                        val isInterleaved = binding.chipMergeModePages.isChecked && (mergePageAdapter?.itemCount ?: 0) > 0
-                        val result = if (isInterleaved) {
-                            val pageItems = mergePageAdapter?.getItems() ?: emptyList()
-                            pdfMerger.mergePageItems(activity, pageItems, outStream)
-                        } else {
-                            pdfMerger.mergePdfs(activity, selectedUris, outStream)
+                        val plan = withContext(Dispatchers.Main) {
+                            val interleaved = binding.chipMergeModePages.isChecked &&
+                                (mergePageAdapter?.itemCount ?: 0) > 0
+                            interleaved to if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty()
+                                else emptyList()
                         }
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "merged_document.pdf", origText)
+                        finishPdfOutputOnDisk("merged_document.pdf", origText) { output ->
+                            if (plan.first) {
+                                pdfMerger.mergePageItems(activity, plan.second, output).isSuccess
+                            } else {
+                                pdfMerger.mergePdfs(activity, operationUris, output).isSuccess
+                            }
                         }
                     }
                     QuickMode.SPLIT -> {
@@ -2244,8 +2250,9 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.DELETE -> {
-                        val uri = selectedUris.first()
-                        val pagesToDelete = rotateThumbnailAdapter?.getDeletedPages() ?: emptySet()
+                        val pagesToDelete = withContext(Dispatchers.Main) {
+                            rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty()
+                        }
                         if (pagesToDelete.isEmpty()) {
                             withContext(Dispatchers.Main) {
                                 isExecuting = false
@@ -2255,89 +2262,91 @@ class PdfQuickToolController(
                             }
                             return@launchTransient
                         }
-
-                        val result = pdfOrganizer.removePages(
-                            context = activity,
-                            inputUri = uri,
-                            outputStream = outStream,
-                            pagesToRemove = pagesToDelete
-                        )
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_pruned.pdf", origText)
+                        finishPdfOutputOnDisk("${base}_pruned.pdf", origText) { output ->
+                            pdfOrganizer.removePages(
+                                context = activity,
+                                inputUri = operationUris.first(),
+                                outputStream = output,
+                                pagesToRemove = pagesToDelete
+                            ).isSuccess
                         }
                     }
                     QuickMode.ROTATE -> {
-                        val uri = selectedUris.first()
-                        val angle = when (binding.chipGroupRotateAngle.checkedChipId) {
-                            R.id.chipRotate180 -> RotationAngle.ROTATE_180
-                            R.id.chipRotate270 -> RotationAngle.ROTATE_270
-                            else -> RotationAngle.ROTATE_90
+                        val (angle, selectedPages) = withContext(Dispatchers.Main) {
+                            val rotation = when (binding.chipGroupRotateAngle.checkedChipId) {
+                                R.id.chipRotate180 -> RotationAngle.ROTATE_180
+                                R.id.chipRotate270 -> RotationAngle.ROTATE_270
+                                else -> RotationAngle.ROTATE_90
+                            }
+                            rotation to rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty()
                         }
-
-                        val selectedPages = rotateThumbnailAdapter?.getSelectedPages() ?: emptySet()
-                        val result = if (selectedPages.isNotEmpty()) {
-                            val rotations = selectedPages.associateWith { angle }
-                            pdfRotator.rotateSpecificPages(activity, uri, outStream, rotations)
-                        } else {
-                            pdfRotator.rotateAllPages(activity, uri, outStream, angle)
-                        }
-
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_rotated.pdf", origText)
+                        finishPdfOutputOnDisk("${base}_rotated.pdf", origText) { output ->
+                            if (selectedPages.isNotEmpty()) {
+                                val rotations = selectedPages.associateWith { angle }
+                                pdfRotator.rotateSpecificPages(
+                                    activity, operationUris.first(), output, rotations
+                                ).isSuccess
+                            } else {
+                                pdfRotator.rotateAllPages(
+                                    activity, operationUris.first(), output, angle
+                                ).isSuccess
+                            }
                         }
                     }
                     QuickMode.REORDER -> {
-                        val uri = selectedUris.first()
-                        val order = rotateThumbnailAdapter?.getPageOrder() ?: (1..primaryDocPages).toList()
-                        val result = pdfOrganizer.reorderPages(activity, uri, outStream, order)
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_reordered.pdf", origText)
+                        val pageOrder = withContext(Dispatchers.Main) {
+                            rotateThumbnailAdapter?.getPageOrder()?.toList()
+                                ?: (1..primaryDocPages).toList()
+                        }
+                        finishPdfOutputOnDisk("${base}_reordered.pdf", origText) { output ->
+                            pdfOrganizer.reorderPages(
+                                activity, operationUris.first(), output, pageOrder
+                            ).isSuccess
                         }
                     }
                     QuickMode.IMAGE_TO_PDF -> {
-                        val result = imageConverter.imagesToPdf(activity, selectedUris, outStream)
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "compiled_images.pdf", origText)
+                        finishPdfOutputOnDisk("compiled_images.pdf", origText) { output ->
+                            imageConverter.imagesToPdf(activity, operationUris, output).isSuccess
                         }
                     }
                     QuickMode.COMPRESS -> {
-                        val uri = selectedUris.first()
-                        val quality = binding.sliderCompressQuality.value.toInt()
-
-                        val result = pdfCompressor.compressPdf(
-                            context = activity,
-                            inputUri = uri,
-                            outputStream = outStream,
-                            qualityPercent = quality
-                        )
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_compressed.pdf", origText)
+                        val quality = withContext(Dispatchers.Main) {
+                            binding.sliderCompressQuality.value.toInt()
+                        }
+                        finishPdfOutputOnDisk("${base}_compressed.pdf", origText) { output ->
+                            pdfCompressor.compressPdf(
+                                context = activity,
+                                inputUri = operationUris.first(),
+                                outputStream = output,
+                                qualityPercent = quality
+                            ).isSuccess
                         }
                     }
                     QuickMode.LOCK -> {
-                        val uri = selectedUris.first()
-                        val password = binding.etLockPassword.text?.toString() ?: ""
-                        if (password.isEmpty()) {
+                        val options = withContext(Dispatchers.Main) {
+                            PdfSecurityOptions(
+                                password = binding.etLockPassword.text?.toString().orEmpty(),
+                                allowPrinting = binding.cbLockAllowPrint.isChecked,
+                                allowCopying = binding.cbLockAllowCopy.isChecked,
+                                allowModifying = binding.cbLockAllowFillForms.isChecked,
+                                allowAnnotations = binding.cbLockAllowAnnotate.isChecked
+                            )
+                        }
+                        if (options.password.isEmpty()) {
                             withContext(Dispatchers.Main) {
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please enter an encryption password", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    activity, "Please enter an encryption password", Toast.LENGTH_SHORT
+                                ).show()
                             }
                             return@launchTransient
                         }
-
-                        val options = PdfSecurityOptions(
-                            password = password,
-                            allowPrinting = binding.cbLockAllowPrint.isChecked,
-                            allowCopying = binding.cbLockAllowCopy.isChecked,
-                            allowModifying = binding.cbLockAllowFillForms.isChecked,
-                            allowAnnotations = binding.cbLockAllowAnnotate.isChecked
-                        )
-
-                        val result = pdfSecurityManager.encryptPdf(activity, uri, outStream, options)
-                        withContext(Dispatchers.Main) {
-                            finishExecution(result.isSuccess, outStream.toByteArray(), "${base}_locked.pdf", origText)
+                        finishPdfOutputOnDisk("${base}_locked.pdf", origText) { output ->
+                            pdfSecurityManager.encryptPdf(
+                                activity, operationUris.first(), output, options
+                            ).isSuccess
                         }
                     }
                     QuickMode.SIGN -> {
@@ -2857,6 +2866,29 @@ class PdfQuickToolController(
      * Deliver a generated export to the SAF picker without reading large PDFs or ZIPs
      * back into heap. Returns true only when picker ownership is transferred.
      */
+    /**
+     * Run the existing PDF engine against a buffered, disk-backed sink.
+     * The SAF picker takes ownership only after a complete successful export;
+     * otherwise the temporary PDF is removed, including on cancellation.
+     */
+    private suspend fun finishPdfOutputOnDisk(
+        fileName: String,
+        originalButtonText: String,
+        generate: (java.io.OutputStream) -> Boolean
+    ) {
+        val file = File.createTempFile("veilframe_pdf_", ".pdf", activity.cacheDir)
+        var handedOff = false
+        try {
+            val success = file.outputStream().buffered().use { output ->
+                generate(output)
+            }
+            kotlin.coroutines.coroutineContext.ensureActive()
+            handedOff = finishDiskExecution(success, file, fileName, originalButtonText)
+        } finally {
+            if (!handedOff) file.delete()
+        }
+    }
+
     private suspend fun finishDiskExecution(
         success: Boolean, file: File, fileName: String, origBtnText: String
     ): Boolean {
