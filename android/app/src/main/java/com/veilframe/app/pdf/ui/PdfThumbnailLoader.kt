@@ -35,6 +35,29 @@ internal object PdfThumbnailSizing {
 class PdfThumbnailLoader(context: Context) {
     private val appContext = context.applicationContext
 
+    /** Counts are reused by the merge-file list rather than reparsing each PDF on every bind. */
+    suspend fun loadPageCount(uri: Uri): Int? = withContext(Dispatchers.IO) {
+        val key = uri.toString()
+        pageCountCache.get(key)?.let { return@withContext it }
+        renderSemaphore.withPermit {
+            pageCountCache.get(key)?.let { return@withPermit it }
+            val descriptor = try {
+                appContext.contentResolver.openFileDescriptor(uri, "r")
+            } catch (_: Exception) {
+                null
+            } ?: return@withPermit null
+            try {
+                PdfRenderer(descriptor).use { renderer ->
+                    renderer.pageCount.also { pageCountCache.put(key, it) }
+                }
+            } catch (_: Exception) {
+                null
+            } finally {
+                runCatching { descriptor.close() }
+            }
+        }
+    }
+
     suspend fun loadPageThumbnail(uri: Uri, pageIndex: Int, targetWidth: Int = DEFAULT_WIDTH): Bitmap? =
         withContext(Dispatchers.IO) {
             if (pageIndex < 0) return@withContext null
@@ -56,6 +79,7 @@ class PdfThumbnailLoader(context: Context) {
         try {
             descriptor = appContext.contentResolver.openFileDescriptor(uri, "r") ?: return null
             renderer = PdfRenderer(descriptor)
+            pageCountCache.put(uri.toString(), renderer.pageCount)
             if (pageIndex >= renderer.pageCount) return null
             page = renderer.openPage(pageIndex)
 
@@ -84,7 +108,10 @@ class PdfThumbnailLoader(context: Context) {
         }
     }
 
-    fun clearCache() = memoryCache.evictAll()
+    fun clearCache() {
+        memoryCache.evictAll()
+        pageCountCache.evictAll()
+    }
 
     companion object {
         private const val DEFAULT_WIDTH = 220
@@ -98,17 +125,24 @@ class PdfThumbnailLoader(context: Context) {
         private val memoryCache = object : LruCache<String, Bitmap>(cacheMaxBytes) {
             override fun sizeOf(key: String, bitmap: Bitmap): Int = bitmap.allocationByteCount
         }
+        private val pageCountCache = LruCache<String, Int>(128)
         private val renderSemaphore = Semaphore(permits = 2)
 
         /** Called by the Application when Android reports process memory pressure. */
         fun onTrimMemory(level: Int) {
             when {
-                level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> memoryCache.evictAll()
+                level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> {
+                    memoryCache.evictAll()
+                    pageCountCache.evictAll()
+                }
                 level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> memoryCache.trimToSize(cacheMaxBytes / 4)
                 level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> memoryCache.trimToSize(cacheMaxBytes / 2)
             }
         }
 
-        fun clearAllCaches() = memoryCache.evictAll()
+        fun clearAllCaches() {
+            memoryCache.evictAll()
+            pageCountCache.evictAll()
+        }
     }
 }
