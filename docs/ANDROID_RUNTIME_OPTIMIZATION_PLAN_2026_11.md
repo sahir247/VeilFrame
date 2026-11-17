@@ -74,6 +74,23 @@ Use Perfetto slices with prefix `VF.` to determine whether PDFBox initialization
 - **Regression coverage:** unit tests for clear, encrypted/password-required, and invalid PDF streams, plus streamed decryption producing an unencrypted readable PDF.
 - **Validation:** source changes committed; current head CI is **pending**, and real-device navigation, slow-provider cancellation, hardlink-fallback, print-after-discard and picker lifecycle tests are **not verified**.
 
+## PR #45 final review: CI evidence and remaining acceptance (17 November 2026)
+
+**Verified green head before final-review fixes:** `d2258a9452ed2964b4a5404d475a8baa38047a89`.
+
+- [VeilFrame CI & Release Pipeline run 44066683789](https://github.com/sahir247/VeilFrame/actions/runs/44066683789): **success**, including the ARM64 NCNN job's **complete Android unit test suite**, `assembleDebug`, native alignment and ABI verification, plus the Python/matrix jobs.
+- [Build Custom OpenCV SDK run 44066683644](https://github.com/sahir247/VeilFrame/actions/runs/44066683644): **success**.
+- The separate workflow **Build Android (APK)** release job was **skipped**; passing the Android NCNN *debug build* is not evidence of signed/minified release assembly or installed release startup.
+- The final-review changes **after** `d2258a9` need fresh checks. Earlier green runs do not validate the newest head.
+
+### Additional confirmed defects found and patched in the final review
+
+1. **EIS/PII cancellation ordering:** the dialog's Cancel lambdas set `stabilizationJob`/`videoRedactionJob` to null *before* calling the per-coroutine FFmpeg registry. That lost the owner's identity and could leave an FFmpeg session processing after cancel. Both lambdas now capture the owner, cancel its coroutine and native session, and only then clear the reference.
+2. **Print page failure safety:** the adapter started an Android `PdfDocument.Page` before PDFBox rendering, which could throw before `finishPage`. On malformed or failed pages, this could make spool-document close throw. PDFBox now renders the bitmap first, and the created print page is completed in `finally`.
+3. **Repeated print writes:** the print adapter used to create a `PrintedPdfDocument` at `onLayout`, close it after `onWrite`, and leave it missing for a second `onWrite` without layout. It now saves print attributes during layout and creates a new spool document for each write, with guarded cleanup.
+
+**Unresolved before claiming release-ready, even with green CI:** physical-device print (page selection, multiple writes, cancellation), video EIS/PII cancellation during slow FFmpeg registration, large-document peak PSS and provider failure, signed/minified release startup, 48/108MP original-resolution matting/export fidelity beyond the current working-resolution cap, rotated 4K video redaction geometry, and NCNN Vulkan/CPU parity. These require device-level tests or separate model/algorithm changes; do not relabel them as passed or measured improvements.
+
 ## Priority 0 — finish and verify first
 
 1. **End-to-end export continuity:** review remaining PDF conversion and export paths still using in-memory buffers; signing, metadata, and form filling now use disk-backed exports. Route large outputs through file callbacks, then migrate controllers to a shared typed output contract; preserve simple small outputs where appropriate. Test picker cancel, navigation during export, >300-page PDF, 150/300 DPI image ZIP, free-space exhaustion, invalid PDFs, repeated exports, and ZIP integrity.
