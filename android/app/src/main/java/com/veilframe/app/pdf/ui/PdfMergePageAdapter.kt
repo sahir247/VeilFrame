@@ -108,7 +108,7 @@ class PdfMergePageAdapter(
                     val currentItem = items.getOrNull(current)
                     if (boundKey != key || current == RecyclerView.NO_POSITION ||
                         currentItem?.sourceItem?.uri != key.first ||
-                        currentItem.sourcePageIndex != key.second
+                        currentItem?.sourcePageIndex != key.second
                     ) return@withContext
                     binding.pbMergePageLoading.visibility = View.GONE
                     if (bmp != null) {
