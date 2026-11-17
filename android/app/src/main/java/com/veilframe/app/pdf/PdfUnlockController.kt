@@ -389,6 +389,11 @@ class PdfUnlockController(
         set.start()
     }
 
+    /** Reflect the SAF picker result rather than treating a launched picker as a save. */
+    fun onSaveResult(success: Boolean) {
+        if (hasPickedMedia()) isSaved = success
+    }
+
     private fun saveUnlockedPdf() {
         val file = unlockedPdfFile
         val result = unlockedResult
