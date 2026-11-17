@@ -124,6 +124,18 @@ class PdfQuickToolController(
     private var isSourceReady: Boolean = false
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
+    private var pendingSaveGeneration: Long? = null
+
+    /** The document picker is not a save: only a completed SAF copy may mark the output saved. */
+    fun onSaveResult(success: Boolean) {
+        if (pendingSaveGeneration == selectionGeneration && success) isSaved = true
+        pendingSaveGeneration = null
+    }
+
+    private fun markExportPending() {
+        pendingSaveGeneration = selectionGeneration
+        isSaved = false
+    }
     private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
 
     private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
@@ -173,6 +185,7 @@ class PdfQuickToolController(
 
     override fun discardAndReleaseAllResources() {
         selectionGeneration++
+        pendingSaveGeneration = null
         activeJob?.cancel()
         activeJob = null
         cancelTransientJobs()
@@ -814,6 +827,7 @@ class PdfQuickToolController(
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
         selectionGeneration++
+        pendingSaveGeneration = null
         val generation = selectionGeneration
         activeJob?.cancel()
         activeJob = null
@@ -2075,7 +2089,7 @@ class PdfQuickToolController(
                                 } else {
                                     onSaveFileRequest(file.readBytes(), exportName)
                                 }
-                                isSaved = true
+                                markExportPending()
                             } else {
                                 Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
                             }
@@ -2821,8 +2835,8 @@ class PdfQuickToolController(
                 binding.btnQuickToolExecute.isEnabled = false
                 binding.btnQuickToolExecute.text = "Applying form values..."
                 val outputName = "${primaryDocName.substringBeforeLast('.', primaryDocName)}_filled.pdf"
+                val shouldFlatten = flatten.isChecked
                 activeJob = launchTransient {
-                    val shouldFlatten = flatten.isChecked
                     val file = File.createTempFile("form_filled_", ".pdf", activity.cacheDir)
                     var handedOff = false
                     try {
@@ -2849,7 +2863,7 @@ class PdfQuickToolController(
                                     } else {
                                         onSaveFileRequest(file.readBytes(), outputName)
                                     }
-                                    isSaved = true
+                                    markExportPending()
                                     dialog.dismiss()
                                     Toast.makeText(activity, "${result.fieldsUpdated} field(s) filled", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -2936,11 +2950,11 @@ class PdfQuickToolController(
                 val diskSave = onSaveFileFromDiskRequest
                 if (diskSave != null) {
                     diskSave(file, fileName)
-                    isSaved = true
+                    markExportPending()
                     true
                 } else {
                     onSaveFileRequest(requireNotNull(legacyBytes), fileName)
-                    isSaved = true
+                    markExportPending()
                     false
                 }
             }
@@ -2953,8 +2967,8 @@ class PdfQuickToolController(
         binding.btnQuickToolExecute.text = origBtnText
 
         if (success && data.isNotEmpty()) {
-            isSaved = true
             onSaveFileRequest(data, fileName)
+            markExportPending()
         } else {
             Toast.makeText(activity, "Operation completed with errors or empty output", Toast.LENGTH_LONG).show()
         }
