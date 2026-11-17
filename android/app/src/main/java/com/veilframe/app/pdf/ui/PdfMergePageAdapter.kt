@@ -26,6 +26,10 @@ class PdfMergePageAdapter(
 
     private val items = mutableListOf<MergePageItem>()
 
+    private companion object {
+        const val SEQUENCE_PAYLOAD = "sequence_only"
+    }
+
     var onPageOrderChanged: ((List<MergePageItem>) -> Unit)? = null
     var onPagePreviewRequested: ((Uri, Int) -> Unit)? = null
 
@@ -45,7 +49,7 @@ class PdfMergePageAdapter(
         notifyItemMoved(fromPosition, toPosition)
         val start = minOf(fromPosition, toPosition)
         val count = kotlin.math.abs(fromPosition - toPosition) + 1
-        notifyItemRangeChanged(start, count)
+        notifyItemRangeChanged(start, count, SEQUENCE_PAYLOAD)
         onPageOrderChanged?.invoke(items.toList())
     }
 
@@ -62,16 +66,30 @@ class PdfMergePageAdapter(
         holder.bind(items[position], position)
     }
 
+    override fun onBindViewHolder(
+        holder: MergePageViewHolder, position: Int, payloads: MutableList<Any>
+    ) {
+        if (payloads.isNotEmpty() && payloads.all { it == SEQUENCE_PAYLOAD }) {
+            holder.updateSequence(position)
+        } else super.onBindViewHolder(holder, position, payloads)
+    }
+
     inner class MergePageViewHolder(
         private val binding: ItemPdfMergePageBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var renderJob: Job? = null
+        private var boundKey: Pair<Uri, Int>? = null
+
+        fun updateSequence(position: Int) {
+            binding.tvMergePageSequence.text = "#${position + 1}"
+        }
 
         fun bind(item: MergePageItem, position: Int) {
             renderJob?.cancel()
-
-            binding.tvMergePageSequence.text = "#${position + 1}"
+            val key = item.sourceItem.uri to item.sourcePageIndex
+            boundKey = key
+            updateSequence(position)
             val docName = item.sourceItem.name
             val pageNum = item.sourcePageIndex + 1
             binding.tvMergePageDocLabel.text = "$docName (p. $pageNum)"
@@ -86,6 +104,12 @@ class PdfMergePageAdapter(
             renderJob = scope.launch(Dispatchers.IO) {
                 val bmp = thumbnailLoader.loadPageThumbnail(item.sourceItem.uri, item.sourcePageIndex, 220)
                 withContext(Dispatchers.Main) {
+                    val current = bindingAdapterPosition
+                    val currentItem = items.getOrNull(current)
+                    if (boundKey != key || current == RecyclerView.NO_POSITION ||
+                        currentItem?.sourceItem?.uri != key.first ||
+                        currentItem.sourcePageIndex != key.second
+                    ) return@withContext
                     binding.pbMergePageLoading.visibility = View.GONE
                     if (bmp != null) {
                         binding.ivMergePageThumb.setImageBitmap(bmp)
@@ -95,5 +119,16 @@ class PdfMergePageAdapter(
                 }
             }
         }
+
+        fun cancelRender() {
+            renderJob?.cancel()
+            renderJob = null
+            boundKey = null
+        }
+    }
+
+    override fun onViewRecycled(holder: MergePageViewHolder) {
+        holder.cancelRender()
+        super.onViewRecycled(holder)
     }
 }
