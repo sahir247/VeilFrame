@@ -118,6 +118,48 @@ class DocumentExportEngineTest {
     }
 
     @Test
+    fun `export decoding uses temporary images without retaining full resolution cache`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val original = Bitmap.createBitmap(30, 24, Bitmap.Config.ARGB_8888)
+        val storedPage = java.io.File.createTempFile("vf_export_page_", ".png", context.cacheDir)
+        val session = DocumentSession(title = "cache_ownership_${UUID.randomUUID()}")
+        var result: DocumentExportEngine.ExportResult? = null
+        try {
+            original.eraseColor(Color.GREEN)
+            storedPage.outputStream().use { output ->
+                assertTrue(original.compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+            original.recycle()
+            val scanned = ScannedPage(processedImagePath = storedPage.absolutePath)
+            session.addPage(scanned)
+
+            // A borrowed UI cache must survive closing the export handle.
+            val fromDisk = scanned.openBitmapForExport(context)
+                ?: throw AssertionError("Could not decode prepared scanner page")
+            val diskBitmap = fromDisk.bitmap
+            assertFalse(diskBitmap.isRecycled)
+            fromDisk.close()
+            assertTrue("Temporary disk decode must be recycled", diskBitmap.isRecycled)
+            assertEquals(null, scanned.processedBitmapCache)
+
+            result = DocumentExportEngine.exportDocument(
+                context, session,
+                DocumentExportEngine.ExportOptions(
+                    format = DocumentExportEngine.OutputFormat.IMAGES_ZIP,
+                    imageFormat = DocumentExportEngine.ImageFormat.PNG
+                )
+            )
+            ZipFile(result.file).use { zip -> assertEquals(1, zip.size()) }
+            assertEquals(null, scanned.processedBitmapCache)
+            assertEquals(null, scanned.originalBitmapCache)
+        } finally {
+            if (!original.isRecycled) original.recycle()
+            result?.file?.delete()
+            storedPage.delete()
+        }
+    }
+
+    @Test
     fun `image zip streams each page with valid decodable entries`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val pages = (0 until 4).map { index ->
