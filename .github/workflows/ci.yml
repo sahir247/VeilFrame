@@ -177,7 +177,14 @@ jobs:
           pip install -r requirements.txt pytest
           pip install -e .
 
-      - name: Run Test Suite
+      # Python 3.12 on each OS is the strict production test gate. Reuse
+      # this matrix result instead of acquiring three more hosted runners.
+      - name: Run strict release test suite (Python 3.12)
+        if: matrix.python-version == '3.12'
+        run: pytest -v
+
+      - name: Run compatibility test suite (Python 3.10 and 3.11)
+        if: matrix.python-version != '3.12'
         shell: bash
         run: |
           pytest -v || {
@@ -221,7 +228,7 @@ jobs:
           "
 
   # ------------------------------------------------------------------ #
-  # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
+  # 2. Mandatory Android and production artifact verification          #
   # ------------------------------------------------------------------ #
   # PR-safe Android verification: independent of release-signing credentials and release-only gates.
   # Builds the production native bridge, runs upscaler + full JVM tests, packages ARM64 debug APK,
@@ -523,129 +530,13 @@ jobs:
       - name: Verify production-only release artifact rules
         run: python3 -m unittest discover -s tests -p 'test_release_assets_gate.py' -v
 
-  release-gate:
-    name: Release Gate (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: [test, android-upscaler-verify, release-contract-tests]
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
-    env:
-      QT_QPA_PLATFORM: offscreen
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ ubuntu-24.04, windows-latest, macos-latest ]
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install System Dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list* /etc/apt/apt-mirrors.txt 2>/dev/null || true
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="15" -o Acquire::https::Timeout="15"
-          sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
-
-      - name: Install FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          # Try installing via Chocolatey with retries
-          $maxAttempts = 3
-          $attempt = 0
-          $installed = $false
-          while ($attempt -lt $maxAttempts -and -not $installed) {
-            $attempt++
-            try {
-              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
-              choco install ffmpeg --no-progress -y
-              if ($LASTEXITCODE -eq 0) {
-                $installed = $true
-                Write-Host "choco install succeeded"
-              } else {
-                throw "choco exited with code $LASTEXITCODE"
-              }
-            } catch {
-              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
-              if ($attempt -lt $maxAttempts) {
-                Start-Sleep -Seconds (5 * $attempt)
-              }
-            }
-          }
-
-          # If choco failed, fetch a static ffmpeg build and stage it
-          if (-not $installed) {
-            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
-            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
-            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
-            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
-            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
-            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-
-            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
-            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
-
-            if (-not $ffmpegFile -or -not $ffprobeFile) {
-              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
-              exit 1
-            }
-
-            $destDir = "C:\ProgramData\ffmpeg"
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
-            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
-
-            if (Test-Path "C:\ProgramData\chocolatey\bin") {
-              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
-              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
-            }
-
-            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
-            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
-            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
-            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
-
-            $env:PATH = "$destDir;$env:PATH"
-            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
-            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            Write-Host "Copied ffmpeg to $destDir and updated PATH"
-          }
-
-      - name: Install FFmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg || true
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest
-          pip install -e .
-
-      - name: Run Test Suite
-        run: |
-          pytest -v
-
-      - name: Run 3-Layer Blackbox & Invariants Suite
-        run: |
-          pytest tests/blackbox/test_blackbox_release.py -v
-
   # ------------------------------------------------------------------ #
   # 3a. Build Standalone Windows Executable (x86_64)                   #
   # ------------------------------------------------------------------ #
   build-windows:
     name: Build Standalone Windows (x86_64)
     runs-on: windows-latest
-    needs: [test, release-gate]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
@@ -748,7 +639,7 @@ jobs:
   build-linux:
     name: Build Linux (.deb & .tar.gz x86_64)
     runs-on: ubuntu-22.04
-    needs: [test, release-gate]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
@@ -867,7 +758,7 @@ jobs:
   build-macos:
     name: Build macOS (.dmg & .tar.gz ARM64)
     runs-on: macos-latest
-    needs: [test, release-gate]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
@@ -1032,7 +923,7 @@ jobs:
   build-python:
     name: Build Universal Python Packages
     runs-on: ubuntu-24.04
-    needs: [test, release-gate]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
@@ -1068,7 +959,7 @@ jobs:
   build-android:
     name: Build Android (APK)
     runs-on: ubuntu-24.04
-    needs: [test, release-gate]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
@@ -1358,7 +1249,7 @@ jobs:
   publish-release:
     name: Aggregate & Publish Release
     runs-on: ubuntu-24.04
-    needs: [test, android-upscaler-verify, release-contract-tests, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
+    needs: [test, android-upscaler-verify, release-contract-tests, build-windows, build-linux, build-macos, build-python, build-android]
     # A skipped release build is not a failure(). Explicitly require every production gate.
     if: >
       ${{
@@ -1366,7 +1257,6 @@ jobs:
         needs.test.result == 'success' &&
         needs.android-upscaler-verify.result == 'success' &&
         needs.release-contract-tests.result == 'success' &&
-        needs.release-gate.result == 'success' &&
         needs.build-windows.result == 'success' &&
         needs.build-linux.result == 'success' &&
         needs.build-macos.result == 'success' &&
