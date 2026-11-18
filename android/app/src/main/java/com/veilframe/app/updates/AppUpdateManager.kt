@@ -57,7 +57,7 @@ class AppUpdateManager(
     companion object {
         private const val PREFS_NAME = "veilframe_prefs"
         // VeilFrame official production APK release signing certificate fingerprint (SHA-256)
-        const val PINNED_PRODUCTION_CERT_SHA256 = "c656094cf515ba92b5bbd2d38562776c5b6b3e83a22839ca429f52f4b4ceba76"
+        const val PINNED_PRODUCTION_CERT_SHA256 = "76b85fb2b3341846bcaba14183ef8490785be4401f1243319f04f0d11530cea3"
         // Embedded Base64 Ed25519 public key for verifying update.json release manifests
         const val EMBEDDED_MANIFEST_ED25519_PUBLIC_KEY = "MCowBQYDK2VwAyEAm+y6kG/gWd7rU6B6z7VpW3rM5s+bL1/uP4V5mK3Q0G8="
 
