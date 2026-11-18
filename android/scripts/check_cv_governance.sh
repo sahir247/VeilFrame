@@ -9,7 +9,7 @@
 #   2. Heavy CV work (BitmapBridge/Mat pipelines) must not run on raw
 #      Dispatchers.IO without engine.submit governance.
 #
-# Runs in CI (tier4-matrix-oracle job) on every push/PR. Fails the build on
+# Runs in CI (Linux android-upscaler-verify job) on every push/PR. Fails the build on
 # regressions; new exemptions must be added here deliberately, in review.
 # ============================================================================
 set -uo pipefail

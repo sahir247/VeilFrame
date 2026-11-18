@@ -103,7 +103,7 @@ This achieves multi-barcode detection **API compatibility**, while leveraging ba
 
 ### 7. Upstream Matrix Differential Oracle: Provenance & Version Tiering
 
-To eliminate circularity between cleanroom reimplementations and stored expectations, VeilFrame executes an independent upstream differential oracle compiled from the exact Swift source tree:
+To eliminate circularity between cleanroom reimplementations and stored expectations, VeilFrame maintains an independent upstream differential oracle compiled from the exact Swift source tree. Routine Android CI uses the committed, independently generated corpus without requiring live Swift regeneration:
 
 - **Upstream Dependency Target**: `QRCodeSwift` (the matrix encoding engine required by EFQRCode 7.0.3).
 - **Dependency Release**: `swift_qrcodejs` v2.3.1.
@@ -148,7 +148,7 @@ To guarantee that VeilFrame's vector export and rasterization engines produce vi
 | **Tier 1: Internal Unit Tests** | 410/410 Tests | ✅ Complete | Verifies internal consistency, parameter propagation, error classification, and subpixel math. |
 | **Tier 2: Mathematical Parity** | Reed-Solomon & Matrix | ✅ Complete | Verified against ISO 18004 specification and embedded upstream vectors across versions 1–40. |
 | **Tier 3: Error & Surface Coverage**| Types & Formats | ✅ Complete | Full coverage of PDF, APNG, M4V, GIF, SVG, PNG, JPEG, fail-closed I/O. |
-| **Tier 4: Upstream Matrix Oracle (V1–40 + Masks 0–7)** | Bit-by-bit differential | ✅ Complete | Swift SPM oracle (`tools/efqrcode-oracle`) compiles against upstream `QRCodeSwift` dependency (`swift_qrcodejs` v2.3.1 @ `d1605333f7edac39b4518538ef4f2638fdd2e4d6`) used by EFQRCode 7.0.3 in CI, generates frozen test matrices, and asserts 100% bit-for-bit equivalence in `Tier4UpstreamMatrixOracleTest` (190 vectors, Versions 1–40 x L/M/Q/H, all 8 natural and forced mask patterns, UTF-8, URLs; 1,952,294 modules verified with zero bit divergence; CI zero-drift gate). |
+| **Tier 4: Upstream Matrix Oracle (V1–40 + Masks 0–7)** | Bit-by-bit differential | ✅ Complete | Swift SPM oracle (`tools/efqrcode-oracle`) compiles against upstream `QRCodeSwift` dependency (`swift_qrcodejs` v2.3.1 @ `d1605333f7edac39b4518538ef4f2638fdd2e4d6`) used by EFQRCode 7.0.3 in the independent QR oracle workflow, generates frozen test matrices, and asserts 100% bit-for-bit equivalence in `Tier4UpstreamMatrixOracleTest` (190 vectors, Versions 1–40 x L/M/Q/H, all 8 natural and forced mask patterns, UTF-8, URLs; 1,952,294 modules verified with zero bit divergence; Routine Android CI checks the frozen corpus; the independent oracle workflow checks regeneration drift). |
 | **Tier 5: Pixel & SVG Golden Diffs** | Rendered output equivalence | ✅ Complete | Normalized structural SVG DOM validation across all 10 EFQRCode styles (`BASIC`, `BUBBLE`, `D25`, `DSJ`, `FUNCTION`, `IMAGE`, `IMAGE_FILL`, `LINE`, `RANDOM_RECTANGLE`, `IMAGE_RESAMPLE`) and deterministic raster diffs against macOS CoreGraphics reference renders (`WWF_reference_qr.png` 0 bit matrix divergence, 6x6 centered dot inside white fur, solid 18x18 pre-pass fills, RMSE < 30.0 / PSNR > 18 dB diagnostic bounding in `Tier5GoldenPixelAndSvgDiffTest`). |
 | **Tier 6: Cross-Device Recognition** | Decoder benchmark | 🔄 Next Phase | Benchmark ZXing multi-pass against Core Image on real-world distorted test sets. |
 
@@ -157,3 +157,8 @@ To guarantee that VeilFrame's vector export and rasterization engines produce vi
 ## Verdict
 
 VeilFrame has established **EFQRCode 7.0.3 parity architecture, major behavioral alignment, complete Tier 4 Upstream Matrix Differential Equivalence (Tier 4A + Tier 4B Complete), and complete Tier 5 Pixel & SVG Golden Equivalence**: default error correction, quiet-zone geometry, parameter propagation, typed error taxonomy, fail-closed storage, full export surface coverage, bit-for-bit matrix identity against upstream Swift `QRCodeSwift` (pinned to revision `d1605333f7edac39b4518538ef4f2638fdd2e4d6` as used by `EFQRCode 7.0.3`) across all 40 standard QR versions (Versions 1–40 $\times$ L/M/Q/H) and all 8 mask patterns (0–7, verified both naturally and under forced evaluation; 190 vectors, 1,952,294 modules verified with zero bit divergence), normalized SVG DOM structural parity across all 10 EFQRCode styles, and deterministic raster alignment with macOS CoreGraphics reference renders are fully implemented and verified in CI. Cross-device decoder benchmarking will be tracked under Tier 6.
+
+
+### CI maintenance policy (November 2026)
+
+The live Swift corpus regeneration is no longer a prerequisite of the ordinary release pipeline. The upstream version, revision, generator and committed corpus remain unchanged. The full Android JVM suite, including `Tier4UpstreamMatrixOracleTest` and the QR golden/parity tests, remains required on the Linux ARM64 verification job. The CV governance ratchet also runs on that job, independently of Swift. The separate `QR Upstream Oracle (on demand)` workflow can be dispatched manually and runs for pull requests modifying the oracle generator, corpus or its workflow. It checks regeneration against the committed corpus; it is not an input to the release publishing job. Review upstream/corpus changes with this independent check before accepting them. All production artifact, signing and publication gates remain mandatory.

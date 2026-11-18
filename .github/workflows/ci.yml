@@ -221,55 +221,6 @@ jobs:
           "
 
   # ------------------------------------------------------------------ #
-  # 1b. Tier 4: EFQRCode Upstream Matrix Differential Oracle           #
-  # ------------------------------------------------------------------ #
-  tier4-matrix-oracle:
-    name: Tier 4 Upstream Matrix Oracle (macOS / Swift)
-    runs-on: macos-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: "temurin"
-          java-version: "21"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platforms;android-37.0 build-tools;36.0.0'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
-
-      - name: Verify Swift Toolchain
-        run: swift --version
-
-      - name: Run Upstream Swift Oracle Generator
-        working-directory: tools/efqrcode-oracle
-        run: |
-          swift run oracle-generator ../../android/app/src/test/resources/tier4_upstream_oracle_matrices.json
-
-      - name: Assert Zero Drift in Committed Oracle Matrices
-        run: |
-          git status --porcelain android/app/src/test/resources/tier4_upstream_oracle_matrices.json
-          git diff --exit-code android/app/src/test/resources/tier4_upstream_oracle_matrices.json
-
-      - name: CV Governance Ratchet
-        working-directory: android
-        run: bash scripts/check_cv_governance.sh
-
-      - name: Run Android Unit Test Suite & Tier 4 Bit-for-Bit Parity Tests
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew testDebugUnitTest
-
-  # ------------------------------------------------------------------ #
   # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
   # ------------------------------------------------------------------ #
   # PR-safe Android verification: independent of release-signing credentials and release-only gates.
@@ -450,6 +401,13 @@ jobs:
           set -Eeuo pipefail
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.upscale.*" --rerun-tasks --stacktrace
 
+      - name: CV Governance Ratchet
+        working-directory: android
+        shell: bash
+        run: bash scripts/check_cv_governance.sh
+
+      # Includes Tier4UpstreamMatrixOracleTest against the committed upstream corpus.
+      # Live Swift corpus regeneration is an independent, opt-in validation.
       - name: Run complete Android unit test suite
         working-directory: android
         shell: bash
@@ -568,7 +526,7 @@ jobs:
   release-gate:
     name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-contract-tests]
+    needs: [test, android-upscaler-verify, release-contract-tests]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
@@ -1400,13 +1358,12 @@ jobs:
   publish-release:
     name: Aggregate & Publish Release
     runs-on: ubuntu-24.04
-    needs: [test, tier4-matrix-oracle, android-upscaler-verify, release-contract-tests, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
+    needs: [test, android-upscaler-verify, release-contract-tests, release-gate, build-windows, build-linux, build-macos, build-python, build-android]
     # A skipped release build is not a failure(). Explicitly require every production gate.
     if: >
       ${{
         success() &&
         needs.test.result == 'success' &&
-        needs.tier4-matrix-oracle.result == 'success' &&
         needs.android-upscaler-verify.result == 'success' &&
         needs.release-contract-tests.result == 'success' &&
         needs.release-gate.result == 'success' &&

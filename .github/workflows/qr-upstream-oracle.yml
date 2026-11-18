@@ -1,0 +1,36 @@
+name: QR Upstream Oracle (on demand)
+
+# Keep the pinned upstream generator available for maintenance without making
+# every release depend on availability of a separate macOS runner.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/efqrcode-oracle/**'
+      - 'android/app/src/test/resources/tier4_upstream_oracle_matrices.json'
+      - '.github/workflows/qr-upstream-oracle.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qr-upstream-oracle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate-oracle:
+    name: Verify pinned Swift oracle corpus
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Verify Swift Toolchain
+        run: swift --version
+
+      - name: Regenerate upstream reference matrices
+        working-directory: tools/efqrcode-oracle
+        run: swift run oracle-generator ../../android/app/src/test/resources/tier4_upstream_oracle_matrices.json
+
+      - name: Assert Zero Drift in Committed Oracle Matrices
+        run: git diff --exit-code -- android/app/src/test/resources/tier4_upstream_oracle_matrices.json
