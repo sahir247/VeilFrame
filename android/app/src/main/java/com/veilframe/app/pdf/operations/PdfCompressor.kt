@@ -814,9 +814,9 @@ class PdfCompressor {
                         contentStream.drawImage(pdImage, pageRect.lowerLeftX, pageRect.lowerLeftY, pageRect.width, pageRect.height)
                     }
                 } catch (t: Throwable) {
+                    // A candidate with a missing/blank page must never win by file size.
                     if (t is CancellationException) throw t
-                    android.util.Log.e("PdfCompressor", "Error rendering page $pageIndex", t)
-                    // We trapped the error, preventing the app from writing empty bytes silently to the next page stream.
+                    throw java.io.IOException("Cannot rasterize source page ${pageIndex + 1}", t)
                 } finally {
                     page?.close()
                     // Recycle the bitmap explicitly at the end of every page processing iteration
@@ -826,6 +826,7 @@ class PdfCompressor {
                 onProgress((pageIndex + 1).toFloat() / totalPages)
             }
             
+            check(outputDocument.numberOfPages == totalPages) { "Rasterization lost source pages" }
             outputDocument.save(outputFile)
             outputFile
             

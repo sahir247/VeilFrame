@@ -48,6 +48,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A29 | P2 | OPEN | Oversized multi-purpose controllers and ownership complexity | `media/; pdf/; navigation/` | Refactor by clear ownership boundaries after regression coverage. |
 | A30 | P2 | OPEN | Visual signing vs cryptographic signing distinction | `pdf/operations/PdfSigner.kt:103-104` | Verify UI differentiates visual overlay from digital signature validation. |
 | A31 | P1 | OPEN | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
+| A32 | P1 | PATCHED | PDF raster compression swallowed individual page render errors, permitting partial or blank-page output | `pdf/operations/PdfCompressor.kt:809-823` (baseline) | Reject the entire faulty candidate; verify original page count and content fixtures. |
 
 ## Implementation log
 
@@ -103,3 +104,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A12 — Isolate compression scratch ownership
 
 - Every regular and target-size compression call creates a unique scratch directory; optimizer/rasterizer candidates live only in it. Cleanup deletes only that directory, including early failures. Strict-target fallback ownership is explicitly transferred to a unique cache file before returning the exception. Concurrent compressions cannot delete another operation's files using the old prefix sweep. CI and concurrent target-size tests pending.
+
+### A32 — Reject incomplete raster compression candidates
+
+- New source finding while implementing A12. A thrown page-render/encode error now aborts that entire raster candidate; the existing candidate-level cleanup deletes it, and the caller can retain a valid structural candidate or original. Verify output page count before saving. No intentional relaxation of any release guard. Actual failed-page fixtures and CI pending.
