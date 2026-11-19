@@ -47,7 +47,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A28 | P2 | OPEN | Office/PDF broader semantic fidelity and workspace coverage | `pdf/operations/; media/; tools/` | Trace all reachable callers; fixtures for charts/formulas/fonts/fields/page geometry. |
 | A29 | P2 | OPEN | Oversized multi-purpose controllers and ownership complexity | `media/; pdf/; navigation/` | Refactor by clear ownership boundaries after regression coverage. |
 | A30 | P2 | OPEN | Visual signing vs cryptographic signing distinction | `pdf/operations/PdfSigner.kt:103-104` | Verify UI differentiates visual overlay from digital signature validation. |
-| A31 | P1 | OPEN | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
+| A31 | P1 | PARTIAL | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
 | A32 | P1 | PATCHED | PDF raster compression swallowed individual page render errors, permitting partial or blank-page output | `pdf/operations/PdfCompressor.kt:809-823` (baseline) | Reject the entire faulty candidate; verify original page count and content fixtures. |
 
 ## Implementation log
@@ -112,3 +112,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A15 — Atomic scanner persistence
 
 - Use Android AtomicFile for page images, thumbnails and JSON manifest; fail failed bitmap encoding; recycle newly generated temporary thumbnails; serialize writes per session instance and read manifests through AtomicFile recovery. Persistence exceptions now logged rather than silently discarded. This protects individual files, not an entire multi-file snapshot or concurrent instances of the same session; explicit UI persistence status and cross-file versioned recovery remain open. CI/process-death test pending.
+
+### A31 — Propagate OCR task errors and retain input lifetime
+
+- Shared recognition path now awaits actual ML Kit task completion before releasing the caller's bitmap. A task failure or cancellation raises an IOException rather than pretending recognition returned no text. Caller coroutine cancellation is checked before submission and after completion; cancellation can wait for one in-flight ML Kit task (the underlying API has no cancellation handle). No extra full-size bitmap allocation is introduced.
+- PDF processing already propagates recognition errors via its existing error result. Image OCR's higher-level fallback/outcome still needs explicit empty-versus-failed status and UI acceptance; therefore A31 remains PARTIAL. Task cancellation/bitmap lifetime and failing recognizer regression tests and CI pending.
