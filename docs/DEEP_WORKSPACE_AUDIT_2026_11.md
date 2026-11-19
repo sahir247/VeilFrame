@@ -11,7 +11,7 @@ Static findings; revalidate against branch before editing. Mark each item implem
 | D02 | OCR Unicode loss | PdfOcrProcessor.kt | Open |
 | D03 | OCR rotation and crop geometry | PdfOcrProcessor.kt | Open |
 | D04 | Fabricated OCR confidence | PdfOcrProcessor.kt | Open |
-| D05 | Incomplete metadata removal | PdfMetadataManager.kt | Open |
+| D05 | Incomplete metadata removal | PdfMetadataManager.kt | Implemented; tests pending |
 | D06 | Partial flattening reported successful | PdfFlattener.kt | Open |
 | D07 | Incomplete JavaScript and attachment sanitization | PdfFlattener.kt | Open |
 | D08 | Matting 4096 cap contradicts full resolution | CelBackgroundRemover.kt | Open |
@@ -52,3 +52,5 @@ The initial ledger was committed before implementation. Each remediation entry r
 - D19: abort incomplete raster compression instead of skipping or blanking failed pages. Code commit `b411deed7cd0248c6f0e1dcd6926fe42fb12002f`. Tests pending.
 
 - D09: cancel/invalidate pending source loads on replacement/discard/cleanup; accept URI and decoded bitmap together; recycle unaccepted bitmap; reject stale input bytes at processing entry. Code commit `efa16dc40d5b3adea67e6cee760c7ebf17b2ace3`. Tests pending; native cancellation and export ownership remain separate concerns.
+
+- D05: clear document info and recursively strip reachable Metadata/PieceInfo entries with cycle protection; scope excludes visible content and other identifiers. Code `7c5ff1611f5b192fd3a87d0dcd14da6c21c59994`; round-trip test `7f2329b9af572164f5ca7c5c405e35d6dbaebeb6` (not executed).
