@@ -27,7 +27,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A08 | P1 | PARTIAL | Background removal full-resolution claim contradicts 4096 cap | `cv/segmentation/rembg/CelBackgroundRemover.kt:35-38,81-112; RembgImageUtils.kt:18` | Disclose actual output size immediately; implement bounded original-resolution compositing. |
 | A09 | P1 | PATCHED | Background removal source import can publish stale result | `media/BackgroundRemoverController.kt:326-368` | Cancel prior import; generation-gate results and cleanup. |
 | A10 | P1 | OPEN | Background removal export may race bitmap recycling | `media/BackgroundRemoverController.kt:1258-1430` | Protect captured bitmap lifetime across export/share/clipboard. |
-| A11 | P1 | OPEN | PDF compression may choose destructive rasterization by size alone | `pdf/operations/PdfCompressor.kt:375-423` | Explicitly authorize lossy semantic change; preserve structural mode. |
+| A11 | P1 | PARTIAL | PDF compression may choose destructive rasterization by size alone | `pdf/operations/PdfCompressor.kt:375-423` | Explicitly authorize lossy semantic change; preserve structural mode. |
 | A12 | P1 | PATCHED | Compression cleanup deletes shared prefix-matching temp files | `pdf/operations/PdfCompressor.kt:299-307` | Own operation-specific temp files/directories. |
 | A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
 | A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
@@ -126,3 +126,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A06 — Flattening must fail rather than silently discard content
 
 - Preflight annotation appearance/rectangle validity, fit transformed appearance bounds, remove annotations only after drawing succeeds, fail on residual fields or annotations, propagate cancellation and close PDF/streams on all paths. This deliberately refuses unsupported appearances instead of producing incomplete success. Raster geometry and PDFBox form appearance behavior still need fixture testing; A06 remains PARTIAL. A07 sanitization is independent.
+
+### A11 — Structural compression is the safe default
+
+- Removed automatic full-page raster fallback from regular and both target-size compression entry points. A smaller size cannot justify loss of searchability, vector or interactive content without consent. Kept raster engine private for a future explicitly authorized mode; current UI uses structural compression only. Also stopped incidental metadata pruning in structural compression and bounded strict target fallback by original size. Explicit raster opt-in UI and semantic save/reload regression fixtures remain pending; A11 PARTIAL. Signed PDFs still require separate signature-preservation policy.

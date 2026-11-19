@@ -193,9 +193,9 @@ class PdfCompressor {
             // Binary search setup
             var low = 0 // Best quality
             var high = 100 // Max compression
-            var bestFile: File? = null
+            var bestFile: File? = tempFile
             var bestQuality = -1
-            var bestSize = Long.MAX_VALUE
+            var bestSize = originalSize
             var bestStrategy = CompressionStrategy.IMAGE_OPTIMIZATION
             val maxIterations = 6
             var iterationCount = 0
@@ -210,24 +210,11 @@ class PdfCompressor {
 
                 val profile = profileFromSlider(mid) ?: profileFromLevel(CompressionLevel.MEDIUM)
 
-                var currentStrategy = CompressionStrategy.IMAGE_OPTIMIZATION
-                var optFile = tryImageOptimization(context, tempFile, profile, {})
+                val currentStrategy = CompressionStrategy.IMAGE_OPTIMIZATION
+                val optFile = tryImageOptimization(context, tempFile, profile, {})
 
-                val isOptInefficient = optFile != null && optFile.length() > originalSize * 0.85f
 
-                // Decide if we should fall back to rerender for this iteration
-                val shouldTryRerender = mid > 60
-
-                if (shouldTryRerender && (optFile == null || isOptInefficient)) {
-                    val rerender = tryFullRerender(context, tempFile, profile, {})
-                    if (rerender != null && (optFile == null || rerender.length() < optFile.length())) {
-                        optFile?.delete()
-                        optFile = rerender
-                        currentStrategy = CompressionStrategy.FULL_RERENDER
-                    } else {
-                        rerender?.delete()
-                    }
-                }
+                // Preserve document structure; rasterization requires a separate explicit opt-in.
 
                 if (optFile != null) {
                     val currentSize = optFile.length()
@@ -368,8 +355,7 @@ class PdfCompressor {
 
             val opt = tryImageOptimization(context, tempFile, profile, onProgress)
             
-            // Smart threshold logic: if it saved less than 15%, we also consider tryFullRerender
-            val isOptInefficient = opt != null && opt.length() > originalSize * 0.85f
+
             
             if (opt != null && opt.length() < originalSize) {
                 resultFile = opt
@@ -378,37 +364,7 @@ class PdfCompressor {
                 opt?.delete()
             }
 
-            // Fall back to re-rendering if image optimization failed or was highly inefficient
-            // A scan can be a single large page image or use nested resources, neither of
-            // which the structural pass is guaranteed to improve.  Always evaluate the
-            // raster fallback when that pass did not produce a worthwhile smaller file.
-            val shouldTryRerender = resultFile == null || isOptInefficient ||
-                level == CompressionLevel.HIGH || level == CompressionLevel.MAXIMUM ||
-                (qualityPercent ?: 50) > 60
-            if (shouldTryRerender) {
-                onProgress(0.55f)
-                val rerender = tryFullRerender(context, tempFile, profile) { p ->
-                    onProgress(0.55f + p * 0.40f)
-                }
-                
-                if (rerender != null && rerender.length() < originalSize) {
-                    // If we have both, compare sizes and choose the smaller one!
-                    if (resultFile != null) {
-                        if (rerender.length() < resultFile.length()) {
-                            resultFile.delete() // clean up optimized file
-                            resultFile = rerender
-                            strategyUsed = CompressionStrategy.FULL_RERENDER
-                        } else {
-                            rerender.delete() // clean up rerendered file
-                        }
-                    } else {
-                        resultFile = rerender
-                        strategyUsed = CompressionStrategy.FULL_RERENDER
-                    }
-                } else {
-                    rerender?.delete()
-                }
-            }
+                // Preserve document structure; rasterization requires a separate explicit opt-in.
 
             onProgress(0.95f)
 
@@ -528,8 +484,7 @@ class PdfCompressor {
             
             if (totalPages == 0) return null
             
-            // Prune metadata first
-            pruneMetadata(document)
+            // Compression must not silently remove document metadata or private application data.
             
             var imagesOptimized = 0
             val optimizedImages = mutableMapOf<COSObjectKey, PDImageXObject>()
@@ -984,20 +939,7 @@ class PdfCompressor {
                     opt?.delete()
                 }
 
-                // Re-rendering is essential for large scanned or single-page image PDFs;
-                // their image data can be nested or already encoded efficiently.
-                if ((resultFile?.length() ?: originalSize) > targetBytes) {
-                    val rerender = tryFullRerender(context, tempFile, profile) { p ->
-                        onProgress(progressStart + progressSpan * (0.45f + p * 0.55f))
-                    }
-                    if (rerender != null && rerender.length() < (resultFile?.length() ?: originalSize)) {
-                        resultFile?.delete()
-                        resultFile = rerender
-                        strategyUsed = CompressionStrategy.FULL_RERENDER
-                    } else {
-                        rerender?.delete()
-                    }
-                }
+                // Preserve document structure; rasterization requires a separate explicit opt-in.
 
                 if ((resultFile?.length() ?: originalSize) <= targetBytes) break
             }
