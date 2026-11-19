@@ -15,16 +15,18 @@ Static findings; revalidate against branch before editing. Mark each item implem
 | D06 | Partial flattening reported successful | PdfFlattener.kt | Open |
 | D07 | Incomplete JavaScript and attachment sanitization | PdfFlattener.kt | Open |
 | D08 | Matting 4096 cap contradicts full resolution | CelBackgroundRemover.kt | Open |
-| D09 | Stale source selection | BackgroundRemoverController.kt | Open |
+| D09 | Stale source selection | BackgroundRemoverController.kt | Implemented; tests pending |
 | D10 | Bitmap export ownership | BackgroundRemoverController.kt | Open |
 | D11 | Compression semantic loss | PdfCompressor.kt | Open |
 | D12 | Shared compression cache deletion | PdfCompressor.kt | Implemented; tests pending |
 | D13 | DOCX silent text fallback | OfficeConverter.kt | Implemented; tests pending |
 | D14 | Scanner silent perspective fallback | DocumentSession.kt | Open |
-| D15 | Nonatomic session manifest | DocumentSession.kt | Implemented; tests pending |
+| D15 | Nonatomic session manifest | DocumentSession.kt | Partial; recovery/reporting pending |
 | D16 | Heuristic secret masking coverage | AiBundleEngine.kt | Open |
 | D17 | Bundle JSON escaping, omissions, memory and token estimate | AiBundleEngine.kt | Open |
 | D18 | Failed Motion Lab MediaStore cleanup | MotionLabController.kt | Implemented; tests pending |
+
+| D19 | Raster compression can omit failed pages | PdfCompressor.kt | Implemented; tests pending |
 
 ## Additional verification tasks
 
@@ -35,7 +37,7 @@ Static findings; revalidate against branch before editing. Mark each item implem
 
 ## Remediation log
 
-No fixes yet. This ledger precedes implementation.
+The initial ledger was committed before implementation. Each remediation entry records its own code commit.
 
 - D01: reject missing searchable PDF destination stream. Code commit `04c9ede61917a0629a4d2a782e22c532f8d3655b`. Verification pending.
 
@@ -48,3 +50,5 @@ No fixes yet. This ledger precedes implementation.
 - D12: isolate compression scratch files in unique operation directories; retain only returned fallback. Code commit `a400c127ee48431e7bd00153656e55b997bdf20d`. Tests pending.
 
 - D19: abort incomplete raster compression instead of skipping or blanking failed pages. Code commit `b411deed7cd0248c6f0e1dcd6926fe42fb12002f`. Tests pending.
+
+- D09: cancel/invalidate pending source loads on replacement/discard/cleanup; accept URI and decoded bitmap together; recycle unaccepted bitmap; reject stale input bytes at processing entry. Code commit `efa16dc40d5b3adea67e6cee760c7ebf17b2ace3`. Tests pending; native cancellation and export ownership remain separate concerns.
