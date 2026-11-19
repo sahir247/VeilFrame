@@ -178,17 +178,22 @@ class ToolExecutionController(
                 )
             } else {
                 val name = safStorageManager.getDisplayName(uri)
-                val raw = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                val raw = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw java.io.IOException("Cannot read selected file")
                 val content = if (bundleConfig.maskSecrets) AiBundleEngine.maskSecrets(raw) else raw
+                require(content.isNotBlank()) { "Selected file has no readable text" }
+                require(tokenBudget <= 0 || content.length.toLong() <= tokenBudget * 4L) {
+                    "Selected file exceeds the estimated token budget; choose a higher budget or a smaller input"
+                }
                 val finalDocument = when (formatKey.lowercase(Locale.US)) {
                     "json" -> """
                         {
-                            "project": "${name.replace("\\", "\\\\")}",
+                            "project": ${org.json.JSONObject.quote(name)},
                             "generated": "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}",
                             "included_files": 1,
                             "estimated_tokens": ${content.length / 4},
                             "files": {
-                                "${name.replace("\\", "\\\\")}": ${org.json.JSONObject.quote(content)}
+                                ${org.json.JSONObject.quote(name)}: ${org.json.JSONObject.quote(content)}
                             }
                         }
                     """.trimIndent()
@@ -220,7 +225,7 @@ class ToolExecutionController(
 
             binding.cardResultSummary.visibility = View.VISIBLE
             binding.tvResultTitle.text = outputFile.name
-            binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles} files included"
+            binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles}/${bundleResult.totalFiles} evaluated files included"
             val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
             binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
 

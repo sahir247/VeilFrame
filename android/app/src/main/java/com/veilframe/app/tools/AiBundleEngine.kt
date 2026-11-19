@@ -49,8 +49,8 @@ object AiBundleEngine {
     // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
         Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
-        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
         Pattern.compile("""(?i)\bBearer\s+[A-Za-z0-9_./+=-]+"""),
+        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
         Pattern.compile("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"""),
         Pattern.compile("""\bAIza[A-Za-z0-9_-]{35}\b"""),
         Pattern.compile("""\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"""),
@@ -100,7 +100,7 @@ object AiBundleEngine {
         val sections = mutableListOf<String>()
 
         fun walkDoc(doc: DocumentFile, currentPath: String, currentDepth: Int) {
-            val children = doc.listFiles()
+            val children = doc.listFiles().sortedWith(compareBy({ it.name.orEmpty() }, { it.uri.toString() }))
             for (child in children) {
                 val childName = child.name ?: continue
                 if (childName.startsWith(".") && childName != ".env.example") continue
@@ -141,9 +141,9 @@ object AiBundleEngine {
             }
         }
 
-        if (rootDoc != null) {
-            walkDoc(rootDoc, "", 0)
-        }
+        requireNotNull(rootDoc) { "Cannot open selected folder" }
+        walkDoc(rootDoc, "", 0)
+        require(includedFiles > 0) { "No readable files fit the selected bundle filters and estimated token budget" }
 
         val timeStamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val estimatedTokens = currentChars / 4
@@ -186,7 +186,7 @@ object AiBundleEngine {
     private fun buildFileSection(path: String, content: String, format: String, fileIndex: Int): String {
         return when (format.lowercase(Locale.US)) {
             "json" -> {
-                "\"${path.replace("\\", "\\\\")}\": ${org.json.JSONObject.quote(content)}"
+                "${org.json.JSONObject.quote(path)}: ${org.json.JSONObject.quote(content)}"
             }
             "aibundle" -> {
                 val ext = path.substringAfterLast('.', "").lowercase(Locale.US)
@@ -277,7 +277,7 @@ object AiBundleEngine {
     private fun buildJsonBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Long, sections: List<String>): String {
         return """
         {
-            "project": "${rootName.replace("\\", "\\\\")}",
+            "project": ${org.json.JSONObject.quote(rootName)},
             "generated": "$timestamp",
             "included_files": $fileCount,
             "estimated_tokens": $tokens,

@@ -12,6 +12,7 @@ class AiBundleSecretMaskingTest {
             "github_pat_" + "a".repeat(40),
             "-----BEGIN PRIVATE KEY-----\nexample-fake-private-material\n-----END PRIVATE KEY-----",
             "Bearer fakeBearerToken012345",
+            "Authorization: Bearer fakeBearerToken012345",
             "eyJfakeHeader.eyJfakePayload.fakeSignature",
             "postgresql://user:fakePassword@localhost/db",
             "sk-proj-" + "X".repeat(30)
@@ -20,6 +21,7 @@ class AiBundleSecretMaskingTest {
             val masked = AiBundleEngine.maskSecrets(example)
             assertTrue(masked.contains("[REDACTED_SECRET]"))
             assertFalse(masked.contains(example))
+            assertFalse(masked.contains("fakeBearerToken012345"))
         }
     }
 

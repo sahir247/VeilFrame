@@ -33,7 +33,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
 | A15 | P1 | OPEN | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
 | A16 | P1 | PARTIAL | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
-| A17 | P1 | OPEN | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
+| A17 | P1 | PARTIAL | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
 | A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
 | A19 | P1 | OPEN | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
 | A20 | P1 | PATCHED | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
@@ -89,3 +89,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A16 — Heuristic secret masking and honest output
 
 - Expanded recognition of private keys, fine-grained tokens, JWTs, credential URLs, bearer tokens and quoted assignments; centralized the masking implementation. Replaced unconditional SECURE status and added sharing-review guidance for both input modes. Added synthetic regression tests; CI pending. This remains heuristic and cannot establish absence of secrets; pre-export per-file review and explicit omissions remain open.
+
+### A17 — Valid bundle JSON and explicit input failures
+
+- Both tree and single-file JSON export quote keys/project names with JSONObject.quote; folder traversal deterministic, missing/empty inputs rejected, single-file input checks estimated token budget, UI shows evaluated/included counts. Full streaming, exact tokenizer and per-file omission reasons remain open. Also corrected A16 matcher ordering so the full Authorization: Bearer value is masked before generic assignment matching; extended fixture. Tests/CI pending.
