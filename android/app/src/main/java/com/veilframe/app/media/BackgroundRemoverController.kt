@@ -72,6 +72,14 @@ class BackgroundRemoverController(
     private val onNavigateBack: () -> Unit
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     private var processingJob: Job? = null
+    private var sourceLoadJob: Job? = null
+    private var sourceGeneration = 0L
+
+    private fun invalidateSourceLoad() {
+        sourceGeneration++
+        sourceLoadJob?.cancel()
+        sourceLoadJob = null
+    }
     private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
@@ -310,6 +318,8 @@ class BackgroundRemoverController(
     }
 
     fun cleanup() {
+        invalidateSourceLoad()
+        cancelProcessing()
         try {
             binding.refineBrushCanvas.cleanup()
             com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin.close()
@@ -324,50 +334,55 @@ class BackgroundRemoverController(
     }
 
     fun handleImageSelected(uri: Uri) {
-        currentSourceUri = uri
-        scope.launch(Dispatchers.IO) {
-            val bytes = try {
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.readBytes()
+        if (processingJob?.isActive == true) {
+            Toast.makeText(activity, "Finish or cancel the current removal first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        invalidateSourceLoad()
+        val generation = sourceGeneration
+        sourceLoadJob = scope.launch(Dispatchers.Main) {
+            var pendingBitmap: Bitmap? = null
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw java.io.IOException("Could not open selected image")
                 }
+                if (bytes.isEmpty()) throw java.io.IOException("Selected image is empty")
+                // Keep ownership outside withContext: prompt cancellation after decoding
+                // must still recycle the bitmap even if dispatch back to Main is skipped.
+                withContext(Dispatchers.IO) {
+                    pendingBitmap = RembgImageUtils.decodeOrientedBitmap(
+                        bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX
+                    )
+                }
+                if (generation != sourceGeneration) return@launch
+                val decoded = checkNotNull(pendingBitmap)
+                val oldSrc = sourceBitmap
+                sourceBytes = bytes
+                sourceBitmap = decoded
+                currentSourceUri = uri
+                pendingBitmap = null // ownership transferred to the accepted source
+                releaseCutoutBitmaps()
+                oldSrc?.recycle()
+                lastFailure = null
+                val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
+                sourceFileName = rawName.substringBeforeLast('.', rawName)
+                updateUi()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                Log.e(TAG, "Failed reading image stream", e)
-                null
-            }
-
-            if (bytes == null || bytes.isEmpty()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Could not open selected image", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "Image import failed", e)
+                if (generation == sourceGeneration) {
+                    Toast.makeText(activity, "Could not open selected image: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
-                return@launch
-            }
-
-            val decoded = try {
-                RembgImageUtils.decodeOrientedBitmap(bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX)
-            } catch (e: Exception) {
-                Log.e(TAG, "Decoding oriented bitmap failed", e)
-                null
-            }
-
-            withContext(Dispatchers.Main) {
-                if (decoded != null) {
-                    val oldSrc = sourceBitmap
-                    sourceBytes = bytes
-                    sourceBitmap = decoded
-                    releaseCutoutBitmaps()
-                    oldSrc?.recycle()
-                    lastFailure = null
-                    val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
-                    sourceFileName = rawName.substringBeforeLast('.', rawName)
-                    updateUi()
-                } else {
-                    Toast.makeText(activity, "Could not decode image", Toast.LENGTH_SHORT).show()
-                }
+            } finally {
+                pendingBitmap?.recycle()
             }
         }
     }
 
     private fun executeRemoval() {
+        if (sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
         val bytes = sourceBytes ?: return
 
         if (currentMode == RembgMode.LIFT_AND_SHIFT && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
@@ -540,6 +555,8 @@ class BackgroundRemoverController(
     }
 
     private fun runRemovalPipeline(bytes: ByteArray) {
+        // Dialog/download callbacks must not process an obsolete source.
+        if (bytes !== sourceBytes || sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
         val effectiveModel = when (currentMode) {
             RembgMode.LIFT_AND_SHIFT -> RembgModel.COLOROS_LIFT_SHIFT
             RembgMode.U2NETP -> RembgModel.U2NETP
@@ -1488,13 +1505,14 @@ class BackgroundRemoverController(
         }
     }
 
-    override fun hasPickedMedia(): Boolean = currentSourceUri != null || sourceBitmap != null
-    override fun hasUnsavedWork(): Boolean = currentSourceUri != null || resultBitmap != null
+    override fun hasPickedMedia(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || sourceBitmap != null
+    override fun hasUnsavedWork(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || resultBitmap != null
     override val isProcessing: Boolean
         get() = processingJob?.isActive == true || binding.cardBgProcessingOverlay.visibility == View.VISIBLE
     override val supportsBackgroundExecution: Boolean get() = false
 
     override fun discardAndReleaseAllResources() {
+        invalidateSourceLoad()
         cancelProcessing()
         binding.splitViewBgCompare.setBitmaps(null, null)
         binding.refineBrushCanvas.cleanup()
