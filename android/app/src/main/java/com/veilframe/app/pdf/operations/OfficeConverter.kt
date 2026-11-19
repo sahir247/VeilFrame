@@ -135,24 +135,24 @@ class OfficeConverter {
     suspend fun convertDocxToPdf(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         try {
             convertDocxViaOpenXml(docxFile, pdfFile, context)
-        } catch (t: Throwable) {
-            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed (${t.message}), trying POI / fallback", t)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            pdfFile.delete()
+            throw cancelled
+        } catch (primary: Exception) {
+            pdfFile.delete()
+            android.util.Log.w("OfficeConverter", "OpenXML conversion failed; trying POI renderer", primary)
             try {
                 convertDocxToPdfInternal(docxFile, pdfFile, context)
-            } catch (t2: Throwable) {
-                android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t2.message}), falling back to lightweight XML text extractor", t2)
-                val extracted = extractDocxTextViaZip(docxFile)
-                if (extracted.isNotBlank()) {
-                    val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
-                    try {
-                        tempText.writeText(extracted)
-                        convertTextToPdf(tempText, pdfFile, context)
-                    } finally {
-                        tempText.delete()
-                    }
-                } else {
-                    convertTextToPdf(docxFile, pdfFile, context)
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                pdfFile.delete()
+                throw cancelled
+            } catch (fallback: Exception) {
+                pdfFile.delete()
+                fallback.addSuppressed(primary)
+                throw java.io.IOException(
+                    "DOCX conversion failed. A formatting-aware PDF could not be produced; no plain-text substitute was saved.",
+                    fallback
+                )
             }
         }
     }
