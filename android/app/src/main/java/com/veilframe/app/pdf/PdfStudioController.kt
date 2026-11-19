@@ -69,12 +69,12 @@ class PdfStudioController(
             ToolCardEntry("lock", binding.cardStudioLock, "Lock PDF", "security", listOf("encrypt", "password", "protect", "aes")),
             ToolCardEntry("unlock", binding.cardStudioUnlock, "Unlock PDF", "security", listOf("decrypt", "remove password", "security")),
             ToolCardEntry("watermark", binding.cardStudioWatermark, "Watermark Studio", "security", listOf("stamp", "confidential", "mesh", "protect", "diagonal")),
-            ToolCardEntry("sign", binding.cardStudioSign, "Sign PDF", "security", listOf("signature", "touch", "draw", "bezier")),
+            ToolCardEntry("sign", binding.cardStudioSign, "Visual Signature", "security", listOf("signature", "touch", "draw", "bezier")),
             ToolCardEntry("flatten", binding.cardStudioFlatten, "Flatten PDF", "security", listOf("acroform", "raster", "lock", "bake")),
             ToolCardEntry("metadata", binding.cardStudioMetadata, "PDF Metadata", "security", listOf("exif", "xmp", "strip", "clean", "sanitize")),
             ToolCardEntry("imposition", binding.cardStudioImposition, "Print Studio", "print", listOf("n-up", "booklet", "zine", "cut", "stack", "duplex")),
             ToolCardEntry("fill_forms", binding.cardStudioFillForms, "Fill Forms", "print", listOf("acroform", "input", "edit", "fields")),
-            ToolCardEntry("signature_validator", binding.cardStudioSignatureValidator, "Verify PDF", "security", listOf("pkix", "cca", "verify", "adobe", "checkmark"))
+            ToolCardEntry("signature_validator", binding.cardStudioSignatureValidator, "Verify Digital Signatures", "security", listOf("pkix", "cca", "verify", "adobe", "checkmark"))
         )
     }
 

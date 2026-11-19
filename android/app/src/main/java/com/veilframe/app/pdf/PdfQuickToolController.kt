@@ -100,18 +100,18 @@ class PdfQuickToolController(
     enum class QuickMode(val title: String, val subtitle: String, val buttonText: String) {
         MERGE("Merge PDF", "Combine multiple documents into one", "Merge & Export PDF"),
         SPLIT("Split PDF", "Extract pages into separate documents", "Split & Export"),
-        COMPRESS("Compress PDF", "Dual-engine smart size reduction", "Compress & Export PDF"),
+        COMPRESS("Compress PDF", "Reduce embedded image size without rasterizing pages", "Compress & Export PDF"),
         ROTATE("Rotate Pages", "Modulo 90°, 180°, 270° orientation fix", "Rotate & Export PDF"),
         REORDER("Reorder Pages", "Rearrange page sequence order", "Reorder & Export PDF"),
         DELETE("Delete Pages", "Purge unwanted sheets from document", "Delete Pages & Export"),
         LOCK("Lock PDF", "256-bit AES encryption & permissions", "Encrypt & Save PDF"),
-        SIGN("Sign PDF", "Touch Bézier canvas signature stamping", "Stamp Signature & Export"),
+        SIGN("Add Visual Signature", "Drawn signature overlay; not cryptographically signed", "Stamp Signature & Export"),
         FILL_FORMS("Fill Forms", "Interactive AcroForm values editing", "Apply Form Values & Export"),
         HTML_TO_PDF("HTML to PDF", "Convert HTML code to PDF document", "Convert HTML to PDF"),
         DOC_TO_PDF("DOC to PDF", "Offline DOCX & XLSX conversion", "Convert Office to PDF"),
         PDF_TO_IMAGE("PDF to Image", "Batch export pages to WebP/PNG/JPG", "Export Page Images"),
         IMAGE_TO_PDF("Image to PDF", "Compile gallery photos into PDF", "Compile PDF"),
-        METADATA("PDF Metadata", "Audit & scrub hidden XMP/Info tags", "Sanitize & Save PDF")
+        METADATA("PDF Metadata", "Inspect Info; remove explicit PDF metadata and private application tags", "Save PDF Metadata")
     }
 
     private var activeMode: QuickMode = QuickMode.MERGE
@@ -2092,7 +2092,7 @@ class PdfQuickToolController(
                                 }
                                 markExportPending()
                             } else {
-                                Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "Failed to remove PDF metadata", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }

@@ -1496,12 +1496,20 @@
                             android:layout_height="wrap_content" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="Removes explicit PDF Info, XMP and private application tags. Does not remove visible personal data, embedded image metadata, attachments or every forensic trace."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp" />
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnStripAllMetadata"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Sanitize &amp; Strip All Forensic Traces"
+                        android:text="Remove PDF Metadata"
                         app:icon="@drawable/ic_exif" />
                 </LinearLayout>
 
