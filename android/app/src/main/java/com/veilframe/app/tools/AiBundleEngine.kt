@@ -14,8 +14,8 @@ import java.util.regex.Pattern
  * Native Kotlin AI Bundle Builder.
  * Traverses Android SAF DocumentFile trees directly without disk materialization,
  * applies smart ignore rules (skipping build artifacts, binary blobs, and test suites),
- * masks confidential tokens and credentials, and packages clean project context
- * formatted for LLM prompts within an exact token budget.
+ * heuristically masks recognized credential patterns and packages project context
+ * formatted for LLM prompts within an estimated token budget.
  */
 object AiBundleEngine {
 
@@ -46,11 +46,17 @@ object AiBundleEngine {
         "mp4", "mkv", "mov", "avi", "mp3", "wav", "flac", "ttf", "otf", "woff", "woff2"
     )
 
+    // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
-        Pattern.compile("(?i)(?:api_key|apikey|secret|token|password|auth|bearer)\\s*[:=]\\s*[\"']?([a-zA-Z0-9_\\-\\.]{16,})"),
-        Pattern.compile("(?i)AIza[0-9A-Za-z\\-_]{35}"),
-        Pattern.compile("(?i)ghp_[0-9a-zA-Z]{36}"),
-        Pattern.compile("(?i)AKIA[0-9A-Z]{16}")
+        Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
+        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
+        Pattern.compile("""(?i)\bBearer\s+[A-Za-z0-9_./+=-]+"""),
+        Pattern.compile("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"""),
+        Pattern.compile("""\bAIza[A-Za-z0-9_-]{35}\b"""),
+        Pattern.compile("""\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"""),
+        Pattern.compile("""\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"""),
+        Pattern.compile("""(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp(?:s)?|https?)://[^/\s:@]+:[^/\s@]+@"""),
+        Pattern.compile("""\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b""")
     )
 
     private val MANIFEST_LOCK_FILES = setOf(
@@ -145,7 +151,7 @@ object AiBundleEngine {
         outputFile.parentFile?.mkdirs()
         val finalDocument = when (config.outputFormat.lowercase(Locale.US)) {
             "json" -> buildJsonBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
-            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections, config.maxDepth)
+            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections, config.maxDepth, config.maskSecrets)
             else -> buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections, config.maxDepth)
         }
 
@@ -164,12 +170,7 @@ object AiBundleEngine {
             val raw = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return null
             if (!maskSecrets) return raw
 
-            var masked = raw
-            for (pattern in SECRET_PATTERNS) {
-                val matcher = pattern.matcher(masked)
-                masked = matcher.replaceAll("[REDACTED_SECRET]")
-            }
-            masked
+            AiBundleEngine.maskSecrets(raw)
         } catch (_: Exception) {
             null
         }
@@ -219,7 +220,8 @@ object AiBundleEngine {
         totalTokens: Long,
         totalFilesSeen: Int,
         sections: List<String>,
-        maxDepth: Int? = null
+        maxDepth: Int? = null,
+        maskSecrets: Boolean
     ): String {
         val sb = StringBuilder()
         sb.append("@VEILFRAME_BUNDLE\n")
@@ -251,7 +253,7 @@ object AiBundleEngine {
         }
 
         sb.append("@SECURITY\n")
-        sb.append("STATUS: SECURE | Credentials, API tokens, and secret patterns sanitized\n\n")
+        sb.append(if (maskSecrets) "STATUS: HEURISTIC MASKING | Known secret patterns masked; review for missed credentials before sharing.\n\n" else "STATUS: MASKING DISABLED | Review all content for credentials before sharing.\n\n")
 
         sb.append("@END\n")
         return sb.toString()

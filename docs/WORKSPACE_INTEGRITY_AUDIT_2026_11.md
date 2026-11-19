@@ -32,7 +32,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
 | A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
 | A15 | P1 | OPEN | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
-| A16 | P1 | OPEN | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
+| A16 | P1 | PARTIAL | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
 | A17 | P1 | OPEN | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
 | A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
 | A19 | P1 | OPEN | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
@@ -85,3 +85,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A05 — Remove explicit PDF metadata recursively
 
 - Clear Info plus `/Metadata` and `/PieceInfo` throughout the reachable PDF catalog graph using identity-based traversal (cycles/shared dictionaries safe). Added save/reload regression for catalog, page, nested resource and Info entries. This intentionally does not claim anonymization of visible content, opaque image bytes, attachments or orphaned objects; scope wording and full physical-byte privacy validation remain open. CI has not executed the new fixture yet.
+
+### A16 — Heuristic secret masking and honest output
+
+- Expanded recognition of private keys, fine-grained tokens, JWTs, credential URLs, bearer tokens and quoted assignments; centralized the masking implementation. Replaced unconditional SECURE status and added sharing-review guidance for both input modes. Added synthetic regression tests; CI pending. This remains heuristic and cannot establish absence of secrets; pre-export per-file review and explicit omissions remain open.

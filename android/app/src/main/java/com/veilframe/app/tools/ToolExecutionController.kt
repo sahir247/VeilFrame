@@ -226,6 +226,7 @@ class ToolExecutionController(
 
             onLog("[OK] Package generated: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
             onLog("[AI] Tokens: ~${bundleResult.totalTokens} | Included files: ${bundleResult.includedFiles} | Format: $formatKey")
+            onLog(if (bundleConfig.maskSecrets) "[PRIVACY] Heuristic masking applied; review for missed credentials before sharing." else "[PRIVACY] Secret masking disabled; review all content before sharing.")
             onLog("[EXPORT] Output ready for saving or sharing.")
             binding.btnExecute.isEnabled = true
             binding.btnExportResult.isEnabled = true
