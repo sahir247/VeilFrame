@@ -155,3 +155,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A06 — CI feedback and visible-widget preflight
 
 - Actual Android job 135896920460 reported one failure out of 1,365 tests: `NoSuchMethodException` in `PdfOperationsFindingsRegressionTest:78`. Kotlin internal function name mangling invalidated the old reflection call, not the flatten assertion. Use the existing test's direct internal API, retaining both count and empty-form assertions. Restrict appearance refresh to attached visible fields that require regeneration; reject XFA and missing visible appearances before removing widgets. Re-run CI to validate the actual flatten behavior; no test skipped or weakened.
+
+### A17 — Bounded streaming bundle construction
+
+- Both SAF tree and single input use one suspendable engine, bounded 500 KiB reads independent of provider-reported size, strict UTF-8, deterministic traversal with cycle/depth guard, per-entry omission reasons and an explicit estimated section-only budget. Content and omission bodies spool to isolated scratch files, then stream into a staged output rather than retaining the whole project in RAM. Cancellation/failure cleans scratch; controller catches bundle errors; unique output names. Native format conflicts are explicitly omitted with JSON alternative; Markdown fences adapt to content. Full model-specific tokenization and native parser interoperability acceptance remain open, so A17 PARTIAL. CI and large-tree/cancellation tests pending.

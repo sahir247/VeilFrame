@@ -5,6 +5,15 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -32,7 +41,8 @@ object AiBundleEngine {
         val totalFiles: Int,
         val includedFiles: Int,
         val totalTokens: Long,
-        val outputPath: String
+        val outputPath: String,
+        val omittedEntries: Int = 0
     )
 
     private val IGNORED_DIRECTORIES = setOf(
@@ -81,99 +91,188 @@ object AiBundleEngine {
         return "$head\n\n// ... [Dependency Manifest Condensed: ${lines.size} lines total] ...\n\n$tail"
     }
 
-    fun buildBundleFromSaf(
+    private const val MAX_FILE_BYTES = 500 * 1024
+    private const val MAX_DIRECTORY_DEPTH = 128
+    private class InputTooLarge : IOException("File exceeds 500 KiB input limit")
+
+    suspend fun buildBundleFromSaf(
         context: Context,
         treeUri: Uri,
         outputFile: File,
         config: BundleConfig,
         onProgress: ((currentFile: String, included: Int) -> Unit)? = null
     ): BundleResult {
-        val resolver = context.contentResolver
-        val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
-        val rootName = rootDoc?.name ?: treeUri.lastPathSegment ?: "Project"
+        val root = requireNotNull(DocumentFile.fromTreeUri(context, treeUri)) { "Cannot open selected folder" }
+        return buildBundle(context, root.name ?: "Project", root, null, outputFile, config, onProgress)
+    }
 
-        val charsBudget = if (config.tokenBudget <= 0L) Long.MAX_VALUE else config.tokenBudget * 4L
-        var currentChars = 0L
-        var totalFilesSeen = 0
-        var includedFiles = 0
+    suspend fun buildSingleFileBundle(
+        context: Context, uri: Uri, name: String, outputFile: File, config: BundleConfig
+    ): BundleResult = buildBundle(context, name, null, uri, outputFile, config, null)
 
-        val sections = mutableListOf<String>()
-
-        fun walkDoc(doc: DocumentFile, currentPath: String, currentDepth: Int) {
-            val children = doc.listFiles().sortedWith(compareBy({ it.name.orEmpty() }, { it.uri.toString() }))
-            for (child in children) {
-                val childName = child.name ?: continue
-                if (childName.startsWith(".") && childName != ".env.example") continue
-
-                val relativePath = if (currentPath.isEmpty()) childName else "$currentPath/$childName"
-
-                if (child.isDirectory) {
-                    if (config.maxDepth != null && currentDepth >= config.maxDepth) {
-                        continue
+    private suspend fun buildBundle(
+        context: Context, rootName: String, root: DocumentFile?, single: Uri?,
+        outputFile: File, config: BundleConfig, onProgress: ((String, Int) -> Unit)?
+    ): BundleResult {
+        val format = config.outputFormat.lowercase(Locale.US)
+        require(format in setOf("json", "md", "aibundle")) { "Unsupported bundle format" }
+        val budget = if (config.tokenBudget <= 0) Long.MAX_VALUE
+            else config.tokenBudget.coerceAtMost(Long.MAX_VALUE / 4) * 4
+        val parent = requireNotNull(outputFile.absoluteFile.parentFile)
+        check(parent.isDirectory || parent.mkdirs()) { "Cannot create bundle output directory" }
+        val scratch = Files.createTempDirectory(context.cacheDir.toPath(), "bundle_").toFile()
+        val body = File(scratch, "body")
+        val omissions = File(scratch, "omissions")
+        var staged: File? = null
+        var chars = 0L
+        var files = 0
+        var included = 0
+        var omitted = 0
+        var condensed = 0
+        val visited = HashSet<String>()
+        try {
+            body.bufferedWriter(Charsets.UTF_8).use { writer ->
+                omissions.bufferedWriter(Charsets.UTF_8).use { skipped ->
+                    fun omit(path: String, reason: String) {
+                        if (format == "json" && omitted > 0) skipped.write(",\n")
+                        skipped.write(if (format == "json") "{\"path\":${JSONObject.quote(path)},\"reason\":${JSONObject.quote(reason)}}"
+                        else "${JSONObject.quote(path)} — $reason\n")
+                        omitted++
                     }
-                    if (childName.lowercase(Locale.US) !in IGNORED_DIRECTORIES) {
-                        walkDoc(child, relativePath, currentDepth + 1)
+                    suspend fun include(uri: Uri, path: String, reportedSize: Long) {
+                        currentCoroutineContext().ensureActive()
+                        val name = path.substringAfterLast('/')
+                        val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
+                        if (ext in BINARY_EXTENSIONS) { omit(path, "binary file type"); return }
+                        if (config.excludeTests && isTestFile(name, path)) { omit(path, "test filter"); return }
+                        if (reportedSize > MAX_FILE_BYTES) { omit(path, "input exceeds 500 KiB"); return }
+                        var content = try {
+                            readBoundedText(context.contentResolver, uri)
+                        } catch (e: InputTooLarge) {
+                            omit(path, "input exceeds 500 KiB"); return
+                        } catch (e: java.nio.charset.CharacterCodingException) {
+                            omit(path, "not valid UTF-8 text"); return
+                        } catch (e: IOException) {
+                            omit(path, "unreadable file"); return
+                        } catch (e: SecurityException) {
+                            omit(path, "permission denied"); return
+                        }
+                        if (content.isBlank()) { omit(path, "empty file"); return }
+                        if (config.maskSecrets) content = maskSecrets(content)
+                        val beforeCondense = content
+                        if (config.compressManifests && name.lowercase(Locale.US) in MANIFEST_LOCK_FILES) {
+                            content = condenseManifest(content)
+                        }
+                        if (format == "aibundle" && (path.any { it == '"' || it == '\\' || it.code < 32 } ||
+                                content.lineSequence().any { it == ">>>" || it == "<<<" })) {
+                            omit(path, "native delimiter conflict; select JSON format"); return
+                        }
+                        val section = buildFileSection(path, content, format, included + 1)
+                        val separator = if (format == "json" && included > 0) ",\n" else ""
+                        val len = section.length.toLong() + separator.length
+                        if (len > budget - chars) { omit(path, "estimated content budget"); return }
+                        writer.write(separator)
+                        writer.write(section)
+                        chars += len
+                        if (content != beforeCondense) condensed++
+                        included++
+                        onProgress?.invoke(name, included)
                     }
-                } else if (child.isFile) {
-                    totalFilesSeen++
-                    val ext = childName.substringAfterLast('.', "").lowercase(Locale.US)
-
-                    if (ext in BINARY_EXTENSIONS) continue
-                    if (config.excludeTests && isTestFile(childName, relativePath)) continue
-                    if (child.length() > 500 * 1024) continue // Skip individual files > 500KB
-
-                    var content = readFileContent(resolver, child.uri, config.maskSecrets)
-                    if (content.isNullOrBlank()) continue
-                    if (config.compressManifests && childName.lowercase(Locale.US) in MANIFEST_LOCK_FILES) {
-                        content = condenseManifest(content)
+                    suspend fun walk(doc: DocumentFile, path: String, depth: Int) {
+                        currentCoroutineContext().ensureActive()
+                        if (!visited.add(doc.uri.toString())) { omit(path, "repeated directory reference"); return }
+                        for (child in doc.listFiles().sortedWith(compareBy({ it.name.orEmpty() }, { it.uri.toString() }))) {
+                            currentCoroutineContext().ensureActive()
+                            val name = child.name ?: "(unnamed)"
+                            val relative = if (path.isEmpty()) name else "$path/$name"
+                            if (child.isFile) files++
+                            if (name.startsWith(".") && name != ".env.example") { omit(relative, "hidden entry"); continue }
+                            if (child.isDirectory) {
+                                when {
+                                    name.lowercase(Locale.US) in IGNORED_DIRECTORIES -> omit(relative, "excluded directory")
+                                    depth >= MAX_DIRECTORY_DEPTH || (config.maxDepth != null && depth >= config.maxDepth) ->
+                                        omit(relative, "depth limit")
+                                    else -> walk(child, relative, depth + 1)
+                                }
+                            } else if (child.isFile) include(child.uri, relative, child.length())
+                            else omit(relative, "unsupported entry")
+                        }
                     }
-
-                    val fileSection = buildFileSection(relativePath, content, config.outputFormat, includedFiles + 1)
-                    val sectionLen = fileSection.length.toLong()
-
-                    if (currentChars + sectionLen <= charsBudget) {
-                        sections.add(fileSection)
-                        currentChars += sectionLen
-                        includedFiles++
-                        onProgress?.invoke(childName, includedFiles)
+                    if (root != null) walk(root, "", 0)
+                    else { files = 1; include(requireNotNull(single), rootName, -1) }
+                }
+            }
+            require(included > 0) { "No readable files fit this format, filters and estimated content budget" }
+            val tokens = chars / 4 + if (chars % 4 == 0L) 0 else 1
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+            val safeName = JSONObject.quote(rootName)
+            val security = if (config.maskSecrets) "Heuristic masking enabled; review for missed secrets before sharing."
+                else "Masking disabled; review all content before sharing."
+            val temp = File.createTempFile("bundle_", ".tmp", parent)
+            staged = temp
+            temp.bufferedWriter(Charsets.UTF_8).use { out ->
+                suspend fun appendFile(file: File) {
+                    file.bufferedReader(Charsets.UTF_8).use { input ->
+                        val buffer = CharArray(8192)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            out.write(buffer, 0, n)
+                        }
+                    }
+                }
+                when (format) {
+                    "json" -> {
+                        out.write("{\"project\":$safeName,\"generated\":${JSONObject.quote(timestamp)},\"included_files\":$included,\"evaluated_files\":$files,\"estimated_tokens\":$tokens,\"condensed_files\":$condensed,\"budget_scope\":\"estimated serialized file sections only\",\"security\":${JSONObject.quote(security)},\"files\":{\n")
+                        appendFile(body)
+                        out.write("\n},\"omissions\":[\n")
+                        appendFile(omissions)
+                        out.write("\n]}\n")
+                    }
+                    "aibundle" -> {
+                        out.write("@VEILFRAME_BUNDLE\nversion=1\nproject=${rootName.replace('\n', ' ').replace('\r', ' ')}\ntimestamp=$timestamp\ntotal_tokens=$tokens\nincluded_files=$included\nexcluded_files=${files - included}\nmax_depth=${config.maxDepth ?: "unlimited"}\n\n@SUMMARY\nEvaluated files: $files\nCondensed manifests: $condensed\nBudget: estimate of file sections only\n\n@FILES\n")
+                        appendFile(body)
+                        out.write("\n@OMISSIONS\n")
+                        appendFile(omissions)
+                        out.write("\n@SECURITY\n$security\n\n@END\n")
+                    }
+                    else -> {
+                        out.write("# VeilFrame AI Context Bundle: $safeName\n\nGenerated: $timestamp\nIncluded: $included / $files evaluated files\nEstimated content tokens: ~$tokens (not exact; excludes report/header)\nCondensed manifests: $condensed\n$security\n\n")
+                        appendFile(body)
+                        out.write("\n## Omitted entries\n\n")
+                        appendFile(omissions)
                     }
                 }
             }
+            currentCoroutineContext().ensureActive()
+            Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            return BundleResult(files, included, tokens, outputFile.absolutePath, omitted)
+        } finally {
+            staged?.delete()
+            scratch.deleteRecursively()
         }
-
-        requireNotNull(rootDoc) { "Cannot open selected folder" }
-        walkDoc(rootDoc, "", 0)
-        require(includedFiles > 0) { "No readable files fit the selected bundle filters and estimated token budget" }
-
-        val timeStamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-        val estimatedTokens = currentChars / 4
-
-        outputFile.parentFile?.mkdirs()
-        val finalDocument = when (config.outputFormat.lowercase(Locale.US)) {
-            "json" -> buildJsonBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
-            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections, config.maxDepth, config.maskSecrets)
-            else -> buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections, config.maxDepth)
-        }
-
-        outputFile.writeText(finalDocument, Charsets.UTF_8)
-
-        return BundleResult(
-            totalFiles = totalFilesSeen,
-            includedFiles = includedFiles,
-            totalTokens = estimatedTokens,
-            outputPath = outputFile.absolutePath
-        )
     }
 
-    private fun readFileContent(resolver: ContentResolver, uri: Uri, maskSecrets: Boolean): String? {
-        return try {
-            val raw = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return null
-            if (!maskSecrets) return raw
-
-            AiBundleEngine.maskSecrets(raw)
-        } catch (_: Exception) {
-            null
+    private suspend fun readBoundedText(resolver: ContentResolver, uri: Uri): String {
+        val input = resolver.openInputStream(uri) ?: throw IOException("Cannot read input")
+        val bytes = input.use { stream ->
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val n = stream.read(buffer)
+                if (n < 0) break
+                if (out.size() + n > MAX_FILE_BYTES) throw InputTooLarge()
+                out.write(buffer, 0, n)
+            }
+            out.toByteArray()
         }
+        if (bytes.any { it == 0.toByte() }) throw IOException("Binary content")
+        return Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes)).toString()
     }
 
     private fun isTestFile(name: String, path: String): Boolean {
@@ -208,83 +307,10 @@ object AiBundleEngine {
                     "sh" -> "bash"
                     else -> ""
                 }
-                "### $path\n\n```$lang\n$content\n```\n\n"
+                val fence = "`".repeat(maxOf(3, Regex("`+").findAll(content).maxOfOrNull { it.value.length + 1 } ?: 3))
+                "### ${JSONObject.quote(path)}\n\n$fence$lang\n$content\n$fence\n\n"
             }
         }
     }
 
-    private fun buildNativeAibundle(
-        rootName: String,
-        timestamp: String,
-        fileCount: Int,
-        totalTokens: Long,
-        totalFilesSeen: Int,
-        sections: List<String>,
-        maxDepth: Int? = null,
-        maskSecrets: Boolean
-    ): String {
-        val sb = StringBuilder()
-        sb.append("@VEILFRAME_BUNDLE\n")
-        sb.append("version=1\n")
-        sb.append("project=$rootName\n")
-        sb.append("timestamp=$timestamp\n")
-        sb.append("total_tokens=$totalTokens\n")
-        sb.append("included_files=$fileCount\n")
-        sb.append("excluded_files=${(totalFilesSeen - fileCount).coerceAtLeast(0)}\n")
-        sb.append("max_depth=${maxDepth ?: "unlimited"}\n\n")
-
-        sb.append("@PROJECT\n")
-        sb.append("Name: $rootName\n")
-        sb.append("Engine: VeilFrame Mobile Hub Native Kotlin\n")
-        sb.append("Included in Context: $fileCount files (~$totalTokens tokens)\n")
-        if (maxDepth != null) {
-            sb.append("Recursion Depth Limit: $maxDepth\n")
-        }
-        sb.append("\n")
-
-        sb.append("@SUMMARY\n")
-        sb.append("Total Files Evaluated: $totalFilesSeen\n")
-        sb.append("Included in Bundle: $fileCount\n")
-        sb.append("Estimated Tokens: ~$totalTokens\n\n")
-
-        sb.append("@FILES\n")
-        for (sec in sections) {
-            sb.append(sec)
-        }
-
-        sb.append("@SECURITY\n")
-        sb.append(if (maskSecrets) "STATUS: HEURISTIC MASKING | Known secret patterns masked; review for missed credentials before sharing.\n\n" else "STATUS: MASKING DISABLED | Review all content for credentials before sharing.\n\n")
-
-        sb.append("@END\n")
-        return sb.toString()
-    }
-
-    private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Long, sections: List<String>, maxDepth: Int? = null): String {
-        val sb = StringBuilder()
-        sb.append("# VeilFrame AI Context Bundle: $rootName\n\n")
-        sb.append("- **Generated:** $timestamp\n")
-        sb.append("- **Included Files:** $fileCount\n")
-        sb.append("- **Estimated Tokens:** ~$tokens\n")
-        sb.append("- **Max Depth:** ${maxDepth ?: "Full Depth"}\n")
-        sb.append("- **Engine:** VeilFrame Native Kotlin\n\n")
-        sb.append("---\n\n")
-        for (sec in sections) {
-            sb.append(sec)
-        }
-        return sb.toString()
-    }
-
-    private fun buildJsonBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Long, sections: List<String>): String {
-        return """
-        {
-            "project": ${org.json.JSONObject.quote(rootName)},
-            "generated": "$timestamp",
-            "included_files": $fileCount,
-            "estimated_tokens": $tokens,
-            "files": {
-                ${sections.joinToString(",\n")}
-            }
-        }
-        """.trimIndent()
-    }
 }

@@ -109,7 +109,17 @@ class ToolExecutionController(
 
         executionJob = scope.launch {
             when (sessionManager.currentToolMode) {
-                ToolMode.AI_BUNDLE -> runAiBundle(uri)
+                ToolMode.AI_BUNDLE -> {
+                    try {
+                        runAiBundle(uri)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        sessionManager.updateJobState(JobState.FAILED, "Bundle failed: ${failure.message}")
+                        binding.progressIndicator.isIndeterminate = false
+                        Toast.makeText(activity, "Bundle generation failed: ${failure.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
                 ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
                 ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
                 ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
@@ -146,7 +156,7 @@ class ToolExecutionController(
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = File(activity.cacheDir, "AIBundle_$timeStamp.$formatKey")
+        val outputFile = File(activity.cacheDir, "AIBundle_${timeStamp}_${java.util.UUID.randomUUID()}.$formatKey")
 
         val maxDepth = if (binding.switchBundleFullDepth.isChecked) {
             null
@@ -177,38 +187,8 @@ class ToolExecutionController(
                     }
                 )
             } else {
-                val name = safStorageManager.getDisplayName(uri)
-                val raw = activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: throw java.io.IOException("Cannot read selected file")
-                val content = if (bundleConfig.maskSecrets) AiBundleEngine.maskSecrets(raw) else raw
-                require(content.isNotBlank()) { "Selected file has no readable text" }
-                require(tokenBudget <= 0 || content.length.toLong() <= tokenBudget * 4L) {
-                    "Selected file exceeds the estimated token budget; choose a higher budget or a smaller input"
-                }
-                val finalDocument = when (formatKey.lowercase(Locale.US)) {
-                    "json" -> """
-                        {
-                            "project": ${org.json.JSONObject.quote(name)},
-                            "generated": "${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}",
-                            "included_files": 1,
-                            "estimated_tokens": ${content.length / 4},
-                            "files": {
-                                ${org.json.JSONObject.quote(name)}: ${org.json.JSONObject.quote(content)}
-                            }
-                        }
-                    """.trimIndent()
-                    "aibundle" -> {
-                        val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
-                        "@VEILFRAME_BUNDLE\nversion=1\nproject=$name\ntimestamp=${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\ntotal_tokens=${content.length / 4}\nincluded_files=1\n\n@FILES\n@FILE id=\"F001\" path=\"$name\" language=\"$ext\"\n<<<\n$content\n>>>\n\n@END\n"
-                    }
-                    else -> "# Context: $name\n\n```\n$content\n```"
-                }
-                outputFile.writeText(finalDocument, Charsets.UTF_8)
-                AiBundleEngine.BundleResult(
-                    totalFiles = 1,
-                    includedFiles = 1,
-                    totalTokens = (content.length / 4).toLong(),
-                    outputPath = outputFile.absolutePath
+                AiBundleEngine.buildSingleFileBundle(
+                    activity, uri, safStorageManager.getDisplayName(uri), outputFile, bundleConfig
                 )
             }
         }
@@ -225,7 +205,7 @@ class ToolExecutionController(
 
             binding.cardResultSummary.visibility = View.VISIBLE
             binding.tvResultTitle.text = outputFile.name
-            binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles}/${bundleResult.totalFiles} evaluated files included"
+            binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles}/${bundleResult.totalFiles} evaluated files included • ${bundleResult.omittedEntries} omitted entries (see report)"
             val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
             binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
 
