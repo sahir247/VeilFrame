@@ -135,24 +135,26 @@ class OfficeConverter {
     suspend fun convertDocxToPdf(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         try {
             convertDocxViaOpenXml(docxFile, pdfFile, context)
-        } catch (t: Throwable) {
-            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed (${t.message}), trying POI / fallback", t)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (primary: Exception) {
+            // Do not accept a stale/partial PDF left by the failed renderer.
+            if (pdfFile.exists() && !pdfFile.delete()) {
+                throw java.io.IOException("Cannot replace partial DOCX conversion", primary)
+            }
+            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed; trying POI", primary)
             try {
                 convertDocxToPdfInternal(docxFile, pdfFile, context)
-            } catch (t2: Throwable) {
-                android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t2.message}), falling back to lightweight XML text extractor", t2)
-                val extracted = extractDocxTextViaZip(docxFile)
-                if (extracted.isNotBlank()) {
-                    val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
-                    try {
-                        tempText.writeText(extracted)
-                        convertTextToPdf(tempText, pdfFile, context)
-                    } finally {
-                        tempText.delete()
-                    }
-                } else {
-                    convertTextToPdf(docxFile, pdfFile, context)
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (secondary: Exception) {
+                pdfFile.delete()
+                secondary.addSuppressed(primary)
+                throw java.io.IOException("DOCX conversion failed; text-only export would lose formatting.", secondary)
+            } catch (unsupported: LinkageError) {
+                pdfFile.delete()
+                unsupported.addSuppressed(primary)
+                throw java.io.IOException("DOCX fallback renderer unavailable; no faithful PDF was produced.", unsupported)
             }
         }
     }

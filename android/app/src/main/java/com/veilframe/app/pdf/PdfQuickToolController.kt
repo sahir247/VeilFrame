@@ -2490,25 +2490,7 @@ class PdfQuickToolController(
                                 ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
                                 ".txt" -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
                                 else -> {
-                                    try {
-                                        officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (t: Exception) {
-                                        Log.w(TAG, "DOCX conversion failed: ${t.message}; using fallback text extractor", t)
-                                        val extracted = officeConverter.extractDocxTextViaZip(tempInput)
-                                        if (extracted.isNotBlank()) {
-                                            val tempText = File(activity.cacheDir, "temp_docx_text_${System.currentTimeMillis()}.txt")
-                                            try {
-                                                tempText.writeText(extracted)
-                                                officeConverter.convertTextToPdf(tempText, tempPdf, activity)
-                                            } finally {
-                                                tempText.delete()
-                                            }
-                                        } else {
-                                            officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                        }
-                                    }
+                                    officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
                                 }
                             }
                             success = tempPdf.exists() && tempPdf.length() > 0

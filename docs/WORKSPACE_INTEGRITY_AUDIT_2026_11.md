@@ -29,7 +29,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A10 | P1 | OPEN | Background removal export may race bitmap recycling | `media/BackgroundRemoverController.kt:1258-1430` | Protect captured bitmap lifetime across export/share/clipboard. |
 | A11 | P1 | OPEN | PDF compression may choose destructive rasterization by size alone | `pdf/operations/PdfCompressor.kt:375-423` | Explicitly authorize lossy semantic change; preserve structural mode. |
 | A12 | P1 | OPEN | Compression cleanup deletes shared prefix-matching temp files | `pdf/operations/PdfCompressor.kt:299-307` | Own operation-specific temp files/directories. |
-| A13 | P1 | OPEN | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
+| A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
 | A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
 | A15 | P1 | OPEN | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
 | A16 | P1 | OPEN | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
@@ -66,3 +66,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 - Explicitly state embedded-key signature validity does not establish trusted publisher identity or media authenticity. No trust bypass or verification change.
 - Source inspection only; Android CI and targeted regression acceptance pending.
+
+### A13 — Remove silent text-only DOCX fallback
+
+- Engine retains formatting-aware OpenXML and POI attempts but propagates cancellation; rejects conversion failure instead of emitting text-only PDF or interpreting binary DOCX as text. Failed primary output is removed before retry. Removed duplicate controller fallback as well; existing UI reports conversion failure and removes unhanded output.
+- Fidelity differences between the two formatting-aware renderers still need fixtures (A28). Android CI and malformed-DOCX regression pending.
