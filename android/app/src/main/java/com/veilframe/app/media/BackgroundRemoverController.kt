@@ -72,6 +72,15 @@ class BackgroundRemoverController(
     private val onNavigateBack: () -> Unit
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     private var processingJob: Job? = null
+    private var sourceLoadJob: Job? = null
+    private var sourceGeneration = 0L
+
+    // Source selection, acceptance and invalidation are main-thread operations.
+    private fun invalidateSourceLoad() {
+        sourceGeneration++
+        sourceLoadJob?.cancel()
+        sourceLoadJob = null
+    }
     private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
@@ -310,6 +319,8 @@ class BackgroundRemoverController(
     }
 
     fun cleanup() {
+        invalidateSourceLoad()
+        cancelProcessing()
         try {
             binding.refineBrushCanvas.cleanup()
             com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin.close()
@@ -324,50 +335,48 @@ class BackgroundRemoverController(
     }
 
     fun handleImageSelected(uri: Uri) {
-        currentSourceUri = uri
-        scope.launch(Dispatchers.IO) {
-            val bytes = try {
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.readBytes()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed reading image stream", e)
-                null
-            }
-
-            if (bytes == null || bytes.isEmpty()) {
+        invalidateSourceLoad()
+        cancelProcessing()
+        val generation = sourceGeneration
+        sourceLoadJob = scope.launch(Dispatchers.IO) {
+            var unownedBitmap: Bitmap? = null
+            try {
+                val bytes = activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw java.io.IOException("Could not open selected image")
+                if (bytes.isEmpty()) throw java.io.IOException("Selected image is empty")
+                val decoded = RembgImageUtils.decodeOrientedBitmap(bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX)
+                unownedBitmap = decoded
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Could not open selected image", Toast.LENGTH_SHORT).show()
-                }
-                return@launch
-            }
-
-            val decoded = try {
-                RembgImageUtils.decodeOrientedBitmap(bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX)
-            } catch (e: Exception) {
-                Log.e(TAG, "Decoding oriented bitmap failed", e)
-                null
-            }
-
-            withContext(Dispatchers.Main) {
-                if (decoded != null) {
+                    if (generation != sourceGeneration) return@withContext
                     val oldSrc = sourceBitmap
                     sourceBytes = bytes
                     sourceBitmap = decoded
+                    currentSourceUri = uri
+                    unownedBitmap = null // Ownership transferred to the active workspace.
                     releaseCutoutBitmaps()
                     oldSrc?.recycle()
                     lastFailure = null
                     val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
                     sourceFileName = rawName.substringBeforeLast('.', rawName)
                     updateUi()
-                } else {
-                    Toast.makeText(activity, "Could not decode image", Toast.LENGTH_SHORT).show()
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not load selected image", e)
+                withContext(Dispatchers.Main) {
+                    if (generation == sourceGeneration) {
+                        Toast.makeText(activity, "Could not open selected image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } finally {
+                unownedBitmap?.recycle()
             }
         }
     }
 
     private fun executeRemoval() {
+        if (sourceLoadJob?.isActive == true) return
         val bytes = sourceBytes ?: return
 
         if (currentMode == RembgMode.LIFT_AND_SHIFT && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
@@ -540,6 +549,7 @@ class BackgroundRemoverController(
     }
 
     private fun runRemovalPipeline(bytes: ByteArray) {
+        if (bytes !== sourceBytes || sourceLoadJob?.isActive == true) return
         val effectiveModel = when (currentMode) {
             RembgMode.LIFT_AND_SHIFT -> RembgModel.COLOROS_LIFT_SHIFT
             RembgMode.U2NETP -> RembgModel.U2NETP
@@ -1495,6 +1505,7 @@ class BackgroundRemoverController(
     override val supportsBackgroundExecution: Boolean get() = false
 
     override fun discardAndReleaseAllResources() {
+        invalidateSourceLoad()
         cancelProcessing()
         binding.splitViewBgCompare.setBitmaps(null, null)
         binding.refineBrushCanvas.cleanup()
