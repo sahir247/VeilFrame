@@ -152,7 +152,7 @@ class PdfCompressor {
         val startTime = System.currentTimeMillis()
         var tempFile: File? = null
         var preservedFallbackFile: File? = null
-        val cacheDir = File(context.cacheDir, "compress_cache")
+        val cacheDir = File(context.cacheDir, "compress_cache/${java.util.UUID.randomUUID()}")
         if (!cacheDir.exists()) cacheDir.mkdirs()
 
         try {
@@ -201,7 +201,6 @@ class PdfCompressor {
                 val currentProgress = 0.05f + 0.85f * (iterationCount.toFloat() / maxIterations)
                 onProgress(currentProgress)
 
-                val iterationFile = File(cacheDir, "iter_${iterationCount}_${System.currentTimeMillis()}.pdf")
                 val profile = profileFromSlider(mid) ?: profileFromLevel(CompressionLevel.MEDIUM)
 
                 var currentStrategy = CompressionStrategy.IMAGE_OPTIMIZATION
@@ -298,13 +297,11 @@ class PdfCompressor {
             return@withContext Result.failure(e)
         } finally {
             tempFile?.delete()
-            // Clean up any remaining iteration files in cacheDir that start with temp_target_compress or iter_,
-            // but preserve fallbackFile if returned in TargetSizeNotReachedException.
+            // This operation owns the entire directory. Preserve only the returned fallback.
             cacheDir.listFiles()?.forEach { file ->
-                if (file != preservedFallbackFile && (file.name.startsWith("iter_") || file.name.startsWith("temp_target_compress_"))) {
-                    file.delete()
-                }
+                if (file != preservedFallbackFile) file.deleteRecursively()
             }
+            if (preservedFallbackFile == null) cacheDir.delete()
         }
     }
 
@@ -325,7 +322,7 @@ class PdfCompressor {
             onProgress(0.05f)
             
             // Create a temp file to avoid loading everything into memory
-            val cacheDir = File(context.cacheDir, "compress_cache")
+            val cacheDir = File(context.cacheDir, "compress_cache/${java.util.UUID.randomUUID()}")
             if (!cacheDir.exists()) cacheDir.mkdirs()
             tempFile = File(cacheDir, "temp_compress_${System.currentTimeMillis()}.pdf")
 
@@ -441,7 +438,7 @@ class PdfCompressor {
                 )
             )
         } finally {
-            tempFile?.delete()
+            tempFile?.parentFile?.deleteRecursively()
         }
     }
     
@@ -512,7 +509,7 @@ class PdfCompressor {
         onProgress: (Float) -> Unit
     ): File? {
         var document: PDDocument? = null
-        val outputFile = File(context.cacheDir, "opt_${System.currentTimeMillis()}.pdf")
+        val outputFile = File(inputFile.parentFile, "opt_${java.util.UUID.randomUUID()}.pdf")
         
         return try {
             // Use MemoryUsageSetting to enable temp file buffering instead of full memory load
@@ -741,7 +738,7 @@ class PdfCompressor {
         var outputDocument: PDDocument? = null
         var androidRenderer: android.graphics.pdf.PdfRenderer? = null
         var pfd: android.os.ParcelFileDescriptor? = null
-        val outputFile = File(context.cacheDir, "rerender_${System.currentTimeMillis()}.pdf")
+        val outputFile = File(inputFile.parentFile, "rerender_${java.util.UUID.randomUUID()}.pdf")
         
         return try {
             // A. Seekable File Descriptors
@@ -915,7 +912,7 @@ class PdfCompressor {
             onProgress(0.05f)
 
             // Create a temp file to avoid loading everything into memory
-            val cacheDir = File(context.cacheDir, "compress_cache")
+            val cacheDir = File(context.cacheDir, "compress_cache/${java.util.UUID.randomUUID()}")
             if (!cacheDir.exists()) cacheDir.mkdirs()
             tempFile = File(cacheDir, "temp_compress_${System.currentTimeMillis()}.pdf")
 
@@ -1038,7 +1035,7 @@ class PdfCompressor {
                 )
             )
         } finally {
-            tempFile?.delete()
+            tempFile?.parentFile?.deleteRecursively()
         }
     }
 
