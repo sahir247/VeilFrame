@@ -289,43 +289,32 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
             return nullptr;
         }
 
-        // Activation & Normalization handling:
-        if (modelType == MODEL_U2NETP) {
-            // For U2-Net-P: Saliency networks output uncalibrated relative energy scores.
-            // We apply sigmoid and official U2-Net dynamic range normalization (normPRED from Qin et al. 2020)
-            // so that secondary subjects and thin extremities (legs, limbs) are scaled into visible alpha.
-            float* ptr = out_unpadded.channel(0);
-            if (!ptr) {
-                LOGE("Failed to get channel 0 pointer for U2NETP");
+        // The bundled U2-Net-P graph ends in convsigmoid_112 producing out0
+        // (NCNN convolution activation parameter 9=4 == sigmoid). Both models
+        // therefore return values in [0,1], not logits. Never activate twice.
+        float* ptr = out_unpadded.channel(0);
+        if (!ptr) return nullptr;
+        const int size = out_unpadded.w * out_unpadded.h;
+        float min_val = 1.f;
+        float max_val = 0.f;
+        for (int i = 0; i < size; i++) {
+            if (!std::isfinite(ptr[i])) {
+                LOGE("Matting output contains non-finite values");
                 return nullptr;
             }
-            float min_val = 1e9f;
-            float max_val = -1e9f;
-            const int size = out_unpadded.w * out_unpadded.h;
-            for (int i = 0; i < size; i++) {
-                float s = 1.0f / (1.0f + expf(-ptr[i]));
-                ptr[i] = s;
-                if (s < min_val) min_val = s;
-                if (s > max_val) max_val = s;
-            }
-            float range = max_val - min_val;
+            ptr[i] = std::max(0.f, std::min(1.f, ptr[i]));
+            min_val = std::min(min_val, ptr[i]);
+            max_val = std::max(max_val, ptr[i]);
+        }
+        if (modelType == MODEL_U2NETP) {
+            // Retain the upstream saliency normPRED convention for compatibility.
+            // Flat outputs retain their original probability rather than dividing
+            // by a near-zero range. This is saliency, not calibrated opacity.
+            const float range = max_val - min_val;
             if (range > 1e-4f) {
                 for (int i = 0; i < size; i++) {
                     ptr[i] = (ptr[i] - min_val) / range;
                 }
-            }
-        } else {
-            // MODNet already outputs continuous alpha matte in [0.0, 1.0]
-            float* ptr = out_unpadded.channel(0);
-            if (!ptr) {
-                LOGE("Failed to get channel 0 pointer for MODNet");
-                return nullptr;
-            }
-            const int size = out_unpadded.w * out_unpadded.h;
-            #pragma omp parallel for
-            for (int i = 0; i < size; i++) {
-                if (ptr[i] < 0.0f) ptr[i] = 0.0f;
-                if (ptr[i] > 1.0f) ptr[i] = 1.0f;
             }
         }
 

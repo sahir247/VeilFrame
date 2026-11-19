@@ -40,7 +40,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A21 | P1 | OPEN | Workspace resource lifecycle dispersed; retained inflated views | `workspace/WorkspaceHost.kt` | Trace navigation/controller ownership; cancel resources without breaking sessions. |
 | A22 | P2 | OPEN | PRNU external attribution resistance not established | `cv/prnu/PrnuSanitizerEngine.kt` | Retain honest diagnostic wording; benchmark independently. |
 | A23 | P2 | OPEN | Stabilization real-world tracking quality and limitations | `cv/motion/VideoStabilizerEngine.kt` | Benchmark difficult footage and confidence behavior. |
-| A24 | P2 | OPEN | Native matting activation/model contract uncertain | `cpp/matting_jni.cpp:292-316` | Inspect actual model graph before changing sigmoid; CPU/GPU parity. |
+| A24 | P2 | PARTIAL | Native matting activation/model contract uncertain | `cpp/matting_jni.cpp:292-316` | Inspect actual model graph before changing sigmoid; CPU/GPU parity. |
 | A25 | P2 | OPEN | Native mutex cancellation latency, model and GPU lifecycle | `cpp/{matting,pii_ncnn,rife,realsr,veilnet}_jni.cpp; vulkan_gpu_lifecycle.h` | Stress device concurrency and measure native cancellation. |
 | A26 | P2 | OPEN | Upscaler tile seams, model fidelity and generated detail | `upscale/inference/` | Measure dimensions, boundaries, memory and preview/export consistency. |
 | A27 | P2 | OPEN | QR exported-style real-device scanability | `qr/` | Retain frozen matrix parity; roundtrip device scans and exports. |
@@ -130,3 +130,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A11 — Structural compression is the safe default
 
 - Removed automatic full-page raster fallback from regular and both target-size compression entry points. A smaller size cannot justify loss of searchability, vector or interactive content without consent. Kept raster engine private for a future explicitly authorized mode; current UI uses structural compression only. Also stopped incidental metadata pruning in structural compression and bounded strict target fallback by original size. Explicit raster opt-in UI and semantic save/reload regression fixtures remain pending; A11 PARTIAL. Signed PDFs still require separate signature-preservation policy.
+
+### A24 — Confirm bundled model activation and fix production double sigmoid
+
+- Inspected the actual packaged `assets/models/u2netp/u2netp.ncnn.param`: layer `convsigmoid_112` produces `out0` with convolution parameter `9=4`. NCNN's [convolution loader](https://github.com/Tencent/ncnn/blob/master/src/layer/convolution.cpp) reads parameter 9 as activation type; [fused_activation.h](https://github.com/Tencent/ncnn/blob/master/src/layer/fused_activation.h) maps type 4 to sigmoid. Removed the redundant sigmoid from production nativeProcess; reject nonfinite model output, bound probabilities and retain upstream saliency normalization. Legacy benchmark comparator intentionally unchanged; numerical CPU/GPU parity and saliency-vs-opacity quality are unmeasured. PARTIAL pending native/device validation.
