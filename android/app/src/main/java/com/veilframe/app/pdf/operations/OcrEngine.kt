@@ -49,7 +49,7 @@ class OcrEngine(private val context: Context) {
                                     boundingBox = element.boundingBox?.let { rect ->
                                         OcrBoundingBox(rect.left, rect.top, rect.right, rect.bottom)
                                     },
-                                    confidence = element.confidence ?: 0.9f
+                                    confidence = element.confidence?.takeIf { it.isFinite() && it in 0f..1f }
                                 )
                             }
                         }

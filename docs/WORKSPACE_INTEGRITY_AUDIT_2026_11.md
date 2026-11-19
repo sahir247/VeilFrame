@@ -20,7 +20,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A01 | P1 | PATCHED | Searchable PDF false success on null output stream | `pdf/operations/PdfOcrProcessor.kt:341-353` | Require non-null destination; test provider failure. |
 | A02 | P1 | OPEN | Searchable OCR strips Unicode | `pdf/operations/PdfOcrProcessor.kt:617-648` | Embed Unicode font and validate text extraction; no silent character loss. |
 | A03 | P1 | OPEN | OCR layer ignores page rotation and actual render dimensions | `pdf/operations/PdfOcrProcessor.kt:609-653` | Map pixel rectangles into crop/rotation-aware PDF coordinates. |
-| A04 | P1 | OPEN | OCR confidence fabricated (0.90 word / 0.85 page) | `pdf/operations/OcrEngine.kt:52; PdfOcrProcessor.kt:210` | Preserve unknown confidence and derive aggregates. |
+| A04 | P1 | PATCHED | OCR confidence fabricated (0.90 word / 0.85 page) | `pdf/operations/OcrEngine.kt:52; PdfOcrProcessor.kt:210` | Preserve unknown confidence and derive aggregates. |
 | A05 | P1 | PARTIAL | PDF metadata removal only clears Info dictionary | `pdf/operations/PdfMetadataManager.kt:162-196` | Clear catalog/page/resource metadata; verify saved output and scope. |
 | A06 | P1 | OPEN | Flattening can silently omit forms/annotations or remove undrawn annotation | `pdf/operations/PdfFlattener.kt:191-286` | Report incomplete work; preserve annotation until drawn successfully. |
 | A07 | P1 | OPEN | JavaScript/attachment removal limited to catalog entries | `pdf/operations/PdfFlattener.kt:292-331` | Inspect relevant COS graph; verify requested removal. |
@@ -47,6 +47,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A28 | P2 | OPEN | Office/PDF broader semantic fidelity and workspace coverage | `pdf/operations/; media/; tools/` | Trace all reachable callers; fixtures for charts/formulas/fonts/fields/page geometry. |
 | A29 | P2 | OPEN | Oversized multi-purpose controllers and ownership complexity | `media/; pdf/; navigation/` | Refactor by clear ownership boundaries after regression coverage. |
 | A30 | P2 | OPEN | Visual signing vs cryptographic signing distinction | `pdf/operations/PdfSigner.kt:103-104` | Verify UI differentiates visual overlay from digital signature validation. |
+
+| A31 | P1 | OPEN | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
 
 ## Implementation log
 
@@ -93,3 +95,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A17 — Valid bundle JSON and explicit input failures
 
 - Both tree and single-file JSON export quote keys/project names with JSONObject.quote; folder traversal deterministic, missing/empty inputs rejected, single-file input checks estimated token budget, UI shows evaluated/included counts. Full streaming, exact tokenizer and per-file omission reasons remain open. Also corrected A16 matcher ordering so the full Authorization: Bearer value is masked before generic assignment matching; extended fixture. Tests/CI pending.
+
+### A04 — Preserve genuine OCR confidence
+
+- Null word/page confidence explicitly means unknown; reject non-finite and out-of-range scores. Aggregate only when all words have known scores. Removed fixed 0.9/0.85 values. GitHub source search located the result types in the two changed OCR files. Added synthetic aggregation regression tests; CI pending.
+- Follow-up: OCR engine failure currently resolves empty results rather than propagating an error. Track A31; also ensure ML Kit bitmap lifetime across cancelled tasks.

@@ -40,7 +40,7 @@ data class OcrPageResult(
     val text: String,
     val markdownText: String = "",
     val blocks: List<OcrTextBlock>,
-    val confidence: Float
+    val confidence: Float?
 )
 
 /**
@@ -67,8 +67,15 @@ data class OcrTextLine(
 data class OcrWord(
     val text: String,
     val boundingBox: OcrBoundingBox?,
-    val confidence: Float
+    val confidence: Float?
 )
+
+/** Null means recognition did not supply confidence for at least one word. */
+internal fun pageOcrConfidence(words: List<OcrWord>): Float? {
+    if (words.isEmpty()) return null
+    val values = words.map { it.confidence?.takeIf { score -> score.isFinite() && score in 0f..1f } ?: return null }
+    return values.average().toFloat()
+}
 
 /**
  * Bounding box for OCR elements.
@@ -207,7 +214,7 @@ class PdfOcrProcessor(private val context: Context) {
                             text = pageText,
                             markdownText = pageMarkdown,
                             blocks = blocks,
-                            confidence = 0.85f
+                            confidence = pageOcrConfidence(words)
                         )
                         pageResults.add(pageResult)
 
