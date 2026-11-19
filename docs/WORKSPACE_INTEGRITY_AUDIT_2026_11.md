@@ -30,7 +30,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A11 | P1 | PARTIAL | PDF compression may choose destructive rasterization by size alone | `pdf/operations/PdfCompressor.kt:375-423` | Explicitly authorize lossy semantic change; preserve structural mode. |
 | A12 | P1 | PATCHED | Compression cleanup deletes shared prefix-matching temp files | `pdf/operations/PdfCompressor.kt:299-307` | Own operation-specific temp files/directories. |
 | A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
-| A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
+| A14 | P1 | PARTIAL | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
 | A15 | P1 | PARTIAL | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
 | A16 | P1 | PARTIAL | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
 | A17 | P1 | PARTIAL | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
@@ -147,3 +147,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 - Removed the false “Strip All Forensic Traces” label. Explicit metadata-removal scope and exclusions are visible before export; A05 remains PARTIAL pending raw-byte validation. Compression UI now describes the structural-only path (A11 remains PARTIAL pending explicit raster opt-in and semantic fixtures).
 - Rename visual signature stamping in the card/tool header; explicitly distinguish it from cryptographic signing. The verification card describes certificate trust rather than suggesting authentic third-party checkmark stamping. A30 PATCHED; verify layouts and UI on device.
+
+### A14 — Fail selected scanner transformations and distinguish render revisions
+
+- Invalid or failed selected crop no longer silently exports an unwarped image. Propagate warmth/filter failures and clean intermediate bitmap allocations. Detached preview render snapshot and version-checked acceptance reject superseded results; dispose discarded results. Report render failures on the active page. Processed preview/disk cache reuse for export is restricted to matching edit revisions; manifests do not claim old processed files match current edits. Initial imports mark unprocessed previews explicitly. The export fallback re-renders or fails rather than returning an unprocessed original. Persistent generation transaction, background auto-crop ordering and device acceptance remain open; A14 PARTIAL.

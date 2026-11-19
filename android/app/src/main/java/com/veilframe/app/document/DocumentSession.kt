@@ -62,6 +62,9 @@ data class ScannedPage(
     var watermarkFont: String = "Sans-Serif",
     // Revision counter to discard stale async render jobs
     var editVersion: Long = 0L,
+    // Old previews may remain visible; they must not be exported as current edits.
+    @Transient var renderedVersion: Long = editVersion,
+    @Transient var persistedRenderVersion: Long = editVersion,
     // Transient in-memory cached bitmaps for smooth rendering
     @Transient var originalBitmapCache: Bitmap? = null,
     @Transient var processedBitmapCache: Bitmap? = null,
@@ -87,11 +90,15 @@ data class ScannedPage(
      * Already-cached UI bitmaps are borrowed and are never recycled by the export.
      */
     internal fun openBitmapForExport(context: Context): ExportPageBitmap? {
-        processedBitmapCache?.takeUnless { it.isRecycled }?.let {
-            return ExportPageBitmap(it, temporary = false)
+        if (renderedVersion == editVersion) {
+            processedBitmapCache?.takeUnless { it.isRecycled }?.let {
+                return ExportPageBitmap(it, temporary = false)
+            }
         }
-        processedImagePath?.takeIf { File(it).isFile }?.let { path ->
-            BitmapFactory.decodeFile(path)?.let { return ExportPageBitmap(it, temporary = true) }
+        if (persistedRenderVersion == editVersion) {
+            processedImagePath?.takeIf { File(it).isFile }?.let { path ->
+                BitmapFactory.decodeFile(path)?.let { return ExportPageBitmap(it, temporary = true) }
+            }
         }
 
         // Render using a detached page object. Native rendering may decode the original,
@@ -109,7 +116,7 @@ data class ScannedPage(
             if (rendered != null) {
                 ExportPageBitmap(rendered, temporary = rendered !== borrowedOriginal)
             } else {
-                borrowedOriginal?.let { ExportPageBitmap(it, temporary = false) }
+                throw java.io.IOException("Could not render current page edits")
             }
         } finally {
             copyForExport.originalBitmapCache?.takeIf { it !== borrowedOriginal && !it.isRecycled }?.recycle()
@@ -152,6 +159,7 @@ data class ScannedPage(
      */
     fun updateCaches(resultBmp: Bitmap) {
         processedBitmapCache = resultBmp
+        renderedVersion = editVersion
         val maxThumbDim = 200
         val scale = (maxThumbDim.toFloat() / resultBmp.width.coerceAtLeast(resultBmp.height)).coerceAtMost(1f)
         val thumbW = (resultBmp.width * scale).toInt().coerceAtLeast(1)
@@ -166,19 +174,23 @@ data class ScannedPage(
     ): Bitmap? {
         val orig = getOriginalBitmap(context) ?: return null
         var currentMat = com.veilframe.app.cv.core.BitmapBridge.toMat(orig)
+        var pendingBitmap: Bitmap? = null
         try {
             cvContext?.ensureActive()
 
             // 1. Perspective Warp Crop (if 4 corners specified in original image coordinates)
             val quad = corners
-            if (quad != null && quad.size == 4) {
-                try {
-                    val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(currentMat, quad)
-                    currentMat.release()
-                    currentMat = warped
-                } catch (_: Throwable) {
-                    // Fall back to unwarped image
+            if (quad != null) {
+                require(quad.size == 4 && quad.all { it.x.isFinite() && it.y.isFinite() }) {
+                    "Invalid document crop geometry"
                 }
+                val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(currentMat, quad)
+                if (warped.empty()) {
+                    warped.release()
+                    throw java.io.IOException("Perspective correction returned no image")
+                }
+                currentMat.release()
+                currentMat = warped
             }
             cvContext?.ensureActive()
 
@@ -246,11 +258,12 @@ data class ScannedPage(
             cvContext?.ensureActive()
 
             var resultBmp = com.veilframe.app.cv.core.BitmapBridge.toBitmap(currentMat)
+            pendingBitmap = resultBmp
 
             // 5. Warmth / Temperature Adjustment
             if (warmth != 0.0) {
+                val wBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                 try {
-                    val wBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                     val canvas = android.graphics.Canvas(wBmp)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     val rScale = (1.0 + warmth * 0.2).toFloat().coerceIn(0.5f, 1.5f)
@@ -265,13 +278,17 @@ data class ScannedPage(
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
                     if (wBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = wBmp
-                } catch (_: Exception) {}
+                    pendingBitmap = resultBmp
+                } catch (failure: Throwable) {
+                    wBmp.recycle()
+                    throw failure
+                }
             }
 
             // 6. Color Filter Presets (Sepia, Vintage, Cool, Warm)
             if (filterPreset != "None" && filterPreset != "Default") {
+                val fBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                 try {
-                    val fBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                     val canvas = android.graphics.Canvas(fBmp)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     val cm = android.graphics.ColorMatrix()
@@ -313,7 +330,11 @@ data class ScannedPage(
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
                     if (fBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = fBmp
-                } catch (_: Exception) {}
+                    pendingBitmap = resultBmp
+                } catch (failure: Throwable) {
+                    fBmp.recycle()
+                    throw failure
+                }
             }
 
             // 7. Text Watermark / Document Stamp Overlay
@@ -329,14 +350,17 @@ data class ScannedPage(
                 val stamped = com.veilframe.app.media.watermark.WatermarkEngine.applyWatermark(resultBmp, state)
                 if (stamped !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                 resultBmp = stamped
+                pendingBitmap = resultBmp
             }
 
             if (updateCaches) {
                 updateCaches(resultBmp)
             }
 
+            pendingBitmap = null
             return resultBmp
         } finally {
+            pendingBitmap?.takeUnless { it.isRecycled }?.recycle()
             currentMat.release()
         }
     }
@@ -355,12 +379,13 @@ data class ScannedPage(
         }
 
         // Save processed bitmap if present
-        if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
+        if (renderedVersion == editVersion && processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
             val procFile = File(sessionDir, "page_${id}_proc.png")
             writeSessionFileAtomically(procFile) { fos ->
                 check(processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Processed page encoding failed" }
             }
             processedImagePath = procFile.absolutePath
+            persistedRenderVersion = renderedVersion
 
             // Save thumbnail
             val thumbFile = File(sessionDir, "page_${id}_thumb.jpg")
@@ -557,8 +582,8 @@ class DocumentSession(
                     val pageJson = JSONObject().apply {
                         put("id", page.id)
                         put("originalImagePath", page.originalImagePath)
-                        put("processedImagePath", page.processedImagePath ?: "")
-                        put("thumbnailPath", page.thumbnailPath ?: "")
+                        put("processedImagePath", if (page.persistedRenderVersion == page.editVersion) page.processedImagePath ?: "" else "")
+                        put("thumbnailPath", if (page.persistedRenderVersion == page.editVersion) page.thumbnailPath ?: "" else "")
                         put("rotationDegrees", page.rotationDegrees)
                         put("mode", page.mode.name)
                         put("exposureStops", page.exposureStops)

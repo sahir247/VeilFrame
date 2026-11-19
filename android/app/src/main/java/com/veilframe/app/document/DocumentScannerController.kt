@@ -909,7 +909,9 @@ class DocumentScannerController(
     ) {
         val page = ScannedPage(
             originalBitmapCache = sourceBitmap,
-            processedBitmapCache = sourceBitmap
+            processedBitmapCache = sourceBitmap,
+            renderedVersion = -1L,
+            persistedRenderVersion = -1L
         )
         session.addPage(page)
         persistSession()
@@ -990,9 +992,11 @@ class DocumentScannerController(
                         if (result != null) {
                             page.corners = result.first
                             page.mode = result.second
-                            page.processedBitmapCache = result.third
+                            page.updateCaches(result.third)
                         } else {
                             page.corners = null
+                            page.mode = DocumentScanner.DocumentMode.ORIGINAL
+                            page.updateCaches(sourceBitmap)
                         }
                         persistSession()
                         updateUi()
@@ -1022,7 +1026,9 @@ class DocumentScannerController(
                                 ScannedPage(
                                     sourceUri = uri,
                                     originalBitmapCache = bmp,
-                                    processedBitmapCache = bmp
+                                    processedBitmapCache = bmp,
+                                    renderedVersion = -1L,
+                                    persistedRenderVersion = -1L
                                 )
                             )
                         }
@@ -1062,6 +1068,7 @@ class DocumentScannerController(
         val origBmp = page.getOriginalBitmap(activity) ?: return
         val targetVersion = ++page.editVersion
         val pageId = page.id
+        val renderSnapshot = page.copy(corners = page.corners?.map { Point(it.x, it.y) })
 
         val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(origBmp.width, origBmp.height, 3)
         scope.launch {
@@ -1073,23 +1080,24 @@ class DocumentScannerController(
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()
-                page.render(activity, ctx, updateCaches = false)
+                renderSnapshot.render(activity, ctx, updateCaches = false)
             }
 
             job.await().fold(
                 onOk = { renderedBmp ->
-                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
-                        if (renderedBmp != null) {
-                            page.updateCaches(renderedBmp)
-                        }
+                    if (session.pages.any { it === page } && page.editVersion == targetVersion && renderedBmp != null) {
+                        page.updateCaches(renderedBmp)
                         persistSession()
                         updateUi()
-                        onComplete?.invoke()
+                        if (session.currentPage?.id == pageId) onComplete?.invoke()
+                    } else {
+                        renderedBmp?.takeUnless { it === origBmp || it.isRecycled }?.recycle()
                     }
                 },
                 onErr = { err ->
                     android.util.Log.w("VeilFrame.DocScanner", "Render failed for page $pageId: ${err.message}")
                     if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
+                        Toast.makeText(activity, "Page edits not applied: ${err.message}", Toast.LENGTH_LONG).show()
                         updateUi()
                     }
                 }
