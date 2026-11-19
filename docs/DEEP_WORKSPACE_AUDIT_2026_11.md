@@ -18,7 +18,7 @@ Static findings; revalidate against branch before editing. Mark each item implem
 | D09 | Stale source selection | BackgroundRemoverController.kt | Open |
 | D10 | Bitmap export ownership | BackgroundRemoverController.kt | Open |
 | D11 | Compression semantic loss | PdfCompressor.kt | Open |
-| D12 | Shared compression cache deletion | PdfCompressor.kt | Open |
+| D12 | Shared compression cache deletion | PdfCompressor.kt | Implemented; tests pending |
 | D13 | DOCX silent text fallback | OfficeConverter.kt | Implemented; tests pending |
 | D14 | Scanner silent perspective fallback | DocumentSession.kt | Open |
 | D15 | Nonatomic session manifest | DocumentSession.kt | Implemented; tests pending |
@@ -44,3 +44,5 @@ No fixes yet. This ledger precedes implementation.
 - D18: roll back incomplete Motion Lab gallery exports and check finalization. Code commit `8490a1b4fe844dd30c8be53d2c1fccd802f118ab`. Tests pending.
 
 - D13: reject silent DOCX plain-text substitution and preserve cancellation. Code commit `a7d4302e7b9f82334b18d94bb59841d9eee6b0a2`. Tests pending.
+
+- D12: isolate compression scratch files in unique operation directories; retain only returned fallback. Code commit `a400c127ee48431e7bd00153656e55b997bdf20d`. Tests pending.
