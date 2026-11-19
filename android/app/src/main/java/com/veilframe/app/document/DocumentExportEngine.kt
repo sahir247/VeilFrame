@@ -150,8 +150,7 @@ object DocumentExportEngine {
         currentCoroutineContext().ensureActive()
         val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
-        val exportBitmap = page.openBitmapForExport(context)
-            ?: throw IllegalStateException("Page bitmap could not be decoded")
+        val exportBitmap = requireExportBitmap(context, page, pageIndex)
 
         exportBitmap.use { owned ->
             val bmp = owned.bitmap
@@ -200,8 +199,7 @@ object DocumentExportEngine {
         try {
             for ((index, page) in session.pages.withIndex()) {
                 currentCoroutineContext().ensureActive()
-                val exportBitmap = page.openBitmapForExport(context)
-                    ?: throw IOException("Unable to decode page ${index + 1}")
+                val exportBitmap = requireExportBitmap(context, page, index)
                 exportBitmap.use { owned ->
                     val bmp = owned.bitmap
                     val (pageW, pageH) = resolvePageDimensions(bmp, options)
@@ -228,8 +226,7 @@ object DocumentExportEngine {
         ZipOutputStream(FileOutputStream(outFile).buffered()).use { zos ->
             for ((index, page) in session.pages.withIndex()) {
                 currentCoroutineContext().ensureActive()
-                val exportBitmap = page.openBitmapForExport(context)
-                    ?: throw IOException("Unable to decode page ${index + 1}")
+                val exportBitmap = requireExportBitmap(context, page, index)
                 exportBitmap.use { owned ->
                     val bmp = owned.bitmap
                     val singlePdf = PdfDocument()
@@ -268,8 +265,7 @@ object DocumentExportEngine {
         ZipOutputStream(FileOutputStream(outFile).buffered()).use { zos ->
             for ((index, page) in session.pages.withIndex()) {
                 currentCoroutineContext().ensureActive()
-                val exportBitmap = page.openBitmapForExport(context)
-                    ?: throw IOException("Unable to decode page ${index + 1}")
+                val exportBitmap = requireExportBitmap(context, page, index)
                 exportBitmap.use { owned ->
                     val bmp = owned.bitmap
                     val entryName = "Page_${index + 1}.$ext"
@@ -301,8 +297,7 @@ object DocumentExportEngine {
         try {
             for ((index, page) in session.pages.withIndex()) {
                 currentCoroutineContext().ensureActive()
-                val exportBitmap = page.openBitmapForExport(context)
-                    ?: throw IOException("Unable to decode page ${index + 1}")
+                val exportBitmap = requireExportBitmap(context, page, index)
                 exportBitmap.use { owned ->
                     val bmp = owned.bitmap
                     val outFile = File(exportDir, "${baseTitle}_page_${index + 1}_$timestamp.$ext")
@@ -318,6 +313,17 @@ object DocumentExportEngine {
         } catch (failure: Throwable) {
             files.forEach { it.delete() }
             throw failure
+        }
+    }
+
+    private fun requireExportBitmap(context: Context, page: ScannedPage, index: Int): ExportPageBitmap {
+        try {
+            return page.openBitmapForExport(context)
+                ?: throw IOException("No renderable bitmap")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            throw IOException("Unable to render page ${index + 1}: ${failure.message ?: failure.javaClass.simpleName}", failure)
         }
     }
 

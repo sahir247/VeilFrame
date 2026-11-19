@@ -167,3 +167,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A15 — Versioned scanner persistence and observable recovery failure
 
 - New originals stored losslessly; processed image and thumbnail generation paths are immutable until a single atomic manifest commits them. Snapshot page metadata/corners, update live cache paths only when edit revision still matches, and remove only obsolete generation-scoped processed caches after commit (originals retained; missing cache can re-render). Unchanged saved revisions do not re-encode. Save returns explicit success/failure; scanner alerts user about failed recovery persistence and activity restoration only records a recoverable manifest. Cross-instance locking, full UI-thread snapshot ordering and process-death fault-injection remain pending, so A15 PARTIAL. Device/CI tests pending.
+
+### A14 follow-up: page-specific failure diagnostics
+
+CI run 44620999275 / Android job 135902300549 executed 1,368 tests with one failure, `DocumentExportEngineTest.failed zip page removes incomplete archive instead of reporting success`. The tightened renderer threw an IOException lacking the page index. All five export routes now wrap page acquisition failures with the exact page number and cause; cancellation remains unwrapped. The existing cleanup regression assertion is unchanged. Re-run required.
