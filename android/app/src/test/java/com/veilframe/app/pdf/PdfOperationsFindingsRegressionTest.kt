@@ -75,9 +75,7 @@ class PdfOperationsFindingsRegressionTest {
         assertEquals(3, acroForm.fields.size)
 
         val flattener = PdfFlattener()
-        val method = PdfFlattener::class.java.getDeclaredMethod("flattenForms", PDDocument::class.java)
-        method.isAccessible = true
-        val flattenedCount = method.invoke(flattener, doc) as Int
+        val flattenedCount = flattener.flattenForms(doc)
 
         // Finding 10 verification: Before the fix, acroForm.fields.size was evaluated AFTER
         // acroForm.flatten() emptied the list, always returning 0. Now it correctly returns 3.

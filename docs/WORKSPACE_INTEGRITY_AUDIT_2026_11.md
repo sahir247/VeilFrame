@@ -151,3 +151,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A14 — Fail selected scanner transformations and distinguish render revisions
 
 - Invalid or failed selected crop no longer silently exports an unwarped image. Propagate warmth/filter failures and clean intermediate bitmap allocations. Detached preview render snapshot and version-checked acceptance reject superseded results; dispose discarded results. Report render failures on the active page. Processed preview/disk cache reuse for export is restricted to matching edit revisions; manifests do not claim old processed files match current edits. Initial imports mark unprocessed previews explicitly. The export fallback re-renders or fails rather than returning an unprocessed original. Persistent generation transaction, background auto-crop ordering and device acceptance remain open; A14 PARTIAL.
+
+### A06 — CI feedback and visible-widget preflight
+
+- Actual Android job 135896920460 reported one failure out of 1,365 tests: `NoSuchMethodException` in `PdfOperationsFindingsRegressionTest:78`. Kotlin internal function name mangling invalidated the old reflection call, not the flatten assertion. Use the existing test's direct internal API, retaining both count and empty-form assertions. Restrict appearance refresh to attached visible fields that require regeneration; reject XFA and missing visible appearances before removing widgets. Re-run CI to validate the actual flatten behavior; no test skipped or weakened.

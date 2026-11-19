@@ -202,12 +202,33 @@ class PdfFlattener {
     internal fun flattenForms(document: PDDocument): Int {
         val form = document.documentCatalog.acroForm ?: return 0
         if (form.fields.isEmpty()) return 0
-        val total = form.fieldTree.count()
-        // Refresh appearances before flattening so filled values are visible.
-        form.refreshAppearances()
+        if (form.hasXFA()) throw IOException("XFA form flattening is not supported")
+        val fields = form.fieldTree.toList()
+        val attached = document.pages.flatMap { page -> page.annotations.map { it.cosObject } }.toSet()
+        // Do not regenerate unplaced fields, such as document-level hidden values.
+        // Preserve valid original appearance streams unless the source requests refresh.
+        val visibleFields = fields.filter { field ->
+            field.widgets.any { widget ->
+                widget.cosObject in attached && !widget.isHidden && !widget.isInvisible
+            }
+        }
+        val refresh = visibleFields.filter { field ->
+            form.needAppearances || field.widgets.any { it.cosObject in attached && it.normalAppearanceStream == null }
+        }
+        if (refresh.isNotEmpty()) form.refreshAppearances(refresh)
+        for (field in visibleFields) {
+            for (widget in field.widgets) {
+                if (widget.cosObject !in attached || widget.isHidden || widget.isInvisible) continue
+                val box = widget.normalAppearanceStream?.bBox
+                if (box == null || box.width <= 0f || box.height <= 0f) {
+                    throw IOException("Cannot preserve visible form field appearance: ${field.fullyQualifiedName}")
+                }
+            }
+        }
+        form.setNeedAppearances(false)
         form.flatten()
         if (form.fields.isNotEmpty()) throw IOException("Some form fields could not be flattened")
-        return total
+        return fields.size
     }
 
     /**
