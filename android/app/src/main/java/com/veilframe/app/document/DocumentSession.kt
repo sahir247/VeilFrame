@@ -366,46 +366,54 @@ data class ScannedPage(
     }
 
     fun saveBitmapsToDisk(context: Context, sessionDir: File) {
-        sessionDir.mkdirs()
-        // Save original bitmap if present and not on disk
-        val origFile = File(sessionDir, "page_${id}_orig.jpg")
-        if (originalBitmapCache != null && !originalBitmapCache!!.isRecycled) {
-            if (!origFile.exists() || originalImagePath.isEmpty()) {
+        check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
+        // The original is an immutable source for all later edits. Keep existing legacy
+        // paths; new originals are stored losslessly rather than recompressed to JPEG.
+        if (originalImagePath.isBlank() || !File(originalImagePath).isFile) {
+            val source = originalBitmapCache?.takeUnless { it.isRecycled }
+                ?: throw java.io.IOException("Original page image unavailable")
+            val origFile = File(sessionDir, "page_${id}_orig.png")
+            if (!origFile.isFile) {
                 writeSessionFileAtomically(origFile) { fos ->
-                    check(originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)) { "Original page encoding failed" }
+                    check(source.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Original page encoding failed" }
                 }
-                originalImagePath = origFile.absolutePath
             }
+            originalImagePath = origFile.absolutePath
         }
 
-        // Save processed bitmap if present
-        if (renderedVersion == editVersion && processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
-            val procFile = File(sessionDir, "page_${id}_proc.png")
+        val processed = processedBitmapCache?.takeUnless { it.isRecycled }
+        if (renderedVersion != editVersion || processed == null) return
+        if (persistedRenderVersion == editVersion &&
+            processedImagePath?.let { File(it).isFile } == true &&
+            thumbnailPath?.let { File(it).isFile } == true) return
+
+        // A committed manifest must never reference a file being overwritten by a
+        // later, potentially failed, version. Only publish these new paths together.
+        val generation = UUID.randomUUID().toString()
+        val procFile = File(sessionDir, "page_${id}_proc_$generation.png")
+        val thumbFile = File(sessionDir, "page_${id}_thumb_$generation.jpg")
+        val existingThumb = thumbnailBitmapCache?.takeUnless { it.isRecycled }
+        val thumb = existingThumb ?: run {
+            val scale = (200f / processed.width.coerceAtLeast(processed.height)).coerceAtMost(1f)
+            Bitmap.createScaledBitmap(processed, (processed.width * scale).toInt().coerceAtLeast(1),
+                (processed.height * scale).toInt().coerceAtLeast(1), true)
+        }
+        try {
             writeSessionFileAtomically(procFile) { fos ->
-                check(processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Processed page encoding failed" }
+                check(processed.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Processed page encoding failed" }
+            }
+            writeSessionFileAtomically(thumbFile) { fos ->
+                check(thumb.compress(Bitmap.CompressFormat.JPEG, 80, fos)) { "Page thumbnail encoding failed" }
             }
             processedImagePath = procFile.absolutePath
+            thumbnailPath = thumbFile.absolutePath
             persistedRenderVersion = renderedVersion
-
-            // Save thumbnail
-            val thumbFile = File(sessionDir, "page_${id}_thumb.jpg")
-            val thumbBmp = thumbnailBitmapCache ?: run {
-                val maxThumbDim = 200
-                val scale = (maxThumbDim.toFloat() / processedBitmapCache!!.width.coerceAtLeast(processedBitmapCache!!.height)).coerceAtMost(1f)
-                val thumbW = (processedBitmapCache!!.width * scale).toInt().coerceAtLeast(1)
-                val thumbH = (processedBitmapCache!!.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(processedBitmapCache!!, thumbW, thumbH, true)
-            }
-            try {
-                writeSessionFileAtomically(thumbFile) { fos ->
-                    check(thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)) { "Page thumbnail encoding failed" }
-                }
-                thumbnailPath = thumbFile.absolutePath
-            } finally {
-                if (thumbBmp !== thumbnailBitmapCache && thumbBmp !== processedBitmapCache && !thumbBmp.isRecycled) {
-                    thumbBmp.recycle()
-                }
-            }
+        } catch (failure: Throwable) {
+            procFile.delete()
+            thumbFile.delete()
+            throw failure
+        } finally {
+            if (thumb !== existingThumb && thumb !== processed && !thumb.isRecycled) thumb.recycle()
         }
     }
 }
@@ -557,12 +565,20 @@ class DocumentSession(
     // =========================================================================
 
     @Synchronized
-    fun saveToDisk(context: Context) {
+    fun saveToDisk(context: Context): Boolean {
+        val sessionId = id
         try {
-            val sessionDir = getSessionDirectory(context, id)
-            sessionDir.mkdirs()
+            val sessionDir = getSessionDirectory(context, sessionId)
+            check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
 
-            val pagesSnapshot = synchronized(_pages) { _pages.toList() }
+            val pagePairs = synchronized(_pages) {
+                _pages.map { page -> page to page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) }) }
+            }
+            val pagesSnapshot = pagePairs.map { it.second }
+            val snapshotTitle = title
+            val snapshotCreated = createdAt
+            val snapshotModified = lastModifiedAt
+            val snapshotActive = activePageIndex.coerceIn(0, (pagesSnapshot.size - 1).coerceAtLeast(0))
 
             // 1. Save all page images to session folder
             for (page in pagesSnapshot) {
@@ -571,11 +587,11 @@ class DocumentSession(
 
             // 2. Write session JSON manifest
             val json = JSONObject().apply {
-                put("id", id)
-                put("title", title)
-                put("createdAt", createdAt)
-                put("lastModifiedAt", lastModifiedAt)
-                put("activePageIndex", activePageIndex)
+                put("id", sessionId)
+                put("title", snapshotTitle)
+                put("createdAt", snapshotCreated)
+                put("lastModifiedAt", snapshotModified)
+                put("activePageIndex", snapshotActive)
 
                 val pagesArray = JSONArray()
                 for (page in pagesSnapshot) {
@@ -620,8 +636,33 @@ class DocumentSession(
             writeSessionFileAtomically(manifestFile) { stream ->
                 stream.write(json.toString().toByteArray(Charsets.UTF_8))
             }
+            // Hand committed paths back only to still-current page objects.
+            if (id == sessionId) synchronized(_pages) {
+                for ((live, saved) in pagePairs) {
+                    if (_pages.none { it === live }) continue
+                    if (live.originalImagePath.isBlank()) live.originalImagePath = saved.originalImagePath
+                    if (live.editVersion == saved.editVersion) {
+                        live.processedImagePath = saved.processedImagePath
+                        live.thumbnailPath = saved.thumbnailPath
+                        live.persistedRenderVersion = saved.persistedRenderVersion
+                    }
+                }
+            }
+            // Delete only obsolete generation-scoped render caches. Originals and
+            // legacy paths are never deleted by this maintenance pass. If an export
+            // races a removed cache, it can re-render from the retained original.
+            val retained = pagesSnapshot.flatMap { listOfNotNull(it.processedImagePath, it.thumbnailPath) }.toHashSet()
+            if (id == sessionId) synchronized(_pages) {
+                retained.addAll(_pages.flatMap { listOfNotNull(it.processedImagePath, it.thumbnailPath) })
+            }
+            val generated = Regex("""page_.+_(?:proc|thumb)_[0-9a-fA-F-]{36}\.(?:png|jpg)""")
+            sessionDir.listFiles()?.forEach { file ->
+                if (generated.matches(file.name) && file.absolutePath !in retained) file.delete()
+            }
+            return true
         } catch (e: Exception) {
-            Log.e("DocumentSession", "Could not persist session $id; last committed manifest retained", e)
+            Log.e("DocumentSession", "Could not persist session $sessionId; last committed manifest retained", e)
+            return false
         }
     }
 

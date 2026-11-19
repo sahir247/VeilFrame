@@ -1331,7 +1331,10 @@ class DocumentScannerController(
 
     private fun persistSession() {
         scope.launch(Dispatchers.IO) {
-            session.saveToDisk(activity)
+            val saved = session.saveToDisk(activity)
+            if (!saved) withContext(Dispatchers.Main) {
+                Toast.makeText(activity, "Document changes could not be saved for recovery. Keep this session open or export your document.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

@@ -163,3 +163,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A31 — Distinguish no recognized text from failed recognition
 
 - Image OCR outcome carries explicit TEXT_FOUND, NO_TEXT, INCOMPLETE or FAILED; failed wrapper/direct paths cannot masquerade as a successful blank recognition. Direct decode failure is an error. Existing reachable PDF Extract Text UI already distinguishes thrown recognition errors from genuinely empty output; switched that caller to temp-file PDFBox load and memory-bounded DPI. Source search found no current caller of the single-image outcome method outside its definition; it retains typed status for future callers. CI for these changes and device/task fault-injection pending.
+
+### A15 — Versioned scanner persistence and observable recovery failure
+
+- New originals stored losslessly; processed image and thumbnail generation paths are immutable until a single atomic manifest commits them. Snapshot page metadata/corners, update live cache paths only when edit revision still matches, and remove only obsolete generation-scoped processed caches after commit (originals retained; missing cache can re-render). Unchanged saved revisions do not re-encode. Save returns explicit success/failure; scanner alerts user about failed recovery persistence and activity restoration only records a recoverable manifest. Cross-instance locking, full UI-thread snapshot ordering and process-death fault-injection remain pending, so A15 PARTIAL. Device/CI tests pending.

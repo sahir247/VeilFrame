@@ -1474,8 +1474,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (::docScannerController.isInitialized && !docScannerController.session.isEmpty) {
-            docScannerController.session.saveToDisk(this)
-            outState.putString(KEY_DOC_SCANNER_SESSION_ID, docScannerController.session.sessionId)
+            val saved = docScannerController.session.saveToDisk(this)
+            if (saved || File(
+                    com.veilframe.app.document.DocumentSession.getSessionDirectory(this, docScannerController.session.sessionId),
+                    "manifest.json"
+                ).isFile) {
+                outState.putString(KEY_DOC_SCANNER_SESSION_ID, docScannerController.session.sessionId)
+            }
         }
         if (::backgroundRemoverController.isInitialized) {
             backgroundRemoverController.currentSourceUri?.let {
