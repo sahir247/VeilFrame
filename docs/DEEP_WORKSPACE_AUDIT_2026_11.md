@@ -24,7 +24,7 @@ Static findings; revalidate against branch before editing. Mark each item implem
 | D15 | Nonatomic session manifest | DocumentSession.kt | Implemented; tests pending |
 | D16 | Heuristic secret masking coverage | AiBundleEngine.kt | Open |
 | D17 | Bundle JSON escaping, omissions, memory and token estimate | AiBundleEngine.kt | Open |
-| D18 | Failed Motion Lab MediaStore cleanup | MotionLabController.kt | Open |
+| D18 | Failed Motion Lab MediaStore cleanup | MotionLabController.kt | Implemented; tests pending |
 
 ## Additional verification tasks
 
@@ -40,3 +40,5 @@ No fixes yet. This ledger precedes implementation.
 - D01: reject missing searchable PDF destination stream. Code commit `04c9ede61917a0629a4d2a782e22c532f8d3655b`. Verification pending.
 
 - D15: atomically replace session manifest (partial: recovery and failure reporting remain). Code commit `373f0933ab639d31c8053b38a3dfb775ae992a20`. Verification pending.
+
+- D18: roll back incomplete Motion Lab gallery exports and check finalization. Code commit `8490a1b4fe844dd30c8be53d2c1fccd802f118ab`. Tests pending.
