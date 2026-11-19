@@ -805,8 +805,7 @@ class PdfCompressor {
                     }
                 } catch (t: Throwable) {
                     if (t is CancellationException) throw t
-                    android.util.Log.e("PdfCompressor", "Error rendering page $pageIndex", t)
-                    // We trapped the error, preventing the app from writing empty bytes silently to the next page stream.
+                    throw java.io.IOException("Cannot rasterize PDF page ${pageIndex + 1}; refusing incomplete output", t)
                 } finally {
                     page?.close()
                     // Recycle the bitmap explicitly at the end of every page processing iteration
