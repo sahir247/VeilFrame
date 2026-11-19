@@ -25,6 +25,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Defines compression levels for PDF compression.
@@ -100,6 +102,12 @@ data class CompressionProfile(
  */
 class PdfCompressor {
 
+    private fun createOperationDirectory(context: Context): File {
+        val root = File(context.cacheDir, "compress_cache")
+        check(root.isDirectory || root.mkdirs() || root.isDirectory) { "Cannot create PDF compression cache" }
+        return Files.createTempDirectory(root.toPath(), "operation_").toFile()
+    }
+
     /**
      * Quick check: does this PDF have any embedded raster images?
      * Used to decide compression strategy without loading the full document.
@@ -151,15 +159,14 @@ class PdfCompressor {
     ): Result<CompressionResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         var tempFile: File? = null
-        var preservedFallbackFile: File? = null
-        val cacheDir = File(context.cacheDir, "compress_cache")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
-
+        var operationDir: File? = null
         try {
             ensureActive()
             onProgress(0.05f)
 
-            tempFile = File(cacheDir, "temp_target_compress_${System.currentTimeMillis()}.pdf")
+            operationDir = createOperationDirectory(context)
+            val cacheDir = operationDir
+            tempFile = File(cacheDir, "source.pdf")
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
@@ -201,7 +208,6 @@ class PdfCompressor {
                 val currentProgress = 0.05f + 0.85f * (iterationCount.toFloat() / maxIterations)
                 onProgress(currentProgress)
 
-                val iterationFile = File(cacheDir, "iter_${iterationCount}_${System.currentTimeMillis()}.pdf")
                 val profile = profileFromSlider(mid) ?: profileFromLevel(CompressionLevel.MEDIUM)
 
                 var currentStrategy = CompressionStrategy.IMAGE_OPTIMIZATION
@@ -276,15 +282,23 @@ class PdfCompressor {
                     )
                 } else {
                     // Let the caller handle the failure or fallback
-                    preservedFallbackFile = bestFile
+                    // Transfer the best candidate out of the operation directory.
+                    // The exception's recipient owns this one independently named file.
+                    val fallback = File.createTempFile("compress_fallback_", ".pdf", context.cacheDir)
+                    try {
+                        Files.move(bestFile.toPath(), fallback.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    } catch (failure: Exception) {
+                        fallback.delete()
+                        throw failure
+                    }
                     Result.failure(
                         TargetSizeNotReachedException(
                             message = "Could not reach target size. Smallest possible size is ${bestSize} bytes.",
                             smallestAchievableSize = bestSize,
-                            fallbackFile = bestFile,
+                            fallbackFile = fallback,
                             originalSize = originalSize,
                             strategyUsed = bestStrategy,
-                            pagesProcessed = countPages(bestFile)
+                            pagesProcessed = countPages(fallback)
                         )
                     )
                 }
@@ -297,14 +311,7 @@ class PdfCompressor {
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         } finally {
-            tempFile?.delete()
-            // Clean up any remaining iteration files in cacheDir that start with temp_target_compress or iter_,
-            // but preserve fallbackFile if returned in TargetSizeNotReachedException.
-            cacheDir.listFiles()?.forEach { file ->
-                if (file != preservedFallbackFile && (file.name.startsWith("iter_") || file.name.startsWith("temp_target_compress_"))) {
-                    file.delete()
-                }
-            }
+            operationDir?.deleteRecursively()
         }
     }
 
@@ -318,6 +325,7 @@ class PdfCompressor {
     ): Result<CompressionResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         var tempFile: File? = null
+        var operationDir: File? = null
         val profile = profileFromSlider(qualityPercent) ?: profileFromLevel(level)
         
         try {
@@ -325,9 +333,8 @@ class PdfCompressor {
             onProgress(0.05f)
             
             // Create a temp file to avoid loading everything into memory
-            val cacheDir = File(context.cacheDir, "compress_cache")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_compress_${System.currentTimeMillis()}.pdf")
+            operationDir = createOperationDirectory(context)
+            tempFile = File(operationDir, "source.pdf")
 
             // Copy URI content to temp file
             context.contentResolver.openInputStream(inputUri)?.use { input ->
@@ -441,7 +448,7 @@ class PdfCompressor {
                 )
             )
         } finally {
-            tempFile?.delete()
+            operationDir?.deleteRecursively()
         }
     }
     
@@ -512,7 +519,7 @@ class PdfCompressor {
         onProgress: (Float) -> Unit
     ): File? {
         var document: PDDocument? = null
-        val outputFile = File(context.cacheDir, "opt_${System.currentTimeMillis()}.pdf")
+        val outputFile = File.createTempFile("opt_", ".pdf", inputFile.parentFile)
         
         return try {
             // Use MemoryUsageSetting to enable temp file buffering instead of full memory load
@@ -741,7 +748,7 @@ class PdfCompressor {
         var outputDocument: PDDocument? = null
         var androidRenderer: android.graphics.pdf.PdfRenderer? = null
         var pfd: android.os.ParcelFileDescriptor? = null
-        val outputFile = File(context.cacheDir, "rerender_${System.currentTimeMillis()}.pdf")
+        val outputFile = File.createTempFile("rerender_", ".pdf", inputFile.parentFile)
         
         return try {
             // A. Seekable File Descriptors
@@ -909,15 +916,15 @@ class PdfCompressor {
     ): Result<TargetSizeResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         var tempFile: File? = null
+        var operationDir: File? = null
 
         try {
             ensureActive()
             onProgress(0.05f)
 
             // Create a temp file to avoid loading everything into memory
-            val cacheDir = File(context.cacheDir, "compress_cache")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_compress_${System.currentTimeMillis()}.pdf")
+            operationDir = createOperationDirectory(context)
+            tempFile = File(operationDir, "source.pdf")
 
             // Copy URI content to temp file
             context.contentResolver.openInputStream(inputUri)?.use { input ->
@@ -1038,7 +1045,7 @@ class PdfCompressor {
                 )
             )
         } finally {
-            tempFile?.delete()
+            operationDir?.deleteRecursively()
         }
     }
 
