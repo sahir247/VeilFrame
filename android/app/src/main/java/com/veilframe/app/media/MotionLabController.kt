@@ -766,8 +766,10 @@ class MotionLabController(
     private fun saveToGallery() {
         val out = outputFile ?: return
         scope.launch(Dispatchers.IO) {
+            val resolver = activity.contentResolver
+            var insertedUri: Uri? = null
+            var published = false
             try {
-                val resolver = activity.contentResolver
                 val fileName = out.name
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -784,20 +786,29 @@ class MotionLabController(
                 }
                 val uri = resolver.insert(collection, values)
                     ?: throw IllegalStateException("MediaStore insert refused")
+                insertedUri = uri
                 resolver.openOutputStream(uri)?.use { os -> out.inputStream().use { it.copyTo(os) } }
                     ?: throw IllegalStateException("openOutputStream returned null")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Video.Media.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
+                    check(resolver.update(uri, values, null, null) > 0) { "MediaStore publication failed" }
                 }
+                published = true
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Saved to Gallery (Movies/VeilFrame)", Toast.LENGTH_SHORT).show()
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Gallery save failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                if (!published) insertedUri?.let { uri ->
+                    runCatching { resolver.delete(uri, null, null) }
+                        .onFailure { Log.w(TAG, "Could not remove incomplete gallery entry", it) }
                 }
             }
         }

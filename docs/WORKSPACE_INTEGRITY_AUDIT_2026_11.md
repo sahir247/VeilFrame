@@ -34,7 +34,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A15 | P1 | OPEN | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
 | A16 | P1 | OPEN | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
 | A17 | P1 | OPEN | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
-| A18 | P2 | OPEN | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
+| A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
 | A19 | P1 | OPEN | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
 | A20 | P1 | OPEN | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
 | A21 | P1 | OPEN | Workspace resource lifecycle dispersed; retained inflated views | `workspace/WorkspaceHost.kt` | Trace navigation/controller ownership; cancel resources without breaking sessions. |
@@ -56,3 +56,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 - Required destination stream before writing; null stream now enters existing IO failure path instead of returning successful page count.
 - Source fix only; provider failure regression and Android CI pending. No claim of device validation.
+
+### A18 — rollback failed Motion Lab gallery exports
+
+- Track newly inserted row; require successful pending publication; remove incomplete row in finally including cancellation.
+- Source inspection only; Android CI and targeted regression acceptance pending.
