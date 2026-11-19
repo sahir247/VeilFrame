@@ -3,6 +3,11 @@ package com.veilframe.app.pdf.operations
 import android.content.Context
 import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.cos.COSBase
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSDictionary
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSObject
 import com.tom_roush.pdfbox.pdmodel.PDDocumentInformation
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import kotlinx.coroutines.Dispatchers
@@ -159,7 +164,32 @@ class PdfMetadataManager {
     }
     
     /**
-     * Remove all metadata from a PDF.
+     * Traverse the reachable COS graph, including page and resource dictionaries.
+     * Use identity tracking because indirect objects and page parent links can cycle.
+     */
+    internal fun stripMetadata(document: PDDocument) {
+        document.documentInformation = PDDocumentInformation()
+        val pending = java.util.ArrayDeque<COSBase>()
+        val visited = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<COSBase, Boolean>())
+        pending.add(document.documentCatalog.cosObject)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeLast()
+            if (!visited.add(node)) continue
+            when (node) {
+                is COSObject -> node.`object`?.let { pending.add(it) }
+                is COSDictionary -> {
+                    node.removeItem(COSName.METADATA)
+                    node.removeItem(COSName.getPDFName("PieceInfo"))
+                    for (key in node.keySet()) node.getItem(key)?.let { pending.add(it) }
+                }
+                is COSArray -> for (index in 0 until node.size()) node.get(index)?.let { pending.add(it) }
+            }
+        }
+    }
+
+    /**
+     * Remove the document information dictionary and reachable PDF Metadata and PieceInfo entries.
+     * This does not anonymize visible content, embedded files or every proprietary identifier.
      */
     suspend fun removeMetadata(
         context: Context,
@@ -182,9 +212,7 @@ class PdfMetadataManager {
             
             onProgress(0.4f)
             
-            // Clear all metadata
-            val info = PDDocumentInformation()
-            document.documentInformation = info
+            stripMetadata(document)
             
             onProgress(0.7f)
             
