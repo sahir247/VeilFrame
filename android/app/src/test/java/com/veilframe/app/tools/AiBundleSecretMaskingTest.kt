@@ -26,6 +26,17 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun excludesCredentialContainersWithoutDependingOnTextPatterns() {
+        listOf(".env", ".env.production", "ID_ED25519", "release.JKS", "service-account.json",
+            "keystore.properties", "private.pem", "client.p12", ".npmrc").forEach {
+            assertTrue(it, AiBundleEngine.isSensitiveFileName(it))
+        }
+        listOf(".env.example", "MainActivity.kt", "package.json", "readme.md").forEach {
+            assertFalse(it, AiBundleEngine.isSensitiveFileName(it))
+        }
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)

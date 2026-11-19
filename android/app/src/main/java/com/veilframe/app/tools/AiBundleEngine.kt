@@ -74,6 +74,17 @@ object AiBundleEngine {
         "cargo.lock", "pipfile.lock", "composer.lock", "packages.lock.json"
     )
 
+    // Credential containers should not enter the bundle merely because their contents
+    // do not match one of our text patterns. Masking remains opt-out, not a guarantee.
+    internal fun isSensitiveFileName(name: String): Boolean {
+        val lower = name.lowercase(Locale.ROOT)
+        if (lower == ".env.example") return false
+        return lower == ".env" || lower.startsWith(".env.") ||
+            lower in setOf("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "keystore.properties",
+                "credentials.json", "service-account.json", ".npmrc", ".netrc", ".pypirc") ||
+            lower.substringAfterLast('.', "") in setOf("pem", "key", "p12", "pfx", "jks", "keystore", "kdbx")
+    }
+
     fun maskSecrets(raw: String): String {
         var masked = raw
         for (pattern in SECRET_PATTERNS) {
@@ -142,6 +153,10 @@ object AiBundleEngine {
                     suspend fun include(uri: Uri, path: String, reportedSize: Long) {
                         currentCoroutineContext().ensureActive()
                         val name = path.substringAfterLast('/')
+                        if (config.maskSecrets && isSensitiveFileName(name)) {
+                            omit(path, "potential credential container (masking enabled)")
+                            return
+                        }
                         val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
                         if (ext in BINARY_EXTENSIONS) { omit(path, "binary file type"); return }
                         if (config.excludeTests && isTestFile(name, path)) { omit(path, "test filter"); return }

@@ -872,7 +872,7 @@ class MainActivity : AppCompatActivity() {
 
         // Result Card Direct Actions
         binding.btnResultSave.setOnClickListener { launchExportCurrentArtifact() }
-        binding.btnResultShare.setOnClickListener { toolExecutionController.shareLastResult() }
+        binding.btnResultShare.setOnClickListener { launchShareCurrentArtifact() }
         binding.btnResultPreview.setOnClickListener {
             val file = toolSessionManager.currentState.lastGeneratedFile
             if (file != null && file.exists()) {
@@ -885,7 +885,7 @@ class MainActivity : AppCompatActivity() {
 
         // Multi-Format Export Action (Save As to device storage)
         binding.btnExportResult.setOnClickListener { launchExportCurrentArtifact() }
-        binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
+        binding.btnShareResult.setOnClickListener { launchShareCurrentArtifact() }
     }
 
     internal fun handleHomeFileIntake(uri: Uri) {
@@ -952,10 +952,64 @@ class MainActivity : AppCompatActivity() {
     private fun launchExportCurrentArtifact() {
         val file = toolSessionManager.currentState.lastGeneratedFile
         if (file != null && file.exists()) {
-            val mimeType = safStorageManager.getExportMimeType(file)
-            launchers.launchExportDocument(file.name, mimeType)
+            reviewBundleBeforeTransfer(file, "Save") {
+                val mimeType = safStorageManager.getExportMimeType(file)
+                launchers.launchExportDocument(file.name, mimeType)
+            }
         } else {
             Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun launchShareCurrentArtifact() {
+        val file = toolSessionManager.currentState.lastGeneratedFile
+        if (file == null || !file.isFile) {
+            Toast.makeText(this, "No output artifact to share", Toast.LENGTH_SHORT).show()
+            return
+        }
+        reviewBundleBeforeTransfer(file, "Share") { toolExecutionController.shareLastResult() }
+    }
+
+    private fun reviewBundleBeforeTransfer(file: File, action: String, proceed: () -> Unit) {
+        if (toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE) {
+            proceed()
+            return
+        }
+        // Never send a bundle to another app for preview. Bound the initial local preview
+        // independently of project size and require explicit confirmation before transfer.
+        lifecycleScope.launch {
+            val preview = withContext(Dispatchers.IO) {
+                runCatching {
+                    file.bufferedReader(Charsets.UTF_8).use { reader ->
+                        val chars = CharArray(12001)
+                        var count = 0
+                        while (count < chars.size) {
+                            val n = reader.read(chars, count, chars.size - count)
+                            if (n <= 0) break
+                            count += n
+                        }
+                        String(chars, 0, minOf(count, 12000)) to (count > 12000)
+                    }
+                }.getOrNull()
+            }
+            if (isFinishing || isDestroyed || toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE ||
+                toolSessionManager.currentState.lastGeneratedFile != file) return@launch
+            if (preview == null) {
+                Toast.makeText(this@MainActivity, "Cannot inspect bundle; transfer cancelled", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val note = if (preview.second) "First 12,000 characters only. Review the remaining content before sharing."
+                else "Complete bundle preview."
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle("Review AI bundle")
+                .setMessage("Secret masking is heuristic and may have been disabled. Credentials, personal data, and confidential code can remain.\n\n" +
+                    note + "\n\n" + preview.first)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("$action anyway") { _, _ ->
+                    if (toolSessionManager.currentToolMode == ToolMode.AI_BUNDLE &&
+                        toolSessionManager.currentState.lastGeneratedFile == file && file.isFile) proceed()
+                }
+                .show()
         }
     }
 

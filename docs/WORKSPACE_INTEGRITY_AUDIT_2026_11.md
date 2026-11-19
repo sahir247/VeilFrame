@@ -171,3 +171,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A14 follow-up: page-specific failure diagnostics
 
 CI run 44620999275 / Android job 135902300549 executed 1,368 tests with one failure, `DocumentExportEngineTest.failed zip page removes incomplete archive instead of reporting success`. The tightened renderer threw an IOException lacking the page index. All five export routes now wrap page acquisition failures with the exact page number and cause; cancellation remains unwrapped. The existing cleanup regression assertion is unchanged. Re-run required.
+
+### A16 follow-up: defensive file exclusions and explicit transfer review
+
+Mask-enabled bundle generation now excludes known credential containers by case-insensitive filename, even if their contents do not match a secret regex, including single-file input. Omissions remain visible. All four workspace save/share buttons use a bounded on-device preview and explicit confirmation before handing the bundle to Android storage/share. Large previews explicitly show only the first 12,000 characters; unreadable bundles cannot be transferred through these controls. Added filename regression coverage. Full per-file review/edit workflow, broader detector validation, and device UX testing remain open; no claim of complete secret detection.
