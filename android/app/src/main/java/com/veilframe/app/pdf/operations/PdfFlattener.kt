@@ -265,44 +265,10 @@ class PdfFlattener {
      * Remove JavaScript from the document.
      */
     private fun removeJavaScript(document: PDDocument) {
-        try {
-            // Remove document-level JavaScript
-            val names = document.documentCatalog.names
-            if (names != null) {
-                // Try to set JavaScript to null
-                try {
-                    names.cosObject.removeItem(com.tom_roush.pdfbox.cos.COSName.JAVA_SCRIPT)
-                } catch (e: Exception) {
-                    // Ignore if cannot remove
-                }
-            }
-            
-            // Remove OpenAction only if it contains JavaScript, preserving navigation/destinations
-            try {
-                val openAction = document.documentCatalog.openAction
-                if (openAction is com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionJavaScript) {
-                    document.documentCatalog.setOpenAction(null)
-                }
-            } catch (e: Exception) {
-                // Ignore if cannot remove
-            }
-            
-        } catch (e: Exception) {
-            // JavaScript removal may fail for some documents
-        }
+        PdfActiveContentSanitizer.remove(document, javascript = true, attachments = false)
     }
-    
-    /**
-     * Remove embedded files from the document.
-     */
+
     private fun removeEmbeddedFiles(document: PDDocument) {
-        try {
-            val names = document.documentCatalog.names
-            if (names != null) {
-                names.embeddedFiles = null
-            }
-        } catch (e: Exception) {
-            // Embedded files removal may fail
-        }
+        PdfActiveContentSanitizer.remove(document, javascript = false, attachments = true)
     }
 }

@@ -23,7 +23,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A04 | P1 | PATCHED | OCR confidence fabricated (0.90 word / 0.85 page) | `pdf/operations/OcrEngine.kt:52; PdfOcrProcessor.kt:210` | Preserve unknown confidence and derive aggregates. |
 | A05 | P1 | PARTIAL | PDF metadata removal only clears Info dictionary | `pdf/operations/PdfMetadataManager.kt:162-196` | Clear catalog/page/resource metadata; verify saved output and scope. |
 | A06 | P1 | PARTIAL | Flattening can silently omit forms/annotations or remove undrawn annotation | `pdf/operations/PdfFlattener.kt:191-286` | Report incomplete work; preserve annotation until drawn successfully. |
-| A07 | P1 | OPEN | JavaScript/attachment removal limited to catalog entries | `pdf/operations/PdfFlattener.kt:292-331` | Inspect relevant COS graph; verify requested removal. |
+| A07 | P1 | PARTIAL | JavaScript/attachment removal limited to catalog entries | `pdf/operations/PdfFlattener.kt:292-331` | Inspect relevant COS graph; verify requested removal. |
 | A08 | P1 | PARTIAL | Background removal full-resolution claim contradicts 4096 cap | `cv/segmentation/rembg/CelBackgroundRemover.kt:35-38,81-112; RembgImageUtils.kt:18` | Disclose actual output size immediately; implement bounded original-resolution compositing. |
 | A09 | P1 | PATCHED | Background removal source import can publish stale result | `media/BackgroundRemoverController.kt:326-368` | Cancel prior import; generation-gate results and cleanup. |
 | A10 | P1 | PATCHED | Background removal export may race bitmap recycling | `media/BackgroundRemoverController.kt:1258-1430` | Protect captured bitmap lifetime across export/share/clipboard. |
@@ -138,3 +138,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A10 — Lease cutout pixels across asynchronous exports
 
 - Added identity-based resource leases with idempotent completion release. Sticker, save, clipboard and share acquire before scheduling, and retirement on source/model/refinement/discard paths defers recycling until all readers finish. Refine brush already copies pixels. Unique shared/clipboard files prevent overwrites; gallery publish failures are checked; stale share/clipboard/SAF result callbacks are gated by source generation. Added lease lifecycle unit fixtures. CI and device race acceptance pending; temporary-file retention policy remains a separate concern.
+
+### A07 — Traverse standard PDF active-content references
+
+- Replaced catalog-only best effort with identity-safe recursive COS graph processing and post-mutation verification. Remove standard JavaScript action references/name entries (including indirect and chained actions), associated/embedded file references and file-attachment annotations when requested, preserve unrelated navigation, fail on unsupported XFA rather than claim script removal. Added serialized/reloaded nested action and attachment fixture. This is reachable PDF-object sanitization, not a proof of removal of arbitrary opaque content or unreferenced bytes; full adversarial corpus and physical-byte checks pending. PARTIAL.
