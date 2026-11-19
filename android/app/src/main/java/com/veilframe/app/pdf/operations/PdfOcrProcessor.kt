@@ -9,7 +9,8 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
+import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.rendering.PDFRenderer
@@ -127,7 +128,6 @@ class PdfOcrProcessor(private val context: Context) {
     private companion object {
         private const val MAX_OCR_PIXELS = 4_000_000 // ~4MP per page
         private const val OCR_CHUNK_SIZE = 3
-        private const val MAX_WORDS_PER_PAGE = 1000
     }
     
     /**
@@ -315,6 +315,8 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(10)
             
             val renderer = PDFRenderer(document)
+            // One embedded subset per document, reused across all OCR pages.
+            val font = context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) }
             
             for (pageIndex in 0 until totalPages) {
                 ensureActive()
@@ -329,7 +331,7 @@ class PdfOcrProcessor(private val context: Context) {
                     val words = performOcrOnBitmap(pageImage)
 
                     if (words.isNotEmpty()) {
-                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, dpi)
+                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, font)
                     }
                 } finally {
                     pageImage.recycle()
@@ -621,43 +623,41 @@ class PdfOcrProcessor(private val context: Context) {
         words: List<OcrWord>,
         imageWidth: Int,
         imageHeight: Int,
-        dpi: Float
+        font: PDType0Font
     ) {
-        val cropBox = page.cropBox
-        val font = PDType1Font.HELVETICA
-
-        val contentStream = PDPageContentStream(
-            document,
-            page,
-            PDPageContentStream.AppendMode.APPEND,
-            true,
-            true
+        val crop = page.cropBox
+        val geometry = OcrPageGeometry(
+            crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height,
+            page.rotation, imageWidth, imageHeight
         )
-
-        try {
-            val graphicsState = PDExtendedGraphicsState()
-            graphicsState.nonStrokingAlphaConstant = 0f
-            contentStream.setGraphicsStateParameters(graphicsState)
-
-            val scale = 72f / dpi
-            for (word in words.take(MAX_WORDS_PER_PAGE)) {
-                val box = word.boundingBox ?: continue
-                val cleanText = word.text.filter { it.code < 256 }
-                if (cleanText.isBlank()) continue
-
-                val pdfX = cropBox.lowerLeftX + box.left * scale
-                val pdfY = cropBox.upperRightY - box.bottom * scale
-                val boxHeightPts = (box.bottom - box.top) * scale
-                val fontSize = (boxHeightPts * 0.8f).coerceIn(4f, 24f)
-
-                contentStream.beginText()
-                contentStream.setFont(font, fontSize)
-                contentStream.newLineAtOffset(pdfX, pdfY)
-                contentStream.showText(cleanText)
-                contentStream.endText()
+        PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
+            val graphics = PDExtendedGraphicsState()
+            graphics.nonStrokingAlphaConstant = 0f
+            stream.setGraphicsStateParameters(graphics)
+            for (word in words) {
+                if (word.text.isBlank()) continue
+                val box = word.boundingBox ?: throw IOException("OCR word has no positioning information")
+                val placement = geometry.place(box.left, box.top, box.right, box.bottom)
+                // Never silently remove characters. An unsupported font glyph fails the
+                // operation before the destination is opened.
+                val width = try {
+                    font.getStringWidth(word.text) / 1000f
+                } catch (e: IllegalArgumentException) {
+                    throw IOException("Searchable PDF font cannot encode all recognized characters", e)
+                }
+                if (!width.isFinite() || width <= 0f) throw IOException("Invalid OCR word width")
+                val fontSize = placement.height * 0.8f
+                val stretch = placement.width / (width * fontSize)
+                stream.beginText()
+                stream.setFont(font, fontSize)
+                stream.setTextMatrix(Matrix(
+                    placement.ux * stretch, placement.uy * stretch,
+                    -placement.uy, placement.ux,
+                    placement.x, placement.y
+                ))
+                stream.showText(word.text)
+                stream.endText()
             }
-        } finally {
-            contentStream.close()
         }
     }
 
