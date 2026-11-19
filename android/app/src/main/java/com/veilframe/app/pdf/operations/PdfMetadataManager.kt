@@ -5,6 +5,14 @@ import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDDocumentInformation
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSBase
+import com.tom_roush.pdfbox.cos.COSDictionary
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSObject
+import java.util.ArrayDeque
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -42,6 +50,38 @@ data class EditableMetadata(
     val creator: String? = null,
     val producer: String? = null
 )
+
+/**
+ * Removes the document Info dictionary and explicit PDF metadata/private
+ * application-data entries throughout the reachable catalog graph. This is
+ * not a content redactor; metadata within opaque image or attachment bytes
+ * is outside the scope of this operation.
+ */
+internal fun stripPdfMetadata(document: PDDocument) {
+    document.documentInformation = PDDocumentInformation()
+    val metadata = COSName.METADATA
+    val pieceInfo = COSName.getPDFName("PieceInfo")
+    val seen = Collections.newSetFromMap(IdentityHashMap<COSBase, Boolean>())
+    val pending = ArrayDeque<COSBase>()
+    pending.add(document.documentCatalog.cosObject)
+    while (pending.isNotEmpty()) {
+        val node = pending.removeLast()
+        if (!seen.add(node)) continue
+        when (node) {
+            is COSObject -> node.getObject()?.let { pending.add(it) }
+            is COSDictionary -> {
+                node.removeItem(metadata)
+                node.removeItem(pieceInfo)
+                for (key in node.keySet()) {
+                    node.getItem(key)?.let { pending.add(it) }
+                }
+            }
+            is COSArray -> for (index in 0 until node.size()) {
+                node.get(index)?.let { pending.add(it) }
+            }
+        }
+    }
+}
 
 /**
  * Handles PDF metadata operations (read/write).
@@ -159,7 +199,8 @@ class PdfMetadataManager {
     }
     
     /**
-     * Remove all metadata from a PDF.
+     * Remove PDF Info, XMP metadata streams and private application data entries.
+     * Does not redact visible text or metadata embedded inside attachment/image bytes.
      */
     suspend fun removeMetadata(
         context: Context,
@@ -182,9 +223,7 @@ class PdfMetadataManager {
             
             onProgress(0.4f)
             
-            // Clear all metadata
-            val info = PDDocumentInformation()
-            document.documentInformation = info
+            stripPdfMetadata(document)
             
             onProgress(0.7f)
             

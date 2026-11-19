@@ -21,7 +21,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A02 | P1 | OPEN | Searchable OCR strips Unicode | `pdf/operations/PdfOcrProcessor.kt:617-648` | Embed Unicode font and validate text extraction; no silent character loss. |
 | A03 | P1 | OPEN | OCR layer ignores page rotation and actual render dimensions | `pdf/operations/PdfOcrProcessor.kt:609-653` | Map pixel rectangles into crop/rotation-aware PDF coordinates. |
 | A04 | P1 | OPEN | OCR confidence fabricated (0.90 word / 0.85 page) | `pdf/operations/OcrEngine.kt:52; PdfOcrProcessor.kt:210` | Preserve unknown confidence and derive aggregates. |
-| A05 | P1 | OPEN | PDF metadata removal only clears Info dictionary | `pdf/operations/PdfMetadataManager.kt:162-196` | Clear catalog/page/resource metadata; verify saved output and scope. |
+| A05 | P1 | PARTIAL | PDF metadata removal only clears Info dictionary | `pdf/operations/PdfMetadataManager.kt:162-196` | Clear catalog/page/resource metadata; verify saved output and scope. |
 | A06 | P1 | OPEN | Flattening can silently omit forms/annotations or remove undrawn annotation | `pdf/operations/PdfFlattener.kt:191-286` | Report incomplete work; preserve annotation until drawn successfully. |
 | A07 | P1 | OPEN | JavaScript/attachment removal limited to catalog entries | `pdf/operations/PdfFlattener.kt:292-331` | Inspect relevant COS graph; verify requested removal. |
 | A08 | P1 | PARTIAL | Background removal full-resolution claim contradicts 4096 cap | `cv/segmentation/rembg/CelBackgroundRemover.kt:35-38,81-112; RembgImageUtils.kt:18` | Disclose actual output size immediately; implement bounded original-resolution compositing. |
@@ -81,3 +81,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 - Cancel superseded image imports, generation-check accepted results, atomically replace URI/bytes/preview on Main, recycle abandoned decoded bitmaps and invalidate pending imports on cleanup/discard. Refuse source switching during active removal and reject outdated dialog callbacks. File-backed import and export bitmap leases remain separate (A08/A10).
 - Rapid selection/back-navigation device regression and Android CI pending; full native-job cancellation audit remains A25.
+
+### A05 — Remove explicit PDF metadata recursively
+
+- Clear Info plus `/Metadata` and `/PieceInfo` throughout the reachable PDF catalog graph using identity-based traversal (cycles/shared dictionaries safe). Added save/reload regression for catalog, page, nested resource and Info entries. This intentionally does not claim anonymization of visible content, opaque image bytes, attachments or orphaned objects; scope wording and full physical-byte privacy validation remain open. CI has not executed the new fixture yet.
