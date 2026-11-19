@@ -36,7 +36,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A17 | P1 | OPEN | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
 | A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
 | A19 | P1 | OPEN | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
-| A20 | P1 | OPEN | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
+| A20 | P1 | PATCHED | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
 | A21 | P1 | OPEN | Workspace resource lifecycle dispersed; retained inflated views | `workspace/WorkspaceHost.kt` | Trace navigation/controller ownership; cancel resources without breaking sessions. |
 | A22 | P2 | OPEN | PRNU external attribution resistance not established | `cv/prnu/PrnuSanitizerEngine.kt` | Retain honest diagnostic wording; benchmark independently. |
 | A23 | P2 | OPEN | Stabilization real-world tracking quality and limitations | `cv/motion/VideoStabilizerEngine.kt` | Benchmark difficult footage and confidence behavior. |
@@ -60,4 +60,9 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A18 — rollback failed Motion Lab gallery exports
 
 - Track newly inserted row; require successful pending publication; remove incomplete row in finally including cancellation.
+- Source inspection only; Android CI and targeted regression acceptance pending.
+
+### A20 — distinguish manifest signature validity from signer trust
+
+- Explicitly state embedded-key signature validity does not establish trusted publisher identity or media authenticity. No trust bypass or verification change.
 - Source inspection only; Android CI and targeted regression acceptance pending.

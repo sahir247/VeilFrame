@@ -162,8 +162,8 @@ class ProvenanceController(
                     if (isVeilFrameArchive) {
                         if (manifestFound && manifestHasSignature) {
                             if (manifestSignatureValid == true) {
-                                binding.tvProvenanceEd25519Status.text = "Ed25519 Signature Verified"
-                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: Valid Ed25519 digital signature verified against embedded public key."
+                                binding.tvProvenanceEd25519Status.text = "Signature Valid (Signer Not Independently Trusted)"
+                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: valid against the embedded Ed25519 public key.\nSigner identity and media authenticity are not independently verified."
                             } else {
                                 binding.tvProvenanceEd25519Status.text = "Ed25519 Signature INVALID"
                                 binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: FAILED verification! Manifest may have been tampered with or signed by an unknown key."
