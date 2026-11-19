@@ -46,3 +46,5 @@ No fixes yet. This ledger precedes implementation.
 - D13: reject silent DOCX plain-text substitution and preserve cancellation. Code commit `a7d4302e7b9f82334b18d94bb59841d9eee6b0a2`. Tests pending.
 
 - D12: isolate compression scratch files in unique operation directories; retain only returned fallback. Code commit `a400c127ee48431e7bd00153656e55b997bdf20d`. Tests pending.
+
+- D19: abort incomplete raster compression instead of skipping or blanking failed pages. Code commit `b411deed7cd0248c6f0e1dcd6926fe42fb12002f`. Tests pending.
