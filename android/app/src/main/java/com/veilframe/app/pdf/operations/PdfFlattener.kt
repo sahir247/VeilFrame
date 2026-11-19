@@ -10,7 +10,9 @@ import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotation
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
 import com.tom_roush.pdfbox.rendering.PDFRenderer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
@@ -77,12 +79,10 @@ class PdfFlattener {
                     errorMessage = "Cannot open source PDF"
                 )
             
-            document = PDDocument.load(inputStream)
-            inputStream.close()
+            document = inputStream.use { PDDocument.load(it, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()) }
             
             val totalPages = document.numberOfPages
             if (totalPages == 0) {
-                document.close()
                 return@withContext FlattenResult(
                     success = false,
                     errorMessage = "PDF has no pages"
@@ -100,6 +100,7 @@ class PdfFlattener {
             // Flatten annotations on each page
             if (config.flattenAnnotations) {
                 for (pageIndex in 0 until totalPages) {
+                    ensureActive()
                     val page = document.getPage(pageIndex)
                     annotationsCount += flattenPageAnnotations(document, page)
                     
@@ -112,6 +113,7 @@ class PdfFlattener {
             if (config.rasterizeContent) {
                 val renderer = PDFRenderer(document)
                 for (pageIndex in 0 until totalPages) {
+                    ensureActive()
                     val page = document.getPage(pageIndex)
                     val dpi = OcrDpiUtil.getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
                     val bitmap = renderer.renderImageWithDPI(pageIndex, dpi)
@@ -147,6 +149,14 @@ class PdfFlattener {
             
             progressCallback(90)
             
+            // Verify requested interactivity removal before exposing a result.
+            if (config.flattenForms && document.documentCatalog.acroForm?.fields?.isNotEmpty() == true) {
+                throw IOException("Some form fields could not be flattened")
+            }
+            if (config.flattenAnnotations && document.pages.any { it.annotations.isNotEmpty() }) {
+                throw IOException("Some annotations could not be flattened")
+            }
+            ensureActive()
             // Save the flattened document
             val outputStream = context.contentResolver.openOutputStream(outputUri)
                 ?: return@withContext FlattenResult(
@@ -159,7 +169,6 @@ class PdfFlattener {
                 stream.flush()
             }
 
-            document.close()
             progressCallback(100)
 
             FlattenResult(
@@ -169,18 +178,20 @@ class PdfFlattener {
                 errorMessage = null
             )
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
-            document?.close()
             FlattenResult(
                 success = false,
                 errorMessage = "IO Error: ${e.message}"
             )
         } catch (e: Exception) {
-            document?.close()
             FlattenResult(
                 success = false,
                 errorMessage = "Error: ${e.message}"
             )
+        } finally {
+            document?.close()
         }
     }
     
@@ -188,104 +199,68 @@ class PdfFlattener {
      * Flatten all form fields in the document.
      * This renders the field values as regular text and removes the form interactivity.
      */
-    private fun flattenForms(document: PDDocument): Int {
-        val acroForm: PDAcroForm? = document.documentCatalog.acroForm
-        
-        if (acroForm == null || acroForm.fields.isEmpty()) {
-            return 0
-        }
-        
-        var count = 0
-        
-        try {
-            val totalFields = acroForm.fields.size
-            // Set NeedAppearances to false to ensure appearances are generated
-            acroForm.setNeedAppearances(false)
-            
-            // Flatten the form (which strips fields from acroForm.fields)
-            acroForm.flatten()
-            count = totalFields
-            
-        } catch (e: Exception) {
-            // Form flattening may fail for some complex forms
-            // Log and continue
-        }
-        
-        return count
+    internal fun flattenForms(document: PDDocument): Int {
+        val form = document.documentCatalog.acroForm ?: return 0
+        if (form.fields.isEmpty()) return 0
+        val total = form.fieldTree.count()
+        // Refresh appearances before flattening so filled values are visible.
+        form.refreshAppearances()
+        form.flatten()
+        if (form.fields.isNotEmpty()) throw IOException("Some form fields could not be flattened")
+        return total
     }
-    
+
     /**
      * Flatten annotations on a page.
      * This renders annotations into the page content stream.
      */
-    private fun flattenPageAnnotations(document: PDDocument, page: PDPage): Int {
-        val annotations = page.annotations ?: return 0
-        
-        if (annotations.isEmpty()) {
-            return 0
-        }
-        
-        var count = 0
-        val annotationsToRemove = mutableListOf<PDAnnotation>()
-        
+    internal fun flattenPageAnnotations(document: PDDocument, page: PDPage): Int {
+        val annotations = page.annotations.toList()
+        // Preflight all annotations: do not silently remove ones with missing geometry.
         for (annotation in annotations) {
-            try {
-                // Get the annotation appearance
-                val appearance = annotation.normalAppearanceStream
-                
-                if (appearance != null) {
-                    // Draw the annotation appearance onto the page
-                    val contentStream = PDPageContentStream(
-                        document,
-                        page,
-                        PDPageContentStream.AppendMode.APPEND,
-                        true,
-                        true
-                    )
-                    
-                    try {
-                        val rect = annotation.rectangle
-                        if (rect != null) {
-                            contentStream.saveGraphicsState()
-                            val matrix = com.tom_roush.pdfbox.util.Matrix()
-                            val bbox = appearance.bBox
-                            val scaleX = if (bbox != null && bbox.width > 0) rect.width / bbox.width else 1f
-                            val scaleY = if (bbox != null && bbox.height > 0) rect.height / bbox.height else 1f
-                            val tx = if (bbox != null) rect.lowerLeftX - bbox.lowerLeftX * scaleX else rect.lowerLeftX
-                            val ty = if (bbox != null) rect.lowerLeftY - bbox.lowerLeftY * scaleY else rect.lowerLeftY
-                            matrix.translate(tx, ty)
-                            matrix.scale(scaleX, scaleY)
-                            contentStream.transform(matrix)
-                            contentStream.drawForm(appearance)
-                            contentStream.restoreGraphicsState()
-                        }
-                    } finally {
-                        contentStream.close()
-                    }
-                    
-                    annotationsToRemove.add(annotation)
-                    count++
-                }
-            } catch (e: Exception) {
-                // Skip annotations that can't be flattened
-                continue
+            val rect = annotation.rectangle
+            val appearance = annotation.normalAppearanceStream
+            val bbox = appearance?.bBox
+            if (rect == null || appearance == null || bbox == null ||
+                rect.width <= 0f || rect.height <= 0f || bbox.width <= 0f || bbox.height <= 0f) {
+                throw IOException("Annotation cannot be flattened without valid geometry and an appearance; use a supported PDF")
             }
         }
-        
-        // Remove the flattened annotations from page
-        if (annotationsToRemove.isNotEmpty()) {
-            try {
-                val updatedAnnotations = annotations.toMutableList()
-                updatedAnnotations.removeAll(annotationsToRemove.toSet())
-                page.setAnnotations(updatedAnnotations)
-            } catch (e: Exception) {
-                // Ignore removal errors
+        for (annotation in annotations) {
+            val rect = annotation.rectangle
+            val appearance = annotation.normalAppearanceStream
+            val bbox = appearance.bBox
+            PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
+                stream.saveGraphicsState()
+                // PDF appearance streams may have a non-identity Matrix. Transform
+                // the four BBox corners into appearance space before fitting the Rect.
+                val m = appearance.matrix
+                val points = listOf(
+                    m.transformPoint(bbox.lowerLeftX, bbox.lowerLeftY),
+                    m.transformPoint(bbox.lowerLeftX, bbox.upperRightY),
+                    m.transformPoint(bbox.upperRightX, bbox.lowerLeftY),
+                    m.transformPoint(bbox.upperRightX, bbox.upperRightY)
+                )
+                val minX = points.minOf { it.x }
+                val minY = points.minOf { it.y }
+                val width = points.maxOf { it.x } - minX
+                val height = points.maxOf { it.y } - minY
+                if (!width.isFinite() || !height.isFinite() || width <= 0f || height <= 0f) throw IOException("Invalid annotation appearance transform")
+                val sx = rect.width / width
+                val sy = rect.height / height
+                stream.transform(com.tom_roush.pdfbox.util.Matrix(
+                    sx, 0f, 0f, sy,
+                    rect.lowerLeftX - minX * sx,
+                    rect.lowerLeftY - minY * sy
+                ))
+                stream.drawForm(appearance)
+                stream.restoreGraphicsState()
             }
         }
-        
-        return count
+        page.setAnnotations(emptyList())
+        return annotations.size
     }
-    
+
     /**
      * Remove JavaScript from the document.
      */
