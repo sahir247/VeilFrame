@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.AtomicFile
+import android.util.Log
 import com.veilframe.app.cv.document.DocumentScanner
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,6 +14,19 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.Closeable
 import java.util.UUID
+
+/** Keep replaced files readable if writing/encoding fails or the process dies. */
+private inline fun writeSessionFileAtomically(file: File, writer: (FileOutputStream) -> Unit) {
+    val atomic = AtomicFile(file)
+    val stream = atomic.startWrite()
+    try {
+        writer(stream)
+        atomic.finishWrite(stream)
+    } catch (failure: Throwable) {
+        atomic.failWrite(stream)
+        throw failure
+    }
+}
 
 /** Borrowed cached image or temporary export decode with explicit ownership. */
 internal class ExportPageBitmap(val bitmap: Bitmap, private val temporary: Boolean) : Closeable {
@@ -332,8 +347,8 @@ data class ScannedPage(
         val origFile = File(sessionDir, "page_${id}_orig.jpg")
         if (originalBitmapCache != null && !originalBitmapCache!!.isRecycled) {
             if (!origFile.exists() || originalImagePath.isEmpty()) {
-                FileOutputStream(origFile).use { fos ->
-                    originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                writeSessionFileAtomically(origFile) { fos ->
+                    check(originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)) { "Original page encoding failed" }
                 }
                 originalImagePath = origFile.absolutePath
             }
@@ -342,8 +357,8 @@ data class ScannedPage(
         // Save processed bitmap if present
         if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
             val procFile = File(sessionDir, "page_${id}_proc.png")
-            FileOutputStream(procFile).use { fos ->
-                processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)
+            writeSessionFileAtomically(procFile) { fos ->
+                check(processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Processed page encoding failed" }
             }
             processedImagePath = procFile.absolutePath
 
@@ -356,10 +371,16 @@ data class ScannedPage(
                 val thumbH = (processedBitmapCache!!.height * scale).toInt().coerceAtLeast(1)
                 Bitmap.createScaledBitmap(processedBitmapCache!!, thumbW, thumbH, true)
             }
-            FileOutputStream(thumbFile).use { fos ->
-                thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)
+            try {
+                writeSessionFileAtomically(thumbFile) { fos ->
+                    check(thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)) { "Page thumbnail encoding failed" }
+                }
+                thumbnailPath = thumbFile.absolutePath
+            } finally {
+                if (thumbBmp !== thumbnailBitmapCache && thumbBmp !== processedBitmapCache && !thumbBmp.isRecycled) {
+                    thumbBmp.recycle()
+                }
             }
-            thumbnailPath = thumbFile.absolutePath
         }
     }
 }
@@ -510,6 +531,7 @@ class DocumentSession(
     // DISK PERSISTENCE LAYER (Process-Death Survival)
     // =========================================================================
 
+    @Synchronized
     fun saveToDisk(context: Context) {
         try {
             val sessionDir = getSessionDirectory(context, id)
@@ -570,9 +592,11 @@ class DocumentSession(
             }
 
             val manifestFile = File(sessionDir, "manifest.json")
-            manifestFile.writeText(json.toString())
+            writeSessionFileAtomically(manifestFile) { stream ->
+                stream.write(json.toString().toByteArray(Charsets.UTF_8))
+            }
         } catch (e: Exception) {
-            // Log / ignore persistence failure during transient teardown
+            Log.e("DocumentSession", "Could not persist session $id; last committed manifest retained", e)
         }
     }
 
@@ -588,10 +612,8 @@ class DocumentSession(
         fun loadFromDisk(context: Context, sessionId: String): DocumentSession? {
             val sessionDir = getSessionDirectory(context, sessionId)
             val manifestFile = File(sessionDir, "manifest.json")
-            if (!manifestFile.exists()) return null
-
             return try {
-                val json = JSONObject(manifestFile.readText())
+                val json = JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
                 val session = DocumentSession(
                     id = json.getString("id"),
                     title = json.optString("title", "Scanned Document")
@@ -663,9 +685,9 @@ class DocumentSession(
             for (dir in dirs) {
                 if (dir.isDirectory) {
                     val manifest = File(dir, "manifest.json")
-                    if (manifest.exists()) {
+                    if (manifest.exists() || File(dir, "manifest.json.bak").exists()) {
                         try {
-                            val json = JSONObject(manifest.readText())
+                            val json = JSONObject(AtomicFile(manifest).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
                             val id = json.getString("id")
                             val title = json.optString("title", "Scanned Document")
                             val lastMod = json.optLong("lastModifiedAt", dir.lastModified())

@@ -31,7 +31,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A12 | P1 | PATCHED | Compression cleanup deletes shared prefix-matching temp files | `pdf/operations/PdfCompressor.kt:299-307` | Own operation-specific temp files/directories. |
 | A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
 | A14 | P1 | OPEN | Scanner silently ignores perspective/adjustment failures | `document/DocumentSession.kt:157-166,236-254` | Fail selected transformations explicitly; distinguish preview vs export. |
-| A15 | P1 | OPEN | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
+| A15 | P1 | PARTIAL | Scanner manifest direct overwrite and ignored persistence errors | `document/DocumentSession.kt:572-576` | Atomic persistence, serialization and recovery/error status. |
 | A16 | P1 | PARTIAL | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
 | A17 | P1 | PARTIAL | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
 | A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
@@ -108,3 +108,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A32 — Reject incomplete raster compression candidates
 
 - New source finding while implementing A12. A thrown page-render/encode error now aborts that entire raster candidate; the existing candidate-level cleanup deletes it, and the caller can retain a valid structural candidate or original. Verify output page count before saving. No intentional relaxation of any release guard. Actual failed-page fixtures and CI pending.
+
+### A15 — Atomic scanner persistence
+
+- Use Android AtomicFile for page images, thumbnails and JSON manifest; fail failed bitmap encoding; recycle newly generated temporary thumbnails; serialize writes per session instance and read manifests through AtomicFile recovery. Persistence exceptions now logged rather than silently discarded. This protects individual files, not an entire multi-file snapshot or concurrent instances of the same session; explicit UI persistence status and cross-file versioned recovery remain open. CI/process-death test pending.
