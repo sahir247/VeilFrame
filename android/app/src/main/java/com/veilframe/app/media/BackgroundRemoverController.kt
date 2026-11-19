@@ -84,12 +84,24 @@ class BackgroundRemoverController(
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
     private var rawCutoutBitmap: Bitmap? = null
+    private val cutoutLeases = ResourceLeases<Bitmap> { if (!it.isRecycled) it.recycle() }
+
+    // Acquire before scheduling: even a queued encoder owns its pixels until completion.
+    private fun launchCutoutExport(bitmap: Bitmap, block: suspend CoroutineScope.() -> Unit) {
+        val release = cutoutLeases.acquire(bitmap)
+        try {
+            scope.launch(Dispatchers.IO, block = block).invokeOnCompletion { release() }
+        } catch (failure: Throwable) {
+            release()
+            throw failure
+        }
+    }
 
     private fun releaseCutoutBitmaps() {
         if (resultBitmap !== rawCutoutBitmap) {
-            resultBitmap?.recycle()
+            resultBitmap?.let(cutoutLeases::retire)
         }
-        rawCutoutBitmap?.recycle()
+        rawCutoutBitmap?.let(cutoutLeases::retire)
         resultBitmap = null
         rawCutoutBitmap = null
     }
@@ -251,7 +263,7 @@ class BackgroundRemoverController(
                     raw
                 }
                 if (prev !== resultBitmap && prev !== raw) {
-                    prev?.recycle()
+                    prev?.let(cutoutLeases::retire)
                 }
                 binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 updateUi()
@@ -649,10 +661,10 @@ class BackgroundRemoverController(
                             result.cutoutBitmap
                         }
                         if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
-                            prevRaw?.recycle()
+                            prevRaw?.let(cutoutLeases::retire)
                         }
                         if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
-                            prevRes?.recycle()
+                            prevRes?.let(cutoutLeases::retire)
                         }
                         lastFailure = null
                         updateUi()
@@ -1050,10 +1062,10 @@ class BackgroundRemoverController(
                     edited
                 }
                 if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
-                    prevRaw?.recycle()
+                    prevRaw?.let(cutoutLeases::retire)
                 }
                 if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
-                    prevRes?.recycle()
+                    prevRes?.let(cutoutLeases::retire)
                 }
                 binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 Toast.makeText(activity, "Refinement applied successfully", Toast.LENGTH_SHORT).show()
@@ -1219,7 +1231,8 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedName = sourceFileName
+        launchCutoutExport(bmp) {
             val trimmed = com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(bmp)
             val resolver = activity.contentResolver
             val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -1227,7 +1240,7 @@ class BackgroundRemoverController(
             } else {
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             }
-            val fileName = "${sourceFileName}_STICKER_${System.currentTimeMillis()}.png"
+            val fileName = "${capturedName}_STICKER_${System.currentTimeMillis()}.png"
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -1250,7 +1263,7 @@ class BackgroundRemoverController(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(target, values, null, null)
+                    check(resolver.update(target, values, null, null) > 0) { "Could not publish sticker" }
                 }
                 success = true
             } catch (e: Exception) {
@@ -1277,10 +1290,11 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             try {
                 val cacheDir = File(activity.cacheDir, "clipboard").apply { mkdirs() }
-                val cacheFile = File(cacheDir, "cutout_clipboard.png")
+                val cacheFile = File(cacheDir, "cutout_${java.util.UUID.randomUUID()}.png")
                 FileOutputStream(cacheFile).use { fos ->
                     if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
                         throw java.io.IOException("Cutout PNG encoding failed")
@@ -1293,6 +1307,7 @@ class BackgroundRemoverController(
                 )
                 val clip = ClipData.newUri(activity.contentResolver, "VeilFrame Cutout", uri)
                 withContext(Dispatchers.Main) {
+                    if (capturedGeneration != sourceGeneration) return@withContext
                     val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(clip)
                     Toast.makeText(activity, "Cutout copied to clipboard", Toast.LENGTH_SHORT).show()
@@ -1311,10 +1326,12 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedName = sourceFileName
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             try {
                 val cacheDir = File(activity.cacheDir, "shares").apply { mkdirs() }
-                val cacheFile = File(cacheDir, "${sourceFileName}_cutout.png")
+                val cacheFile = File(cacheDir, "${capturedName}_${java.util.UUID.randomUUID()}_cutout.png")
                 FileOutputStream(cacheFile).use { fos ->
                     if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
                         throw java.io.IOException("Cutout PNG encoding failed")
@@ -1326,6 +1343,7 @@ class BackgroundRemoverController(
                     cacheFile
                 )
                 withContext(Dispatchers.Main) {
+                    if (capturedGeneration != sourceGeneration) return@withContext
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/png"
                         putExtra(Intent.EXTRA_STREAM, uri)
@@ -1361,7 +1379,8 @@ class BackgroundRemoverController(
         // View state is owned by the main thread; never inspect it in the encoder worker.
         val backgroundMode = binding.splitViewBgCompare.backgroundMode
         val exportBaseName = sourceFileName
-        scope.launch(Dispatchers.IO) {
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
             val ext = if (isJpg) "jpg" else "png"
             val mimeType = if (isJpg) "image/jpeg" else "image/png"
@@ -1436,7 +1455,7 @@ class BackgroundRemoverController(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(savedUri, values, null, null)
+                    check(resolver.update(savedUri, values, null, null) > 0) { "Could not publish gallery image" }
                 }
                 savedToGallery = true
             } catch (e: Exception) {
@@ -1451,6 +1470,10 @@ class BackgroundRemoverController(
             }
 
             withContext(Dispatchers.Main) {
+                if (capturedGeneration != sourceGeneration) {
+                    outFile.delete()
+                    return@withContext
+                }
                 if (savedToGallery) {
                     Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
                     currentSaveCutoutState = SaveCutoutState.SAVED

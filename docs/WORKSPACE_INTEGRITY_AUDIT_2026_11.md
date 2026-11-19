@@ -26,7 +26,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A07 | P1 | OPEN | JavaScript/attachment removal limited to catalog entries | `pdf/operations/PdfFlattener.kt:292-331` | Inspect relevant COS graph; verify requested removal. |
 | A08 | P1 | PARTIAL | Background removal full-resolution claim contradicts 4096 cap | `cv/segmentation/rembg/CelBackgroundRemover.kt:35-38,81-112; RembgImageUtils.kt:18` | Disclose actual output size immediately; implement bounded original-resolution compositing. |
 | A09 | P1 | PATCHED | Background removal source import can publish stale result | `media/BackgroundRemoverController.kt:326-368` | Cancel prior import; generation-gate results and cleanup. |
-| A10 | P1 | OPEN | Background removal export may race bitmap recycling | `media/BackgroundRemoverController.kt:1258-1430` | Protect captured bitmap lifetime across export/share/clipboard. |
+| A10 | P1 | PATCHED | Background removal export may race bitmap recycling | `media/BackgroundRemoverController.kt:1258-1430` | Protect captured bitmap lifetime across export/share/clipboard. |
 | A11 | P1 | PARTIAL | PDF compression may choose destructive rasterization by size alone | `pdf/operations/PdfCompressor.kt:375-423` | Explicitly authorize lossy semantic change; preserve structural mode. |
 | A12 | P1 | PATCHED | Compression cleanup deletes shared prefix-matching temp files | `pdf/operations/PdfCompressor.kt:299-307` | Own operation-specific temp files/directories. |
 | A13 | P1 | PATCHED | DOCX conversion falls back silently to text/binary ZIP | `pdf/operations/OfficeConverter.kt:135-158` | Propagate cancellation and errors, disclose text-only fallback. |
@@ -134,3 +134,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A24 — Confirm bundled model activation and fix production double sigmoid
 
 - Inspected the actual packaged `assets/models/u2netp/u2netp.ncnn.param`: layer `convsigmoid_112` produces `out0` with convolution parameter `9=4`. NCNN's [convolution loader](https://github.com/Tencent/ncnn/blob/master/src/layer/convolution.cpp) reads parameter 9 as activation type; [fused_activation.h](https://github.com/Tencent/ncnn/blob/master/src/layer/fused_activation.h) maps type 4 to sigmoid. Removed the redundant sigmoid from production nativeProcess; reject nonfinite model output, bound probabilities and retain upstream saliency normalization. Legacy benchmark comparator intentionally unchanged; numerical CPU/GPU parity and saliency-vs-opacity quality are unmeasured. PARTIAL pending native/device validation.
+
+### A10 — Lease cutout pixels across asynchronous exports
+
+- Added identity-based resource leases with idempotent completion release. Sticker, save, clipboard and share acquire before scheduling, and retirement on source/model/refinement/discard paths defers recycling until all readers finish. Refine brush already copies pixels. Unique shared/clipboard files prevent overwrites; gallery publish failures are checked; stale share/clipboard/SAF result callbacks are gated by source generation. Added lease lifecycle unit fixtures. CI and device race acceptance pending; temporary-file retention policy remains a separate concern.
