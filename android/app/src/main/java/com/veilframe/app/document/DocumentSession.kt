@@ -569,8 +569,17 @@ class DocumentSession(
                 put("pages", pagesArray)
             }
 
-            val manifestFile = File(sessionDir, "manifest.json")
-            manifestFile.writeText(json.toString())
+            val manifestFile = android.util.AtomicFile(File(sessionDir, "manifest.json"))
+            synchronized(this) {
+                val stream = manifestFile.startWrite()
+                try {
+                    stream.write(json.toString().toByteArray(Charsets.UTF_8))
+                    manifestFile.finishWrite(stream)
+                } catch (failure: Throwable) {
+                    manifestFile.failWrite(stream)
+                    throw failure
+                }
+            }
         } catch (e: Exception) {
             // Log / ignore persistence failure during transient teardown
         }
