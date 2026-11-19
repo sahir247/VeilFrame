@@ -161,7 +161,7 @@ class PdfExtractTextController(
                 val input = activity.contentResolver.openInputStream(uri)
                     ?: throw java.io.IOException("Cannot open PDF input stream")
                 input.use { inputStream ->
-                    PDDocument.load(inputStream).use { doc ->
+                    PDDocument.load(inputStream, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                         val renderer = PDFRenderer(doc)
                         val total = doc.numberOfPages
                         for (i in 0 until total) {
@@ -170,7 +170,9 @@ class PdfExtractTextController(
                                 binding.tvExtractTextLoadingStatus.text =
                                     "Google ML Kit OCR: Processing page ${i + 1} of $total..."
                             }
-                            val pageBmp = renderer.renderImageWithDPI(i, 150f)
+                            val box = doc.getPage(i).cropBox
+                            val dpi = com.veilframe.app.pdf.operations.OcrDpiUtil.getSafeOcrDpi(box.width, box.height)
+                            val pageBmp = renderer.renderImageWithDPI(i, dpi)
                             val pageText = try {
                                 ocrEngine.recognizeFullText(pageBmp)
                             } finally {

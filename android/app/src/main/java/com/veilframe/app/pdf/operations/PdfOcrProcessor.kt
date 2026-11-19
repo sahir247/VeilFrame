@@ -112,9 +112,12 @@ data class SearchablePdfResult(
  * Outcome of single-image OCR: recognized text plus a debug trail
  * (dimensions, path results) shown when nothing is recognized.
  */
+enum class ImageOcrStatus { TEXT_FOUND, NO_TEXT, INCOMPLETE, FAILED }
+
 data class ImageOcrOutcome(
     val text: String,
-    val debug: String = ""
+    val debug: String = "",
+    val status: ImageOcrStatus = if (text.isBlank()) ImageOcrStatus.NO_TEXT else ImageOcrStatus.TEXT_FOUND
 )
 
 /**
@@ -484,29 +487,40 @@ class PdfOcrProcessor(private val context: Context) {
             if (options.outWidth <= 0 || options.outHeight <= 0) {
                 return@withContext ImageOcrOutcome(
                     text = "",
-                    debug = "${trail}decode=FAIL(unsupported format ${options.outMimeType})"
+                    debug = "${trail}decode=FAIL(unsupported format ${options.outMimeType})",
+                    status = ImageOcrStatus.FAILED
                 )
             }
 
             // Path 1: wrapped-PDF pipeline (same renderer path as PDF OCR).
             var text = ""
+            var successfulAttempts = 0
+            var failedAttempts = 0
             try {
                 val wrapped = wrapImageAsPdf(imageUri)
                 if (wrapped != null) {
                     try {
                         trail.append("wrap=OK(${wrapped.length() / 1024}KB) ")
                         val result = extractTextWithOcr(pdfUri = Uri.fromFile(wrapped))
-                        text = if (result.success) result.fullText else ""
+                        if (result.success) {
+                            successfulAttempts++
+                            text = result.fullText
+                        } else {
+                            failedAttempts++
+                            trail.append("wrapped-OCR=FAIL ")
+                        }
                         trail.append("rendered-words=${text.split("\\s+".toRegex()).count { it.isNotBlank() }} ")
                     } finally {
                         wrapped.delete()
                     }
                 } else {
+                    failedAttempts++
                     trail.append("wrap=FAIL ")
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                failedAttempts++
                 trail.append("wrap-EX:${e.message} ")
                 android.util.Log.e("PdfOcrProcessor", "image OCR wrapped path failed", e)
             }
@@ -515,21 +529,29 @@ class PdfOcrProcessor(private val context: Context) {
             if (text.isBlank()) {
                 try {
                     text = recognizeImageBitmapDirect(imageUri, options, trail)
+                    successfulAttempts++
                     trail.append("direct-chars=${text.length} ")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    failedAttempts++
                     trail.append("direct-EX:${e.message} ")
                     android.util.Log.e("PdfOcrProcessor", "image OCR direct path failed", e)
                 }
             }
 
-            ImageOcrOutcome(text = text, debug = trail.toString().trim())
+            val status = when {
+                text.isNotBlank() -> ImageOcrStatus.TEXT_FOUND
+                successfulAttempts == 0 -> ImageOcrStatus.FAILED
+                failedAttempts > 0 -> ImageOcrStatus.INCOMPLETE
+                else -> ImageOcrStatus.NO_TEXT
+            }
+            ImageOcrOutcome(text = text, debug = trail.toString().trim(), status = status)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             android.util.Log.e("PdfOcrProcessor", "extractTextFromImage failed: ${e.message}", e)
-            ImageOcrOutcome(text = "", debug = "${trail}EX:${e.message}".trim())
+            ImageOcrOutcome(text = "", debug = "${trail}EX:${e.message}".trim(), status = ImageOcrStatus.FAILED)
         }
     }
 
@@ -550,7 +572,7 @@ class PdfOcrProcessor(private val context: Context) {
         }
         val bitmap = context.contentResolver.openInputStream(imageUri)?.use {
             BitmapFactory.decodeStream(it, null, decodeOptions)
-        } ?: return@withContext ""
+        } ?: throw IOException("Cannot decode selected image for OCR")
         val oriented = applyExifOrientation(imageUri, bitmap)
         trail.append("bitmap=${oriented.width}x${oriented.height} ")
         try {

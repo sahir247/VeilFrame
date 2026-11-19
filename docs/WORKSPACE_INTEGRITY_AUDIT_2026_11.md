@@ -47,7 +47,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A28 | P2 | OPEN | Office/PDF broader semantic fidelity and workspace coverage | `pdf/operations/; media/; tools/` | Trace all reachable callers; fixtures for charts/formulas/fonts/fields/page geometry. |
 | A29 | P2 | OPEN | Oversized multi-purpose controllers and ownership complexity | `media/; pdf/; navigation/` | Refactor by clear ownership boundaries after regression coverage. |
 | A30 | P2 | PATCHED | Visual signing vs cryptographic signing distinction | `pdf/operations/PdfSigner.kt:103-104` | Verify UI differentiates visual overlay from digital signature validation. |
-| A31 | P1 | PARTIAL | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
+| A31 | P1 | PATCHED | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
 | A32 | P1 | PATCHED | PDF raster compression swallowed individual page render errors, permitting partial or blank-page output | `pdf/operations/PdfCompressor.kt:809-823` (baseline) | Reject the entire faulty candidate; verify original page count and content fixtures. |
 
 ## Implementation log
@@ -159,3 +159,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ### A17 — Bounded streaming bundle construction
 
 - Both SAF tree and single input use one suspendable engine, bounded 500 KiB reads independent of provider-reported size, strict UTF-8, deterministic traversal with cycle/depth guard, per-entry omission reasons and an explicit estimated section-only budget. Content and omission bodies spool to isolated scratch files, then stream into a staged output rather than retaining the whole project in RAM. Cancellation/failure cleans scratch; controller catches bundle errors; unique output names. Native format conflicts are explicitly omitted with JSON alternative; Markdown fences adapt to content. Full model-specific tokenization and native parser interoperability acceptance remain open, so A17 PARTIAL. CI and large-tree/cancellation tests pending.
+
+### A31 — Distinguish no recognized text from failed recognition
+
+- Image OCR outcome carries explicit TEXT_FOUND, NO_TEXT, INCOMPLETE or FAILED; failed wrapper/direct paths cannot masquerade as a successful blank recognition. Direct decode failure is an error. Existing reachable PDF Extract Text UI already distinguishes thrown recognition errors from genuinely empty output; switched that caller to temp-file PDFBox load and memory-bounded DPI. Source search found no current caller of the single-image outcome method outside its definition; it retains typed status for future callers. CI for these changes and device/task fault-injection pending.
