@@ -34,7 +34,7 @@ class CelBackgroundRemover(
         val pixels = sourceInfo.width.toLong() * sourceInfo.height
 
         if (pixels > LARGE_IMAGE_PIXELS) {
-            warnings += "Large image (${sourceInfo.width}×${sourceInfo.height}) — processing at full resolution."
+            warnings += "Large image (${sourceInfo.width}×${sourceInfo.height}) — processing with memory limits."
         }
 
         onProgress(RembgProgress(10, "Loading ${model.displayName}…"))
@@ -85,6 +85,10 @@ class CelBackgroundRemover(
             maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
             inMutable = true
         )
+
+        if (sourceBitmap.width != sourceInfo.width || sourceBitmap.height != sourceInfo.height) {
+            warnings.add(0, "Output before trim is ${sourceBitmap.width}×${sourceBitmap.height}; original resolution is ${sourceInfo.width}×${sourceInfo.height}.")
+        }
 
         val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
             sourceBitmap
