@@ -339,7 +339,9 @@ class PdfOcrProcessor(private val context: Context) {
             ensureActive()
             
             // Save the document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
+            val destination = context.contentResolver.openOutputStream(outputUri)
+                ?: throw java.io.IOException("Cannot open destination for searchable PDF")
+            destination.use { outputStream ->
                 document.save(outputStream)
                 outputStream.flush()
             }
