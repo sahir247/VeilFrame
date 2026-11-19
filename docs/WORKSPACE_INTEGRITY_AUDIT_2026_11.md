@@ -17,7 +17,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 | ID | Priority | Status | Finding | Baseline evidence | Acceptance / next action |
 |---|---|---|---|---|---|
-| A01 | P1 | OPEN | Searchable PDF false success on null output stream | `pdf/operations/PdfOcrProcessor.kt:341-353` | Require non-null destination; test provider failure. |
+| A01 | P1 | PATCHED | Searchable PDF false success on null output stream | `pdf/operations/PdfOcrProcessor.kt:341-353` | Require non-null destination; test provider failure. |
 | A02 | P1 | OPEN | Searchable OCR strips Unicode | `pdf/operations/PdfOcrProcessor.kt:617-648` | Embed Unicode font and validate text extraction; no silent character loss. |
 | A03 | P1 | OPEN | OCR layer ignores page rotation and actual render dimensions | `pdf/operations/PdfOcrProcessor.kt:609-653` | Map pixel rectangles into crop/rotation-aware PDF coordinates. |
 | A04 | P1 | OPEN | OCR confidence fabricated (0.90 word / 0.85 page) | `pdf/operations/OcrEngine.kt:52; PdfOcrProcessor.kt:210` | Preserve unknown confidence and derive aggregates. |
@@ -51,3 +51,8 @@ Code and ledger updates must be committed together. Never mark an issue verified
 ## Implementation log
 
 - Ledger initialized before fixes; no tests executed yet.
+
+### A01 — Searchable PDF destination
+
+- Required destination stream before writing; null stream now enters existing IO failure path instead of returning successful page count.
+- Source fix only; provider failure regression and Android CI pending. No claim of device validation.

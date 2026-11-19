@@ -339,7 +339,9 @@ class PdfOcrProcessor(private val context: Context) {
             ensureActive()
             
             // Save the document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
+            val destination = context.contentResolver.openOutputStream(outputUri)
+                ?: throw IOException("Cannot open destination URI for writing")
+            destination.use { outputStream ->
                 document.save(outputStream)
                 outputStream.flush()
             }
