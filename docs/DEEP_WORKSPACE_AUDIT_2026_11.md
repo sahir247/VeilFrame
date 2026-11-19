@@ -7,7 +7,7 @@ Static findings; revalidate against branch before editing. Mark each item implem
 
 | ID | Finding | Source | Status |
 |---|---|---|---|
-| D01 | OCR null output stream false success | PdfOcrProcessor.kt | Open |
+| D01 | OCR null output stream false success | PdfOcrProcessor.kt | Implemented; tests pending |
 | D02 | OCR Unicode loss | PdfOcrProcessor.kt | Open |
 | D03 | OCR rotation and crop geometry | PdfOcrProcessor.kt | Open |
 | D04 | Fabricated OCR confidence | PdfOcrProcessor.kt | Open |
@@ -36,3 +36,5 @@ Static findings; revalidate against branch before editing. Mark each item implem
 ## Remediation log
 
 No fixes yet. This ledger precedes implementation.
+
+- D01: reject missing searchable PDF destination stream. Code commit `04c9ede61917a0629a4d2a782e22c532f8d3655b`. Verification pending.
