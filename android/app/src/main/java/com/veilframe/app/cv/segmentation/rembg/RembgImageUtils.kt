@@ -43,6 +43,32 @@ object RembgImageUtils {
         return scaled
     }
 
+    // Reserve memory for EXIF rotation, original RGB, composited output and edge passes.
+    // The cap is deliberately conservative; a Bitmap-returning API cannot promise arbitrary sizes.
+    internal fun canCompositeOriginal(width: Int, height: Int, availableBytes: Long): Boolean {
+        if (width <= 0 || height <= 0 || max(width, height) > 16384) return false
+        val pixels = width.toLong() * height
+        return pixels <= 24_000_000L && pixels * 16L <= (availableBytes - 24L * 1024 * 1024).coerceAtLeast(0)
+    }
+
+    internal fun decodeCompositeSource(
+        bytes: ByteArray,
+        analysis: Bitmap,
+        info: RembgSourceInfo,
+        warnings: MutableList<String>
+    ): Bitmap {
+        if (analysis.width == info.width && analysis.height == info.height) return analysis
+        val runtime = Runtime.getRuntime()
+        val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        if (canCompositeOriginal(info.width, info.height, available)) {
+            val original = decodeOrientedBitmap(bytes)
+            if (original.width == info.width && original.height == info.height) return original
+            original.recycle()
+        }
+        warnings.add(0, "Memory-limited output before trim: ${analysis.width}×${analysis.height}; original: ${info.width}×${info.height}.")
+        return analysis
+    }
+
     fun orientedDimensions(bytes: ByteArray): Pair<Int, Int> {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)

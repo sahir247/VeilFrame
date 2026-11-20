@@ -86,17 +86,15 @@ class CelBackgroundRemover(
             inMutable = true
         )
 
-        if (sourceBitmap.width != sourceInfo.width || sourceBitmap.height != sourceInfo.height) {
-            warnings.add(0, "Output before trim is ${sourceBitmap.width}×${sourceBitmap.height}; original resolution is ${sourceInfo.width}×${sourceInfo.height}.")
-        }
-
-        val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
+         val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
             sourceBitmap
         } else {
             sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
         }
 
         var maskBitmap: Bitmap? = null
+        var compositeSource: Bitmap? = null
+        var cutoutBitmap: Bitmap? = null
         try {
             onProgress(RembgProgress(55, "Running neural matting…"))
             ensureActive()
@@ -107,14 +105,25 @@ class CelBackgroundRemover(
             onProgress(RembgProgress(80, "Building cutout…"))
             ensureActive()
 
-            var cutoutBitmap = applyFullResolutionColors(sourceBitmap, maskBitmap)
+            val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
+            compositeSource = colors
+            cutoutBitmap = applyFullResolutionColors(colors, maskBitmap)
+            if (colors !== sourceBitmap) colors.recycle()
+            compositeSource = null
+            maskBitmap.recycle()
+            maskBitmap = null
 
             onProgress(RembgProgress(90, "Refining edges…"))
             cutoutBitmap = applyEdgePostProcessing(cutoutBitmap, tightenEdges, featherEdges, trim)
 
             onProgress(RembgProgress(100, "Done"))
-            RembgResult(cutoutBitmap, sourceInfo, model, warnings)
+            ensureActive()
+            val result = RembgResult(cutoutBitmap, sourceInfo, model, warnings)
+            cutoutBitmap = null
+            result
         } finally {
+            cutoutBitmap?.takeUnless { it.isRecycled }?.recycle()
+            compositeSource?.takeUnless { it === sourceBitmap || it.isRecycled }?.recycle()
             maskBitmap?.recycle()
             if (rgbaBitmap !== sourceBitmap) {
                 rgbaBitmap.recycle()
@@ -182,24 +191,55 @@ class CelBackgroundRemover(
         internal fun applyFullResolutionColors(source: Bitmap, alphaSource: Bitmap): Bitmap {
             val w = source.width
             val h = source.height
+            val mw = alphaSource.width
+            val mh = alphaSource.height
             val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val stripeRows = 256
-            val rgb = IntArray(w * stripeRows)
-            val alpha = IntArray(w * stripeRows)
-
-            var y = 0
-            while (y < h) {
-                val rows = Math.min(stripeRows, h - y)
-                val count = w * rows
-                source.getPixels(rgb, 0, w, 0, y, w, rows)
-                alphaSource.getPixels(alpha, 0, w, 0, y, w, rows)
-                for (i in 0 until count) {
-                    rgb[i] = (rgb[i] and 0x00FFFFFF) or (alpha[i] and 0xFF000000.toInt())
-                }
-                output.setPixels(rgb, 0, w, 0, y, w, rows)
-                y += rows
+            // Half-pixel bilinear resampling, with only three scanlines and bounded x lookup.
+            val rgb = IntArray(w)
+            val upper = IntArray(mw)
+            val lower = IntArray(mw)
+            val x0 = IntArray(w)
+            val xWeight = FloatArray(w)
+            for (x in 0 until w) {
+                val sx = ((x + 0.5) * mw / w - 0.5).coerceIn(0.0, (mw - 1).toDouble())
+                x0[x] = sx.toInt()
+                xWeight[x] = (sx - x0[x]).toFloat()
             }
-            return output
+            try {
+                var lastY0 = -1
+                var lastY1 = -1
+                for (y in 0 until h) {
+                    val sy = ((y + 0.5) * mh / h - 0.5).coerceIn(0.0, (mh - 1).toDouble())
+                    val y0 = sy.toInt()
+                    val y1 = minOf(y0 + 1, mh - 1)
+                    val fy = (sy - y0).toFloat()
+                    if (lastY0 != y0) {
+                        alphaSource.getPixels(upper, 0, mw, 0, y0, mw, 1)
+                        lastY0 = y0
+                    }
+                    if (lastY1 != y1) {
+                        alphaSource.getPixels(lower, 0, mw, 0, y1, mw, 1)
+                        lastY1 = y1
+                    }
+                    source.getPixels(rgb, 0, w, 0, y, w, 1)
+                    for (x in 0 until w) {
+                        val left = x0[x]
+                        val right = minOf(left + 1, mw - 1)
+                        val fx = xWeight[x]
+                        val a = (upper[left] ushr 24) * (1f - fx) + (upper[right] ushr 24) * fx
+                        val b = (lower[left] ushr 24) * (1f - fx) + (lower[right] ushr 24) * fx
+                        val maskAlpha = (a * (1f - fy) + b * fy + 0.5f).toInt().coerceIn(0, 255)
+                        // Matting must never resurrect pixels transparent in the input.
+                        val alpha = ((rgb[x] ushr 24) * maskAlpha + 127) / 255
+                        rgb[x] = (rgb[x] and 0x00FFFFFF) or (alpha shl 24)
+                    }
+                    output.setPixels(rgb, 0, w, 0, y, w, 1)
+                }
+                return output
+            } catch (failure: Throwable) {
+                output.recycle()
+                throw failure
+            }
         }
     }
 }

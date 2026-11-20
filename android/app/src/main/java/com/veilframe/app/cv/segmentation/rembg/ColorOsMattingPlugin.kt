@@ -16,7 +16,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import java.io.File
 import java.util.concurrent.Executors
@@ -195,9 +194,9 @@ object ColorOsMattingPlugin {
             inMutable = true
         )
         var cutoutBitmap: Bitmap? = null
+        var compositeSource: Bitmap? = null
+        var alphaBitmap: Bitmap? = null
         try {
-            val srcW = sourceBitmap.width
-            val srcH = sourceBitmap.height
 
             onProgress(RembgProgress(50, "Running Neural Subject Matting…"))
             ensureActive()
@@ -253,18 +252,19 @@ object ColorOsMattingPlugin {
             val binaryBytes = ByteArray(OUTPUT_FLOAT_COUNT)
             val threshold = 5.0f / 255.0f
             for (i in 0 until OUTPUT_FLOAT_COUNT) {
+                check(alphaValues[i].isFinite()) { "ColorOS model returned non-finite alpha" }
                 val alpha = alphaValues[i].coerceIn(0f, 1f)
                 rawAlphaBytes[i] = (alpha * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
                 binaryBytes[i] = if (alpha >= threshold) 255.toByte() else 0.toByte()
             }
 
-            val fullMaskBytes = ByteArray(srcW * srcH)
+            val cleanMaskBytes = ByteArray(OUTPUT_FLOAT_COUNT)
             val rawMaskMat = Mat(TENSOR_HEIGHT, TENSOR_WIDTH, CvType.CV_8UC1)
             val labels = Mat()
             val stats = Mat()
             val centroids = Mat()
             val cleanMaskMat = Mat.zeros(TENSOR_HEIGHT, TENSOR_WIDTH, CvType.CV_8UC1)
-            val fullMaskMat = Mat()
+ 
             try {
                 rawMaskMat.put(0, 0, binaryBytes)
                 val numComponents = Imgproc.connectedComponentsWithStats(rawMaskMat, labels, stats, centroids)
@@ -301,35 +301,32 @@ object ColorOsMattingPlugin {
                     cleanMaskMat.put(0, 0, rawAlphaBytes)
                 }
 
-                onProgress(RembgProgress(90, "Compositing 4K Cutout…"))
-                ensureActive()
-                Imgproc.resize(
-                    cleanMaskMat, fullMaskMat, Size(srcW.toDouble(), srcH.toDouble()),
-                    0.0, 0.0, Imgproc.INTER_LINEAR
-                )
-                fullMaskMat.get(0, 0, fullMaskBytes)
+                cleanMaskMat.get(0, 0, cleanMaskBytes)
             } finally {
                 rawMaskMat.release()
                 labels.release()
                 stats.release()
                 centroids.release()
                 cleanMaskMat.release()
-                fullMaskMat.release()
+ 
             }
 
-            // Full-resolution alpha composite; keep source RGB unchanged.
-            cutoutBitmap = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888)
-            val sourceRow = IntArray(srcW)
-            val outputRow = IntArray(srcW)
-            for (y in 0 until srcH) {
-                sourceBitmap.getPixels(sourceRow, 0, srcW, 0, y, srcW, 1)
-                val rowOffset = y * srcW
-                for (x in 0 until srcW) {
-                    val alpha = fullMaskBytes[rowOffset + x].toInt() and 0xFF
-                    outputRow[x] = (alpha shl 24) or (sourceRow[x] and 0x00FFFFFF)
+            onProgress(RembgProgress(90, "Compositing cutout…"))
+            ensureActive()
+            val mask = Bitmap.createBitmap(TENSOR_WIDTH, TENSOR_HEIGHT, Bitmap.Config.ARGB_8888)
+            alphaBitmap = mask
+            val maskRow = IntArray(TENSOR_WIDTH)
+            for (y in 0 until TENSOR_HEIGHT) {
+                for (x in 0 until TENSOR_WIDTH) {
+                    maskRow[x] = ((cleanMaskBytes[y * TENSOR_WIDTH + x].toInt() and 255) shl 24) or 0x00FFFFFF
                 }
-                cutoutBitmap.setPixels(outputRow, 0, srcW, 0, y, srcW, 1)
+                mask.setPixels(maskRow, 0, TENSOR_WIDTH, 0, y, TENSOR_WIDTH, 1)
             }
+            val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
+            compositeSource = colors
+            cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask)
+            if (colors !== sourceBitmap) colors.recycle()
+            compositeSource = null
 
             val finalCutout = if (trim) {
                 val trimmed = MaskPostprocessor.trimTransparent(cutoutBitmap)
@@ -338,11 +335,16 @@ object ColorOsMattingPlugin {
             } else {
                 cutoutBitmap
             }
-            cutoutBitmap = null
+            cutoutBitmap = finalCutout
             onProgress(RembgProgress(100, "Done"))
-            RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings)
+            ensureActive()
+            val result = RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings)
+            cutoutBitmap = null
+            result
         } finally {
             if (cutoutBitmap != null && !cutoutBitmap.isRecycled) cutoutBitmap.recycle()
+            alphaBitmap?.recycle()
+            compositeSource?.takeUnless { it === sourceBitmap || it.isRecycled }?.recycle()
             if (!sourceBitmap.isRecycled) sourceBitmap.recycle()
         }
     }
