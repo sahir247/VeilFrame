@@ -174,6 +174,55 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun versionedManifestCannotRebaselineMissingDigestOrSubstitutedOriginal() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(originalBitmapCache = bitmap))
+            assertTrue(session.saveToDisk(context))
+            val dir = DocumentSession.getSessionDirectory(context, session.id)
+            val file = java.io.File(dir, "manifest.json")
+            val legitimate = file.readText()
+            val manifest = org.json.JSONObject(legitimate)
+            manifest.getJSONArray("pages").getJSONObject(0).remove("originalSha256")
+            file.writeText(manifest.toString())
+            assertFalse(session.saveToDisk(context))
+            assertNull(DocumentSession.loadFromDisk(context, session.id))
+            file.writeText(legitimate)
+            val page = session.pages.single()
+            val other = java.io.File(dir, "substituted.png")
+            java.io.File(page.originalImagePath).copyTo(other)
+            page.originalImagePath = other.absolutePath
+            assertFalse(session.saveToDisk(context))
+            assertEquals(legitimate, file.readText())
+        } finally {
+            bitmap.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
+    fun uncommittedOrphanOriginalIsNeverAdoptedByFilename() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            val page = ScannedPage(id = "orphan", originalBitmapCache = bitmap)
+            val dir = DocumentSession.getSessionDirectory(context, session.id).apply { mkdirs() }
+            val orphan = java.io.File(dir, "page_orphan_orig.png").apply { writeText("invalid prior file") }
+            session.addPage(page)
+            assertTrue(session.saveToDisk(context))
+            assertTrue(page.originalImagePath != orphan.absolutePath)
+            assertEquals("invalid prior file", orphan.readText())
+            assertNotNull(DocumentSession.loadFromDisk(context, session.id))
+        } finally {
+            bitmap.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
     fun corruptDerivedRenderIsDiscardedWithoutLosingOriginal() {
         val context = RuntimeEnvironment.getApplication()
         val session = DocumentSession()

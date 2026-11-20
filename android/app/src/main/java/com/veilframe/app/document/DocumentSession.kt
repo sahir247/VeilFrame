@@ -408,14 +408,15 @@ data class ScannedPage(
         if (ownedSessionFile(sessionDir, originalImagePath) == null) {
             val source = originalBitmapCache?.takeUnless { it.isRecycled }
                 ?: throw java.io.IOException("Original page image unavailable")
-            val origFile = File(sessionDir, "page_${id}_orig.png")
+            val standard = File(sessionDir, "page_${id}_orig.png")
+            // An orphan from a failed previous save is not proof that it
+            // contains this source. Never overwrite or adopt it by filename.
+            val origFile = if (standard.exists()) File(sessionDir, "page_${id}_orig_${UUID.randomUUID()}.png") else standard
             if (origFile.canonicalFile.parentFile != sessionDir.canonicalFile) {
                 throw java.io.IOException("Original page destination is outside the session")
             }
-            if (ownedSessionFile(sessionDir, origFile.absolutePath) == null) {
-                writeSessionFileAtomically(origFile) { fos ->
-                    check(source.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Original page encoding failed" }
-                }
+            writeSessionFileAtomically(origFile) { fos ->
+                check(source.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Original page encoding failed" }
             }
             check(ownedSessionFile(sessionDir, origFile.absolutePath) != null) { "Original page was not persisted" }
             originalImagePath = origFile.absolutePath
@@ -666,6 +667,10 @@ class DocumentSession(
             val current = try {
                 JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
             } catch (_: java.io.FileNotFoundException) { null }
+            val integrityVersion = current?.optInt("imageIntegrityVersion", 0) ?: 0
+            require(current == null || (current.getString("id") == sessionId && integrityVersion in 0..1)) {
+                "Invalid previous recovery manifest"
+            }
             if (current?.optString("writerEpoch") == writerEpoch &&
                 current.optLong("writerSequence", -1L) > snapshot.sequence) return@synchronized true
 
@@ -681,38 +686,76 @@ class DocumentSession(
             // The manifest pins immutable originals and generation-specific caches.
             // Never bless changed bytes simply because another autosave ran.
             val previousDigests = HashMap<String, String>()
-            current?.optJSONArray("pages")?.let { prior ->
+            val previousOriginals = HashMap<String, String>()
+            val legacyPaths = HashSet<String>()
+            fun canonicalPath(path: String): String = File(path).canonicalPath
+            current?.getJSONArray("pages")?.let { prior ->
                 for (i in 0 until prior.length()) {
                     val entry = prior.getJSONObject(i)
-                    for (type in listOf("original", "processed", "thumbnail")) {
-                        val path = entry.optString(type + "ImagePath", "")
-                            .ifEmpty { if (type == "thumbnail") entry.optString("thumbnailPath", "") else "" }
-                        val digest = entry.optString(type + "Sha256", "")
-                        if (path.isNotBlank() && digest.isNotBlank()) previousDigests[path] = digest
+                    val pageId = entry.getString("id")
+                    require(isValidPageIdentity(pageId) && pageId !in previousOriginals) {
+                        "Invalid previous page identity"
+                    }
+                    val original = entry.getString("originalImagePath")
+                    require(original.isNotBlank() && File(original).canonicalFile.parentFile == sessionDir.canonicalFile) {
+                        "Invalid previously committed original"
+                    }
+                    previousOriginals[pageId] = canonicalPath(original)
+                    for ((pathKey, digestKey) in listOf("originalImagePath" to "originalSha256",
+                        "processedImagePath" to "processedSha256", "thumbnailPath" to "thumbnailSha256")) {
+                        val path = entry.optString(pathKey, "")
+                        if (path.isBlank()) continue
+                        val canonical = canonicalPath(path)
+                        val digest = entry.optString(digestKey, "")
+                        if (integrityVersion == 1 || digest.isNotEmpty()) {
+                            if (pathKey == "originalImagePath") {
+                                require(digest.matches(Regex("[a-f0-9]{64}"))) { "Committed original digest missing or invalid" }
+                            }
+                            val existing = previousDigests.put(canonical, digest)
+                            require(existing == null || existing == digest) { "Conflicting committed page digests" }
+                        } else legacyPaths.add(canonical)
                     }
                 }
             }
             val digests = HashMap<String, String>()
-            fun checkedDigest(path: String): String = digests.getOrPut(path) {
-                val file = requireNotNull(ownedSessionFile(sessionDir, path)) { "Saved page unavailable" }
-                val actual = PersistedPageIntegrity.digest(file)
-                val prior = previousDigests[path]
-                require(prior == null || actual == prior) { "Previously committed page bytes changed" }
-                actual
+            fun checkedDigest(path: String): String {
+                val canonical = canonicalPath(path)
+                return digests.getOrPut(canonical) {
+                    val file = requireNotNull(ownedSessionFile(sessionDir, canonical)) { "Saved page unavailable" }
+                    val actual = PersistedPageIntegrity.digest(file)
+                    val prior = previousDigests[canonical]
+                    require(prior == null || actual == prior) { "Previously committed page bytes changed" }
+                    require(canonical !in legacyPaths || PersistedPageIntegrity.legacyDecodes(file)) {
+                        "Legacy image could not be decoded for digest migration"
+                    }
+                    actual
+                }
             }
 
             // 1. Save all page images to session folder
             for (page in pagesSnapshot) {
                 // Rebuild disposable caches rather than accepting corrupt old bytes.
-                if (page.originalImagePath.isNotBlank() && previousDigests.containsKey(page.originalImagePath)) {
+                previousOriginals[page.id]?.let { pinned ->
+                    if (page.originalImagePath.isBlank()) page.originalImagePath = pinned
+                    require(canonicalPath(page.originalImagePath) == pinned) { "Committed original path changed" }
+                    checkedDigest(pinned)
+                }
+                if (page.originalImagePath.isNotBlank() &&
+                    (canonicalPath(page.originalImagePath) in previousDigests || canonicalPath(page.originalImagePath) in legacyPaths)) {
                     checkedDigest(page.originalImagePath)
                 }
                 val originalRender = page.processedImagePath
                 val originalThumbnail = page.thumbnailPath
                 if (listOfNotNull(originalRender, originalThumbnail).any { path ->
-                        previousDigests[path]?.let { expected ->
-                            ownedSessionFile(sessionDir, path)?.let { PersistedPageIntegrity.verify(it, expected) } != true
-                        } == true
+                        val canonical = canonicalPath(path)
+                        val expected = previousDigests[canonical]
+                        when {
+                            expected != null -> ownedSessionFile(sessionDir, canonical)
+                                ?.let { PersistedPageIntegrity.verify(it, expected) } != true
+                            canonical in legacyPaths -> ownedSessionFile(sessionDir, canonical)
+                                ?.let { PersistedPageIntegrity.legacyDecodes(it) } != true
+                            else -> false
+                        }
                     }) {
                     page.processedImagePath = null
                     page.thumbnailPath = null

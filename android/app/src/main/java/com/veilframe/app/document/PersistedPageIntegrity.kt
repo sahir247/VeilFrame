@@ -11,6 +11,7 @@ internal object PersistedPageIntegrity {
 
     fun digest(file: File): String {
         val expectedLength = file.length()
+        val expectedModified = file.lastModified()
         require(file.isFile && expectedLength in 1..MAX_ENCODED_BYTES) { "Page file exceeds the recovery byte budget or is missing" }
         val sha = MessageDigest.getInstance("SHA-256")
         var count = 0L
@@ -24,7 +25,7 @@ internal object PersistedPageIntegrity {
                 sha.update(buffer, 0, n)
             }
         }
-        if (count != expectedLength || file.length() != expectedLength) throw IOException("Page file changed during verification")
+        if (count != expectedLength || file.length() != expectedLength || file.lastModified() != expectedModified) throw IOException("Page file changed during verification")
         return sha.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it.toInt() and 255) }
     }
 
