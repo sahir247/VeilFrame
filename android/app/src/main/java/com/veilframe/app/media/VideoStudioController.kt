@@ -2655,6 +2655,7 @@ class VideoStudioController(
                     copyUriToFile(item.uri, item.file)
                 }
 
+                MediaProcessor.video.requireSingleVideoTrack(item.file)
                 val retriever = MediaMetadataRetriever()
                 val scanResult = try {
                     retriever.setDataSource(item.file.absolutePath)
@@ -2757,12 +2758,17 @@ class VideoStudioController(
                                 Toast.makeText(activity, "No targets selected for redaction", Toast.LENGTH_SHORT).show()
                                 return@showItemSelectionDialog
                             }
-                            val filterChain = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
-                                regions = selectedRegions,
-                                frameW = scanResult.frameWidth,
-                                frameH = scanResult.frameHeight,
-                                style = chosenStyle
-                            )
+                            val filterChain = try {
+                                VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+                                    regions = selectedRegions,
+                                    frameW = scanResult.frameWidth,
+                                    frameH = scanResult.frameHeight,
+                                    style = chosenStyle
+                                )
+                            } catch (e: IllegalArgumentException) {
+                                Toast.makeText(activity, "Cannot apply masks: ${e.message}", Toast.LENGTH_LONG).show()
+                                return@showItemSelectionDialog
+                            }
                             if (filterChain.isNullOrBlank()) {
                                 Toast.makeText(activity, "No valid temporal regions generated", Toast.LENGTH_SHORT).show()
                                 return@showItemSelectionDialog
@@ -2840,7 +2846,7 @@ class VideoStudioController(
             }
         )
 
-        val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
+        val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${java.util.UUID.randomUUID()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
             var outputHandedToWorkspace = false
@@ -2915,6 +2921,9 @@ class VideoStudioController(
                 }
             } finally {
                 if (!outputHandedToWorkspace) tempRedactedFile.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    progressDialog.dismiss()
+                }
             }
         }
     }

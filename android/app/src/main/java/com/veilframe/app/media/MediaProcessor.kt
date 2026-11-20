@@ -605,6 +605,24 @@ object VideoProcessor {
      * Bakes the temporal redaction filter graph directly into the video file,
      * preserving high visual fidelity (crf 18, fast preset) and original audio losslessly (-c:a copy).
      */
+    /**
+     * MMR does not expose track selection. Reject ambiguous sources rather than
+     * scanning one stream and applying masks to another.
+     */
+    internal fun requireSingleVideoTrack(file: File) {
+        val extractor = android.media.MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            val tracks = (0 until extractor.trackCount).count { index ->
+                extractor.getTrackFormat(index).getString(android.media.MediaFormat.KEY_MIME)
+                    ?.startsWith("video/") == true
+            }
+            require(tracks == 1) { "Video PII redaction requires exactly one video track (found $tracks)" }
+        } finally {
+            extractor.release()
+        }
+    }
+
     fun redactVideoStandalone(
         srcFile: File,
         outFile: File,
@@ -612,6 +630,7 @@ object VideoProcessor {
         onSessionId: ((Long) -> Unit)? = null,
         onProgress: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
     ): CompressionResult {
+        requireSingleVideoTrack(srcFile)
         val durMs = try {
             val mmr = android.media.MediaMetadataRetriever()
             try {
@@ -635,6 +654,8 @@ object VideoProcessor {
                 add("-map"); add("[v_out]")
                 add("-map"); add("0:a?")
             } else {
+                add("-map"); add("0:v:0")
+                add("-map"); add("0:a?")
                 add("-vf"); add(filterChain)
             }
             add("-c:v"); add("libx264")

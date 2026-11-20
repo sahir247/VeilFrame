@@ -9,6 +9,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiRedactionStyle
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File

@@ -112,6 +112,37 @@ class VideoPiiRedactionEngineTest {
     }
 
     @Test
+    fun movingMaskContainsEachObservedPositionEvenWithLeadAndTrailPadding() {
+        val first = RectF(10f, 100f, 70f, 160f)
+        val last = RectF(290f, 100f, 350f, 160f)
+        val (regions, tracks) = VideoPiiRedactionEngine.buildTrackedRegions(
+            listOf(1.0 to listOf(PiiDetection(first, PiiClass.FACE, .9f, "Face")),
+                2.0 to listOf(PiiDetection(last, PiiClass.FACE, .9f, "Face"))),
+            1920, 1080, 2.5, 1.0
+        )
+        assertEquals(1, tracks)
+        assertTrue(regions.any { it.startSec <= 1.0 && it.endSec >= 1.0 && it.rect.contains(first) })
+        assertTrue(regions.any { it.startSec <= 2.0 && it.endSec >= 2.0 && it.rect.contains(last) })
+        assertTrue(regions.all { it.endSec <= 2.5 })
+    }
+
+    @Test
+    fun filterCoordinatesAndTimesAlwaysRoundOutward() {
+        val region = TimedPiiRegion(.109, .421, RectF(11.7f, 13.8f, 20.1f, 24.2f), PiiClass.FACE, "Face")
+        val solid = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(listOf(region), 320, 240)!!
+        assertTrue(solid.contains("x=10:y=12:w=12:h=14"))
+        assertTrue(solid.contains("between(t,0.10,0.43)"))
+        val blur = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(listOf(region), 320, 240, PiiRedactionStyle.BLUR)!!
+        assertTrue(blur.startsWith("[0:v:0]"))
+        assertTrue(blur.contains("crop=w=12:h=14:x=10:y=12:exact=1"))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+                listOf(region.copy(rect = RectF(Float.NaN, 0f, 20f, 30f))), 320, 240
+            )
+        }
+    }
+
+    @Test
     fun testBridgesShortDetectorDropoutGap() {
         // Plate detected at t=0.0s and t=0.8s (missed on middle frame at t=0.4s)
         val frames = listOf(

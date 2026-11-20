@@ -16,6 +16,8 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.floor
+import kotlin.math.ceil
 
 /**
  * Timed bounding-box entry for FFmpeg-backed video PII redaction.
@@ -284,7 +286,8 @@ object VideoPiiRedactionEngine {
         val maxW = frameW.toFloat()
         val maxH = frameH.toFloat()
         val frameDiag = hypot(maxW.toDouble(), maxH.toDouble()).toFloat().coerceAtLeast(1f)
-        val maxTrackGapSec = max(sampleStepSec * 2.6, 1.35)
+        // Sparse sampling does not justify extending inferred identity continuity.
+        val maxTrackGapSec = 1.35
 
         val tracks = mutableListOf<MutableList<TimedPiiObservation>>()
 
@@ -364,7 +367,7 @@ object VideoPiiRedactionEngine {
 
         val padLeadSec = min(0.18, sampleStepSec * 0.45)
         val padTrailSec = max(0.20, sampleStepSec * 0.65)
-        val totalEndCap = (durationSec + 0.25).coerceAtLeast(0.5)
+        val totalEndCap = durationSec
 
         val rawIntervals = mutableListOf<TimedPiiRegion>()
         for (track in tracks) {
@@ -398,7 +401,7 @@ object VideoPiiRedactionEngine {
         if (padded.size == 1) {
             val only = padded[0]
             val start = (only.timeSec - padLeadSec).coerceAtLeast(0.0)
-            val end = min(totalEndCap, only.timeSec + padTrailSec).coerceAtLeast(start + 0.20)
+            val end = min(totalEndCap, max(start + 0.20, only.timeSec + padTrailSec))
             return listOf(
                 TimedPiiRegion(
                     startSec = start,
@@ -411,17 +414,19 @@ object VideoPiiRedactionEngine {
         }
 
         val result = mutableListOf<TimedPiiRegion>()
-        val firstStart = (padded.first().timeSec - padLeadSec).coerceAtLeast(0.0)
+        val first = padded.first()
+        val last = padded.last()
+        val firstStart = (first.timeSec - padLeadSec).coerceAtLeast(0.0)
+        if (firstStart < first.timeSec) {
+            result += TimedPiiRegion(firstStart, first.timeSec, first.rect, first.piiClass, first.label)
+        }
 
         for (i in 0 until padded.size - 1) {
             val a = padded[i]
             val b = padded[i + 1]
-            val segStart = if (i == 0) firstStart else a.timeSec
-            val segEnd = if (i == padded.size - 2) {
-                min(totalEndCap, b.timeSec + padTrailSec)
-            } else {
-                b.timeSec
-            }
+            // Lead/trail padding must not change the interpolation timebase.
+            val segStart = a.timeSec
+            val segEnd = b.timeSec
             val dt = (b.timeSec - a.timeSec).coerceAtLeast(0.05)
             val moveDist = centerDistance(a.rect, b.rect)
             val minDim = min(a.rect.width(), a.rect.height()).coerceAtLeast(8f)
@@ -439,14 +444,14 @@ object VideoPiiRedactionEngine {
                 val swept = unionRect(a.rect, b.rect)
                 result += TimedPiiRegion(
                     startSec = segStart,
-                    endSec = segEnd.coerceAtLeast(segStart + 0.08),
+                    endSec = min(totalEndCap, max(segEnd, segStart + 0.08)),
                     rect = swept,
                     piiClass = a.piiClass,
                     label = a.label
                 )
             } else {
                 val spanStart = segStart
-                val spanDur = (segEnd - segStart).coerceAtLeast(0.08)
+                val spanDur = segEnd - segStart
                 val step = spanDur / subCount.toDouble()
                 for (s in 0 until subCount) {
                     val alpha0 = (s.toFloat() / subCount.toFloat()).coerceIn(0f, 1f)
@@ -458,13 +463,17 @@ object VideoPiiRedactionEngine {
                     val t1 = spanStart + (s + 1) * step + 0.02
                     result += TimedPiiRegion(
                         startSec = t0,
-                        endSec = min(totalEndCap, t1).coerceAtLeast(t0 + 0.05),
+                        endSec = min(totalEndCap, max(t1, t0 + 0.05)),
                         rect = swept,
                         piiClass = a.piiClass,
                         label = a.label
                     )
                 }
             }
+        }
+        val lastEnd = min(totalEndCap, last.timeSec + padTrailSec)
+        if (lastEnd > last.timeSec) {
+            result += TimedPiiRegion(last.timeSec, lastEnd, last.rect, last.piiClass, last.label)
         }
         return result
     }
@@ -562,6 +571,14 @@ object VideoPiiRedactionEngine {
         maxFilters: Int = DEFAULT_MAX_FILTERS
     ): String? {
         if (regions.isEmpty() || frameW < 8 || frameH < 8) return null
+        require(regions.all { r ->
+            r.startSec.isFinite() && r.endSec.isFinite() && r.startSec >= 0.0 &&
+                r.endSec >= r.startSec &&
+                listOf(r.rect.left, r.rect.top, r.rect.right, r.rect.bottom).all { it.isFinite() } &&
+                r.rect.left < r.rect.right && r.rect.top < r.rect.bottom &&
+                r.rect.right > 0f && r.rect.bottom > 0f &&
+                r.rect.left < frameW && r.rect.top < frameH
+        }) { "Invalid selected video redaction region" }
         val safeBudget = maxFilters.coerceAtLeast(1)
         val bounded = compressToFilterBudget(regions, safeBudget)
         if (bounded.isEmpty()) return null
@@ -570,12 +587,8 @@ object VideoPiiRedactionEngine {
             PiiRedactionStyle.SOLID_BLACK, PiiRedactionStyle.SOLID_WHITE -> {
                 val colorName = if (style == PiiRedactionStyle.SOLID_WHITE) "white" else "black"
                 val filters = bounded.map { r ->
-                    val x = r.rect.left.roundToInt().coerceIn(0, frameW - 2)
-                    val y = r.rect.top.roundToInt().coerceIn(0, frameH - 2)
-                    val w = (r.rect.right.roundToInt() - x).coerceIn(2, frameW - x)
-                    val h = (r.rect.bottom.roundToInt() - y).coerceIn(2, frameH - y)
-                    val start = max(0.0, r.startSec)
-                    val end = max(start + 0.04, r.endSec)
+                    val (x, y, w, h) = outwardBox(r.rect, frameW, frameH, 2)
+                    val (start, end) = outwardTimes(r)
                     String.format(
                         Locale.US,
                         "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill:enable='between(t,%.2f,%.2f)'",
@@ -593,6 +606,28 @@ object VideoPiiRedactionEngine {
         }
     }
 
+    private data class FilterBox(val x: Int, val y: Int, val w: Int, val h: Int)
+
+    // Round outward to chroma-aligned coordinates instead of relying on
+    // crop/overlay's inward truncation on subsampled video.
+    private fun outwardBox(rect: RectF, frameW: Int, frameH: Int, minimum: Int): FilterBox {
+        fun axis(lo: Float, hi: Float, limit: Int): Pair<Int, Int> {
+            val start = floor(lo.toDouble() / 2).toInt().coerceIn(0, (limit - minimum) / 2) * 2
+            val end = (ceil(hi.toDouble().coerceAtMost(limit.toDouble()) / 2).toLong() * 2)
+                .coerceIn((start + minimum).toLong(), limit.toLong()).toInt()
+            return start to (end - start)
+        }
+        val (x, w) = axis(rect.left, rect.right, frameW)
+        val (y, h) = axis(rect.top, rect.bottom, frameH)
+        return FilterBox(x, y, w, h)
+    }
+
+    private fun outwardTimes(region: TimedPiiRegion): Pair<Double, Double> {
+        val start = floor(region.startSec * 100.0) / 100.0
+        val end = ceil(max(region.startSec + 0.04, region.endSec) * 100.0) / 100.0
+        return start to end
+    }
+
     private fun buildComplexRedactionGraph(
         regions: List<TimedPiiRegion>,
         frameW: Int,
@@ -600,16 +635,12 @@ object VideoPiiRedactionEngine {
         isPixelate: Boolean
     ): String {
         val sb = StringBuilder()
-        var currentInputPad = "0:v"
+        var currentInputPad = "0:v:0"
 
         for (i in regions.indices) {
             val r = regions[i]
-            val x = r.rect.left.roundToInt().coerceIn(0, frameW - 4)
-            val y = r.rect.top.roundToInt().coerceIn(0, frameH - 4)
-            val w = (r.rect.right.roundToInt() - x).coerceIn(4, frameW - x)
-            val h = (r.rect.bottom.roundToInt() - y).coerceIn(4, frameH - y)
-            val start = max(0.0, r.startSec)
-            val end = max(start + 0.04, r.endSec)
+            val (x, y, w, h) = outwardBox(r.rect, frameW, frameH, 4)
+            val (start, end) = outwardTimes(r)
 
             val basePad = "v_b$i"
             val cropPad = "v_c$i"
@@ -621,9 +652,9 @@ object VideoPiiRedactionEngine {
             if (isPixelate) {
                 val downW = max(2, w / 10)
                 val downH = max(2, h / 10)
-                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y,scale=$downW:$downH:flags=neighbor,scale=$w:$h:flags=neighbor[$procPad];")
+                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y:exact=1,scale=$downW:$downH:flags=neighbor,scale=$w:$h:flags=neighbor[$procPad];")
             } else {
-                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y,avgblur=sizeX=16:sizeY=16[$procPad];")
+                sb.append("[$cropPad]crop=w=$w:h=$h:x=$x:y=$y:exact=1,avgblur=sizeX=16:sizeY=16[$procPad];")
             }
 
             sb.append(String.format(
