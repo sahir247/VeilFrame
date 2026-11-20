@@ -105,7 +105,7 @@ private fun visitMetadata(document: PDDocument, mutate: Boolean) {
  */
 class PdfMetadataManager {
     
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
     
     /**
      * Read metadata from a PDF.
@@ -162,7 +162,7 @@ class PdfMetadataManager {
      * @param context Android context
      * @param inputUri URI of the PDF to update
      * @param outputStream Output stream for the updated PDF
-     * @param metadata New metadata values (null values are not updated)
+     * @param metadata New metadata values (null or blank values clear fields)
      * @param onProgress Progress callback (0.0 to 1.0)
      * @return Result indicating success or failure
      */
@@ -277,7 +277,7 @@ class PdfMetadataManager {
      */
     private fun formatDate(calendar: Calendar): String {
         return try {
-            dateFormat.format(calendar.time)
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(calendar.time)
         } catch (e: Exception) {
             "Unknown"
         }

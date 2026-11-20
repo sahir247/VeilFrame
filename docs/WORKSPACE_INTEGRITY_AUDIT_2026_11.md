@@ -261,3 +261,7 @@ Mask-enabled bundle generation now excludes known credential containers by case-
 
 - Removed self-correlation inflation from the multi-camera PRNU baseline. Both conditions now query the same enrolled fingerprint using held-out original and paired transformed probes. Reject absent/unpaired probes, incompatible geometry, nonfinite and empty/degenerate enrollment, and exact enrollment/probe overlap. Synthetic fixtures separate enrollment and original probes. Pair-only analysis remains a same-recording residual diagnostic. ROC threshold ties are grouped: a constant classifier must report AUC 0.5. Added null-effect, leakage and tie regressions.
 - Report matched/nonmatched camera-level pair counts and the fixed-threshold scope. Exact duplicate rejection cannot establish independent captures. Real Android output needs consented independent capture sessions, matched original/export files, frozen calibration and independent detectors; no anonymity claim. A22 PARTIAL pending device/corpus evaluation.
+
+### A05 — Metadata rewrite raw-byte regression
+
+Added a loaded-document full-rewrite fixture with an uncompressed metadata stream and private author sentinel; checks the serialized bytes for retained payload and independently verifies the reopened document structure. Removed shared mutable date formatter from concurrent metadata reads. Scope remains explicit PDF metadata, not opaque attachments or image payloads. Pending CI; A05 remains PARTIAL.

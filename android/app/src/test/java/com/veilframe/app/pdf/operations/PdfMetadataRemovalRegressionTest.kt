@@ -7,10 +7,34 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDResources
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import com.tom_roush.pdfbox.pdmodel.common.PDMetadata
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 
 class PdfMetadataRemovalRegressionTest {
+    @Test
+    fun fullRewriteDoesNotRetainUncompressedMetadataPayload() {
+        val marker = "VEILFRAME_PRIVATE_METADATA_SENTINEL_72519"
+        val original = PDDocument().use { document ->
+            document.addPage(PDPage())
+            document.documentInformation.author = marker
+            document.documentCatalog.metadata = PDMetadata(document).apply {
+                cosObject.createOutputStream().use { it.write(marker.toByteArray(Charsets.US_ASCII)) }
+            }
+            ByteArrayOutputStream().use { document.save(it); it.toByteArray() }
+        }
+        val sanitized = PDDocument.load(original).use { document ->
+            stripPdfMetadata(document)
+            ByteArrayOutputStream().use { document.save(it); it.toByteArray() }
+        }
+        assertFalse(sanitized.toString(Charsets.ISO_8859_1).contains(marker))
+        PDDocument.load(sanitized).use { document ->
+            verifyStrippedPdfMetadata(document)
+            assertEquals(1, document.numberOfPages)
+        }
+    }
+
     @Test
     fun clearsCatalogPageAndNestedResourceMetadataAfterSave() {
         val bytes = PDDocument().use { document ->
