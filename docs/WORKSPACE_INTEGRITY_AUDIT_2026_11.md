@@ -39,7 +39,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A20 | P1 | PATCHED | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
 | A21 | P1 | PARTIAL | Workspace resource lifecycle dispersed; retained inflated views | `workspace/WorkspaceHost.kt` | Trace navigation/controller ownership; cancel resources without breaking sessions. |
 | A22 | P2 | OPEN | PRNU external attribution resistance not established | `cv/prnu/PrnuSanitizerEngine.kt` | Retain honest diagnostic wording; benchmark independently. |
-| A23 | P2 | OPEN | Stabilization real-world tracking quality and limitations | `cv/motion/VideoStabilizerEngine.kt` | Benchmark difficult footage and confidence behavior. |
+| A23 | P2 | PARTIAL | Stabilization real-world tracking quality and limitations | `cv/motion/VideoStabilizerEngine.kt` | Benchmark difficult footage and confidence behavior. |
 | A24 | P2 | PARTIAL | Native matting activation/model contract uncertain | `cpp/matting_jni.cpp:292-316` | Inspect actual model graph before changing sigmoid; CPU/GPU parity. |
 | A25 | P2 | OPEN | Native mutex cancellation latency, model and GPU lifecycle | `cpp/{matting,pii_ncnn,rife,realsr,veilnet}_jni.cpp; vulkan_gpu_lifecycle.h` | Stress device concurrency and measure native cancellation. |
 | A26 | P2 | OPEN | Upscaler tile seams, model fidelity and generated detail | `upscale/inference/` | Measure dimensions, boundaries, memory and preview/export consistency. |
@@ -194,3 +194,9 @@ Mask-enabled bundle generation now excludes known credential containers by case-
 
 - Source inspection found that the “structural” optimizer also flattened transparent images onto white and deduplicated decoded bytes with MD5 independently of image dictionary semantics. Removed raw-byte dedup; retain only identity-based indirect-object reuse. Limit JPEG replacement to plain opaque 8-bit DeviceRGB images, preserve masked/custom/annotated image dictionaries, bound image decode size, and retain original when a candidate cannot be reopened with the original page count.
 - All three public compression entry points preflight PDF page count, modification rights and signature/rights dictionaries before writing. Strict target failure returns an independently owned fallback file without also writing a failed candidate to the destination; targets already met pass through unchanged. Added COS eligibility and document preflight tests. PARTIAL: explicit raster opt-in, signed-file UI acceptance and rendered appearance/color-profile integration fixtures remain open. No claim of arbitrary PDF fidelity.
+
+### A23 — Stabilization source ownership and baked-state truthfulness
+
+- Standalone libvidstab analysis and rendering explicitly select the same video stream; first-pass progress uses source duration when no trim is requested. The render retains the first audio stream if present.
+- EIS dialog guards callbacks by workspace generation and selected source, disables the false undo action for baked footage, and discloses tracking limitations. Stabilization waits for source copy, uses a unique output path, and dismisses progress on cancellation.
+- Remaining: multi-stream, scene-cut, moving-subject and low-texture device fixtures; frame-quality and crop measurements. Android CI/device verification pending; no tracking-quality claim.

@@ -412,7 +412,19 @@ object VideoProcessor {
         onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)?
     ): VidstabPass1Outcome {
         val trfFile = File.createTempFile("vf_vidstab_", ".trf", trfParent)
-        val effectiveDurMs = (trimDurationSec * 1000.0).coerceAtLeast(1000.0)
+        val effectiveDurMs = if (trimDurationSec > 0.05) {
+            trimDurationSec * 1000.0
+        } else {
+            runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(srcFile.absolutePath)
+                    retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull()
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull() ?: 1000.0
+        }.coerceAtLeast(1.0)
         val pass1Cmd = mutableListOf<String>().apply {
             add("-y")
             add("-nostdin")
@@ -518,6 +530,8 @@ object VideoProcessor {
                 add("-nostdin")
                 add("-threads"); add("2")
                 add("-i"); add(srcFile.absolutePath)
+                add("-map"); add("0:v:0")
+                add("-map"); add("0:a:0?")
                 add("-map_metadata"); add("-1")
                 add("-map_chapters"); add("-1")
                 add("-vf"); add(transformVf)

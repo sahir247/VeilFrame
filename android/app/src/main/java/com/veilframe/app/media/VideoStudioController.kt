@@ -2457,6 +2457,8 @@ class VideoStudioController(
             return
         }
 
+        val dialogGeneration = activeGeneration
+        val baked = editState.isStabilizationBaked
         Log.d(TAG, "Opening Pro 2-Pass EIS dialog (FFmpeg libvidstab)")
 
         VideoEisDialog.show(
@@ -2465,17 +2467,21 @@ class VideoStudioController(
             isCurrentlyEnabled = editState.isStabilized,
             videoFile = item.file,
             onApply = { config ->
-                executeImmediateStabilization(item, config)
+                if (activeGeneration == dialogGeneration && currentItem === item) {
+                    executeImmediateStabilization(item, config)
+                }
             },
             onDisable = {
-                editState.isStabilized = false
-                editState.isStabilizationBaked = false
-                currentItem?.editState?.copyFrom(editState)
-                updateStabilizeButtonState()
-                refreshStats()
-                updateEditSummary()
-                Toast.makeText(activity, "Stabilization disabled", Toast.LENGTH_SHORT).show()
-            }
+                if (activeGeneration == dialogGeneration && currentItem === item && !editState.isStabilizationBaked) {
+                    editState.isStabilized = false
+                    currentItem?.editState?.copyFrom(editState)
+                    updateStabilizeButtonState()
+                    refreshStats()
+                    updateEditSummary()
+                    Toast.makeText(activity, "Stabilization disabled", Toast.LENGTH_SHORT).show()
+                }
+            },
+            canDisable = !baked
         )
     }
 
@@ -2504,13 +2510,14 @@ class VideoStudioController(
             }
         )
 
-        val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
+        val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${java.util.UUID.randomUUID()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
             var outputHandedToComparison = false
             val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
             ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
+                if (item.copyJob?.isActive == true) item.copyJob?.join()
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
                 }
@@ -2532,7 +2539,7 @@ class VideoStudioController(
 
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
-                    if (activeGeneration != gen) return@withContext
+                    if (activeGeneration != gen || currentItem !== item) return@withContext
 
                     if (result.success && tempStabilizedFile.exists() && tempStabilizedFile.length() > 0L) {
                         VideoEisComparisonDialog.show(
@@ -2596,6 +2603,9 @@ class VideoStudioController(
                 }
             } finally {
                 if (!outputHandedToComparison) tempStabilizedFile.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (progressDialog.isShowing) progressDialog.dismiss()
+                }
             }
         }
     }
