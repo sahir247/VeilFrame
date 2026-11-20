@@ -27,6 +27,35 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun workbookRelationshipsControlSheetOrderAndNonContiguousPartNames() {
+        val workbook = """<workbook><sheets>
+            <sheet name="First" sheetId="8" r:id="rId9"/>
+            <sheet name="Second" sheetId="3" r:id="rId2"/>
+            </sheets></workbook>"""
+        val rels = """<Relationships>
+            <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+            <Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet8.xml"/>
+            </Relationships>"""
+        fun worksheet(value: String) = """<worksheet><sheetData><row r="1"><c r="A1"><v>$value</v></c></row></sheetData></worksheet>"""
+        val entries = mapOf("xl/workbook.xml" to workbook, "xl/_rels/workbook.xml.rels" to rels,
+            "xl/worksheets/sheet3.xml" to worksheet("23"), "xl/worksheets/sheet8.xml" to worksheet("87"))
+        val file = createZipFile(entries)
+        try {
+            val sheets = OpenXmlDocumentParser.parseXlsx(file).sheets
+            assertEquals(listOf("First", "Second"), sheets.map { it.name })
+            assertEquals(listOf("87", "23"), sheets.map { it.rows.first().first() })
+        } finally { file.delete() }
+        val bad = createZipFile(entries + ("xl/worksheets/sheet3.xml" to "<worksheet><broken>"))
+        try {
+            org.junit.Assert.assertThrows(Exception::class.java) { OpenXmlDocumentParser.parseXlsx(bad) }
+        } finally { bad.delete() }
+        val missing = createZipFile(entries - "xl/worksheets/sheet3.xml")
+        try {
+            org.junit.Assert.assertThrows(Exception::class.java) { OpenXmlDocumentParser.parseXlsx(missing) }
+        } finally { missing.delete() }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -72,14 +72,12 @@ object OpenXmlDocumentParser {
 
     fun parseDocx(file: File): DocxDocument {
         val nodes = mutableListOf<DocxNode>()
-        try {
-            ZipFile(file).use { zip ->
-                val entry = zip.getEntry("word/document.xml") ?: return DocxDocument(emptyList())
-                zip.getInputStream(entry).use { stream ->
-                    parseDocxStream(stream, nodes)
-                }
+        ZipFile(file).use { zip ->
+            val entry = zip.getEntry("word/document.xml") ?: throw java.io.IOException("Word document XML missing")
+            zip.getInputStream(entry).use { stream ->
+                parseDocxStream(stream, nodes)
             }
-        } catch (_: Throwable) {}
+        }
         return DocxDocument(nodes)
     }
 
@@ -328,54 +326,110 @@ object OpenXmlDocumentParser {
         val sheets: List<XlsxSheetData>
     )
 
+    private data class SheetPart(val name: String, val path: String)
+    private data class WorkbookRelationship(val type: String, val path: String)
+
+    private fun workbookPartPath(target: String): String {
+        val uri = java.net.URI(target)
+        require(!uri.isAbsolute && uri.rawAuthority == null && uri.rawQuery == null &&
+            uri.rawFragment == null && !target.contains('\\')) { "Invalid workbook relationship target" }
+        val resolved = java.net.URI("/xl/workbook.xml").resolve(uri).normalize().path
+        require(resolved.startsWith("/") && !resolved.startsWith("//") &&
+            resolved.split('/').none { it == ".." || it == "." }) { "Invalid workbook part path" }
+        return resolved.removePrefix("/")
+    }
+
+    private fun workbookRelationships(zip: ZipFile): Map<String, WorkbookRelationship>? {
+        val entry = zip.getEntry("xl/_rels/workbook.xml.rels") ?: return null
+        val doc = zip.getInputStream(entry).use { newDocBuilder().parse(it) }
+        val relationships = doc.getElementsByTagName("*")
+        val result = linkedMapOf<String, WorkbookRelationship>()
+        for (i in 0 until relationships.length) {
+            val node = relationships.item(i) as? Element ?: continue
+            if (node.localName() != "Relationship") continue
+            val id = node.getAttribute("Id")
+            val type = node.getAttribute("Type")
+            // External links are irrelevant to local worksheet rendering. If a sheet
+            // references one, the absent relationship will cause a visible failure.
+            if (node.getAttribute("TargetMode").equals("External", ignoreCase = true)) continue
+            require(id.isNotBlank() && type.isNotBlank()) { "Malformed workbook relationship" }
+            require(result.put(id, WorkbookRelationship(type, workbookPartPath(node.getAttribute("Target")))) == null) {
+                "Duplicate workbook relationship ID"
+            }
+        }
+        return result
+    }
+
+    private fun orderedSheetParts(zip: ZipFile, relationships: Map<String, WorkbookRelationship>?): List<SheetPart> {
+        val entry = zip.getEntry("xl/workbook.xml") ?: throw java.io.IOException("Workbook XML missing")
+        val doc = zip.getInputStream(entry).use { newDocBuilder().parse(it) }
+        val nodes = doc.getElementsByTagName("*")
+        val parts = mutableListOf<SheetPart>()
+        val usedPaths = mutableSetOf<String>()
+        for (i in 0 until nodes.length) {
+            val element = nodes.item(i) as? Element ?: continue
+            if (element.localName() != "sheet") continue
+            val title = element.getAttribute("name")
+            require(title.isNotBlank()) { "Workbook contains an unnamed sheet" }
+            val path = if (relationships != null) {
+                // Namespace prefix is not fixed; the relationship attribute is identified
+                // by local name. sheetId is not the relationship ID.
+                val attrs = element.attributes
+                val id = (0 until attrs.length).map { attrs.item(it) }
+                    .firstOrNull { it.nodeName.substringAfterLast(':') == "id" }?.nodeValue
+                val relationship = relationships[id] ?: throw java.io.IOException("Missing relationship for worksheet $title")
+                require(relationship.type.endsWith("/worksheet")) {
+                    "Unsupported non-worksheet sheet: $title"
+                }
+                relationship.path
+            } else {
+                // Compatibility only for minimally packaged workbooks used by older
+                // exports/tests. Do not infer a missing, reordered or extra worksheet.
+                require(element.getAttribute("sheetId").toIntOrNull() == parts.size + 1) {
+                    "Workbook relationships are missing; worksheet order is ambiguous"
+                }
+                "xl/worksheets/sheet${parts.size + 1}.xml"
+            }
+            require(usedPaths.add(path)) { "Multiple workbook sheets reference $path" }
+            require(zip.getEntry(path) != null) { "Missing worksheet part: $title ($path)" }
+            parts.add(SheetPart(title, path))
+        }
+        require(parts.isNotEmpty()) { "Workbook has no worksheets" }
+        if (relationships == null) {
+            val actual = zip.entries().asSequence().filter {
+                !it.isDirectory && it.name.matches(Regex("xl/worksheets/sheet[0-9]+\\.xml"))
+            }.map { it.name }.toSet()
+            require(actual == usedPaths) { "Workbook relationships are missing; worksheet set is ambiguous" }
+        }
+        return parts
+    }
+
+    /** A malformed later sheet must fail the entire workbook, never return a prefix. */
     fun parseXlsx(file: File): XlsxWorkbookData {
         val sheets = mutableListOf<XlsxSheetData>()
-        try {
-            ZipFile(file).use { zip ->
-                // 1. Parse shared strings table (xl/sharedStrings.xml)
-                val sharedStrings = mutableListOf<String>()
-                val sstEntry = zip.getEntry("xl/sharedStrings.xml")
-                if (sstEntry != null) {
-                    zip.getInputStream(sstEntry).use { stream ->
-                        parseSharedStrings(stream, sharedStrings)
-                    }
-                }
-
-                // 2. Parse sheet list from xl/workbook.xml
-                val sheetNames = mutableListOf<String>()
-                val wbEntry = zip.getEntry("xl/workbook.xml")
-                if (wbEntry != null) {
-                    zip.getInputStream(wbEntry).use { stream ->
-                        parseWorkbookSheetNames(stream, sheetNames)
-                    }
-                }
-
-                // 3. Parse individual sheets
-                var sheetIdx = 1
-                while (true) {
-                    val sheetEntry = zip.getEntry("xl/worksheets/sheet$sheetIdx.xml") ?: break
-                    val name = if (sheetIdx - 1 < sheetNames.size) sheetNames[sheetIdx - 1] else "Sheet$sheetIdx"
-                    val sheetRows = mutableListOf<List<String>>()
-                    val sheetSparseRows = mutableListOf<XlsxRow>()
-                    val sheetMergedRegions = mutableListOf<CellRangeAddress>()
-                    val (frozenCols, frozenRows) = zip.getInputStream(sheetEntry).use { stream ->
-                        parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions)
-                    }
-                    sheets.add(
-                        XlsxSheetData(
-                            name = name,
-                            rows = sheetRows,
-                            sparseRows = sheetSparseRows,
-                            mergedRegions = sheetMergedRegions,
-                            frozenColumns = frozenCols,
-                            frozenRows = frozenRows
-                        )
-                    )
-                    sheetIdx++
-                }
+        ZipFile(file).use { zip ->
+            val relationships = workbookRelationships(zip)
+            val parts = orderedSheetParts(zip, relationships)
+            val sharedStrings = mutableListOf<String>()
+            val sharedPart = relationships?.values?.singleOrNull { it.type.endsWith("/sharedStrings") }?.path
+            val sstEntry = if (sharedPart != null) zip.getEntry(sharedPart)
+                ?: throw java.io.IOException("Missing shared strings part")
+                else zip.getEntry("xl/sharedStrings.xml")
+            if (sstEntry != null) {
+                zip.getInputStream(sstEntry).use { stream -> parseSharedStrings(stream, sharedStrings) }
             }
-        } catch (e: Throwable) {
-            if (e is IllegalArgumentException) throw e
+            for (part in parts) {
+                val sheetRows = mutableListOf<List<String>>()
+                val sheetSparseRows = mutableListOf<XlsxRow>()
+                val sheetMergedRegions = mutableListOf<CellRangeAddress>()
+                val (frozenCols, frozenRows) = zip.getInputStream(zip.getEntry(part.path)).use { stream ->
+                    parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions)
+                }
+                sheets.add(XlsxSheetData(
+                    name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
+                    mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows
+                ))
+            }
         }
         return XlsxWorkbookData(sheets)
     }
@@ -391,18 +445,6 @@ object OpenXmlDocumentParser {
                 sb.append(tList.item(j).textContent ?: "")
             }
             outStrings.add(sb.toString())
-        }
-    }
-
-    private fun parseWorkbookSheetNames(stream: InputStream, outNames: MutableList<String>) {
-        val doc = newDocBuilder().parse(stream)
-        val sheetList = doc.getElementsByTagName("sheet")
-        for (i in 0 until sheetList.length) {
-            val sheet = sheetList.item(i) as Element
-            val name = sheet.getAttribute("name")
-            if (name.isNotEmpty()) {
-                outNames.add(name)
-            }
         }
     }
 
@@ -431,6 +473,10 @@ object OpenXmlDocumentParser {
         outMergedRegions: MutableList<CellRangeAddress>? = null
     ): Pair<Int, Int> {
         val doc = newDocBuilder().parse(stream)
+        require(doc.documentElement.localName() == "worksheet") { "Invalid worksheet XML root" }
+        // This parser uses unprefixed worksheet element names. Refuse unsupported
+        // prefixed XML rather than silently returning an empty worksheet.
+        require(doc.documentElement.nodeName == "worksheet") { "Unsupported prefixed worksheet XML" }
 
         var frozenCols = 0
         var frozenRows = 0

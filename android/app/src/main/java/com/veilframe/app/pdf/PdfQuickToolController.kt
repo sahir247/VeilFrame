@@ -1066,7 +1066,8 @@ class PdfQuickToolController(
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (failure: Exception) {
+            } catch (failure: Throwable) {
+                if (failure !is Exception && failure !is LinkageError) throw failure
                 Log.w(TAG, "Office source inspection failed", failure)
                 withContext(Dispatchers.Main) {
                     if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
@@ -1094,10 +1095,12 @@ class PdfQuickToolController(
         sheetGrid: List<List<String>>?,
         slideElements: List<String>?
     ): Bitmap? {
+        var allocated: Bitmap? = null
         return try {
             val width = 720
             val height = if (docType == "PPTX") 480 else 1018
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            allocated = bitmap
             val canvas = Canvas(bitmap)
 
             // Clean white paper
@@ -1308,6 +1311,8 @@ class PdfQuickToolController(
 
             bitmap
         } catch (t: Throwable) {
+            allocated?.recycle()
+            if (t !is Exception) throw t
             Log.e(TAG, "renderOfficePreviewBitmap failed: ${t.message}", t)
             null
         }
