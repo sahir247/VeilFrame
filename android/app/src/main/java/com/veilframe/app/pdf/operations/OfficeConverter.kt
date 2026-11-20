@@ -963,13 +963,16 @@ class OfficeConverter {
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
-                if (maxCol == 0 && sheet.mergedRegions.isEmpty()) continue // Empty sheet
+                if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0) continue // Empty sheet
 
                 val notes = buildList {
                     if (sheet.cachedFormulaCount > 0) add("cached formulas; not recalculated")
                     if (sheet.unsupportedConditionalRules > 0) add("conditional formatting partial")
+                    if (sheet.charts.isNotEmpty()) add("cached charts follow")
+                    if (sheet.unsupportedDrawings > 0) add("some drawing objects unsupported")
                 }
                 val displayedSheet = if (notes.isEmpty()) sheet else sheet.copy(name = sheet.name + " [" + notes.joinToString("; ") + "]")
+                if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
                 val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits)
                 require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
                     "Workbook exceeds PDF page budget"
@@ -1009,12 +1012,117 @@ class OfficeConverter {
                         )
                     }
                 }
+                }
+                for (chart in sheet.charts) renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint)
+                if (sheet.unsupportedDrawings > 0 && maxCol == 0 && sheet.mergedRegions.isEmpty()) {
+                    require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+                    val page = PDPage(PDRectangle(842f, 595f))
+                    pdf.addPage(page)
+                    PDPageContentStream(pdf, page).use { stream ->
+                        stream.beginText(); stream.setFont(fontBold, 12f); stream.newLineAtOffset(30f, 550f)
+                        safeShowText(stream, sheet.name + ": unsupported drawing objects", fontBold); stream.endText()
+                    }
+                }
             }
 
             require(pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
+    private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+        val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
+        val maxAbs = chart.series.flatMap { it.values }.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }
+            ?.takeIf { it > 0.0 } ?: 1.0
+        val min = minOf(0.0, chart.series.flatMap { it.values }.filterNotNull().minOrNull() ?: 0.0) / maxAbs
+        val max = maxOf(0.0, chart.series.flatMap { it.values }.filterNotNull().maxOrNull() ?: 0.0) / maxAbs
+        val high = if (max == min) min + 1.0 else max
+        fun fraction(v: Double) = ((v / maxAbs - min) / (high - min)).toFloat().coerceIn(0f, 1f)
+        for ((panel, indices) in chart.categories.indices.chunked(12).withIndex()) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val page = PDPage(PDRectangle(842f, 595f))
+            pdf.addPage(page)
+            PDPageContentStream(pdf, page).use { stream ->
+                val font = PDType1Font.HELVETICA
+                fun label(value: String, x: Float, y: Float, size: Float = 9f, bold: Boolean = false) {
+                    val f = if (bold) PDType1Font.HELVETICA_BOLD else font
+                    stream.setNonStrokingColor(0, 0, 0)
+                    stream.beginText(); stream.setFont(f, size); stream.newLineAtOffset(x, y)
+                    safeShowText(stream, value, f); stream.endText()
+                }
+                fun color(rgb: Int) { stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
+                fun stroke(rgb: Int) { stream.setStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
+                fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
+                    stream.moveTo(x1,y1); stream.lineTo(x2,y2); stream.stroke()
+                }
+                label(sheet.take(70) + " / Cached chart " + (panel + 1), 30f, 565f, 11f, true)
+                label(chart.title.take(100), 30f, 545f, 13f, true)
+                label("Saved chart cache; reconstructed appearance, not recalculated", 30f, 529f)
+                val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
+                val horizontal = chart.kind == "bar"
+                val slot = (if (horizontal) height else width) / indices.size
+                val zero = if (horizontal) left + fraction(0.0)*width else bottom + fraction(0.0)*height
+                stroke(0xB0B0B0); stream.setLineWidth(0.5f)
+                if (horizontal) line(zero,bottom,zero,bottom+height) else line(left,zero,left+width,zero)
+                for (tick in 0..4) {
+                    val f = tick / 4f
+                    val v = (min + (high - min)*f) * maxAbs
+                    val value = String.format(java.util.Locale.US, "%.4g", v)
+                    stroke(0xE0E0E0)
+                    if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-12f,8f) }
+                    else { val y = bottom + f*height; line(left,y,left+width,y); label(value,30f,y-3f,8f) }
+                }
+                for ((seriesIndex, series) in chart.series.withIndex()) {
+                    checkpoint()
+                    var previous: Pair<Float,Float>? = null
+                    val bar = slot * 0.8f / chart.series.size
+                    for ((local, index) in indices.withIndex()) {
+                        val v = series.values[index]
+                        if (v == null) { previous = null; continue }
+                        val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
+                        if (chart.kind == "line") {
+                            val y = bottom + fraction(v)*height
+                            stroke(palette[seriesIndex]); stream.setLineWidth(1.4f)
+                            previous?.let { line(it.first,it.second,position,y) }
+                            color(palette[seriesIndex]); stream.addRect(position-2f,y-2f,4f,4f); stream.fill()
+                            previous = position to y
+                        } else {
+                            color(palette[seriesIndex])
+                            val offset = position - slot*0.4f + seriesIndex*bar
+                            if (horizontal) {
+                                val x = left + fraction(v)*width
+                                stream.addRect(minOf(x,zero),offset,kotlin.math.abs(x-zero),bar*0.9f)
+                            } else {
+                                val y = bottom + fraction(v)*height
+                                stream.addRect(offset,minOf(y,zero),bar*0.9f,kotlin.math.abs(y-zero))
+                            }
+                            stream.fill()
+                        }
+                    }
+                }
+                for ((local,index) in indices.withIndex()) {
+                    if (horizontal) label((index+1).toString(),80f,bottom+height-slot*(local+0.5f)-3f,8f)
+                    else label((index+1).toString(),left+slot*(local+0.5f)-3f,bottom-12f,8f)
+                }
+                // Index labels and a numeric cache table make small bars, missing values and
+                // category order auditable independently from the simplified chart graphics.
+                val column = 570f / chart.series.size
+                for ((i,series) in chart.series.withIndex()) {
+                    color(palette[i]); stream.addRect(230f+i*column,231f,8f,8f); stream.fill()
+                    label(series.name.take(14),241f+i*column,231f,8f)
+                }
+                for ((local,index) in indices.withIndex()) {
+                    val y = 213f-local*14f
+                    label((index+1).toString() + " " + (chart.categories[index] ?: "(missing category)").take(30),30f,y,8f)
+                    for ((i,series) in chart.series.withIndex())
+                        label(series.values[index]?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",230f+i*column,y,8f)
+                }
+                label("Labels and numbers abbreviated for display; absent cache points are not inferred.", 30f, 28f, 8f)
+            }
         }
     }
 

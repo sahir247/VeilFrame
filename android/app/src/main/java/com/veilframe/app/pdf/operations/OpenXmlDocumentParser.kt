@@ -421,7 +421,9 @@ object OpenXmlDocumentParser {
         val cachedFormulaCount: Int = 0,
         val dimensions: XlsxDimensions = XlsxDimensions(),
         val styles: XlsxCellStyles = XlsxCellStyles(),
-        val unsupportedConditionalRules: Int = 0
+        val unsupportedConditionalRules: Int = 0,
+        val charts: List<XlsxCachedChart> = emptyList(),
+        val unsupportedDrawings: Int = 0
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -433,18 +435,19 @@ object OpenXmlDocumentParser {
     private data class SheetPart(val name: String, val path: String)
     private data class WorkbookRelationship(val type: String, val path: String)
 
-    private fun workbookPartPath(target: String): String {
+    private fun relatedPartPath(source: String, target: String): String {
         val uri = java.net.URI(target)
         require(!uri.isAbsolute && uri.rawAuthority == null && uri.rawQuery == null &&
             uri.rawFragment == null && !target.contains('\\')) { "Invalid workbook relationship target" }
-        val resolved = java.net.URI("/xl/workbook.xml").resolve(uri).normalize().path
+        val resolved = java.net.URI("/" + source).resolve(uri).normalize().path
         require(resolved.startsWith("/") && !resolved.startsWith("//") &&
             resolved.split('/').none { it == ".." || it == "." }) { "Invalid workbook part path" }
         return resolved.removePrefix("/")
     }
 
-    private fun workbookRelationships(zip: ZipFile, budget: XmlReadBudget): Map<String, WorkbookRelationship>? {
-        val entry = zip.getEntry("xl/_rels/workbook.xml.rels") ?: return null
+    private fun partRelationships(zip: ZipFile, budget: XmlReadBudget, source: String): Map<String, WorkbookRelationship>? {
+        val relPath = source.substringBeforeLast('/', "") + "/_rels/" + source.substringAfterLast('/') + ".rels"
+        val entry = zip.getEntry(relPath.removePrefix("/")) ?: return null
         val doc = parseXml(budget.read(zip, entry))
         require(doc.documentElement.localName() == "Relationships") { "Invalid workbook relationships root" }
         val relationships = doc.getElementsByTagName("*")
@@ -458,7 +461,7 @@ object OpenXmlDocumentParser {
             // references one, the absent relationship will cause a visible failure.
             if (node.getAttribute("TargetMode").equals("External", ignoreCase = true)) continue
             require(id.isNotBlank() && type.isNotBlank()) { "Malformed workbook relationship" }
-            require(result.put(id, WorkbookRelationship(type, workbookPartPath(node.getAttribute("Target")))) == null) {
+            require(result.put(id, WorkbookRelationship(type, relatedPartPath(source, node.getAttribute("Target")))) == null) {
                 "Duplicate workbook relationship ID"
             }
         }
@@ -515,7 +518,7 @@ object OpenXmlDocumentParser {
         var totalTextChars = 0L
         ZipFile(file).use { zip ->
             val budget = XmlReadBudget()
-            val relationships = workbookRelationships(zip, budget)
+            val relationships = partRelationships(zip, budget, "xl/workbook.xml")
             val workbookEntry = zip.getEntry("xl/workbook.xml") ?: throw IOException("Workbook XML missing")
             val workbook = parseXml(budget.read(zip, workbookEntry))
             val parts = orderedSheetParts(zip, relationships, workbook)
@@ -565,15 +568,127 @@ object OpenXmlDocumentParser {
                     totalTextChars <= SpreadsheetGeometry.MAX_WORKBOOK_TEXT_CHARS) {
                     "Workbook exceeds aggregate worksheet layout budget"
                 }
+                val (charts, unsupportedDrawings) = readWorksheetCharts(zip, budget, part.path, metadata.drawingIds)
+                require(sheets.sumOf { it.charts.size } + charts.size <= 64) { "Workbook chart count exceeds budget" }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
                     cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions,
-                    styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules
+                    styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules,
+                    charts = charts, unsupportedDrawings = unsupportedDrawings
                 ))
             }
         }
         return XlsxWorkbookData(sheets)
+    }
+
+    private fun relationshipId(element: Element): String {
+        val attrs = element.attributes
+        val ids = (0 until attrs.length).map { attrs.item(it) }
+            .filter { it.nodeName.substringAfterLast(':') == "id" }.map { it.nodeValue }
+        require(ids.size == 1 && ids.single().isNotBlank()) { "Missing or ambiguous drawing relationship ID" }
+        return ids.single()
+    }
+
+    private fun descendants(element: Element, name: String): List<Element> {
+        val nodes = element.getElementsByTagName("*")
+        return (0 until nodes.length).mapNotNull { nodes.item(it) as? Element }.filter { it.localName() == name }
+    }
+
+    private fun readWorksheetCharts(zip: ZipFile, budget: XmlReadBudget, sheet: String,
+        drawingIds: List<String>): Pair<List<XlsxCachedChart>, Int> {
+        if (drawingIds.isEmpty()) return emptyList<XlsxCachedChart>() to 0
+        require(drawingIds.size <= 16 && drawingIds.distinct().size == drawingIds.size) { "Ambiguous worksheet drawings" }
+        val sheetRels = partRelationships(zip, budget, sheet).orEmpty()
+        val charts = mutableListOf<XlsxCachedChart>()
+        var unsupported = 0
+        for (id in drawingIds) {
+            val rel = sheetRels[id] ?: throw IOException("Missing worksheet drawing relationship")
+            require(rel.type.endsWith("/drawing")) { "Invalid worksheet drawing relationship type" }
+            val entry = zip.getEntry(rel.path) ?: throw IOException("Missing worksheet drawing part")
+            val drawing = parseXml(budget.read(zip, entry)).documentElement
+            require(drawing.localName() == "wsDr") { "Invalid spreadsheet drawing root" }
+            val drawingRels = partRelationships(zip, budget, rel.path).orEmpty()
+            val refs = descendants(drawing, "chart")
+            unsupported += descendants(drawing, "pic").size + descendants(drawing, "sp").size +
+                descendants(drawing, "graphicFrame").size.coerceAtLeast(refs.size) - refs.size
+            require(refs.size + charts.size <= 32) { "Worksheet chart count exceeds budget" }
+            for (ref in refs) {
+                val chartRel = drawingRels[relationshipId(ref)] ?: throw IOException("Missing drawing chart relationship")
+                require(chartRel.type.endsWith("/chart")) { "Invalid drawing chart relationship type" }
+                val chartEntry = zip.getEntry(chartRel.path) ?: throw IOException("Missing chart part")
+                val chart = parseCachedChart(parseXml(budget.read(zip, chartEntry)).documentElement)
+                if (chart == null) unsupported++ else charts.add(chart)
+            }
+        }
+        return charts to unsupported
+    }
+
+    private fun parseCachedChart(root: Element): XlsxCachedChart? {
+        require(root.localName() == "chartSpace") { "Invalid spreadsheet chart root" }
+        val chart = root.childElements("chart").singleOrNull() ?: return null
+        val plot = chart.childElements("plotArea").singleOrNull() ?: return null
+        val chartTypes = (0 until plot.childNodes.length).mapNotNull { plot.childNodes.item(it) as? Element }
+            .filter { it.localName().endsWith("Chart") }
+        val type = chartTypes.singleOrNull() ?: return null
+        val kind = when (type.localName()) {
+            "barChart" -> {
+                if (type.childElements("grouping").singleOrNull()?.getAttribute("val") != "clustered") return null
+                when (type.childElements("barDir").singleOrNull()?.getAttribute("val")) {
+                    "col" -> "column"
+                    "bar" -> "bar"
+                    else -> return null
+                }
+            }
+            "lineChart" -> {
+                if (type.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard")) return null
+                "line"
+            }
+            else -> return null
+        }
+        fun text(element: Element?): String? {
+            if (element == null) return null
+            val str = descendants(element, "t").joinToString(" ") { it.textContent }
+                .ifBlank { descendants(element, "v").firstOrNull()?.textContent.orEmpty() }
+            require(str.length <= 1024) { "Chart label exceeds budget" }
+            return str.takeIf { it.isNotBlank() }
+        }
+        fun cache(parent: Element?, numeric: Boolean): List<String?>? {
+            if (parent == null) return null
+            val names = if (numeric) setOf("numCache", "numLit") else setOf("strCache", "strLit", "numCache", "numLit")
+            val caches = (0 until parent.getElementsByTagName("*").length)
+                .mapNotNull { parent.getElementsByTagName("*").item(it) as? Element }
+                .filter { it.localName() in names }
+            val cache = caches.singleOrNull() ?: return null
+            val count = cache.childElements("ptCount").singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: return null
+            require(count in 1..240) { "Chart point count exceeds supported budget" }
+            val points = MutableList<String?>(count) { null }
+            val seen = mutableSetOf<Int>()
+            for (point in cache.childElements("pt")) {
+                val index = point.getAttribute("idx").toIntOrNull()
+                require(index != null && index in points.indices && seen.add(index)) { "Invalid chart cache point index" }
+                val value = point.childElements("v").singleOrNull()?.textContent ?: return null
+                require(value.length <= 1024) { "Chart point value exceeds budget" }
+                points[index] = value
+            }
+            return points
+        }
+        val series = type.childElements("ser")
+        if (series.isEmpty() || series.size > 6) return null
+        var labels: List<String?>? = null
+        val parsed = mutableListOf<XlsxCachedChart.Series>()
+        for ((index, ser) in series.withIndex()) {
+            val raw = cache(ser.childElements("val").singleOrNull(), true) ?: return null
+            val values = raw.map { value ->
+                if (value == null) null else value.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
+            }
+            val categories = cache(ser.childElements("cat").singleOrNull(), false)
+                ?: List(values.size) { (it + 1).toString() }
+            if (categories.size != values.size || (labels != null && labels != categories)) return null
+            labels = categories
+            parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1), values))
+        }
+        return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed)
     }
 
     private data class ParsedXlsxStyles(
@@ -805,7 +920,7 @@ object OpenXmlDocumentParser {
 
     private data class WorksheetMetadata(
         val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions,
-        val styles: XlsxCellStyles, val unsupportedConditionalRules: Int
+        val styles: XlsxCellStyles, val unsupportedConditionalRules: Int, val drawingIds: List<String>
     )
 
     private fun parseConditionalFormatting(root: Element, differential: List<XlsxConditionalFormatting.Delta?>):
@@ -912,7 +1027,8 @@ object OpenXmlDocumentParser {
         var cachedFormulaCount = 0
         fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
             XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights),
-            XlsxCellStyles(visuals, styledRows, showGridLines), conditional.count { it.delta == null })
+            XlsxCellStyles(visuals, styledRows, showGridLines), conditional.count { it.delta == null },
+            root.childElements("drawing").map { relationshipId(it) })
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {
