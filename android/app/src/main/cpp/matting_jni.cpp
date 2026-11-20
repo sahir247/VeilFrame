@@ -66,13 +66,15 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             return JNI_FALSE;
         }
 
+        // Declare the lease first: on an early return or exception, destroy the
+        // partially loaded Net (including Vulkan pipelines) before its GPU lease.
+        veilframe::GpuInstanceLease local_lease;
         std::unique_ptr<ncnn::Net> net = std::make_unique<ncnn::Net>();
         net->opt.lightmode = true;
         net->opt.num_threads = 4;
         net->opt.blob_allocator = &g_matting_blob_allocator;
         net->opt.workspace_allocator = &g_matting_workspace_allocator;
 
-        veilframe::GpuInstanceLease local_lease;
         if (useGpu) {
             if (local_lease.acquire() && ncnn::get_gpu_count() > 0) {
                 net->opt.use_vulkan_compute = true;

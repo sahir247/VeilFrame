@@ -319,6 +319,8 @@ struct NativeInstance {
 static std::unordered_map<jlong, std::shared_ptr<NativeInstance>> g_instance_registry;
 static std::atomic<jlong> g_next_handle{1};
 static RuntimeState g_runtime_state = RuntimeState::UNINITIALIZED;
+// Only a successful acquire entitles this runtime to release the shared GPU.
+static bool g_runtime_gpu_acquired = false;
 static size_t g_active_operations = 0;
 static std::mutex g_lifecycle_mutex;
 static std::condition_variable g_lifecycle_cv;
@@ -506,6 +508,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 
     {
         std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        g_runtime_gpu_acquired = gpu_instance_created;
         g_runtime_state = RuntimeState::READY;
     }
     g_lifecycle_cv.notify_all();
@@ -516,6 +519,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalInit(JNIEnv* env
 JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
     try {
+        bool release_gpu = false;
         {
             std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
             g_lifecycle_cv.wait(lock, [] {
@@ -524,6 +528,9 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* 
             if (g_runtime_state != RuntimeState::READY) return;
             if (!g_instance_registry.empty()) {
                 LOGW("Draining %zu orphaned instance handle(s) during NCNN global teardown", g_instance_registry.size());
+                for (const auto& entry : g_instance_registry) {
+                    entry.second->cancelled.store(true);
+                }
                 g_instance_registry.clear();
             }
 
@@ -532,10 +539,12 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* 
             // but whose shared instance pointer is still being used by inference.
             g_runtime_state = RuntimeState::STOPPING;
             g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
+            release_gpu = g_runtime_gpu_acquired;
+            g_runtime_gpu_acquired = false;
         }
 
         release_cached_global_refs(env);
-        veilframe::release_gpu_instance();
+        if (release_gpu) veilframe::release_gpu_instance();
 
         {
             std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
@@ -556,7 +565,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuCount(JNIEnv* en
         OperationLease operation;
         {
             std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-            if (g_runtime_state != RuntimeState::READY) return 0;
+            if (g_runtime_state != RuntimeState::READY || !g_runtime_gpu_acquired) return 0;
             ++g_active_operations;
             operation = OperationLease(true);
         }
@@ -576,7 +585,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGetGpuDeviceName(JNIEn
         OperationLease operation;
         {
             std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
-            if (g_runtime_state != RuntimeState::READY) return nullptr;
+            if (g_runtime_state != RuntimeState::READY || !g_runtime_gpu_acquired) return nullptr;
             ++g_active_operations;
             operation = OperationLease(true);
         }
@@ -607,6 +616,8 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeCreateInstance(
                 LOGE("nativeCreateInstance called while NCNN runtime is not ready");
                 return 0;
             }
+            if (gpuid < -1 || (gpuid >= 0 &&
+                (!g_runtime_gpu_acquired || gpuid >= ncnn::get_gpu_count()))) return 0;
             ++g_active_operations;
             operation = OperationLease(true);
         }
@@ -672,6 +683,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeDestroyInstance(
             ++g_active_operations;
             operation = OperationLease(true);
             instance_to_drop = std::move(it->second);
+            instance_to_drop->cancelled.store(true);
             g_instance_registry.erase(it);
         }
         // Drop the registry owner before releasing our lifecycle lease; any
@@ -717,6 +729,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
         }
         std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
 
+        if (lease.instance->cancelled.load()) return -10;
         if (!paramPath || !binPath ||
             (scale != 2 && scale != 3 && scale != 4) ||
             tilesize < 64 || tilesize > 384 ||
@@ -821,7 +834,9 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
         return -3;
     }
 
-    lease.instance->cancelled.store(false);
+    // Each handle owns one operation lifetime; cancellation before inference
+    // or while waiting for the call mutex must not be erased on entry.
+    if (lease.instance->cancelled.load()) return -10;
     CallbackUserData udata{};
     udata.env = env;
     udata.row_callback = rowCallback;
@@ -882,7 +897,9 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
         return -3;
     }
 
-    lease.instance->cancelled.store(false);
+    // Each handle owns one operation lifetime; cancellation before inference
+    // or while waiting for the call mutex must not be erased on entry.
+    if (lease.instance->cancelled.load()) return -10;
     CallbackUserData udata{};
     udata.env = env;
     udata.strip_callback = stripCallback;
