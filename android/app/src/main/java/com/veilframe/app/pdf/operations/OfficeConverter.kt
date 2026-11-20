@@ -961,9 +961,12 @@ class OfficeConverter {
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
-                if (maxCol == 0) continue // Empty sheet
+                if (maxCol == 0 && sheet.mergedRegions.isEmpty()) continue // Empty sheet
 
                 val plan = SpreadsheetLayoutEngine.createExportPlan(sheet, sheetIdx, fontNormal, limits)
+                require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
+                    "Workbook exceeds PDF page budget"
+                }
 
                 when (plan.strategy) {
                     ExportStrategy.NATURAL_SIZE -> {
@@ -998,6 +1001,7 @@ class OfficeConverter {
                 }
             }
 
+            require(pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (_: Exception) {}

@@ -1483,12 +1483,12 @@ class OfficeConverterFidelityTest {
 
         val limits = LayoutLimits()
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheetData, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
-        assertEquals(150, layout.rowCount)
+        assertEquals(200, layout.rowCount)
         assertEquals(50, layout.colCount)
         assertEquals("HIGH_COORD_PAYLOAD", sheetData.rows[149][49])
 
         val mergedGeoms = layout.mergedGeometries
         assertEquals(1, mergedGeoms.size)
-        assertEquals(149, mergedGeoms[0].lastRow) // clamped to rows.size - 1
+        assertEquals(199, mergedGeoms[0].lastRow) // preserve declared blank merged rows
     }
 }

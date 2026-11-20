@@ -175,8 +175,11 @@ object SpreadsheetLayoutEngine {
         fontNormal: PDFont,
         limits: LayoutLimits
     ): SheetLayout {
-        val rows = sheet.rows
-        val maxCol = rows.maxOfOrNull { it.size } ?: 0
+        val extent = SpreadsheetGeometry.inspect(sheet.rows, sheet.mergedRegions)
+        // Preserve blank geometry covered by declared merge ranges.
+        val rows = if (extent.rows == sheet.rows.size) sheet.rows
+            else sheet.rows + List(extent.rows - sheet.rows.size) { emptyList<String>() }
+        val maxCol = extent.columns
 
         val effectiveMaxTileW = limits.maxTileWidthOverride ?: limits.maxTileWidth
         val maxAllowedColWidth = (minOf(effectiveMaxTileW, limits.maxStandardCoord) - (2 * limits.margin)).coerceAtLeast(45f)
@@ -238,13 +241,11 @@ object SpreadsheetLayoutEngine {
         val naturalPageWidth = maxOf(limits.minPageWidth, totalTableWidth + (2 * limits.margin))
         val naturalPageHeight = maxOf(limits.minPageHeight, limits.headerHeight + totalTableHeight + (2 * limits.margin))
 
-        val mergedGeometries = sheet.mergedRegions.mapNotNull { region ->
-            if (maxCol == 0 || rows.isEmpty()) return@mapNotNull null
-            val fCol = region.firstCol.coerceIn(0, maxCol - 1)
-            val lCol = region.lastCol.coerceIn(0, maxCol - 1)
-            val fRow = region.firstRow.coerceIn(0, rows.size - 1)
-            val lRow = region.lastRow.coerceIn(0, rows.size - 1)
-            if (lCol < fCol || lRow < fRow) return@mapNotNull null
+        val mergedGeometries = sheet.mergedRegions.map { region ->
+            val fCol = region.firstCol
+            val lCol = region.lastCol
+            val fRow = region.firstRow
+            val lRow = region.lastRow
 
             val mWidth = (fCol..lCol).sumOf { colWidths[it].toDouble() }.toFloat()
             val mHeight = (fRow..lRow).sumOf { rowHeights[it].toDouble() }.toFloat()
@@ -577,6 +578,9 @@ object SpreadsheetLayoutEngine {
             return emptyList()
         }
 
+        require(rowGroups.size.toLong() * colGroups.size <= SpreadsheetGeometry.MAX_PAGES) {
+            "Worksheet exceeds PDF tile page budget"
+        }
         val tiles = mutableListOf<SheetTile>()
         // Row-major sequence: for each row group, export all horizontal column groups left-to-right
         for (rGroup in rowGroups) {

@@ -509,6 +509,8 @@ object OpenXmlDocumentParser {
     /** A malformed later sheet must fail the entire workbook, never return a prefix. */
     fun parseXlsx(file: File): XlsxWorkbookData {
         val sheets = mutableListOf<XlsxSheetData>()
+        var totalGridCells = 0L
+        var totalTextChars = 0L
         ZipFile(file).use { zip ->
             val budget = XmlReadBudget()
             val relationships = workbookRelationships(zip, budget)
@@ -531,6 +533,13 @@ object OpenXmlDocumentParser {
                     budget.read(zip, requireNotNull(zip.getEntry(part.path))),
                     sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions
                 )
+                val geometry = SpreadsheetGeometry.inspect(sheetRows, sheetMergedRegions)
+                totalGridCells += geometry.cells
+                totalTextChars += geometry.textChars
+                require(totalGridCells <= SpreadsheetGeometry.MAX_WORKBOOK_CELLS &&
+                    totalTextChars <= SpreadsheetGeometry.MAX_WORKBOOK_TEXT_CHARS) {
+                    "Workbook exceeds aggregate worksheet layout budget"
+                }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows
@@ -573,6 +582,25 @@ object OpenXmlDocumentParser {
         return if (hasLetters && col in 1..MAX_XLSX_COLUMNS) col - 1 else -1
     }
 
+    internal fun parseMergeRange(ref: String): CellRangeAddress {
+        val parts = ref.split(':')
+        require(parts.size == 2) { "Invalid merged range: $ref" }
+        fun coordinate(value: String): Pair<Int, Int> {
+            require(value.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid merged cell reference" }
+            val col = colRefToIndex(value)
+            val row = value.dropWhile { it.isLetter() }.toIntOrNull()
+            require(col in 0 until MAX_XLSX_COLUMNS && row != null && row in 1..MAX_XLSX_ROWS) {
+                "Merged range exceeds worksheet bounds"
+            }
+            return (row - 1) to col
+        }
+        val (firstRow, firstCol) = coordinate(parts[0])
+        val (lastRow, lastCol) = coordinate(parts[1])
+        require(firstRow <= lastRow && firstCol <= lastCol &&
+            (firstRow != lastRow || firstCol != lastCol)) { "Invalid or reversed merged range" }
+        return CellRangeAddress(firstRow, lastRow, firstCol, lastCol)
+    }
+
     private fun parseWorksheet(
         xml: String,
         sharedStrings: List<String>,
@@ -605,24 +633,9 @@ object OpenXmlDocumentParser {
             val mergeNodes = root.childElements("mergeCells").flatMap { it.childElements("mergeCell") }
             for (mElem in mergeNodes) {
                 val ref = mElem.getAttribute("ref")
-                if (ref.contains(":")) {
-                    val parts = ref.split(":")
-                    val startRef = parts[0].trim()
-                    val endRef = parts[1].trim()
-                    val startCol = colRefToIndex(startRef)
-                    val startRow = (startRef.filter { it.isDigit() }.toIntOrNull() ?: 1) - 1
-                    val endCol = colRefToIndex(endRef)
-                    val endRow = (endRef.filter { it.isDigit() }.toIntOrNull() ?: 1) - 1
-                    if (startCol >= 0 && endCol >= 0 && startRow >= 0 && endRow >= 0) {
-                        outMergedRegions.add(
-                            CellRangeAddress(
-                                firstRow = minOf(startRow, endRow),
-                                lastRow = maxOf(startRow, endRow),
-                                firstCol = minOf(startCol, endCol),
-                                lastCol = maxOf(startCol, endCol)
-                            )
-                        )
-                    }
+                outMergedRegions.add(parseMergeRange(ref))
+                require(outMergedRegions.size <= SpreadsheetGeometry.MAX_MERGES) {
+                    "Worksheet exceeds merged-range count limit"
                 }
             }
         }
