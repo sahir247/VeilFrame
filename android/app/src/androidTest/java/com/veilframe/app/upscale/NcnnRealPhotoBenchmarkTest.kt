@@ -182,6 +182,7 @@ class NcnnRealPhotoBenchmarkTest {
 
                     val t1 = System.nanoTime()
                     val pssAfter = Debug.getPss()
+                    val thermalAfter = thermalStatus()
                     val elapsedMs = (t1 - t0) / 1_000_000
                     val pssDelta = pssAfter - pssBefore
 
@@ -200,7 +201,7 @@ class NcnnRealPhotoBenchmarkTest {
                             .format(idx + 1, model.id, fileName, inW, inH, output.width, output.height, elapsedMs, tilesCount, pssDelta, outDest.length() / 1024)
                     )
 
-                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,${output.width},${output.height},${model.nativeScale},$elapsedMs,$pssDelta,$tilesCount,SUCCESS,$backend,$inputHash,${sha256(outDest)},$thermalBefore,${thermalStatus()},$pssBefore,$pssAfter\n")
+                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,${output.width},${output.height},${model.nativeScale},$elapsedMs,$pssDelta,$tilesCount,SUCCESS,$backend,$inputHash,${sha256(outDest)},$thermalBefore,$thermalAfter,$pssBefore,$pssAfter\n")
                     fw.flush()
                 } catch (e: ResourceLimitExceededException) {
                     val t1 = System.nanoTime()

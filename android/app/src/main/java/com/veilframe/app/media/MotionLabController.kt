@@ -93,6 +93,22 @@ class MotionLabController(
     override val supportsBackgroundExecution: Boolean get() = true
     @Volatile private var cancelRequested = false
     private var outputFile: File? = null
+    private val outputLeases = ResourceLeases<File> { file ->
+        runCatching { if (file.exists()) file.delete() }
+            .onFailure { Log.w(TAG, "Failed retiring motion output", it) }
+    }
+
+    private fun retireOutput() {
+        val old = outputFile ?: return
+        outputFile = null
+        outputLeases.retire(old)
+    }
+
+    private fun adoptOutput(file: File) {
+        if (outputFile == file) return // retain identity for existing readers
+        retireOutput()
+        outputFile = file
+    }
 
     init {
         wire()
@@ -182,14 +198,7 @@ class MotionLabController(
     override fun hasUnsavedWork(): Boolean = sourceUri != null || outputFile != null
 
     fun discardCurrentWork() {
-        outputFile?.let { file ->
-            try {
-                if (file.exists()) file.delete()
-            } catch (t: Throwable) {
-                Log.w(TAG, "Failed deleting output file on discard", t)
-            }
-        }
-        outputFile = null
+        retireOutput()
         binding.cardMotionLabResult.visibility = View.GONE
         updateControlStates()
         Toast.makeText(activity, "Work discarded", Toast.LENGTH_SHORT).show()
@@ -197,14 +206,7 @@ class MotionLabController(
 
     override fun discardAndReleaseAllResources() {
         cancel()
-        outputFile?.let { file ->
-            try {
-                if (file.exists()) file.delete()
-            } catch (t: Throwable) {
-                Log.w(TAG, "Failed deleting output file on discard", t)
-            }
-        }
-        outputFile = null
+        retireOutput()
         reset()
         MotionLabForegroundService.stop(activity)
     }
@@ -219,15 +221,10 @@ class MotionLabController(
         rifeDownloadJob?.cancel()
         job?.cancel()
         isTrimming = false
-        outputFile?.let { file ->
-            try {
-                if (file.exists()) file.delete()
-            } catch (_: Throwable) {}
-        }
+        retireOutput()
         ownedTrimFile?.delete()
         ownedTrimFile = null
         sourceUri = null
-        outputFile = null
         videoDurationMs = 0L
         isTarget60fps = true
         multiplier = 2
@@ -264,10 +261,7 @@ class MotionLabController(
         // The trim coroutine cancels its own native session; the foreground
         // service likewise owns its native sessions. Never cancel globally.
         MotionLabForegroundService.stop(activity)
-        outputFile?.let { file ->
-            try { if (file.exists()) file.delete() } catch (_: Throwable) {}
-        }
-        outputFile = null
+        retireOutput()
         scope.launch(Dispatchers.Main) {
             binding.containerMotionLabProgress.visibility = View.GONE
             binding.cardMotionLabResult.visibility = View.GONE
@@ -415,7 +409,7 @@ class MotionLabController(
             ownedTrimFile = null
         }
         sourceUri = uri
-        outputFile = null
+        retireOutput()
         videoDurationMs = durationMs
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabTrim.visibility = View.VISIBLE
@@ -753,8 +747,8 @@ class MotionLabController(
         activeJobId = jobId
 
         val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
-        val resultFile = File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-        outputFile = null
+        val resultFile = File(exportDir, "motionlab_$jobId.mp4")
+        retireOutput()
 
         attachJobCallback(jobId)
         updateControlStates()
@@ -770,13 +764,19 @@ class MotionLabController(
         )
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun saveToGallery() {
         val out = outputFile ?: return
-        scope.launch(Dispatchers.IO) {
+        val releaseOutput = outputLeases.acquire(out)
+        scope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             val resolver = activity.contentResolver
             var insertedUri: Uri? = null
             var published = false
             try {
+                val cc = kotlinx.coroutines.currentCoroutineContext()
+                cc.ensureActive()
+                val expected = out.length()
+                check(expected > 0) { "Motion output unavailable" }
                 val fileName = out.name
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -794,29 +794,50 @@ class MotionLabController(
                 val uri = resolver.insert(collection, values)
                     ?: throw IllegalStateException("MediaStore insert refused")
                 insertedUri = uri
-                resolver.openOutputStream(uri)?.use { os -> out.inputStream().use { it.copyTo(os) } }
+                val stream = resolver.openOutputStream(uri, "w")
                     ?: throw IllegalStateException("openOutputStream returned null")
+                stream.use { os ->
+                    out.inputStream().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            cc.ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            check(n > 0 && n.toLong() <= expected - copied) { "Motion output changed during copy" }
+                            os.write(buffer, 0, n)
+                            copied += n
+                        }
+                        check(copied == expected) { "Incomplete motion output copy" }
+                        os.flush()
+                    }
+                }
+                cc.ensureActive()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Video.Media.IS_PENDING, 0)
-                    check(resolver.update(uri, values, null, null) > 0) { "MediaStore publication failed" }
+                    check(resolver.update(uri, values, null, null) == 1) { "MediaStore publication failed" }
                 }
                 published = true
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Saved to Gallery (Movies/VeilFrame)", Toast.LENGTH_SHORT).show()
+                    if (!activity.isDestroyed && !activity.isFinishing && outputFile === out)
+                        Toast.makeText(activity, "Saved to Gallery (Movies/VeilFrame)", Toast.LENGTH_SHORT).show()
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Gallery save failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (!activity.isDestroyed && !activity.isFinishing && outputFile === out)
+                        Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
-                if (!published) insertedUri?.let { uri ->
-                    runCatching { resolver.delete(uri, null, null) }
-                        .onFailure { Log.w(TAG, "Could not remove incomplete gallery entry", it) }
-                }
+                try {
+                    if (!published) insertedUri?.let { uri ->
+                        runCatching { resolver.delete(uri, null, null) }
+                            .onFailure { Log.w(TAG, "Could not remove incomplete gallery entry", it) }
+                    }
+                } finally { releaseOutput() }
             }
         }
     }
@@ -848,7 +869,7 @@ class MotionLabController(
                     val outUri = currentJob.outputUri
                     val outFile = outUri?.path?.let { File(it) }
                     if (outFile != null && outFile.exists() && outFile.length() > 0L) {
-                        outputFile = outFile
+                        adoptOutput(outFile)
                         if (sourceUri == null) {
                             setSource(currentJob.inputUri)
                         }
@@ -888,10 +909,17 @@ class MotionLabController(
 
             override fun onCompleted(id: UUID, outputPath: String) {
                 if (id == jobId) {
-                    activeJobId = null
                     val out = File(outputPath)
-                    outputFile = out
                     scope.launch(Dispatchers.Main) {
+                        if (activeJobId != id || activity.isDestroyed || activity.isFinishing) return@launch
+                        activeJobId = null
+                        if (!out.isFile || out.length() <= 0L) {
+                            binding.containerMotionLabProgress.visibility = View.GONE
+                            binding.tvMotionLabStatus.text = "Motion output unavailable"
+                            updateControlStates()
+                            return@launch
+                        }
+                        adoptOutput(out)
                         binding.containerMotionLabProgress.visibility = View.GONE
                         binding.cardMotionLabResult.visibility = View.VISIBLE
                         val mb = out.length() / (1024.0 * 1024.0)
