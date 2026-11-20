@@ -123,6 +123,23 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun xlsxFormatsStoredNumbersAndCachedFormulasWithWorkbookDateSystem() {
+        val workbook = """<workbook><workbookPr date1904="1"/><sheets><sheet name="Data" sheetId="1" r:id="r1"/></sheets></workbook>"""
+        val rels = """<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="formats/custom.xml"/></Relationships>"""
+        val styles = """<styleSheet><numFmts><numFmt numFmtId="164" formatCode="00000"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd"/><numFmt numFmtId="166" formatCode="[Red]0.0;(0.0)"/></numFmts><cellStyleXfs><xf numFmtId="4"/></cellStyleXfs><cellXfs><xf numFmtId="0"/><xf numFmtId="10"/><xf numFmtId="164"/><xf numFmtId="165"/><xf numFmtId="166"/><xf xfId="0" numFmtId="0" applyNumberFormat="0"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" s="1"><v>0.125</v></c><c r="B1" s="2"><v>23</v></c><c r="C1" s="3"><v>0</v></c><c r="D1" t="b"><v>1</v></c><c r="E1" s="5"><f>1000+234.5</f><v>1234.5</v></c><c r="F1" s="4"><v>-1.25</v></c><c r="G1" t="str"><f>1</f><v>  cached  </v></c><c r="H1"><v>1234567890123456789</v></c></row></sheetData></worksheet>"""
+        val file = createZipFile(mapOf("xl/workbook.xml" to workbook,
+            "xl/_rels/workbook.xml.rels" to rels, "xl/formats/custom.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val parsed = OpenXmlDocumentParser.parseXlsx(file).sheets.single()
+            assertEquals(listOf("12.50%", "00023", "1904-01-01", "TRUE", "1,234.50",
+                "-1.25 [format 166 unsupported]", "  cached  ", "1234567890123456789"), parsed.rows.single())
+            assertEquals(2, parsed.cachedFormulaCount)
+        } finally { file.delete() }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

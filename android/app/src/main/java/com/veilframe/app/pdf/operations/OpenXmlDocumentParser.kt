@@ -417,7 +417,8 @@ object OpenXmlDocumentParser {
         val sparseRows: List<XlsxRow> = rows.mapIndexed { idx, cells -> XlsxRow(idx + 1, cells) },
         val mergedRegions: List<CellRangeAddress> = emptyList(),
         val frozenColumns: Int = 0,
-        val frozenRows: Int = 0
+        val frozenRows: Int = 0,
+        val cachedFormulaCount: Int = 0
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -461,9 +462,7 @@ object OpenXmlDocumentParser {
         return result
     }
 
-    private fun orderedSheetParts(zip: ZipFile, relationships: Map<String, WorkbookRelationship>?, budget: XmlReadBudget): List<SheetPart> {
-        val entry = zip.getEntry("xl/workbook.xml") ?: throw java.io.IOException("Workbook XML missing")
-        val doc = parseXml(budget.read(zip, entry))
+    private fun orderedSheetParts(zip: ZipFile, relationships: Map<String, WorkbookRelationship>?, doc: org.w3c.dom.Document): List<SheetPart> {
         require(doc.documentElement.localName() == "workbook") { "Invalid workbook XML root" }
         val nodes = doc.getElementsByTagName("*")
         val parts = mutableListOf<SheetPart>()
@@ -514,7 +513,23 @@ object OpenXmlDocumentParser {
         ZipFile(file).use { zip ->
             val budget = XmlReadBudget()
             val relationships = workbookRelationships(zip, budget)
-            val parts = orderedSheetParts(zip, relationships, budget)
+            val workbookEntry = zip.getEntry("xl/workbook.xml") ?: throw IOException("Workbook XML missing")
+            val workbook = parseXml(budget.read(zip, workbookEntry))
+            val parts = orderedSheetParts(zip, relationships, workbook)
+            val properties = workbook.documentElement.childElements("workbookPr")
+            require(properties.size <= 1) { "Ambiguous workbook date system" }
+            val date1904 = when (properties.singleOrNull()?.getAttribute("date1904").orEmpty()) {
+                "", "0", "false" -> false
+                "1", "true" -> true
+                else -> throw IOException("Invalid workbook date system")
+            }
+            val styleParts = relationships?.values?.filter { it.type.endsWith("/styles") }.orEmpty()
+            require(styleParts.size <= 1) { "Ambiguous workbook styles relationship" }
+            val styleEntry = styleParts.singleOrNull()?.let {
+                zip.getEntry(it.path) ?: throw IOException("Missing workbook styles part")
+            } ?: zip.getEntry("xl/styles.xml")
+            val formatter = if (styleEntry == null) XlsxValueFormatter(date1904, listOf(0), emptyMap())
+                else parseXlsxStyles(budget.read(zip, styleEntry), date1904)
             val sharedStrings = mutableListOf<String>()
             val sharedParts = relationships?.values?.filter { it.type.endsWith("/sharedStrings") }.orEmpty()
             require(sharedParts.size <= 1) { "Ambiguous workbook shared strings relationship" }
@@ -529,9 +544,9 @@ object OpenXmlDocumentParser {
                 val sheetRows = mutableListOf<List<String>>()
                 val sheetSparseRows = mutableListOf<XlsxRow>()
                 val sheetMergedRegions = mutableListOf<CellRangeAddress>()
-                val (frozenCols, frozenRows) = parseWorksheet(
+                val (frozenCols, frozenRows, cachedFormulaCount) = parseWorksheet(
                     budget.read(zip, requireNotNull(zip.getEntry(part.path))),
-                    sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions
+                    sharedStrings, formatter, sheetRows, sheetSparseRows, sheetMergedRegions
                 )
                 val geometry = SpreadsheetGeometry.inspect(sheetRows, sheetMergedRegions)
                 totalGridCells += geometry.cells
@@ -542,11 +557,50 @@ object OpenXmlDocumentParser {
                 }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
-                    mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows
+                    mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows,
+                    cachedFormulaCount = cachedFormulaCount
                 ))
             }
         }
         return XlsxWorkbookData(sheets)
+    }
+
+    private fun parseXlsxStyles(xml: String, date1904: Boolean): XlsxValueFormatter {
+        val root = parseXml(xml).documentElement
+        require(root.localName() == "styleSheet") { "Invalid workbook styles root" }
+        fun collection(name: String, item: String): List<Element> {
+            val groups = root.childElements(name)
+            require(groups.size <= 1) { "Ambiguous style collection" }
+            val entries = groups.singleOrNull()?.childElements(item).orEmpty()
+            require(entries.size <= 8192) { "Workbook style count exceeds admission limit" }
+            return entries
+        }
+        fun id(value: String): Int {
+            val result = value.toIntOrNull()
+            require(result != null && result in 0..65535) { "Invalid number format ID" }
+            return result
+        }
+        val custom = mutableMapOf<Int, String>()
+        for (entry in collection("numFmts", "numFmt")) {
+            val key = id(entry.getAttribute("numFmtId"))
+            val code = entry.getAttribute("formatCode")
+            require(code.isNotEmpty() && code.length <= 256 && custom.put(key, code) == null) {
+                "Invalid or duplicate number format"
+            }
+        }
+        val parents = collection("cellStyleXfs", "xf").map { id(it.getAttribute("numFmtId").ifEmpty { "0" }) }
+        val cellStyles = collection("cellXfs", "xf").map { xf ->
+            val parentRef = xf.getAttribute("xfId")
+            val inherited = if (parentRef.isEmpty()) 0 else parents.getOrNull(id(parentRef))
+                ?: throw IOException("Invalid parent cell style")
+            val direct = xf.getAttribute("numFmtId")
+            when (xf.getAttribute("applyNumberFormat")) {
+                "0", "false" -> inherited
+                "", "1", "true" -> if (direct.isEmpty()) inherited else id(direct)
+                else -> throw IOException("Invalid applyNumberFormat flag")
+            }
+        }
+        return XlsxValueFormatter(date1904, cellStyles.ifEmpty { listOf(0) }, custom)
     }
 
     private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
@@ -604,10 +658,11 @@ object OpenXmlDocumentParser {
     private fun parseWorksheet(
         xml: String,
         sharedStrings: List<String>,
+        formatter: XlsxValueFormatter,
         outRows: MutableList<List<String>>,
         outSparseRows: MutableList<XlsxRow>? = null,
         outMergedRegions: MutableList<CellRangeAddress>? = null
-    ): Pair<Int, Int> {
+    ): Triple<Int, Int, Int> {
         val doc = parseXml(xml)
         require(doc.documentElement.localName() == "worksheet") { "Invalid worksheet XML root" }
         val root = doc.documentElement
@@ -616,6 +671,7 @@ object OpenXmlDocumentParser {
 
         var frozenCols = 0
         var frozenRows = 0
+        var cachedFormulaCount = 0
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {
@@ -665,13 +721,23 @@ object OpenXmlDocumentParser {
                     var cellVal = ""
                     val values = cElem.childElements("v")
                     val inline = cElem.childElements("is")
+                    val formulas = cElem.childElements("f")
+                    require(formulas.size <= 1) { "Ambiguous cached formula" }
+                    val styleAttribute = cElem.getAttribute("s")
+                    val style = if (styleAttribute.isEmpty()) 0 else styleAttribute.toIntOrNull()
+                        ?: throw IOException("Invalid cell style index")
                     require(values.size <= 1 && inline.size <= 1 && (values.isEmpty() || inline.isEmpty())) {
                         "Ambiguous cell value at $cellRef"
                     }
                     if (values.isNotEmpty()) {
-                        cellVal = values.single().textContent?.trim().orEmpty()
+                        val stored = values.single().textContent.orEmpty()
+                        cellVal = if (cellType == "str") stored else stored.trim()
+                        if (formulas.isNotEmpty()) {
+                            require(cellVal.isNotEmpty() || cellType == "str") { "Formula has no usable cached value" }
+                            cachedFormulaCount++
+                        }
                     } else {
-                        if (cElem.childElements("f").isNotEmpty()) {
+                        if (formulas.isNotEmpty()) {
                             throw java.io.IOException("Formula at $cellRef has no cached result; recalculate and save the workbook first")
                         }
                         cellVal = inline.singleOrNull()?.let { spreadsheetRichText(it) }.orEmpty()
@@ -683,6 +749,7 @@ object OpenXmlDocumentParser {
                             throw java.io.IOException("Invalid shared string reference at $cellRef")
                         cellVal = sharedStrings[idx]
                     }
+                    cellVal = formatter.format(cellVal, cellType, style)
 
                     val targetCol = if (cellRef.isEmpty()) existingCells.size else {
                         require(cellRef.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid cell reference: $cellRef" }
@@ -707,7 +774,7 @@ object OpenXmlDocumentParser {
             }
         }
 
-        if (rowMap.isEmpty()) return Pair(frozenCols, frozenRows)
+        if (rowMap.isEmpty()) return Triple(frozenCols, frozenRows, cachedFormulaCount)
 
         var prevRow = 0
         for ((rowIdx, cells) in rowMap) {
@@ -731,6 +798,6 @@ object OpenXmlDocumentParser {
         while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() }) {
             outRows.removeAt(outRows.size - 1)
         }
-        return Pair(frozenCols, frozenRows)
+        return Triple(frozenCols, frozenRows, cachedFormulaCount)
     }
 }
