@@ -44,6 +44,30 @@ class VideoPiiRedactionEngineTest {
     }
 
     @Test
+    fun tinyPositiveDetectionIsNotSilentlyDiscarded() {
+        val tiny = RectF(20.2f, 30.3f, 21.1f, 31.2f)
+        val (regions, _) = VideoPiiRedactionEngine.buildTrackedRegions(
+            listOf(0.0 to listOf(PiiDetection(tiny, PiiClass.FACE, .9f, "face"))),
+            320, 240, 1.0
+        )
+        assertTrue(regions.any { it.rect.contains(tiny) })
+    }
+
+    @Test
+    fun malformedObservationsAndCrowdedFramesFailClosed() {
+        val valid = PiiDetection(RectF(1f, 1f, 40f, 40f), PiiClass.FACE, .9f, "face")
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(
+                listOf(0.0 to listOf(valid.copy(rect = RectF(Float.NaN, 1f, 40f, 40f)))),
+                320, 240, 1.0
+            )
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(listOf(0.0 to List(513) { valid }), 320, 240, 1.0)
+        }
+    }
+
+    @Test
     fun cancelledTrackingDoesNotMaterializePartialMasks() {
         org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
             VideoPiiRedactionEngine.buildTrackedRegions(

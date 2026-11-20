@@ -75,6 +75,8 @@ object VideoPiiRedactionEngine {
 
     private const val MIN_SAMPLE_FRAMES = 6
     private const val MAX_OBSERVATIONS = 12_000
+    private const val MAX_OBSERVATIONS_PER_FRAME = 512
+    private const val MAX_ASSOCIATION_PAIRS = 262_144L
     private const val MAX_FALLBACK_PIXELS = 16_000_000L
     private const val MAX_ANALYSIS_EDGE_PX = 1280
     private const val BOX_MARGIN_RATIO = 0.12f
@@ -138,7 +140,9 @@ object VideoPiiRedactionEngine {
                     null
                 }
             } else null
-            val scaledCompatible = scaledBmp != null && VideoThumbnailPolicy.matchesSourceAspect(
+            val scaledCompatible = scaledBmp != null &&
+                maxOf(scaledBmp.width, scaledBmp.height) <= MAX_ANALYSIS_EDGE_PX &&
+                VideoThumbnailPolicy.matchesSourceAspect(
                 frameW, frameH, scaledBmp.width, scaledBmp.height
             )
             if (!scaledCompatible) {
@@ -301,7 +305,10 @@ object VideoPiiRedactionEngine {
         sampleStepSec: Double = 0.5,
         isCancelled: () -> Boolean = { false }
     ): Pair<List<TimedPiiRegion>, Int> {
-        if (frames.isEmpty() || frameW < 4 || frameH < 4) return emptyList<TimedPiiRegion>() to 0
+        require(frameW >= 4 && frameH >= 4 && durationSec.isFinite() && durationSec > 0.0 &&
+            sampleStepSec.isFinite() && sampleStepSec > 0.0) { "Invalid video tracking geometry or timebase" }
+        if (frames.isEmpty()) return emptyList<TimedPiiRegion>() to 0
+        require(frames.sumOf { it.second.size.toLong() } <= MAX_OBSERVATIONS) { "Video observation budget exceeded" }
 
         val sortedFrames = frames.sortedBy { it.first }
         val maxW = frameW.toFloat()
@@ -316,9 +323,22 @@ object VideoPiiRedactionEngine {
         for ((timeSec, dets) in sortedFrames) {
             if (isCancelled()) throw kotlinx.coroutines.CancellationException("Video PII tracking cancelled")
             require(timeSec.isFinite() && timeSec >= 0.0 && timeSec < durationSec) { "Observation outside scan timeline" }
-            val validDets = dets.filter { it.rect.width() >= 2f && it.rect.height() >= 2f }
+            require(dets.size <= MAX_OBSERVATIONS_PER_FRAME) { "Too many targets in one frame; cannot safely build masks" }
+            val validDets = dets.map { detection ->
+                val rect = detection.rect
+                require(listOf(rect.left, rect.top, rect.right, rect.bottom, detection.score).all { it.isFinite() } &&
+                    rect.left < rect.right && rect.top < rect.bottom) { "Invalid video observation geometry" }
+                val clipped = RectF(max(0f, rect.left), max(0f, rect.top),
+                    min(maxW, rect.right), min(maxH, rect.bottom))
+                require(clipped.width() > 0f && clipped.height() > 0f) { "Observation lies outside video frame" }
+                // Tiny but positive detections still deserve a padded mask.
+                detection.copy(rect = clipped)
+            }
             activeTracks.removeAll { timeSec - tracks[it].last().timeSec > maxTrackGapSec }
             if (validDets.isEmpty()) continue
+            require(activeTracks.size.toLong() * validDets.size <= MAX_ASSOCIATION_PAIRS) {
+                "Video association budget exceeded; split into shorter or less crowded clips"
+            }
 
             // Build scored candidate pairs (trackIdx, detIdx, score) for greedy 1-to-1 matching
             data class MatchCandidate(val trackIdx: Int, val detIdx: Int, val matchScore: Float)
