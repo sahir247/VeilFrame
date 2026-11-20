@@ -98,7 +98,7 @@ class CelBackgroundRemover(
                             )
                         }
                     }
-        
+
                     if (!initSuccess) {
                         throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
                     }

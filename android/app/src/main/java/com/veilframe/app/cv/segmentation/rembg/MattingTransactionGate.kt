@@ -47,7 +47,14 @@ internal object NcnnMattingTransactions {
     private val retirement = Executors.newSingleThreadExecutor { task ->
         Thread(task, "vf-matting-retirement").apply { isDaemon = true }
     }
-    private val gate = MattingTransactionGate(retirement) { NcnnMattingNative.nativeRelease() }
+    private val gate = MattingTransactionGate(retirement) {
+        try {
+            NcnnMattingNative.nativeRelease()
+        } catch (unavailable: LinkageError) {
+            // An unused/unavailable native backend has no live session to retire.
+            android.util.Log.w("VeilFrame.Matting", "Native backend unavailable during retirement", unavailable)
+        }
+    }
 
     fun <T> run(checkpoint: () -> Unit = {}, block: () -> T): T =
         gate.run(checkpoint, block)
