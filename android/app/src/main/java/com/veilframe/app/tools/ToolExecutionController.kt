@@ -933,23 +933,7 @@ class ToolExecutionController(
                     FolderScannerEngine.exportReport(res, outputFile, formatExt)
                     res
                 } else {
-                    val name = safStorageManager.getDisplayName(uri)
-                    val size = activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
-                    val record = FolderScannerEngine.ScannedFileRecord(
-                        relativePath = name,
-                        name = name,
-                        sizeBytes = size,
-                        sha256 = null,
-                        detectedSecrets = emptyList()
-                    )
-                    val res = FolderScannerEngine.ScanResult(
-                        rootDisplayName = name,
-                        timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
-                        totalFiles = 1,
-                        totalBytes = size,
-                        totalSecretsFound = 0,
-                        files = listOf(record)
-                    )
+                    val res = FolderScannerEngine.scanSingleFile(activity, uri, state.selectedPathDisplay, scanConfig)
                     FolderScannerEngine.exportReport(res, outputFile, formatExt)
                     res
                 }

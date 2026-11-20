@@ -452,3 +452,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21/A29 — Generic single-artifact ownership
 
 - Bind cleaner and scanner publication/progress to the original execution generation, including same-target re-runs. Single-media operations allocate unique input/output files and unconditionally retire private staging and unpublished results, including cancellation at IO-to-Main handoff. Provider-derived extensions are admitted only as bounded ASCII suffixes. Folder report publication follows the same ownership rule and displays PARTIAL coverage distinctly; FAILED audits cannot publish a successful artifact. Further scanner-engine coverage hardening follows separately. Android CI and lifecycle acceptance pending.
+
+### A21/A29 — Bounded, truthful SAF folder audit and single-file inspection
+
+- Folder scanner now queries child cursors directly and reports incomplete provider listings, cycles, invalid names, failed streams, size mismatches, unknown sizes, actual read limits and truncated findings as partial coverage. No SHA-256 is generated for a null/incomplete read; hash and text checks share one bounded stream. Inspect all admitted text rather than a 5,000-line prefix; findings stay masked and count is capped. Single-file mode now uses the same checks. Unknown total volume stops traversal; requested size-only checks remain metadata-based where size is available. Existing regex detection remains heuristic, not a security guarantee. Added bounded stream and post-line-limit regressions; CI/device fixtures pending.
