@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.cos.COSObject
 import com.tom_roush.pdfbox.cos.COSObjectKey
@@ -43,7 +44,7 @@ enum class CompressionLevel(val dpi: Float, val jpegQuality: Float, val descript
  * Compression mode determines the compression strategy.
  */
 enum class CompressionMode {
-    HYBRID,      // Current behavior: image optimization + optional rerender fallback
+    HYBRID,      // Legacy enum name; current default is structure-preserving image optimization
     TARGET_SIZE  // Progressively compress until the target is reached or no smaller result remains
 }
 
@@ -87,20 +88,41 @@ data class CompressionProfile(
 )
 
 /**
- * Handles PDF compression operations with smart strategy selection.
- * 
- * Strategy Selection:
- * 1. IMAGE_OPTIMIZATION: Compresses embedded images without re-rendering pages.
- *    Best for: Text-heavy PDFs, PDFs with high-quality images, documents.
- * 
- * 2. FULL_RERENDER: Re-renders each page as a compressed JPEG.
- *    Best for: Scanned documents, image-heavy PDFs, PDFs with complex graphics.
- * 
- * The compressor tries IMAGE_OPTIMIZATION first, and if it doesn't achieve
- * good compression, falls back to FULL_RERENDER. It always compares the
- * result to the original and keeps the smaller version.
+ * Preflight every source, including passthrough paths. A full PDFBox save invalidates
+ * existing digital signatures and can violate document modification permissions.
  */
+internal fun inspectCompressionSource(document: PDDocument): Int {
+    require(document.numberOfPages > 0) { "PDF contains no pages" }
+    require(document.signatureDictionaries.isEmpty() &&
+        !document.documentCatalog.cosObject.containsKey(COSName.getPDFName("Perms"))) {
+        "Digitally signed or rights-enabled PDF cannot be safely rewritten. Preserve the original."
+    }
+    require(document.currentAccessPermission.canModify()) { "PDF does not permit modification" }
+    return document.numberOfPages
+}
+
+/**
+ * Only known plain RGB image dictionaries can be safely replaced with JPEG.
+ * Identical decoded bytes alone do not establish equivalent image semantics.
+ */
+internal fun isPlainRgbCompressionImage(dictionary: COSDictionary): Boolean {
+    val allowed = setOf("Type", "Subtype", "Width", "Height", "ColorSpace", "BitsPerComponent", "Filter", "DecodeParms", "Length")
+    return dictionary.getDictionaryObject(COSName.getPDFName("ColorSpace")) == COSName.getPDFName("DeviceRGB") &&
+        dictionary.getInt(COSName.getPDFName("BitsPerComponent")) == 8 &&
+        dictionary.keySet().all { it.name in allowed }
+}
+
+/** Compress eligible opaque RGB images without rasterizing pages or rewriting signed documents. */
 class PdfCompressor {
+
+    private fun sourcePageCount(file: File): Int =
+        PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly()).use(::inspectCompressionSource)
+
+    private fun requirePageCount(file: File, expected: Int): Int =
+        PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly()).use { document ->
+            check(document.numberOfPages == expected) { "Compressed PDF page count changed" }
+            expected
+        }
 
     private fun createOperationDirectory(context: Context): File {
         val root = File(context.cacheDir, "compress_cache")
@@ -174,6 +196,7 @@ class PdfCompressor {
             } ?: return@withContext Result.failure(IllegalStateException("Cannot open input file"))
 
             val originalSize = tempFile.length()
+            val originalPages = sourcePageCount(tempFile)
             if (originalSize <= targetSizeBytes) {
                 onProgress(1.0f)
                 tempFile.inputStream().use { it.copyTo(outputStream) }
@@ -184,7 +207,7 @@ class PdfCompressor {
                         compressedSize = originalSize,
                         compressionRatio = 1f,
                         timeTakenMs = System.currentTimeMillis() - startTime,
-                        pagesProcessed = countPages(tempFile),
+                        pagesProcessed = originalPages,
                         strategyUsed = CompressionStrategy.IMAGE_OPTIMIZATION
                     )
                 )
@@ -250,20 +273,20 @@ class PdfCompressor {
             onProgress(0.95f)
 
             if (bestFile != null) {
-                bestFile.inputStream().use { it.copyTo(outputStream) }
-                outputStream.flush()
+                val pages = requirePageCount(bestFile, originalPages)
+                val isTargetReached = bestSize <= targetSizeBytes
                 onProgress(1.0f)
 
-                val isTargetReached = bestSize <= targetSizeBytes
-
                 return@withContext if (isTargetReached) {
+                    bestFile.inputStream().use { it.copyTo(outputStream) }
+                    outputStream.flush()
                     Result.success(
                         CompressionResult(
                             originalSize = originalSize,
                             compressedSize = bestSize,
                             compressionRatio = bestSize.toFloat() / originalSize,
                             timeTakenMs = System.currentTimeMillis() - startTime,
-                            pagesProcessed = countPages(bestFile),
+                            pagesProcessed = pages,
                             strategyUsed = bestStrategy
                         )
                     )
@@ -285,7 +308,7 @@ class PdfCompressor {
                             fallbackFile = fallback,
                             originalSize = originalSize,
                             strategyUsed = bestStrategy,
-                            pagesProcessed = countPages(fallback)
+                            pagesProcessed = pages
                         )
                     )
                 }
@@ -333,6 +356,7 @@ class PdfCompressor {
             )
             
             val originalSize = tempFile.length()
+            val originalPages = sourcePageCount(tempFile)
 
             // Skip for very small files
             if (originalSize < 10 * 1024) {
@@ -342,7 +366,7 @@ class PdfCompressor {
                 return@withContext Result.success(CompressionResult(
                     originalSize = originalSize, compressedSize = originalSize,
                     compressionRatio = 1f, timeTakenMs = System.currentTimeMillis() - startTime,
-                    pagesProcessed = countPages(tempFile),
+                    pagesProcessed = originalPages,
                     strategyUsed = CompressionStrategy.IMAGE_OPTIMIZATION
                 ))
             }
@@ -369,13 +393,14 @@ class PdfCompressor {
             onProgress(0.95f)
 
             val finalFile = resultFile ?: tempFile
+            val pagesProcessed = requirePageCount(finalFile, originalPages)
+            ensureActive()
             finalFile.inputStream().use { it.copyTo(outputStream) }
             outputStream.flush()
 
             onProgress(1.0f)
 
             val compressedSize = finalFile.length()
-            val pagesProcessed = countPages(finalFile)
             if (resultFile != null && resultFile != tempFile) resultFile.delete()
 
             return@withContext Result.success(CompressionResult(
@@ -412,62 +437,6 @@ class PdfCompressor {
      * Try to compress by optimizing embedded images only.
      * This preserves text quality and searchability.
      */
-    /**
-     * Prune document metadata, private application data, and unused XML schemas.
-     */
-    private fun pruneMetadata(document: PDDocument) {
-        try {
-            // Remove catalog-level metadata stream
-            val catalog = document.documentCatalog
-            catalog.metadata = null
-            
-            // Clean Document Information properties
-            val info = document.documentInformation
-            info.creator = null
-            info.producer = "PDF Toolkit"
-            info.author = null
-            info.title = null
-            info.subject = null
-            info.keywords = null
-            
-            // Remove PieceInfo (private vendor-specific schemas, e.g. Adobe Illustrator layers)
-            catalog.cosObject.removeItem(COSName.getPDFName("PieceInfo"))
-            
-            // Clean individual pages PieceInfo and Metadata
-            for (i in 0 until document.numberOfPages) {
-                val page = document.getPage(i)
-                page.cosObject.removeItem(COSName.getPDFName("PieceInfo"))
-                page.cosObject.removeItem(COSName.METADATA)
-            }
-        } catch (e: Exception) {
-            // Safe fallback if metadata operations fail
-        }
-    }
-
-    data class ImageContentKey(val length: Long, val md5: String)
-
-    private fun computeImageHash(image: PDImageXObject): ImageContentKey? {
-        return try {
-            val length = image.cosObject.getLength().toLong()
-            if (length <= 0) return null
-            
-            val digest = java.security.MessageDigest.getInstance("MD5")
-            image.createInputStream().use { input ->
-                val buffer = ByteArray(8192)
-                var bytesRead = input.read(buffer)
-                while (bytesRead != -1) {
-                    digest.update(buffer, 0, bytesRead)
-                    bytesRead = input.read(buffer)
-                }
-            }
-            val hashBytes = digest.digest()
-            val md5String = hashBytes.joinToString("") { "%02x".format(it) }
-            ImageContentKey(length, md5String)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private suspend fun tryImageOptimization(
         context: Context,
         inputFile: File,
@@ -488,7 +457,6 @@ class PdfCompressor {
             
             var imagesOptimized = 0
             val optimizedImages = mutableMapOf<COSObjectKey, PDImageXObject>()
-            val hashCache = mutableMapOf<ImageContentKey, PDImageXObject>()
             
             // Process each page
             for (pageIndex in 0 until totalPages) {
@@ -497,13 +465,14 @@ class PdfCompressor {
                 val resources = page.resources ?: continue
                 
                 // Optimize images in this page
-                imagesOptimized += optimizePageImages(document, resources, profile, optimizedImages, hashCache)
+                imagesOptimized += optimizePageImages(document, resources, profile, optimizedImages)
                 
                 val pageProgress = 0.10f + (0.45f * (pageIndex + 1).toFloat() / totalPages)
                 onProgress(pageProgress)
             }
             
             document.save(outputFile)
+            requirePageCount(outputFile, totalPages)
             outputFile
             
         } catch (e: CancellationException) {
@@ -525,8 +494,7 @@ class PdfCompressor {
         document: PDDocument,
         resources: PDResources,
         profile: CompressionProfile,
-        optimizedCache: MutableMap<COSObjectKey, PDImageXObject>,
-        hashCache: MutableMap<ImageContentKey, PDImageXObject>
+        optimizedCache: MutableMap<COSObjectKey, PDImageXObject>
     ): Int {
         var optimizedCount = 0
         
@@ -554,20 +522,6 @@ class PdfCompressor {
                     val xObject = resources.getXObject(name)
                     
                     if (xObject is PDImageXObject) {
-                        // First check hash cache for identical image content
-                        val hashKey = computeImageHash(xObject)
-                        if (hashKey != null) {
-                            val cachedByHash = hashCache[hashKey]
-                            if (cachedByHash != null) {
-                                resources.put(name, cachedByHash)
-                                optimizedCount++
-                                if (cacheKey != null) {
-                                    optimizedCache[cacheKey] = cachedByHash
-                                }
-                                continue
-                            }
-                        }
-
                         val optimized = optimizeImage(document, xObject, profile)
                         if (optimized != null) {
                             resources.put(name, optimized)
@@ -576,10 +530,7 @@ class PdfCompressor {
                             if (cacheKey != null) {
                                 optimizedCache[cacheKey] = optimized
                             }
-                            if (hashKey != null) {
-                                hashCache[hashKey] = optimized
-                            }
-                        }
+                         }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -606,16 +557,11 @@ class PdfCompressor {
         profile: CompressionProfile
     ): PDImageXObject? {
         return try {
-            // Check filters/colorspace to skip monochrome (1-bit) images
-            val isMonochrome = image.bitsPerComponent == 1
-            val hasSMask = image.cosObject.containsKey(COSName.SMASK)
-            val hasMask = image.cosObject.containsKey(COSName.MASK)
-            
-            // Skip to prevent massive bloat on 1-bit
-            if (isMonochrome) {
-                return null
-            }
-            
+            if (!isPlainRgbCompressionImage(image.cosObject)) return null
+            // Avoid decoding oversized images into unbounded pixel buffers.
+            if (image.width < 128 || image.height < 128 ||
+                image.width.toLong() * image.height > 16_000_000L) return null
+
             // Get original stream length to compare later
             val originalLength = image.cosObject.getLength()
             
@@ -639,36 +585,17 @@ class PdfCompressor {
             }
             
             try {
-                val optimizedImage = if (hasSMask || hasMask || scaledBitmap.hasAlpha()) {
-                    // Extract alpha mask and RGB channels separately
-                    val width = scaledBitmap.width
-                    val height = scaledBitmap.height
-                    
-                    // Create white-backed RGB bitmap
-                    val rgbBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(rgbBitmap)
-                    canvas.drawColor(android.graphics.Color.WHITE)
-                    canvas.drawBitmap(scaledBitmap, 0f, 0f, null)
-                    
-                    try {
-                        // Create white-backed RGB bitmap (flatten transparency)
-                        // This is necessary because many mobile PDF viewers (Drive, Acrobat)
-                        // fail to render DCTDecode (JPEG) images that have an SMask attached.
-                        val colorImage = JPEGFactory.createFromImage(document, rgbBitmap, profile.jpegQuality)
-                        
-                        // Explicitly remove SMASK and MASK to ensure viewers don't expect them
-                        colorImage.cosObject.removeItem(COSName.SMASK)
-                        colorImage.cosObject.removeItem(COSName.MASK)
-                        colorImage
-                    } catch (e: Exception) {
-                        null
-                    } finally {
-                        rgbBitmap.recycle()
+                // A plain dictionary can still decode to a transparent bitmap. Never
+                // flatten it to white; that changes the appearance over page content.
+                if (scaledBitmap.hasAlpha()) {
+                    val row = IntArray(scaledBitmap.width)
+                    for (y in 0 until scaledBitmap.height) {
+                        scaledBitmap.getPixels(row, 0, row.size, 0, y, row.size, 1)
+                        if (row.any { (it ushr 24) != 255 }) return null
                     }
-                } else {
-                    JPEGFactory.createFromImage(document, scaledBitmap, profile.jpegQuality)
                 }
-                
+                val optimizedImage = JPEGFactory.createFromImage(document, scaledBitmap, profile.jpegQuality)
+
                 if (optimizedImage != null) {
                     // Compare compressed stream length with original
                     val newLength = optimizedImage.cosObject.getLength()
@@ -799,19 +726,6 @@ class PdfCompressor {
     }
     
     /**
-     * Count pages in a PDF file.
-     */
-    private fun countPages(file: File): Int {
-        return try {
-            PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
-                doc.numberOfPages
-            }
-        } catch (e: Exception) {
-            0
-        }
-    }
-    
-    /**
      * Estimate the compressed size based on compression level.
      * This is a rough estimate - actual results depend on PDF content.
      */
@@ -892,9 +806,10 @@ class PdfCompressor {
             )
 
             val originalSize = tempFile.length()
+            val originalPages = sourcePageCount(tempFile)
 
             // Skip for very small files
-            if (originalSize < 10 * 1024) {
+            if (originalSize < 10 * 1024 || originalSize <= targetBytes) {
                 onProgress(1.0f)
                 tempFile.inputStream().use { it.copyTo(outputStream) }
                 outputStream.flush()
@@ -903,7 +818,7 @@ class PdfCompressor {
                     compressedSize = originalSize,
                     compressionRatio = 1f,
                     timeTakenMs = System.currentTimeMillis() - startTime,
-                    pagesProcessed = countPages(tempFile),
+                    pagesProcessed = originalPages,
                     strategyUsed = CompressionStrategy.IMAGE_OPTIMIZATION
                 )
                 return@withContext Result.success(TargetSizeResult(
@@ -947,13 +862,14 @@ class PdfCompressor {
             onProgress(0.95f)
 
             val finalFile = resultFile ?: tempFile
+            val pagesProcessed = requirePageCount(finalFile, originalPages)
+            ensureActive()
             finalFile.inputStream().use { it.copyTo(outputStream) }
             outputStream.flush()
 
             onProgress(1.0f)
 
             val compressedSize = finalFile.length()
-            val pagesProcessed = countPages(finalFile)
             if (resultFile != null && resultFile != tempFile) resultFile.delete()
 
             val baseResult = CompressionResult(
