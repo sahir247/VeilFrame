@@ -1005,6 +1005,10 @@ class MainActivity : AppCompatActivity() {
             text = "Masking is heuristic and may be disabled. Credentials, personal data and confidential code can remain. Review the exact local artifact before transferring."
         }
         val status = android.widget.TextView(this)
+        val allowUnread = android.widget.CheckBox(this).apply {
+            text = "Transfer without opening every page. Unread content may contain sensitive data."
+            isEnabled = false
+        }
         val nav = android.widget.LinearLayout(this)
         val previous = android.widget.Button(this).apply { text = "Previous"; isEnabled = false }
         val next = android.widget.Button(this).apply { text = "Next"; isEnabled = false }
@@ -1021,8 +1025,9 @@ class MainActivity : AppCompatActivity() {
         content.addView(nav)
         content.addView(status)
         content.addView(scroll, android.widget.LinearLayout.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT, (280 * resources.displayMetrics.density).toInt()
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, (240 * resources.displayMetrics.density).toInt()
         ))
+        content.addView(allowUnread)
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("Review AI bundle")
             .setView(content)
@@ -1033,6 +1038,16 @@ class MainActivity : AppCompatActivity() {
         var position = 0
         var following: Long? = null
         var pageJob: kotlinx.coroutines.Job? = null
+        val reviewGate = com.veilframe.app.tools.BundleReviewGate()
+
+        fun refreshTransferGate() {
+            if (!dialog.isShowing) return
+            allowUnread.isEnabled = reviewGate.pageReady && !reviewGate.reachedEnd
+            val button = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+            button.text = if (reviewGate.reachedEnd) "$action after review" else "$action with unread pages"
+            button.isEnabled = reviewGate.canTransfer(allowUnread.isChecked)
+        }
+        allowUnread.setOnCheckedChangeListener { _, _ -> refreshTransferGate() }
 
         fun loadPage() {
             pageJob?.cancel()
@@ -1040,7 +1055,8 @@ class MainActivity : AppCompatActivity() {
             val offset = offsets[index]
             previous.isEnabled = false
             next.isEnabled = false
-            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled = false
+            reviewGate.loading()
+            refreshTransferGate()
             status.text = "Loading bundle page ${index + 1}…"
             pageJob = lifecycleScope.launch {
                 val page = try {
@@ -1065,11 +1081,12 @@ class MainActivity : AppCompatActivity() {
                 frozen = true
                 following = page.nextOffset
                 pageText.text = page.text
+                reviewGate.loaded(following == null)
                 status.text = "Page ${index + 1}" + if (following == null) " — end of bundle" else " — more content follows"
                 scroll.scrollTo(0, 0)
                 previous.isEnabled = index > 0
                 next.isEnabled = following != null
-                dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled = true
+                refreshTransferGate()
             }
         }
         previous.setOnClickListener { if (position > 0) { position--; loadPage() } }
@@ -1090,7 +1107,7 @@ class MainActivity : AppCompatActivity() {
         }
         dialog.show()
         dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-            if (frozen && reviewedFile.isFile && stillCurrent()) {
+            if (reviewGate.canTransfer(allowUnread.isChecked) && frozen && reviewedFile.isFile && stillCurrent()) {
                 handedOff = proceed(reviewedFile, true)
                 dialog.dismiss()
             } else {

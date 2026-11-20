@@ -56,6 +56,45 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun reviewUsesByteOffsetsAndRejectsInvalidUtf8() {
+        val file = java.io.File.createTempFile("bundle_byte_review", ".txt")
+        try {
+            file.writeText("ab😀éz")
+            val first = BundleReviewReader.read(file, 0, 4)
+            org.junit.Assert.assertEquals("ab😀", first.text)
+            org.junit.Assert.assertEquals(6L, first.nextOffset)
+            val second = BundleReviewReader.read(file, 6, 2)
+            org.junit.Assert.assertEquals("é", second.text)
+            org.junit.Assert.assertEquals(8L, second.nextOffset)
+            org.junit.Assert.assertEquals("z", BundleReviewReader.read(file, 8, 2).text)
+            org.junit.Assert.assertThrows(java.nio.charset.CharacterCodingException::class.java) {
+                BundleReviewReader.read(file, 3, 2)
+            }
+            file.writeBytes(byteArrayOf(0xC0.toByte(), 0x80.toByte()))
+            org.junit.Assert.assertThrows(java.nio.charset.CharacterCodingException::class.java) {
+                BundleReviewReader.read(file, 0, 2)
+            }
+        } finally { file.delete() }
+    }
+
+    @Test
+    fun reviewConsentIsRequiredUntilLastPageAndBlockedDuringLoads() {
+        val gate = BundleReviewGate()
+        assertFalse(gate.canTransfer(true))
+        gate.loaded(false)
+        assertFalse(gate.canTransfer(false))
+        assertTrue(gate.canTransfer(true))
+        gate.loading()
+        assertFalse(gate.canTransfer(true))
+        gate.loaded(true)
+        assertTrue(gate.canTransfer(false))
+        gate.loading()
+        assertFalse(gate.canTransfer(false))
+        gate.loaded(false)
+        assertTrue(gate.canTransfer(false))
+    }
+
+    @Test
     fun additionalCredentialSchemesAreMasked() {
         listOf("Basic dGVzdDp0ZXN0", "glpat-" + "x".repeat(24),
             "client_secret=exampleSecretValue", "hf_" + "a".repeat(32)).forEach {
