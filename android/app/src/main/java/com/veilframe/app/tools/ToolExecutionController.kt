@@ -141,9 +141,22 @@ class ToolExecutionController(
                         Toast.makeText(activity, "Bundle generation failed: ${failure.message}", Toast.LENGTH_LONG).show()
                     }
                 }
-                ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
-                ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
-                ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
+                ToolMode.VIDEO_CLEANER, ToolMode.IMAGE_CLEANER, ToolMode.FOLDER_SCANNER -> {
+                    try {
+                        when (mode) {
+                            ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
+                            ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
+                            else -> runFolderScan(uri)
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (!ownsExecution(generation, mode, owner)) return@launch
+                        sessionManager.updateJobState(JobState.FAILED, "Processing failed: ${failure.message}")
+                        binding.progressIndicator.isIndeterminate = false
+                        Toast.makeText(activity, "Processing failed: ${failure.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
                 ToolMode.IMAGE_COMPRESSOR -> getImageStudioController()?.execute()
                 ToolMode.VIDEO_COMPRESSOR -> getVideoStudioController()?.execute()
                 ToolMode.IMAGE_UPSCALER -> { /* Handled within ImageUpscalerController */ }
@@ -295,6 +308,8 @@ class ToolExecutionController(
 
     private suspend fun runVideoSanitization(uri: Uri) {
         val state = sessionManager.currentState
+        val owner = ToolTargetOwner(state)
+        val mode = ToolMode.VIDEO_CLEANER
         val noiseIndex = sessionManager.getSelectedOptionIndex()
         val noiseLevel = when (noiseIndex) {
             0 -> "low"
@@ -322,13 +337,17 @@ class ToolExecutionController(
                 onLog("[BATCH] Scanning folder for video files: ${state.selectedPathDisplay}...")
             }
 
-            val stagingDir = File(activity.cacheDir, "batch_video_staging_$timeStamp")
-            val outputBatchDir = File(activity.cacheDir, "batch_video_sanitized_$timeStamp").apply { mkdirs() }
+            val batchRoot = java.nio.file.Files.createTempDirectory(activity.cacheDir.toPath(), "batch_video_").toFile()
+            val stagingDir = File(batchRoot, "inputs")
+            val outputBatchDir = File(batchRoot, "outputs").apply { check(mkdir()) }
+            var finalArtifact: File? = null
+            var published = false
+            try {
             safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
             val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
 
             val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "wmv", "3gp")
-            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in videoExtensions }.toList()
+            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in videoExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
 
             if (candidateFiles.isEmpty()) {
                 stagingDir.deleteRecursively()
@@ -355,16 +374,7 @@ class ToolExecutionController(
                     3 -> "webm"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
                 }
-                val relativeInput = inputFile.relativeTo(stagingDir)
-                val relativeParent = relativeInput.parent
-                val relativeOutputPath = if (relativeParent.isNullOrBlank()) {
-                    "${inputFile.nameWithoutExtension}_sanitized.$targetExt"
-                } else {
-                    "$relativeParent/${inputFile.nameWithoutExtension}_sanitized.$targetExt"
-                }
-                val outputFile = File(outputBatchDir, relativeOutputPath).apply {
-                    parentFile?.mkdirs()
-                }
+                val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "sanitized", targetExt)
 
                 withContext(Dispatchers.Main) {
                     val percent = ((idx * 100) / candidateFiles.size)
@@ -409,23 +419,27 @@ class ToolExecutionController(
             }
 
             val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
-            val finalFile: File
-            if (actualOutputs.size == 1) {
-                val singleFile = actualOutputs.first()
-                finalFile = File(activity.cacheDir, singleFile.name)
-                singleFile.copyTo(finalFile, overwrite = true)
-                outputBatchDir.deleteRecursively()
+            check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
+            val finalFile = if (actualOutputs.size == 1) {
+                val singleFile = actualOutputs.single()
+                File.createTempFile("VeilFrame_Videos_", ".${singleFile.extension}", activity.cacheDir).also {
+                    finalArtifact = it
+                    singleFile.copyTo(it, overwrite = true)
+                }
             } else {
-                finalFile = File(activity.cacheDir, "VeilFrame_Batch_Videos_$timeStamp.zip")
-                safStorageManager.zipDirectory(outputBatchDir, finalFile)
-                outputBatchDir.deleteRecursively()
+                File.createTempFile("VeilFrame_Batch_Videos_", ".zip", activity.cacheDir).also {
+                    finalArtifact = it
+                    safStorageManager.zipDirectory(outputBatchDir, it)
+                }
             }
-
-            state.lastGeneratedFile = finalFile
-            state.progressPercent = 100
-            state.progressDetailsText = "100% complete"
+            check(finalFile.isFile && finalFile.length() > 0) { "Batch artifact was not created" }
 
             withContext(Dispatchers.Main) {
+                if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                state.lastGeneratedFile = finalFile
+                state.progressPercent = 100
+                state.progressDetailsText = "100% complete"
+                published = true
                 sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
@@ -440,6 +454,10 @@ class ToolExecutionController(
                 sessionManager.updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
                 binding.btnShareResult.isEnabled = true
+            }
+            } finally {
+                batchRoot.deleteRecursively()
+                if (!published) finalArtifact?.delete()
             }
         } else {
             // Single video file
@@ -523,6 +541,8 @@ class ToolExecutionController(
 
     private suspend fun runImageSanitization(uri: Uri) {
         val state = sessionManager.currentState
+        val owner = ToolTargetOwner(state)
+        val mode = ToolMode.IMAGE_CLEANER
         val formatIndex = sessionManager.getSelectedFormatIndex()
         val optionIndex = sessionManager.getSelectedOptionIndex()
         val defenseName = when (optionIndex) {
@@ -545,13 +565,17 @@ class ToolExecutionController(
                 onLog("[BATCH] Scanning folder for images: ${state.selectedPathDisplay}...")
             }
 
-            val stagingDir = File(activity.cacheDir, "batch_img_staging_$timeStamp")
-            val outputBatchDir = File(activity.cacheDir, "batch_img_sanitized_$timeStamp").apply { mkdirs() }
+            val batchRoot = java.nio.file.Files.createTempDirectory(activity.cacheDir.toPath(), "batch_img_").toFile()
+            val stagingDir = File(batchRoot, "inputs")
+            val outputBatchDir = File(batchRoot, "outputs").apply { check(mkdir()) }
+            var finalArtifact: File? = null
+            var published = false
+            try {
             safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
             val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
 
             val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "gif")
-            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList()
+            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
 
             if (candidateFiles.isEmpty()) {
                 stagingDir.deleteRecursively()
@@ -581,7 +605,7 @@ class ToolExecutionController(
                     7 -> "heif"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "jpg" }
                 }
-                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_cleaned.$targetExt")
+                val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "cleaned", targetExt)
 
                 withContext(Dispatchers.Main) {
                     val percent = ((idx * 100) / candidateFiles.size)
@@ -631,8 +655,11 @@ class ToolExecutionController(
                         )
                     }
                 }
-                if (ok && outputFile.exists() && outputFile.length() > 0) {
+                if (ok && outputFile.isFile && outputFile.length() > 0) {
                     successCount++
+                } else {
+                    // Failed encoders may leave an original or partially written image.
+                    check(!outputFile.exists() || outputFile.delete()) { "Could not remove failed image artifact" }
                 }
             }
 
@@ -648,23 +675,28 @@ class ToolExecutionController(
                 return
             }
 
-            val finalFile: File
-            if (successCount == 1) {
-                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
-                finalFile = File(activity.cacheDir, singleFile.name)
-                singleFile.copyTo(finalFile, overwrite = true)
-                outputBatchDir.deleteRecursively()
+            val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
+            check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
+            val finalFile = if (actualOutputs.size == 1) {
+                val singleFile = actualOutputs.single()
+                File.createTempFile("VeilFrame_Images_", ".${singleFile.extension}", activity.cacheDir).also {
+                    finalArtifact = it
+                    singleFile.copyTo(it, overwrite = true)
+                }
             } else {
-                finalFile = File(activity.cacheDir, "VeilFrame_Batch_Images_$timeStamp.zip")
-                safStorageManager.zipDirectory(outputBatchDir, finalFile)
-                outputBatchDir.deleteRecursively()
+                File.createTempFile("VeilFrame_Batch_Images_", ".zip", activity.cacheDir).also {
+                    finalArtifact = it
+                    safStorageManager.zipDirectory(outputBatchDir, it)
+                }
             }
-
-            state.lastGeneratedFile = finalFile
-            state.progressPercent = 100
-            state.progressDetailsText = "100% complete"
+            check(finalFile.isFile && finalFile.length() > 0) { "Batch artifact was not created" }
 
             withContext(Dispatchers.Main) {
+                if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                state.lastGeneratedFile = finalFile
+                state.progressPercent = 100
+                state.progressDetailsText = "100% complete"
+                published = true
                 sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
@@ -679,6 +711,10 @@ class ToolExecutionController(
                 sessionManager.updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
                 binding.btnShareResult.isEnabled = true
+            }
+            } finally {
+                batchRoot.deleteRecursively()
+                if (!published) finalArtifact?.delete()
             }
         } else {
             // Single image file
@@ -843,7 +879,7 @@ class ToolExecutionController(
                 res
             } else {
                 val name = safStorageManager.getDisplayName(uri)
-                val size = activity.contentResolver.openFileDescriptor(uri, "r")?.statSize ?: 0L
+                val size = activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
                 val record = FolderScannerEngine.ScannedFileRecord(
                     relativePath = name,
                     name = name,

@@ -12,6 +12,11 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CancellationException
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -148,27 +153,53 @@ class SafStorageManager(private val context: Context) {
     }
 
     suspend fun copyUriToFile(uri: Uri, destination: File): Boolean = withContext(Dispatchers.IO) {
+        var stage: File? = null
         try {
-            destination.parentFile?.mkdirs()
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(destination).use { output ->
-                    input.copyTo(output)
+            val parent = requireNotNull(destination.absoluteFile.parentFile)
+            check(parent.isDirectory || parent.mkdirs()) { "Cannot create import directory" }
+            val temp = File.createTempFile("saf_import_", ".partial", parent)
+            stage = temp
+            val cc = kotlin.coroutines.coroutineContext
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("Provider returned no input stream")
+            input.use { source ->
+                temp.outputStream().buffered().use { output ->
+                    copyChecked(source, output) { cc.ensureActive() }
                 }
             }
+            cc.ensureActive()
+            Files.move(temp.toPath(), destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             false
+        } finally {
+            stage?.delete()
         }
     }
 
     suspend fun copyFileToUri(sourceFile: File, destUri: Uri): Boolean = withContext(Dispatchers.IO) {
         try {
-            context.contentResolver.openOutputStream(destUri)?.use { outStream ->
-                sourceFile.inputStream().use { inStream ->
-                    inStream.copyTo(outStream)
+            if (!sourceFile.isFile) return@withContext false
+            val expected = sourceFile.length()
+            val cc = kotlin.coroutines.coroutineContext
+            sourceFile.inputStream().buffered().use { source ->
+                val output = context.contentResolver.openOutputStream(destUri, "wt")
+                    ?: throw IOException("Provider returned no output stream")
+                output.use {
+                    val copied = copyChecked(source, it) { cc.ensureActive() }
+                    if (copied != expected || sourceFile.length() != expected) {
+                        throw IOException("Source changed during export")
+                    }
+                    it.flush()
                 }
             }
+            cc.ensureActive()
             true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             false
         }
@@ -179,56 +210,65 @@ class SafStorageManager(private val context: Context) {
         isFolder: Boolean,
         destDir: File
     ): File = withContext(Dispatchers.IO) {
-        destDir.deleteRecursively()
-        destDir.mkdirs()
-
-        val freeBytes = destDir.usableSpace
-        if (freeBytes > 0 && freeBytes < 25L * 1024 * 1024) {
-            throw java.io.IOException("Insufficient internal storage (< 25MB available) to materialize SAF target.")
-        }
-
-        if (!isFolder) {
-            val fileName = getDisplayName(targetUri)
-            val destFile = File(destDir, fileName)
-            copyUriToFile(targetUri, destFile)
-            return@withContext destFile
-        }
-
-        val rootDoc = try {
-            DocumentFile.fromTreeUri(context, targetUri)
-        } catch (e: Exception) {
-            null
-        } ?: throw IllegalStateException("Cannot access root directory via SAF: provider access failure.")
-
-        suspend fun copyDocRecursive(doc: DocumentFile, currentDir: File) {
-            val children = try {
-                doc.listFiles()
-            } catch (e: Exception) {
-                emptyArray()
+        // Only a fresh private staging directory may be owned by this operation.
+        check(!destDir.exists() && destDir.mkdirs()) { "Cannot create fresh SAF staging directory" }
+        var completed = false
+        try {
+            val cc = kotlin.coroutines.coroutineContext
+            require(destDir.usableSpace >= 25L * 1024 * 1024) { "Insufficient internal storage to stage SAF target" }
+            if (!isFolder) {
+                val destFile = safeStagingChild(destDir, getDisplayName(targetUri))
+                if (!copyUriToFile(targetUri, destFile)) throw IOException("Could not stage selected file")
+                completed = true
+                return@withContext destFile
             }
-            for (child in children) {
-                val name = child.name ?: continue
-                try {
-                    if (child.isDirectory) {
-                        val sub = File(currentDir, name)
-                        sub.mkdirs()
-                        copyDocRecursive(child, sub)
-                    } else if (child.isFile) {
-                        val target = File(currentDir, name)
-                        context.contentResolver.openInputStream(child.uri)?.use { input ->
-                            FileOutputStream(target).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
+            val rootDoc = DocumentFile.fromTreeUri(context, targetUri)
+                ?: throw IOException("Cannot access selected directory")
+            val visited = HashSet<String>()
+            var entries = 0
+            suspend fun copyDocRecursive(doc: DocumentFile, currentDir: File, depth: Int) {
+                cc.ensureActive()
+                require(depth <= 128 && visited.add(doc.uri.toString())) { "Folder depth or duplicate directory identity exceeded" }
+                // Query directly: DocumentFile.listFiles() can swallow provider exceptions.
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                    doc.uri, DocumentsContract.getDocumentId(doc.uri))
+                val cursor = context.contentResolver.query(childrenUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+                    null, null, null) ?: throw IOException("Provider returned no directory cursor")
+                data class Child(val uri: Uri, val name: String, val mime: String)
+                val children = mutableListOf<Child>()
+                cursor.use {
+                    while (it.moveToNext()) {
+                        cc.ensureActive()
+                        require(++entries <= 50_000) { "Folder staging entry limit exceeded" }
+                        val id = it.getString(0) ?: throw IOException("Missing document identity")
+                        val name = it.getString(1) ?: throw IOException("Missing document name")
+                        val mime = it.getString(2) ?: throw IOException("Missing document MIME type")
+                        children += Child(DocumentsContract.buildDocumentUriUsingTree(doc.uri, id), name, mime)
                     }
-                } catch (_: Exception) {
-                    // Skip unreadable file or permission error on individual file
+                }
+                for (child in children) {
+                    cc.ensureActive()
+                    val target = safeStagingChild(currentDir, child.name)
+                    require(!target.exists()) { "Duplicate folder entry name" }
+                    if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        check(target.mkdir()) { "Cannot create staged subdirectory" }
+                        val nested = DocumentFile.fromSingleUri(context, child.uri)
+                            ?: throw IOException("Cannot access nested directory")
+                        copyDocRecursive(nested, target, depth + 1)
+                    } else {
+                        if (!copyUriToFile(child.uri, target)) throw IOException("Could not stage a selected file")
+                        if (destDir.usableSpace < 25L * 1024 * 1024) throw IOException("Insufficient staging storage")
+                    }
                 }
             }
+            copyDocRecursive(rootDoc, destDir, 0)
+            completed = true
+            destDir
+        } finally {
+            if (!completed) destDir.deleteRecursively()
         }
-
-        copyDocRecursive(rootDoc, destDir)
-        return@withContext destDir
     }
 
     fun zipDirectory(sourceDir: File, zipFile: File) {
@@ -267,6 +307,30 @@ class SafStorageManager(private val context: Context) {
     fun getExportMimeType(file: File): String = Companion.getExportMimeType(file)
 
     companion object {
+        internal fun safeStagingChild(parent: File, name: String): File {
+            require(name.isNotBlank() && name != "." && name != ".." &&
+                name.none { it == '/' || it == '\\' || it.code < 32 || it.code == 127 }) {
+                "Unsafe provider entry name"
+            }
+            val child = File(parent, name)
+            require(child.canonicalFile.parentFile == parent.canonicalFile) { "Provider entry escapes staging directory" }
+            return child
+        }
+
+        internal fun copyChecked(input: java.io.InputStream, output: java.io.OutputStream,
+                                 checkpoint: () -> Unit = {}): Long {
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                checkpoint()
+                val count = input.read(buffer)
+                if (count < 0) return total
+                if (count == 0) throw IOException("Provider stream made no progress")
+                output.write(buffer, 0, count)
+                total = Math.addExact(total, count.toLong())
+            }
+        }
+
         fun getExportMimeType(file: File): String {
             return when (file.extension.lowercase(Locale.US)) {
                 "aibundle" -> "application/octet-stream"

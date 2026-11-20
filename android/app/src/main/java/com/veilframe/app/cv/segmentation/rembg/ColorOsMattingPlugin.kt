@@ -73,24 +73,31 @@ object ColorOsMattingPlugin {
         }
     }
 
-    private fun getOrInitCompiledModelLocked(context: Context): CompiledModel {
+    private fun getOrInitCompiledModelLocked(context: Context, checkpoint: () -> Unit): CompiledModel {
         compiledModel?.let { return it }
         val appContext = context.applicationContext
-        val candidates = listOf(
-            File(appContext.filesDir, "models/rembg/image_matting_mobile.tflite"),
-            File(appContext.filesDir, "models/lift_shift/image_matting_mobile.tflite")
-        )
-        val modelFile = candidates.firstOrNull { it.isFile && it.length() >= 8_000_000L }
+        val repository = RembgModelRepository(appContext)
+        val expected = RembgModel.COLOROS_LIFT_SHIFT
+        val modelFile = repository.verifiedModelFile(expected, checkpoint)
         val environment = LiteRtEnvironment.get(appContext)
         val gpuAvailable = runCatching {
             environment.getAvailableAccelerators().contains(Accelerator.GPU)
         }.getOrDefault(false)
         val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
 
-        // Downloaded models already have file paths; stage only the bundled fallback.
-        val modelPath = modelFile?.absolutePath ?: LiteRtModelStorage.stageBundled(
-            appContext, MODEL_ASSET_PATH, "coloros-liftshift"
-        ).absolutePath
+        // Size alone must not authorize a downloaded or staged native model.
+        val selectedFile = modelFile ?: run {
+            checkpoint()
+            val staged = try {
+                LiteRtModelStorage.stageBundled(appContext, MODEL_ASSET_PATH, "coloros-liftshift")
+            } catch (failure: java.io.IOException) {
+                throw IllegalStateException("Lift & Shift model is missing or failed checksum validation; delete and download it again", failure)
+            }
+            check(repository.matchesPinnedArtifact(staged, expected.sha256, expected.minBytes,
+                20L * 1024 * 1024, checkpoint)) { "Bundled Lift & Shift model failed checksum validation" }
+            staged
+        }
+        val modelPath = selectedFile.absolutePath
         fun create(options: CompiledModel.Options): CompiledModel =
             CompiledModel.create(modelPath, options, environment)
 
@@ -211,8 +218,9 @@ object ColorOsMattingPlugin {
             // Reuse one input tensor and its backing buffers; model work stays on mattingDispatcher.
             val alphaValues = withContext(mattingDispatcher) {
                 ensureActive()
+                val modelContext = kotlin.coroutines.coroutineContext
                 modelLock.withLock {
-                    val model = getOrInitCompiledModelLocked(context)
+                    val model = getOrInitCompiledModelLocked(context) { modelContext.ensureActive() }
                     val scaledBitmap = Bitmap.createScaledBitmap(
                         sourceBitmap, TENSOR_WIDTH, TENSOR_HEIGHT, true
                     )
