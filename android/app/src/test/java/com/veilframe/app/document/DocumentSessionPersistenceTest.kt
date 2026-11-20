@@ -154,6 +154,51 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun modifiedOriginalCannotBeRestoredOrRebaselinedByAutosave() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(originalBitmapCache = bmp, renderedVersion = -1L))
+            assertTrue(session.saveToDisk(context))
+            val original = java.io.File(session.pages.single().originalImagePath)
+            val bytes = original.readBytes()
+            bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte()
+            original.writeBytes(bytes)
+            assertNull(DocumentSession.loadFromDisk(context, session.id))
+            assertFalse(session.saveToDisk(context))
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
+    fun corruptDerivedRenderIsDiscardedWithoutLosingOriginal() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(originalBitmapCache = bmp, processedBitmapCache = bmp,
+                renderedVersion = 0L, persistedRenderVersion = -1L))
+            assertTrue(session.saveToDisk(context))
+            val page = session.pages.single()
+            val processed = java.io.File(checkNotNull(page.processedImagePath))
+            val bytes = processed.readBytes()
+            bytes[0] = (bytes[0].toInt() xor 1).toByte()
+            processed.writeBytes(bytes)
+            val recovered = checkNotNull(DocumentSession.loadFromDisk(context, session.id)).pages.single()
+            assertNull(recovered.processedImagePath)
+            assertNull(recovered.thumbnailPath)
+            assertEquals(-1L, recovered.persistedRenderVersion)
+            assertTrue(java.io.File(recovered.originalImagePath).isFile)
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
     fun capturedSnapshotOwnsItsSessionIdentityAndPageMetadata() {
         val session = DocumentSession()
         val page = ScannedPage(rotationDegrees = 90)

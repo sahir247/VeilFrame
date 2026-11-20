@@ -124,7 +124,7 @@ object FolderScannerEngine {
                             // The actual bytes were larger than admitted. Stop the
                             // traversal instead of undercounting an unknown volume.
                             issue("Actual file bytes exceeded scan limits")
-                            if (knownSize == null || limit == maximum) exhausted = true
+                            exhausted = true
                         } else {
                             count = measured
                             if (knownSize != null && knownSize != measured) {
@@ -244,6 +244,7 @@ object FolderScannerEngine {
         val visited = HashSet<String>()
         var entries = 0
         var lastProgress = 0L
+        var rootReadFailed = false
         data class Child(val uri: Uri, val name: String, val mime: String, val size: Long?)
         suspend fun walk(doc: Uri, path: String, depth: Int) {
             ensureActive()
@@ -278,7 +279,11 @@ object FolderScannerEngine {
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { audit.issue("Directory read failed"); return }
+            catch (_: Exception) {
+                audit.issue("Directory read failed")
+                if (depth == 1) rootReadFailed = true
+                return
+            }
             for (child in children) {
                 ensureActive()
                 if (audit.exhausted || !audit.canInspect()) return
@@ -297,7 +302,7 @@ object FolderScannerEngine {
         }
         walk(root.uri, "", 1)
         onProgress?.invoke("Complete", audit.records.size)
-        audit.result(rootName)
+        audit.result(rootName, failed = rootReadFailed)
     }
 
     private fun isTextCandidate(name: String, size: Long, maxSize: Long): Boolean {

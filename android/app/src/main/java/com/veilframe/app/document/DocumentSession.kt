@@ -678,10 +678,46 @@ class DocumentSession(
             val snapshotModified = snapshot.modified
             val snapshotActive = snapshot.active
 
+            // The manifest pins immutable originals and generation-specific caches.
+            // Never bless changed bytes simply because another autosave ran.
+            val previousDigests = HashMap<String, String>()
+            current?.optJSONArray("pages")?.let { prior ->
+                for (i in 0 until prior.length()) {
+                    val entry = prior.getJSONObject(i)
+                    for (type in listOf("original", "processed", "thumbnail")) {
+                        val path = entry.optString(type + "ImagePath", "")
+                            .ifEmpty { if (type == "thumbnail") entry.optString("thumbnailPath", "") else "" }
+                        val digest = entry.optString(type + "Sha256", "")
+                        if (path.isNotBlank() && digest.isNotBlank()) previousDigests[path] = digest
+                    }
+                }
+            }
+            val digests = HashMap<String, String>()
+            fun checkedDigest(path: String): String = digests.getOrPut(path) {
+                val file = requireNotNull(ownedSessionFile(sessionDir, path)) { "Saved page unavailable" }
+                val actual = PersistedPageIntegrity.digest(file)
+                val prior = previousDigests[path]
+                require(prior == null || actual == prior) { "Previously committed page bytes changed" }
+                actual
+            }
+
             // 1. Save all page images to session folder
             for (page in pagesSnapshot) {
+                // Rebuild disposable caches rather than accepting corrupt old bytes.
+                if (page.originalImagePath.isNotBlank() && previousDigests.containsKey(page.originalImagePath)) {
+                    checkedDigest(page.originalImagePath)
+                }
                 val originalRender = page.processedImagePath
                 val originalThumbnail = page.thumbnailPath
+                if (listOfNotNull(originalRender, originalThumbnail).any { path ->
+                        previousDigests[path]?.let { expected ->
+                            ownedSessionFile(sessionDir, path)?.let { PersistedPageIntegrity.verify(it, expected) } != true
+                        } == true
+                    }) {
+                    page.processedImagePath = null
+                    page.thumbnailPath = null
+                    page.persistedRenderVersion = -1L
+                }
                 page.saveBitmapsToDisk(context, sessionDir)
                 page.processedImagePath?.takeIf { it != originalRender }?.let { newRenderFiles.add(File(it)) }
                 page.thumbnailPath?.takeIf { it != originalThumbnail }?.let { newRenderFiles.add(File(it)) }
@@ -690,6 +726,7 @@ class DocumentSession(
             // 2. Write session JSON manifest
             val json = JSONObject().apply {
                 put("id", sessionId)
+                put("imageIntegrityVersion", 1)
                 put("writerEpoch", writerEpoch)
                 put("writerSequence", snapshot.sequence)
                 put("title", snapshotTitle)
@@ -702,8 +739,13 @@ class DocumentSession(
                     val pageJson = JSONObject().apply {
                         put("id", page.id)
                         put("originalImagePath", page.originalImagePath)
-                        put("processedImagePath", if (page.persistedRenderVersion == page.editVersion) page.processedImagePath ?: "" else "")
-                        put("thumbnailPath", if (page.persistedRenderVersion == page.editVersion) page.thumbnailPath ?: "" else "")
+                        put("originalSha256", checkedDigest(page.originalImagePath))
+                        val processed = if (page.persistedRenderVersion == page.editVersion) page.processedImagePath.orEmpty() else ""
+                        val thumbnail = if (page.persistedRenderVersion == page.editVersion) page.thumbnailPath.orEmpty() else ""
+                        put("processedImagePath", processed)
+                        put("processedSha256", if (processed.isNotBlank()) checkedDigest(processed) else "")
+                        put("thumbnailPath", thumbnail)
+                        put("thumbnailSha256", if (thumbnail.isNotBlank()) checkedDigest(thumbnail) else "")
                         put("rotationDegrees", page.rotationDegrees)
                         put("mode", page.mode.name)
                         put("exposureStops", page.exposureStops)
@@ -820,6 +862,19 @@ class DocumentSession(
                     lastModifiedAt = json.optLong("lastModifiedAt", System.currentTimeMillis())
                 }
 
+                val integrityVersion = json.optInt("imageIntegrityVersion", 0)
+                require(integrityVersion in 0..1) { "Unsupported recovery integrity contract" }
+                val checkedFiles = HashMap<Pair<String, String>, Boolean>()
+                fun checkedImage(page: JSONObject, pathKey: String, digestKey: String): File? {
+                    val file = ownedSessionFile(sessionDir, page.optString(pathKey, "")) ?: return null
+                    val expected = page.optString(digestKey, "")
+                    val valid = checkedFiles.getOrPut(file.absolutePath to expected) {
+                        if (integrityVersion == 1 || expected.isNotBlank()) PersistedPageIntegrity.verify(file, expected)
+                        else PersistedPageIntegrity.legacyDecodes(file)
+                    }
+                    return file.takeIf { valid }
+                }
+
                 val pagesArray = json.getJSONArray("pages")
                 require(pagesArray.length() > 0) { "Saved document has no pages" }
                 val loadedPages = mutableListOf<ScannedPage>()
@@ -828,9 +883,9 @@ class DocumentSession(
                     val p = pagesArray.getJSONObject(i)
                     val pageId = p.getString("id")
                     require(isValidPageIdentity(pageId) && pageIds.add(pageId)) { "Invalid or duplicate page identity" }
-                    val original = requireNotNull(ownedSessionFile(sessionDir, p.optString("originalImagePath", ""))) { "Saved original page unavailable" }
-                    val processed = ownedSessionFile(sessionDir, p.optString("processedImagePath", ""))
-                    val thumbnail = ownedSessionFile(sessionDir, p.optString("thumbnailPath", ""))
+                    val original = requireNotNull(checkedImage(p, "originalImagePath", "originalSha256")) { "Saved original page unavailable or corrupt" }
+                    val processed = checkedImage(p, "processedImagePath", "processedSha256")
+                    val thumbnail = if (processed != null) checkedImage(p, "thumbnailPath", "thumbnailSha256") else null
                     val modeStr = p.optString("mode", DocumentScanner.DocumentMode.ENHANCED.name)
                     val mode = try {
                         DocumentScanner.DocumentMode.valueOf(modeStr)
