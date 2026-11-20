@@ -972,10 +972,13 @@ object OpenXmlDocumentParser {
         for (group in root.childElements("conditionalFormatting")) {
             val ranges = group.getAttribute("sqref").trim().split(Regex("\\s+")).map { ref ->
                 val clean = ref.replace("$", "")
-                if (':' in clean) parseMergeRange(clean) else {
-                    require(clean.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid conditional range" }
-                    val c = colRefToIndex(clean)
-                    val r = clean.dropWhile { it.isLetter() }.toInt()
+                val endpoints = clean.split(':')
+                val single = if (endpoints.size == 2 && endpoints[0].equals(endpoints[1], ignoreCase = true))
+                    endpoints[0] else clean
+                if (':' in single) parseMergeRange(single) else {
+                    require(single.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid conditional range" }
+                    val c = colRefToIndex(single)
+                    val r = single.dropWhile { it.isLetter() }.toInt()
                     require(c in 0 until MAX_XLSX_COLUMNS && r in 1..MAX_XLSX_ROWS) { "Conditional range out of bounds" }
                     CellRangeAddress(r - 1, r - 1, c, c)
                 }
@@ -994,13 +997,20 @@ object OpenXmlDocumentParser {
                 val operands = rule.childElements("formula").map { XlsxConditionalFormatting.number(it.textContent.trim()) }
                 val id = rule.getAttribute("dxfId").toIntOrNull()
                 if (rule.hasAttribute("dxfId")) require(id != null && id in differential.indices) { "Invalid differential style ID" }
-                val supported = rule.getAttribute("type") == "cellIs" &&
+                val type = rule.getAttribute("type")
+                val literal = rule.getAttribute("text")
+                val numeric = type == "cellIs" &&
                     op in XlsxConditionalFormatting.operators && operands.size == (if (op in setOf("between", "notBetween")) 2 else 1) &&
                     operands.all { it != null }
-                val delta = if (supported) {
+                // Only literal text rules: wildcards and arbitrary formula-based rules
+                // are deliberately disclosed as unsupported rather than guessed.
+                val text = type in XlsxConditionalFormatting.textOperators && literal.length in 1..1024 &&
+                    literal.none { it in "*?~" } && (op.isEmpty() || op == type)
+                val delta = if (numeric || text) {
                     if (id == null) XlsxConditionalFormatting.Delta() else differential[id]
                 } else null
-                result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, op, operands.filterNotNull(), delta))
+                result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, if (text) type else op,
+                    operands.filterNotNull(), delta, if (text) literal else null))
                 require(result.size <= 256) { "Too many conditional formatting rules" }
             }
         }
@@ -1055,6 +1065,7 @@ object OpenXmlDocumentParser {
         val visuals = styleTable.visuals.toMutableList()
         val derivedStyles = mutableMapOf<XlsxCellStyle, Int>()
         var conditionalChecks = 0L
+        val conditionalCost = conditional.sumOf { it.ranges.size.toLong() }
         // Prefer the first saved worksheet view, not the device's display setting.
         val firstView = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }.firstOrNull()
         val showGridLines = when (firstView?.getAttribute("showGridLines").orEmpty()) {
@@ -1158,6 +1169,8 @@ object OpenXmlDocumentParser {
                     }
                     val rawNumeric = if (conditional.isNotEmpty() && (cellType.isEmpty() || cellType == "n"))
                         XlsxConditionalFormatting.number(cellVal) else null
+                    val rawText = if (conditional.isNotEmpty() && cellType in setOf("s", "str", "inlineStr"))
+                        cellVal else null
                     cellVal = styleTable.formatter.format(cellVal, cellType, style)
                     expandedTextChars += cellVal.length
                     require(expandedTextChars <= SpreadsheetGeometry.MAX_TEXT_CHARS) {
@@ -1183,11 +1196,11 @@ object OpenXmlDocumentParser {
                     while (existingCells.size <= targetCol) existingCells.add("")
                     existingCells[targetCol] = cellVal
                     var visualIndex = style
-                    if (rawNumeric != null) {
-                        conditionalChecks += conditional.sumOf { it.ranges.size.toLong() }
+                    if (rawNumeric != null || rawText != null) {
+                        conditionalChecks += conditionalCost
                         require(conditionalChecks <= 8_000_000L) { "Conditional formatting evaluation exceeds budget" }
                         val base = styleTable.visuals[style]
-                        val applied = XlsxConditionalFormatting.apply(base, targetRow - 1, targetCol, rawNumeric, conditional)
+                        val applied = XlsxConditionalFormatting.apply(base, targetRow - 1, targetCol, rawNumeric, conditional, rawText)
                         if (applied != base) visualIndex = derivedStyles.getOrPut(applied) {
                             require(visuals.size < 16384) { "Conditional style count exceeds budget" }
                             visuals.add(applied)

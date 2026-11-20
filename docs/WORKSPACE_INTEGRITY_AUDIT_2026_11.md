@@ -643,3 +643,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Pie chart reconstruction and chart/print edge cases
 
 - Support single-series nonnegative cached pie charts (up to 12 categories), use one normalized denominator, cubic vector curves and explicit missing-value labels. Refuse invalid/negative or all-zero datasets rather than inventing shares. Missing category caches are not replaced by inferred labels when a category source exists. Separate horizontal chart axis labels from category indices; reduce repeated DOM traversal. Allow an explicitly saved blank print area to reach the print renderer. Added chart-only PDF fixture and percentage/curve assertions. These remain reconstructed appendices, not original drawing anchors; CI pending.
+
+### A28 — Literal text conditional-formatting rules
+
+- Add case-insensitive contains/not-contains/begins/ends matching on saved explicit string cells, with numeric/text type separation, same priority/stop and differential-property handling. Wildcards and arbitrary expressions remain disclosed as unsupported. Accept singleton `A1:A1` conditional ranges; precompute the rule-range budget cost. Added text/numeric interaction and stop-rule fixture. Numeric-as-text coercion, blank-cell rules and Excel locale-specific comparisons remain incomplete. CI pending.
