@@ -55,7 +55,8 @@ data class VideoPiiScanResult(
     val isScanDegraded: Boolean = false,
     val isSamplingCapped: Boolean = false,
     val actualSampleIntervalMs: Long = 0L,
-    val isCancelled: Boolean = false
+    val isCancelled: Boolean = false,
+    val isEveryFrameScan: Boolean = false
 )
 
 /**
@@ -70,7 +71,8 @@ data class VideoPiiScanResult(
 object VideoPiiRedactionEngine {
     enum class ScanDensity(val targetStepMs: Long, val maxSamples: Int) {
         STANDARD(350L, 120),
-        DENSE(100L, 600)
+        DENSE(100L, 600),
+        EVERY_FRAME(0L, 0)
     }
 
     private const val MIN_SAMPLE_FRAMES = 6
@@ -259,6 +261,67 @@ object VideoPiiRedactionEngine {
         )
     }
 
+    /** Scan actual presentation intervals instead of inferred frame timing. */
+    fun scanEveryDecodedFrame(
+        context: Context,
+        source: java.io.File,
+        piiEngine: PiiNcnnEngine?,
+        sourceDurationMs: Long,
+        frameW: Int,
+        frameH: Int,
+        confThreshold: Float = 0.36f,
+        includeOcrText: Boolean = true,
+        isCancelled: () -> Boolean = { false },
+        onProgress: ((Int, Int) -> Unit)? = null
+    ): VideoPiiScanResult {
+        require(sourceDurationMs > 0L)
+        val rawRegions = mutableListOf<TimedPiiRegion>()
+        val counts = linkedMapOf<PiiClass, Int>()
+        val failed = linkedMapOf<String, String>()
+        val succeeded = linkedSetOf<String>()
+        val decoded = SequentialVideoFrameDecoder.decode(source, context.cacheDir, frameW, frameH, isCancelled) {
+                bitmap, timestamp, next, index, total ->
+            val summary = PiiMultiModalDetector.detectAllSummary(
+                context = context, ncnnEngine = piiEngine, bitmap = bitmap,
+                targetWidth = frameW, targetHeight = frameH, confThreshold = confThreshold,
+                includeNcnn = true, includeBarcodes = true, includeOcrText = includeOcrText
+            )
+            failed.putAll(summary.failedEngines)
+            succeeded.addAll(summary.successfulEngines)
+            val detections = summary.detections
+            require(detections.size <= MAX_OBSERVATIONS_PER_FRAME &&
+                detections.size <= MAX_OBSERVATIONS - rawRegions.size) {
+                "Every-frame observation budget exceeded; split the video into shorter clips"
+            }
+            rawRegions += frameCoverageRegions(timestamp, next, sourceDurationMs, frameW, frameH, detections)
+            for (detection in detections) counts[detection.piiClass] = (counts[detection.piiClass] ?: 0) + 1
+            onProgress?.invoke(index, total)
+        }
+        val regions = coalesceStationarySegments(rawRegions, isCancelled = isCancelled)
+        return VideoPiiScanResult(regions = regions, frameWidth = frameW, frameHeight = frameH,
+            detectedCounts = counts, trackCount = regions.size, sampledFrames = decoded,
+            attemptedFrames = decoded, failedEngines = failed, successfulEngines = succeeded,
+            isScanDegraded = failed.isNotEmpty(), isEveryFrameScan = true)
+    }
+
+    internal fun frameCoverageRegions(
+        timestampUs: Long, nextTimestampUs: Long?, durationMs: Long,
+        frameW: Int, frameH: Int, detections: List<PiiDetection>
+    ): List<TimedPiiRegion> {
+        require(timestampUs >= 0 && (nextTimestampUs == null || nextTimestampUs > timestampUs) &&
+            durationMs > 0 && frameW >= 8 && frameH >= 8) { "Invalid frame presentation interval" }
+        val start = timestampUs / 1_000_000.0
+        val end = nextTimestampUs?.div(1_000_000.0) ?: max(start + 0.04, durationMs / 1000.0)
+        return detections.map { detection ->
+            val r = detection.rect
+            require(listOf(r.left, r.top, r.right, r.bottom, detection.score).all { it.isFinite() } &&
+                r.left < r.right && r.top < r.bottom && r.left < frameW && r.top < frameH &&
+                r.right > 0f && r.bottom > 0f) { "Invalid sequential video observation geometry" }
+            TimedPiiRegion(start, end, expandRect(r, BOX_MARGIN_RATIO, frameW.toFloat(), frameH.toFloat()),
+                detection.piiClass, detection.label)
+        }
+    }
+
     /**
      * A scan is incomplete if any requested frame was unavailable, any detector failed,
      * or cancellation stopped the requested pass. This is intentionally conservative:
@@ -273,6 +336,7 @@ object VideoPiiRedactionEngine {
 
     internal fun sampleCountForSpan(spanMs: Long, density: ScanDensity = ScanDensity.STANDARD): Int {
         require(spanMs > 0)
+        require(density != ScanDensity.EVERY_FRAME) { "Every-frame mode requires the sequential decoder" }
         val intervals = (spanMs - 1) / density.targetStepMs +
             if ((spanMs - 1) % density.targetStepMs == 0L) 0L else 1L
         return (intervals + 1L).coerceIn(MIN_SAMPLE_FRAMES.toLong(), density.maxSamples.toLong())

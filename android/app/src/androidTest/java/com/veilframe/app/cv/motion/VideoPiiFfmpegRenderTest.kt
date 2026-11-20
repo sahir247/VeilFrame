@@ -25,6 +25,28 @@ import kotlin.math.pow
 class VideoPiiFfmpegRenderTest {
 
     @Test
+    fun sequentialDecoderPreservesEveryVariableRateFrameAndReleasesSpool() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_seq_test").toFile()
+        val source = File(dir, "vfr.mp4")
+        try {
+            val creation = FFmpegKit.executeWithArguments(arrayOf("-y", "-f", "lavfi", "-i",
+                "testsrc2=size=320x240:rate=10:duration=1", "-vf",
+                "select='not(mod(n,3))+eq(n,1)'", "-vsync", "0", "-an", "-c:v", "mpeg4", source.absolutePath))
+            assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
+            val seen = mutableListOf<Long>()
+            val count = SequentialVideoFrameDecoder.decode(source, dir, 320, 240, { false }) {
+                    bitmap, pts, _, _, _ ->
+                assertTrue(bitmap.width == 320 && bitmap.height == 240)
+                seen.add(pts)
+            }
+            org.junit.Assert.assertEquals(listOf(0L, 100_000L, 300_000L, 600_000L, 900_000L), seen)
+            org.junit.Assert.assertEquals(5, count)
+            assertTrue(dir.listFiles()!!.none { it.extension == "rgb" })
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test
     fun allRedactionStylesRenderAndModifyTheTargetRegion() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val dir = File(context.cacheDir, "video_pii_ffmpeg_test").apply {

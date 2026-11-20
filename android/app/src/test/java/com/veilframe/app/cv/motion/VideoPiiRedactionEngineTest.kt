@@ -25,6 +25,41 @@ import org.robolectric.RobolectricTestRunner
 class VideoPiiRedactionEngineTest {
 
     @Test
+    fun sequentialTimestampsRejectMissingDuplicateAndMismatchedGeometry() {
+        fun line(index: Int, pts: Long, size: String = "320x240") =
+            "[Parsed_showinfo_1 @ 0x123] n: $index pts: $pts pts_time:0 pos:0 fmt:yuv420p sar:1/1 s:$size"
+        val a = line(0, 0)
+        val b = line(1, 123_456)
+        assertEquals(listOf(0L, 123_456L), SequentialVideoFrameDecoder.parseFrameTimestamps("$a\n$b", 2, 320, 240))
+        for (broken in listOf(a, a + "\n" + line(2, 10), a + "\n" + line(1, 0),
+            a + "\n" + line(1, 10, "240x320"))) {
+            org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+                SequentialVideoFrameDecoder.parseFrameTimestamps(broken, 2, 320, 240)
+            }
+        }
+    }
+
+    @Test
+    fun frameCoverageUsesActualVariableFrameIntervalsAndLastHold() {
+        val detection = PiiDetection(RectF(20f, 30f, 40f, 60f), PiiClass.FACE, .9f, "face")
+        val region = VideoPiiRedactionEngine.frameCoverageRegions(120_000, 870_000, 2000, 320, 240, listOf(detection)).single()
+        assertEquals(0.12, region.startSec, 0.000001)
+        assertEquals(0.87, region.endSec, 0.000001)
+        assertTrue(region.rect.contains(detection.rect))
+        val last = VideoPiiRedactionEngine.frameCoverageRegions(1_100_000, null, 2000, 320, 240, listOf(detection)).single()
+        assertEquals(2.0, last.endSec, 0.000001)
+    }
+
+    @Test
+    fun sequentialBudgetReservesSentinelAndRejectsSamplingFallback() {
+        assertEquals(0, SequentialVideoFrameDecoder.frameLimit(1000, 128L * 1024 * 1024))
+        assertEquals(2, SequentialVideoFrameDecoder.frameLimit(1000, 128L * 1024 * 1024 + 3000))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.sampleCountForSpan(1000, VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
+        }
+    }
+
+    @Test
     fun scanGeometryAndSamplingAreBounded() {
         assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, 90))
         assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, -90))
