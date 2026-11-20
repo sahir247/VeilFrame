@@ -1654,4 +1654,25 @@ class OfficeConverterFidelityTest {
         }
         PDDocument.load(full).use { pdf -> assertTrue(PDFTextStripper().getText(pdf).contains("OUTSIDE")) }
     }
+    @Test
+    fun cachedPieUsesOneDenominatorAndVectorCurves() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Sales" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData/><drawing r:id="draw"/></worksheet>"""
+        val sheetRels = """<Relationships><Relationship Id="draw" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:graphicFrame><c:chart r:id="chart"/></xdr:graphicFrame></xdr:wsDr>"""
+        val drawingRels = """<Relationships><Relationship Id="chart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/c.xml"/></Relationships>"""
+        val chart = """<c:chartSpace><c:chart><c:plotArea><c:pieChart><c:ser><c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>North</c:v></c:pt><c:pt idx="1"><c:v>South</c:v></c:pt><c:pt idx="2"><c:v>Missing</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>3</c:v></c:pt><c:pt idx="1"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser></c:pieChart></c:plotArea></c:chart></c:chartSpace>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRels, "xl/drawings/d.xml" to drawing,
+            "xl/drawings/_rels/d.xml.rels" to drawingRels, "xl/charts/c.xml" to chart))
+        val output = File(tempFolder.root, "pie.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(1, pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("75.00%") && text.contains("25.00%") && text.contains("(missing)"))
+            val operators = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bc\s*$""").containsMatchIn(operators))
+        }
+    }
 }

@@ -639,3 +639,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A17 — Correct multilingual reference fixture
 
 - CI 44777202636 compiled Android and executed 1,503 tests; the sole failure was the expected o200k count for `お誕生日おめでとう`. Official OpenAI Cookbook reference reports 8 tokens for o200k_base and 9 for cl100k_base (https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb). Correct the expected count and exact boundary budget to 8; preserve the cross-encoding overflow assertion. No runtime tokenizer or token-budget logic change. Revalidation pending.
+
+### A28 — Pie chart reconstruction and chart/print edge cases
+
+- Support single-series nonnegative cached pie charts (up to 12 categories), use one normalized denominator, cubic vector curves and explicit missing-value labels. Refuse invalid/negative or all-zero datasets rather than inventing shares. Missing category caches are not replaced by inferred labels when a category source exists. Separate horizontal chart axis labels from category indices; reduce repeated DOM traversal. Allow an explicitly saved blank print area to reach the print renderer. Added chart-only PDF fixture and percentage/curve assertions. These remain reconstructed appendices, not original drawing anchors; CI pending.

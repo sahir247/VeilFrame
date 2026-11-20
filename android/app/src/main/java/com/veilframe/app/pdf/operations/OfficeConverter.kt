@@ -965,7 +965,8 @@ class OfficeConverter {
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
-                if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0) continue // Empty sheet
+                if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0 &&
+                    !(savedPrintLayout && sheet.printSettings.area != null)) continue // Empty sheet
 
                 val notes = buildList {
                     if (sheet.cachedFormulaCount > 0) add("cached formulas; not recalculated")
@@ -1103,6 +1104,10 @@ class OfficeConverter {
 
     /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
     private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+        if (chart.kind == "pie") {
+            renderCachedPieChart(pdf, sheet, chart, checkpoint)
+            return
+        }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
         val maxAbs = chart.series.flatMap { it.values }.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }
             ?.takeIf { it > 0.0 } ?: 1.0
@@ -1142,7 +1147,7 @@ class OfficeConverter {
                     val v = (min + (high - min)*f) * maxAbs
                     val value = String.format(java.util.Locale.US, "%.4g", v)
                     stroke(0xE0E0E0)
-                    if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-12f,8f) }
+                    if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-25f,8f) }
                     else { val y = bottom + f*height; line(left,y,left+width,y); label(value,30f,y-3f,8f) }
                 }
                 for ((seriesIndex, series) in chart.series.withIndex()) {
@@ -1192,6 +1197,65 @@ class OfficeConverter {
                 }
                 label("Labels and numbers abbreviated for display; absent cache points are not inferred.", 30f, 28f, 8f)
             }
+        }
+    }
+
+    /** Render a single complete pie; splitting the denominator across pages would mislead. */
+    private fun renderCachedPieChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+        checkpoint()
+        val values = chart.series.single().values
+        require(values.size in 1..12 && values.all { it == null || (it.isFinite() && it >= 0.0) })
+        val max = values.filterNotNull().maxOrNull() ?: 0.0
+        require(max > 0.0)
+        val total = values.sumOf { (it ?: 0.0) / max }
+        val colors = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82,
+            0xAA4167, 0x6D7C35, 0x5264B4, 0x9B653C, 0x557D83, 0x777777)
+        require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+        val page = PDPage(PDRectangle(842f, 595f))
+        pdf.addPage(page)
+        PDPageContentStream(pdf, page).use { stream ->
+            val font = PDType1Font.HELVETICA
+            fun label(text: String, x: Float, y: Float, size: Float = 10f) {
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
+                safeShowText(stream,text,font); stream.endText()
+            }
+            fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+            label(sheet.take(70) + " / Cached pie chart", 30f,565f,12f)
+            label(chart.title.take(85),30f,543f,14f)
+            label("Saved chart cache; reconstructed appearance, not recalculated",30f,523f)
+            val cx = 225f; val cy = 300f; val radius = 170f
+            var angle = Math.PI / 2
+            for ((i,v) in values.withIndex()) {
+                checkpoint()
+                val share = if (v == null) 0.0 else (v / max) / total
+                if (share > 0.0) {
+                    val sweep = -2 * Math.PI * share
+                    val segments = kotlin.math.ceil(kotlin.math.abs(sweep) / (Math.PI / 2)).toInt().coerceAtLeast(1)
+                    val delta = sweep / segments
+                    color(colors[i])
+                    stream.moveTo(cx,cy)
+                    stream.lineTo(cx + radius * kotlin.math.cos(angle).toFloat(), cy + radius * kotlin.math.sin(angle).toFloat())
+                    repeat(segments) {
+                        val end = angle + delta
+                        val k = (4.0 / 3.0 * kotlin.math.tan(delta / 4.0)).toFloat()
+                        val x0 = kotlin.math.cos(angle).toFloat(); val y0 = kotlin.math.sin(angle).toFloat()
+                        val x1 = kotlin.math.cos(end).toFloat(); val y1 = kotlin.math.sin(end).toFloat()
+                        stream.curveTo(cx + radius*(x0-k*y0), cy + radius*(y0+k*x0),
+                            cx + radius*(x1+k*y1), cy + radius*(y1-k*x1),
+                            cx + radius*x1, cy + radius*y1)
+                        angle = end
+                    }
+                    stream.closePath(); stream.fill()
+                }
+                val y = 481f - i * 26f
+                color(colors[i]); stream.addRect(430f,y-3f,10f,10f); stream.fill()
+                label((i+1).toString() + " " + (chart.categories[i] ?: "(missing category)").take(27),447f,y)
+                label(v?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",650f,y,9f)
+                label(if (v == null) "-" else String.format(java.util.Locale.US,"%.2f%%",share*100),750f,y,9f)
+            }
+            label("Shares are relative to nonnegative saved values; missing values are excluded.",30f,60f,9f)
+            label("Category labels and values abbreviated for display.",30f,44f,9f)
         }
     }
 

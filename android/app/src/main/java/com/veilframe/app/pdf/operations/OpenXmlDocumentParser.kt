@@ -648,6 +648,7 @@ object OpenXmlDocumentParser {
                     else -> return null
                 }
             }
+            "pieChart" -> "pie"
             "lineChart" -> {
                 if (type.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard")) return null
                 "line"
@@ -664,8 +665,9 @@ object OpenXmlDocumentParser {
         fun cache(parent: Element?, numeric: Boolean): List<String?>? {
             if (parent == null) return null
             val names = if (numeric) setOf("numCache", "numLit") else setOf("strCache", "strLit", "numCache", "numLit")
-            val caches = (0 until parent.getElementsByTagName("*").length)
-                .mapNotNull { parent.getElementsByTagName("*").item(it) as? Element }
+            val nodes = parent.getElementsByTagName("*")
+            val caches = (0 until nodes.length)
+                .mapNotNull { nodes.item(it) as? Element }
                 .filter { it.localName() in names }
             val cache = caches.singleOrNull() ?: return null
             val count = cache.childElements("ptCount").singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: return null
@@ -682,7 +684,7 @@ object OpenXmlDocumentParser {
             return points
         }
         val series = type.childElements("ser")
-        if (series.isEmpty() || series.size > 6) return null
+        if (series.isEmpty() || series.size > 6 || (kind == "pie" && series.size != 1)) return null
         var labels: List<String?>? = null
         val parsed = mutableListOf<XlsxCachedChart.Series>()
         for ((index, ser) in series.withIndex()) {
@@ -690,8 +692,11 @@ object OpenXmlDocumentParser {
             val values = raw.map { value ->
                 if (value == null) null else value.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
             }
-            val categories = cache(ser.childElements("cat").singleOrNull(), false)
-                ?: List(values.size) { (it + 1).toString() }
+            if (kind == "pie" && (values.size > 12 || values.any { it != null && it < 0.0 } ||
+                values.none { it != null && it > 0.0 })) return null
+            val cat = ser.childElements("cat").singleOrNull()
+            val categories = if (cat == null) List(values.size) { (it + 1).toString() }
+                else cache(cat, false) ?: return null
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1), values))
