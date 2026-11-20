@@ -1,6 +1,7 @@
 package com.veilframe.app.pdf.operations
 
 import android.content.Context
+import com.tom_roush.pdfbox.cos.COSName
 import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -214,6 +215,22 @@ class PdfFlattener {
         if (form.fields.isEmpty()) return 0
         val fields = form.fieldTree.toList()
         val attached = document.pages.flatMap { page -> page.annotations.map { it.cosObject } }.toSet()
+        // PDFBox flatten checks hidden/invisible, but a NoView widget may still
+        // be painted. A print-only/NoView or conditional-visibility widget cannot
+        // be represented faithfully as unconditional page content.
+        for (field in fields) {
+            for (widget in field.widgets) {
+                if (widget.cosObject !in attached || widget.isHidden || widget.isInvisible) continue
+                if (widget.isNoView || widget.isNoRotate || widget.cosObject.containsKey(COSName.getPDFName("OC"))) {
+                    throw IOException("Cannot flatten conditional-visibility or non-rotating widget: ${field.fullyQualifiedName}")
+                }
+                val rect = widget.rectangle
+                if (rect == null || !rect.width.isFinite() || !rect.height.isFinite() ||
+                    rect.width <= 0f || rect.height <= 0f) {
+                    throw IOException("Cannot flatten widget with invalid geometry: ${field.fullyQualifiedName}")
+                }
+            }
+        }
         // Do not regenerate unplaced fields, such as document-level hidden values.
         // Preserve valid original appearance streams unless the source requests refresh.
         val visibleFields = fields.filter { field ->
@@ -250,10 +267,15 @@ class PdfFlattener {
         for (annotation in annotations) {
             // Hidden annotations should never become visible page content.
             if (annotation.isHidden || annotation.isInvisible || annotation.isNoView) continue
+            if (annotation.isNoRotate || annotation.isNoZoom || annotation.cosObject.containsKey(COSName.getPDFName("OC"))) {
+                throw IOException("Cannot flatten an annotation with conditional visibility or view-dependent geometry")
+            }
             val rect = annotation.rectangle
             val appearance = annotation.normalAppearanceStream
             val bbox = appearance?.bBox
             if (rect == null || appearance == null || bbox == null ||
+                listOf(rect.lowerLeftX, rect.lowerLeftY, rect.upperRightX, rect.upperRightY,
+                    bbox.lowerLeftX, bbox.lowerLeftY, bbox.upperRightX, bbox.upperRightY).any { !it.isFinite() } ||
                 rect.width <= 0f || rect.height <= 0f || bbox.width <= 0f || bbox.height <= 0f) {
                 throw IOException("Annotation cannot be flattened without valid geometry and an appearance; use a supported PDF")
             }

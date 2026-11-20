@@ -11,6 +11,37 @@ import org.junit.Test
 
 class PdfActiveContentSanitizerTest {
     private fun n(value: String) = COSName.getPDFName(value)
+    @Test fun loadedRewriteRemovesScriptSentinelAndPreservesNameTreePairs() {
+        val marker = "VeilFramePrivateScriptPayload_37601"
+        val source = PDDocument().use { document ->
+            document.addPage(PDPage())
+            val names = COSDictionary().apply {
+                setItem(n("Names"), COSArray().apply {
+                    add(com.tom_roush.pdfbox.cos.COSString("a-script"))
+                    add(COSDictionary().apply { setItem(n("S"), n("JavaScript")); setString(n("JS"), marker) })
+                    add(com.tom_roush.pdfbox.cos.COSString("b-keep"))
+                    add(COSDictionary().apply { setString(n("Value"), "retained") })
+                })
+            }
+            document.documentCatalog.cosObject.setItem(n("Names"), COSDictionary().apply { setItem(n("Custom"), names) })
+            ByteArrayOutputStream().use { document.save(it); it.toByteArray() }
+        }
+        assertTrue(String(source, Charsets.ISO_8859_1).contains(marker))
+        val saved = PDDocument.load(source).use { document ->
+            PdfActiveContentSanitizer.remove(document, javascript = true, attachments = false)
+            ByteArrayOutputStream().use { document.save(it); it.toByteArray() }
+        }
+        assertFalse(String(saved, Charsets.ISO_8859_1).contains(marker))
+        PDDocument.load(saved).use { document ->
+            PdfActiveContentSanitizer.verify(document, javascript = true, attachments = false)
+            val root = document.documentCatalog.cosObject.getDictionaryObject(n("Names")) as COSDictionary
+            val leaf = root.getDictionaryObject(n("Custom")) as COSDictionary
+            val pairs = leaf.getDictionaryObject(n("Names")) as COSArray
+            assertEquals(2, pairs.size())
+            assertEquals("b-keep", (pairs.getObject(0) as com.tom_roush.pdfbox.cos.COSString).string)
+        }
+    }
+
     @Test fun removesNestedActionsAndFileAttachmentsWithoutLosingNavigation() {
         val bytes = PDDocument().use { document ->
             val page = PDPage(); document.addPage(page)

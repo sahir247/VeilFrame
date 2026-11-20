@@ -77,7 +77,7 @@ class AiBundleSecretMaskingTest {
 
     @Test
     fun escapedQuotedSecretAndNativeDelimitersFailSafely() {
-        val input = """password = "fake\\"suffix-secret" """
+        val input = """password = "fake\"suffix-secret" """
         assertFalse(AiBundleEngine.maskSecrets(input).contains("suffix-secret"))
         assertFalse(AiBundleEngine.isNativeBundleEntrySafe("file.kt", "before\n  >>>\r\nafter"))
         assertFalse(AiBundleEngine.isNativeBundleEntrySafe("bad\"name.kt", "normal code"))
