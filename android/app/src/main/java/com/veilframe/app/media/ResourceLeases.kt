@@ -4,9 +4,9 @@ import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Owners may retire a resource while async readers still have leases. */
-internal class ResourceLeases<T : Any>(private val dispose: (T) -> Unit) {
+internal class ResourceLeases<T : Any>(identity: Boolean = true, private val dispose: (T) -> Unit) {
     private data class Entry(var count: Int = 0, var retired: Boolean = false)
-    private val entries = IdentityHashMap<T, Entry>()
+    private val entries: MutableMap<T, Entry> = if (identity) IdentityHashMap() else HashMap()
 
     @Synchronized
     fun acquire(resource: T): () -> Unit {

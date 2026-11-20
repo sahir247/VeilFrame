@@ -93,21 +93,27 @@ class MotionLabController(
     override val supportsBackgroundExecution: Boolean get() = true
     @Volatile private var cancelRequested = false
     private var outputFile: File? = null
-    private val outputLeases = ResourceLeases<File> { file ->
+    // File keys use path equality since service restoration creates new File objects.
+    private val outputLeases = ResourceLeases<File>(identity = false) { file ->
         runCatching { if (file.exists()) file.delete() }
             .onFailure { Log.w(TAG, "Failed retiring motion output", it) }
     }
 
+    private var lastRetiredOutput: File? = null
+
     private fun retireOutput() {
         val old = outputFile ?: return
         outputFile = null
+        lastRetiredOutput = old
         outputLeases.retire(old)
     }
 
     private fun adoptOutput(file: File) {
-        if (outputFile == file) return // retain identity for existing readers
-        retireOutput()
-        outputFile = file
+        val path = file.absoluteFile.normalize()
+        if (outputFile == path || lastRetiredOutput == path) return
+        // Completed outputs belong to the Library. Replacing the editor selection
+        // must not delete an earlier Library export unless explicitly discarded.
+        outputFile = path
     }
 
     init {
@@ -332,7 +338,9 @@ class MotionLabController(
         }
     }
 
-    fun setSource(uri: Uri) {
+    fun setSource(uri: Uri) = setSourceInternal(uri, restoringCompleted = false)
+
+    private fun setSourceInternal(uri: Uri, restoringCompleted: Boolean) {
         if (job?.isActive == true || activeJobId != null || isTrimming) return
         sourceGeneration++
         try {
@@ -354,7 +362,7 @@ class MotionLabController(
             val prefs = activity.getSharedPreferences("veilframe_motion_lab", Context.MODE_PRIVATE)
             val skipWarning = prefs.getBoolean("skip_long_video_warning", false)
 
-            if (durationS > WARN_DURATION_S && !skipWarning) {
+            if (!restoringCompleted && durationS > WARN_DURATION_S && !skipWarning) {
                 showLongVideoWarningDialog(uri, durationMs, durationS, fpsLabel, name)
             } else {
                 applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
@@ -409,7 +417,7 @@ class MotionLabController(
             ownedTrimFile = null
         }
         sourceUri = uri
-        retireOutput()
+        outputFile = null
         videoDurationMs = durationMs
         binding.cardMotionLabResult.visibility = View.GONE
         binding.btnMotionLabTrim.visibility = View.VISIBLE
@@ -748,7 +756,7 @@ class MotionLabController(
 
         val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
         val resultFile = File(exportDir, "motionlab_$jobId.mp4")
-        retireOutput()
+        outputFile = null
 
         attachJobCallback(jobId)
         updateControlStates()
@@ -868,11 +876,12 @@ class MotionLabController(
                 com.veilframe.app.media.JobState.COMPLETED -> {
                     val outUri = currentJob.outputUri
                     val outFile = outUri?.path?.let { File(it) }
-                    if (outFile != null && outFile.exists() && outFile.length() > 0L) {
-                        adoptOutput(outFile)
+                    if (outFile != null && outFile.exists() && outFile.length() > 0L &&
+                        lastRetiredOutput != outFile.absoluteFile.normalize()) {
                         if (sourceUri == null) {
-                            setSource(currentJob.inputUri)
+                            setSourceInternal(currentJob.inputUri, restoringCompleted = true)
                         }
+                        adoptOutput(outFile)
                         binding.containerMotionLabProgress.visibility = View.GONE
                         binding.cardMotionLabResult.visibility = View.VISIBLE
                         val mb = outFile.length() / (1024.0 * 1024.0)

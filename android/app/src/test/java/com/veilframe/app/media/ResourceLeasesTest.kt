@@ -53,4 +53,13 @@ class ResourceLeasesTest {
             executor.shutdownNow()
         }
     }
+    @Test fun equivalentFileHandlesShareTheSameLeaseWhenRequested() {
+        var disposed = 0
+        val registry = ResourceLeases<java.io.File>(identity = false) { disposed++ }
+        val reader = registry.acquire(java.io.File("same-file"))
+        registry.retire(java.io.File("same-file"))
+        assertEquals(0, disposed)
+        reader()
+        assertEquals(1, disposed)
+    }
 }
