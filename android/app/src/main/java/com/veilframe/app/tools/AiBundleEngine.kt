@@ -36,7 +36,8 @@ object AiBundleEngine {
         val excludeTests: Boolean = false,
         val compressManifests: Boolean = false,
         val maxDepth: Int? = null,
-        val excludedRelativePaths: Set<String> = emptySet()
+        val excludedRelativePaths: Set<String> = emptySet(),
+        val expectedInventoryFingerprint: String? = null
     )
 
     data class BundleResult(
@@ -121,7 +122,93 @@ object AiBundleEngine {
     private const val MAX_BUNDLE_BYTES = 32L * 1024 * 1024
     private const val MAX_PATH_CHARS = 4096
     private class InputTooLarge : IOException("File exceeds 500 KiB input limit")
-    private data class BundleInput(val uri: Uri, val path: String, val size: Long, val directory: Boolean)
+    internal data class BundleInput(val uri: String, val path: String, val size: Long, val directory: Boolean)
+
+    internal data class BundleInventory(val entries: List<BundleInput>, val fingerprint: String) {
+        val files: List<String> get() = entries.filterNot { it.directory }.map { it.path }
+    }
+
+    internal fun inventoryFingerprint(entries: List<BundleInput>): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        fun field(value: String) {
+            val bytes = value.toByteArray(Charsets.UTF_8)
+            digest.update(ByteBuffer.allocate(4).putInt(bytes.size).array())
+            digest.update(bytes)
+        }
+        for (entry in entries) {
+            field(entry.path); field(entry.uri); field(entry.size.toString()); field(entry.directory.toString())
+        }
+        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 255) }
+    }
+
+    private fun blockedDirectory(path: String, depth: Int, maxDepth: Int?): String? {
+        val name = path.substringAfterLast('/')
+        return when {
+            name.startsWith(".") && name != ".env.example" -> "hidden entry"
+            name.lowercase(Locale.US) in IGNORED_DIRECTORIES -> "excluded directory"
+            depth >= MAX_DIRECTORY_DEPTH || (maxDepth != null && depth >= maxDepth) -> "depth limit"
+            else -> null
+        }
+    }
+
+    internal suspend fun previewInventory(context: Context, treeUri: Uri, maxDepth: Int?): BundleInventory {
+        val root = requireNotNull(DocumentFile.fromTreeUri(context, treeUri)) { "Cannot open selected folder" }
+        require(root.exists() && root.isDirectory) { "Selected folder is unavailable" }
+        return enumerateInventory(context, root.uri, maxDepth)
+    }
+
+    private suspend fun enumerateInventory(context: Context, root: Uri, maxDepth: Int?): BundleInventory {
+        require(maxDepth == null || maxDepth in 0..MAX_DIRECTORY_DEPTH)
+        val entries = ArrayList<BundleInput>()
+        val visited = HashSet<String>()
+        var entered = 0
+        var inventoryChars = 0L
+        suspend fun walk(doc: Uri, path: String, depth: Int) {
+            currentCoroutineContext().ensureActive()
+            if (!visited.add(doc.toString())) throw IOException("Repeated folder identity; narrow the selection")
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(doc, DocumentsContract.getDocumentId(doc))
+            val cursor = context.contentResolver.query(childrenUri, arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE), null, null, null)
+                ?: throw IOException("Provider returned no directory listing")
+            val children = ArrayList<BundleInput>()
+            val names = HashSet<String>()
+            cursor.use {
+                if (it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) ||
+                    !it.extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()) {
+                    throw IOException("Provider returned incomplete directory listing")
+                }
+                while (it.moveToNext()) {
+                    currentCoroutineContext().ensureActive()
+                    if (++entered > MAX_ENTRIES) throw IOException("Folder exceeds the 50,000 entry inspection limit")
+                    val id = it.getString(0)?.takeIf { value -> value.isNotBlank() } ?: throw IOException("Missing provider document identity")
+                    val name = it.getString(1) ?: throw IOException("Missing provider document name")
+                    val mime = it.getString(2)?.takeIf { value -> value.isNotBlank() } ?: throw IOException("Missing provider MIME type")
+                    if (!isSafeBundlePath(name) || name.contains('/') || !names.add(name)) {
+                        throw IOException("Invalid or ambiguous directory entry; no bundle published")
+                    }
+                    val relative = if (path.isEmpty()) name else "$path/$name"
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(doc, id).toString()
+                    if (relative.length > MAX_PATH_CHARS) throw IOException("Bundle path exceeds supported length")
+                    inventoryChars += relative.length.toLong() + uri.length
+                    if (inventoryChars > 8L * 1024 * 1024) throw IOException("Directory metadata exceeds bundle inspection budget")
+                    children.add(BundleInput(uri, relative, if (it.isNull(3)) -1L else it.getLong(3),
+                        mime == DocumentsContract.Document.MIME_TYPE_DIR))
+                }
+            }
+            for (child in children.sortedWith(compareBy({ it.path }, { it.uri }))) {
+                currentCoroutineContext().ensureActive()
+                entries.add(child)
+                if (child.directory && blockedDirectory(child.path, depth, maxDepth) == null) {
+                    walk(Uri.parse(child.uri), child.path, depth + 1)
+                }
+            }
+        }
+        walk(root, "", 0)
+        return BundleInventory(entries, inventoryFingerprint(entries))
+    }
 
     suspend fun buildBundleFromSaf(
         context: Context,
@@ -165,13 +252,9 @@ object AiBundleEngine {
         var included = 0
         var omitted = 0
         var condensed = 0
-        var entered = 0
         var omissionBytes = 0L
-        val visited = HashSet<String>()
         val includedPaths = HashSet<String>()
-        val inventory = ArrayList<BundleInput>()
         val excludedIdentities = ExcludedDocumentIdentities()
-        var inventoryChars = 0L
         fun safePath(path: String): String = if (config.maskSecrets) maskSecrets(path) else path
         val exportedRoot = safePath(rootName).take(MAX_PATH_CHARS)
         try {
@@ -236,82 +319,37 @@ object AiBundleEngine {
                         included++
                         onProgress?.invoke(safePath(name), included)
                     }
-                    suspend fun walk(doc: Uri, path: String, depth: Int) {
-                        currentCoroutineContext().ensureActive()
-                        // Repeated directory identities can hide paths of excluded descendants.
-                        // Reject an ambiguous tree rather than publishing incomplete context.
-                        if (!visited.add(doc.toString())) throw IOException("Repeated folder identity; narrow the selection")
-                        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(doc, DocumentsContract.getDocumentId(doc))
-                        val cursor = context.contentResolver.query(childrenUri, arrayOf(
-                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                            DocumentsContract.Document.COLUMN_MIME_TYPE,
-                            DocumentsContract.Document.COLUMN_SIZE), null, null, null)
-                            ?: throw IOException("Provider returned no directory listing")
-                        val children = ArrayList<BundleInput>()
-                        val names = HashSet<String>()
-                        cursor.use {
-                            if (it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) ||
-                                !it.extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()) {
-                                throw IOException("Provider returned incomplete directory listing")
-                            }
-                            while (cursor.moveToNext()) {
-                                currentCoroutineContext().ensureActive()
-                                if (++entered > MAX_ENTRIES) throw IOException("Folder exceeds the 50,000 entry inspection limit")
-                                val id = cursor.getString(0) ?: throw IOException("Missing provider document identity")
-                                val name = cursor.getString(1) ?: throw IOException("Missing provider document name")
-                                val mime = cursor.getString(2) ?: throw IOException("Missing provider MIME type")
-                                if (!isSafeBundlePath(name) || name.contains('/') || !names.add(name)) {
-                                    throw IOException("Invalid or ambiguous directory entry; no bundle published")
-                                }
-                                val relative = if (path.isEmpty()) name else "$path/$name"
-                                val uri = DocumentsContract.buildDocumentUriUsingTree(doc, id)
-                                if (relative.length > MAX_PATH_CHARS) throw IOException("Bundle path exceeds supported length")
-                                inventoryChars += relative.length.toLong() + uri.toString().length
-                                if (inventoryChars > 8L * 1024 * 1024) throw IOException("Directory metadata exceeds bundle inspection budget")
-                                children.add(BundleInput(uri, relative,
-                                    if (cursor.isNull(3)) -1L else cursor.getLong(3),
-                                    mime == DocumentsContract.Document.MIME_TYPE_DIR))
-                            }
-                        }
-                        for (child in children.sortedWith(compareBy({ it.path }, { it.uri.toString() }))) {
-                            currentCoroutineContext().ensureActive()
-                            val name = child.path.substringAfterLast('/')
-                            if (!child.directory) files++
-                            // Collect excluded identities before any content processing.
-                            if (!child.directory && exclusions.excludes(child.path)) {
-                                excludedIdentities.exclude(child.uri.toString())
-                                omit(child.path, "explicit user exclusion")
-                                continue
-                            }
-                            if (!child.directory && config.maskSecrets && isSensitiveFileName(name)) {
-                                excludedIdentities.exclude(child.uri.toString())
-                                omit(child.path, "potential credential container (masking enabled)")
-                                continue
-                            }
-                            if (name.startsWith(".") && name != ".env.example") {
-                                // Hidden directories are not inspected; an unmatched explicit
-                                // exclusion beneath one still fails the preflight.
-                                omit(child.path, "hidden entry"); continue
-                            }
-                            if (child.directory) {
-                                when {
-                                    name.lowercase(Locale.US) in IGNORED_DIRECTORIES -> omit(child.path, "excluded directory")
-                                    depth >= MAX_DIRECTORY_DEPTH || (config.maxDepth != null && depth >= config.maxDepth) ->
-                                        omit(child.path, "depth limit")
-                                    else -> walk(child.uri, child.path, depth + 1)
-                                }
-                            } else inventory.add(child)
-                        }
-                    }
                     if (root != null) {
-                        walk(root.uri, "", 0)
-                        exclusions.requireAllMatched()
-                        for (entry in inventory) {
+                        val inventory = enumerateInventory(context, root.uri, config.maxDepth)
+                        if (config.expectedInventoryFingerprint != null &&
+                            inventory.fingerprint != config.expectedInventoryFingerprint) {
+                            throw IOException("Folder inventory changed since selection; review files again")
+                        }
+                        val candidates = ArrayList<BundleInput>()
+                        for (entry in inventory.entries) {
                             currentCoroutineContext().ensureActive()
-                            if (excludedIdentities.contains(entry.uri.toString())) {
-                                omit(entry.path, "alias of excluded document")
-                            } else include(entry.uri, entry.path, entry.size)
+                            val name = entry.path.substringAfterLast('/')
+                            if (entry.directory) {
+                                val reason = blockedDirectory(entry.path, entry.path.count { it == '/' }, config.maxDepth)
+                                if (reason != null) omit(entry.path, reason)
+                                continue
+                            }
+                            files++
+                            if (exclusions.excludes(entry.path)) {
+                                excludedIdentities.exclude(entry.uri)
+                                omit(entry.path, "explicit user exclusion")
+                            } else if (config.maskSecrets && isSensitiveFileName(name)) {
+                                excludedIdentities.exclude(entry.uri)
+                                omit(entry.path, "potential credential container (masking enabled)")
+                            } else if (name.startsWith(".") && name != ".env.example") {
+                                omit(entry.path, "hidden entry")
+                            } else candidates.add(entry)
+                        }
+                        exclusions.requireAllMatched()
+                        for (entry in candidates) {
+                            currentCoroutineContext().ensureActive()
+                            if (excludedIdentities.contains(entry.uri)) omit(entry.path, "alias of excluded document")
+                            else include(Uri.parse(entry.uri), entry.path, entry.size)
                         }
                     } else {
                         files = 1

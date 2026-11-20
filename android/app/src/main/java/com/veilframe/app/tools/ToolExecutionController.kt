@@ -83,7 +83,7 @@ class ToolExecutionController(
 
     fun executeSelectedMode() = executeSelectedModeInternal(null)
 
-    private fun executeSelectedModeInternal(excludedPaths: Set<String>?) {
+    private fun executeSelectedModeInternal(excludedPaths: Set<String>?, inventoryFingerprint: String? = null) {
         val state = sessionManager.currentState
         if (state.jobState in listOf(JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING)) {
             cancelExecution()
@@ -131,7 +131,7 @@ class ToolExecutionController(
             when (mode) {
                 ToolMode.AI_BUNDLE -> {
                     try {
-                        runAiBundle(uri, state, excludedPaths.orEmpty()) {
+                        runAiBundle(uri, state, excludedPaths.orEmpty(), inventoryFingerprint) {
                             ownsExecution(generation, mode, owner)
                         }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -167,50 +167,39 @@ class ToolExecutionController(
         }
     }
 
+    private fun selectedBundleDepth(): Int? = if (binding.switchBundleFullDepth.isChecked) null
+        else binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
+
     private fun showBundleExclusions(state: ToolSessionState, uri: Uri) {
         val owner = ToolTargetOwner(state)
-        val container = android.widget.LinearLayout(activity).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            val padding = (20 * resources.displayMetrics.density).toInt()
-            setPadding(padding, 0, padding, 0)
-        }
-        container.addView(android.widget.TextView(activity).apply {
-            text = "Optional: exclude individual files before their contents are read. Enter exact, case-sensitive paths relative to the selected folder, one per line (not wildcards). Unmatched paths block generation. Excluded names can still appear in the omission report."
-        })
-        val input = android.widget.EditText(activity).apply {
-            hint = "src/private.kt\nconfig/local.json"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
-            minLines = 4
-            maxLines = 8
-            filters = arrayOf(android.text.InputFilter.LengthFilter(128 * 1024))
-        }
-        container.addView(input)
-        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-            .setTitle("Exclude files from AI bundle")
-            .setView(container)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Generate", null)
-            .create()
-        dialog.show()
-        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-            if (activity.isFinishing || activity.isDestroyed || sessionManager.currentToolMode != ToolMode.AI_BUNDLE ||
-                !owner.owns(sessionManager.currentState) || state.selectedUri != uri || !state.isFolderSelected) {
-                dialog.dismiss()
-                return@setOnClickListener
+        val depth = selectedBundleDepth()
+        val generation = ++executionGeneration
+        val mode = ToolMode.AI_BUNDLE
+        sessionManager.updateJobState(JobState.PREPARING, "Indexing file names for exclusion…")
+        sessionManager.updatePrimaryActionDock(state)
+        executionJob = scope.launch {
+            try {
+                val inventory = withContext(Dispatchers.IO) { AiBundleEngine.previewInventory(activity, uri, depth) }
+                if (!ownsExecution(generation, mode, owner)) return@launch
+                sessionManager.updateJobState(JobState.IDLE, "Review files before generation.")
+                sessionManager.updatePrimaryActionDock(state)
+                BundleFileSelectionDialog.show(activity, inventory.files) { excluded ->
+                    if (!ownsExecution(generation, mode, owner) || selectedBundleDepth() != depth) {
+                        Toast.makeText(activity, "Target or folder depth changed; review files again.", Toast.LENGTH_LONG).show()
+                    } else executeSelectedModeInternal(excluded, inventory.fingerprint)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (!ownsExecution(generation, mode, owner)) return@launch
+                sessionManager.updateJobState(JobState.FAILED, "Folder inventory failed: ${failure.message}")
+                binding.progressIndicator.isIndeterminate = false
+                sessionManager.updatePrimaryActionDock(state)
             }
-            val exclusions = try {
-                AiBundleEngine.parseExcludedPaths(input.text.toString())
-            } catch (failure: IllegalArgumentException) {
-                input.error = failure.message
-                return@setOnClickListener
-            }
-            dialog.dismiss()
-            executeSelectedModeInternal(exclusions)
         }
     }
 
-    private suspend fun runAiBundle(uri: Uri, state: ToolSessionState, excludedPaths: Set<String>, owns: () -> Boolean) {
+    private suspend fun runAiBundle(uri: Uri, state: ToolSessionState, excludedPaths: Set<String>, inventoryFingerprint: String?, owns: () -> Boolean) {
         if (!owns()) return
         val folder = state.isFolderSelected
         val sourceName = state.selectedPathDisplay
@@ -237,11 +226,7 @@ class ToolExecutionController(
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(activity.cacheDir, "AIBundle_${timeStamp}_${java.util.UUID.randomUUID()}.$formatKey")
 
-        val maxDepth = if (binding.switchBundleFullDepth.isChecked) {
-            null
-        } else {
-            binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
-        }
+        val maxDepth = selectedBundleDepth()
 
         val bundleConfig = AiBundleEngine.BundleConfig(
             tokenBudget = tokenBudget,
@@ -250,7 +235,8 @@ class ToolExecutionController(
             excludeTests = binding.switchOption2.isChecked,
             compressManifests = binding.switchOption3.isChecked,
             maxDepth = maxDepth,
-            excludedRelativePaths = excludedPaths
+            excludedRelativePaths = excludedPaths,
+            expectedInventoryFingerprint = inventoryFingerprint
         )
 
         var published = false

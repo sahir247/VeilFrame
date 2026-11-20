@@ -487,3 +487,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A08/A29 — CV governance correction
 
 - CI run 44750829980 failed the unchanged CV governance ratchet because the UI brush canvas imported pure stroke/history records from the CV namespace. Move those records and their unit tests to media/refine (no native dependencies), with dependencies directed from CV and UI toward the shared data model. No suppression, exemption or fake runtime gate added. CI revalidation pending.
+
+### A16/A17 — Metadata-only visual file exclusion and inventory binding
+
+- Extract one bounded SAF metadata enumeration used by both the visual selector and actual generation. Paginated checkboxes and path filtering preserve selection across pages; only file names are enumerated before confirmation, no payload reads. Bind selection to a SHA-256 fingerprint of the ordered path, provider identity, size and directory records. Re-enumerate before payload reads and fail closed on changed inventory; aliases and explicit exclusions still use the existing identity-based policy. Selection is bounded to 2,000 paths, and target revision/generation and depth are checked before starting. Added inventory fingerprint regression coverage. This is metadata binding, not a snapshot of file bytes; same-size edits or provider changes after preflight remain possible and final artifact review is still required. Device selector/provider testing and exact tokenization remain pending.
