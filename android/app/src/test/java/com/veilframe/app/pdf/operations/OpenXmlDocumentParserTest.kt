@@ -140,6 +140,21 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun rejectsInvalidStyleReferencesAndEmptyNumericFormulaCache() {
+        val workbook = """<workbook><sheets><sheet name="Data" sheetId="1"/></sheets></workbook>"""
+        for (cell in listOf("""<c r="A1" s="2"><v>1</v></c>""",
+            """<c r="A1"><f>1+2</f><v/></c>""")) {
+            val file = createZipFile(mapOf("xl/workbook.xml" to workbook,
+                "xl/worksheets/sheet1.xml" to "<worksheet><sheetData><row r=\"1\">$cell</row></sheetData></worksheet>"))
+            try {
+                org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                    OpenXmlDocumentParser.parseXlsx(file)
+                }
+            } finally { file.delete() }
+        }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -700,6 +700,7 @@ object OpenXmlDocumentParser {
         val rowMap = java.util.TreeMap<Int, MutableList<String>>()
         var autoRowIndex = 1
         var expandedCells = 0L
+        var expandedTextChars = 0L
         val occupied = mutableMapOf<Int, MutableSet<Int>>()
 
         for (rowElem in rowList) {
@@ -750,6 +751,10 @@ object OpenXmlDocumentParser {
                         cellVal = sharedStrings[idx]
                     }
                     cellVal = formatter.format(cellVal, cellType, style)
+                    expandedTextChars += cellVal.length
+                    require(expandedTextChars <= SpreadsheetGeometry.MAX_TEXT_CHARS) {
+                        "Worksheet expanded text exceeds layout budget"
+                    }
 
                     val targetCol = if (cellRef.isEmpty()) existingCells.size else {
                         require(cellRef.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid cell reference: $cellRef" }

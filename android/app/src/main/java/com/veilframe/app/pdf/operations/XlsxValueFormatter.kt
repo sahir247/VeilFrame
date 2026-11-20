@@ -40,6 +40,18 @@ internal class XlsxValueFormatter(
         "h:mm" to "H:mm", "hh:mm" to "HH:mm", "h:mm:ss" to "H:mm:ss",
         "hh:mm:ss" to "HH:mm:ss", "mm:ss" to "mm:ss")
 
+    // Parser owns one formatter, confined to the calling thread. Bound the
+    // cache independently of the workbook's number of custom styles.
+    private val decimalFormats = object : LinkedHashMap<String, DecimalFormat>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, DecimalFormat>?): Boolean =
+            size > 64
+    }
+    private val dateFormats = (dates.values + times.values).distinct().associateWith {
+        DateTimeFormatter.ofPattern(it, Locale.US)
+    }
+    private val maxSerial = BigDecimal("2958465.999999999999")
+    private val secondsPerDay = BigDecimal("86400")
+
     fun format(raw: String, type: String, style: Int): String {
         require(style in styles.indices) { "Unknown cell style index" }
         if (type == "b") return when (raw) {
@@ -61,15 +73,15 @@ internal class XlsxValueFormatter(
             return unsupported()
         val normalized = code.lowercase(Locale.ROOT)
         if (normalized in dates || normalized in times || normalized == "[h]:mm:ss") {
-            if (number.signum() < 0 || number > BigDecimal("2958465.999999999999")) return unsupported()
+            if (number.signum() < 0 || number > maxSerial) return unsupported()
             val whole = number.setScale(0, RoundingMode.FLOOR).longValueExact()
-            val seconds = number.subtract(BigDecimal.valueOf(whole)).multiply(BigDecimal("86400"))
+            val seconds = number.subtract(BigDecimal.valueOf(whole)).multiply(secondsPerDay)
                 .setScale(0, RoundingMode.HALF_UP).longValueExact()
             val totalSeconds = whole * 86400 + seconds
             if (normalized == "[h]:mm:ss") return String.format(Locale.US, "%d:%02d:%02d",
                 totalSeconds / 3600, totalSeconds / 60 % 60, totalSeconds % 60)
             val time = LocalTime.ofSecondOfDay(totalSeconds % 86400)
-            times[normalized]?.let { return time.format(DateTimeFormatter.ofPattern(it, Locale.US)) }
+            times[normalized]?.let { return time.format(dateFormats.getValue(it)) }
             // Excel 1900 compatibility includes a fictitious leap day.
             // Don't map serial 60 to a real but incorrect Gregorian date.
             val hasTime = normalized.contains("h:")
@@ -78,15 +90,17 @@ internal class XlsxValueFormatter(
             val date = if (date1904) LocalDate.of(1904, 1, 1).plusDays(day)
                 else LocalDate.of(1899, 12, 31).plusDays(if (day > 60) day - 1 else day)
             if (date.year > 9999) return unsupported()
-            return date.atTime(time).format(DateTimeFormatter.ofPattern(dates.getValue(normalized), Locale.US))
+            return date.atTime(time).format(dateFormats.getValue(dates.getValue(normalized)))
         }
         // Basic currency literals, number masks and percentages only. Complex
         // conditions, text sections, locales, fractions etc. stay explicit raw.
         val currency = code.firstOrNull()?.takeIf { it == '$' || it == '€' || it == '£' || it == '¥' || it == '₹' }
         val pattern = if (currency != null) code.substring(1) else code
         if (!decimalPattern.matches(pattern)) return unsupported()
-        val format = DecimalFormat(pattern, DecimalFormatSymbols.getInstance(Locale.US)).apply {
-            roundingMode = RoundingMode.HALF_UP
+        val format = decimalFormats.getOrPut(pattern) {
+            DecimalFormat(pattern, DecimalFormatSymbols.getInstance(Locale.US)).apply {
+                roundingMode = RoundingMode.HALF_UP
+            }
         }
         val display = format.format(number)
         return if (currency == null) display
