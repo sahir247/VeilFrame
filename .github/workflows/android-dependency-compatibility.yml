@@ -7,6 +7,8 @@ on:
       - 'android/gradle.properties'
       - 'android/gradle/wrapper/gradle-wrapper.properties'
       - '.github/workflows/android-dependency-compatibility.yml'
+      - 'android/app/src/main/**'
+      - 'scripts/audit_android_protobuf.py'
   workflow_dispatch:
 
 permissions:
@@ -35,4 +37,52 @@ jobs:
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace
+          # Retry only transient Maven repository throttling, not compilation errors.
+          for attempt in 1 2 3; do
+            if ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace > ../dependency-validation.log 2>&1; then
+              cat ../dependency-validation.log
+              exit 0
+            fi
+            cat ../dependency-validation.log
+            if ! grep -Eq 'status code 429|Too Many Requests|HTTP 429' ../dependency-validation.log || [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
+
+      # Diagnose the protobuf/Tink warning emitted by release R8/D8. Do not
+      # suppress com.google.protobuf.use_unsafe_pre22_gencode: the fix belongs
+      # in the dependency which ships the generated classes.
+      - name: Audit Tink and protobuf transitive dependency paths
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p ../dependency-audit
+          ./gradlew buildEnvironment --no-daemon > ../dependency-audit/buildEnvironment.txt
+          ./gradlew :app:buildEnvironment --no-daemon > ../dependency-audit/app-buildEnvironment.txt
+          echo '=== Buildscript/plugin Tink dependency chains ==='
+          grep -Ein -B 18 -A 5 'com.google.crypto.tink|tink:1\\.7\\.0|protobuf' ../dependency-audit/buildEnvironment.txt ../dependency-audit/app-buildEnvironment.txt || true
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon > ../dependency-audit/releaseRuntimeClasspath.txt
+          ./gradlew :app:dependencies --configuration releaseCompileClasspath --no-daemon > ../dependency-audit/releaseCompileClasspath.txt
+          for module in tink tink-android protobuf-javalite protobuf-java protobuf-kotlin-lite protobuf-kotlin; do
+            ./gradlew :app:dependencyInsight --dependency "$module" --configuration releaseRuntimeClasspath --no-daemon \
+              > "../dependency-audit/${module}-insight.txt"
+          done
+          grep -Ein 'tink|protobuf|mlkit|play-services|firebase' ../dependency-audit/releaseRuntimeClasspath.txt \
+            > ../dependency-audit/security-relevant-paths.txt || true
+          echo "Dependency path audit completed. Inspect artifact for the exact owner of generated Tink classes."
+          cat ../dependency-audit/security-relevant-paths.txt
+
+      - name: Scan resolved cache archives for generated Tink protobuf classes
+        run: |
+          python3 scripts/audit_android_protobuf.py --output dependency-audit/tink-class-provenance.json
+          cat dependency-audit/tink-class-provenance.json | head -c 12000
+          echo
+
+      - name: Upload dependency security audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-release-dependency-security-audit
+          path: dependency-audit/
+          if-no-files-found: warn
