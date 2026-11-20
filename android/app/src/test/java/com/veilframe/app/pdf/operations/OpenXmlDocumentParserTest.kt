@@ -657,4 +657,21 @@ class OpenXmlDocumentParserTest {
             tempFile.delete()
         }
     }
+    @Test
+    fun numericConditionalFormattingUsesRawValuesAndGlobalPriority() {
+        val workbook = """<workbook><sheets><sheet name="CF" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><cellXfs><xf numFmtId="9"/></cellXfs><dxfs><dxf><font><b/><color rgb="FF0000FF"/></font></dxf><dxf><fill><patternFill><bgColor rgb="FFFF0000"/></patternFill></fill></dxf></dxfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>0.75</v></c><c r="B1"><v>0.25</v></c><c r="C1"><v>0.75</v></c></row></sheetData><conditionalFormatting sqref="A1:C1"><cfRule type="cellIs" operator="greaterThan" priority="2" dxfId="1"><formula>0.5</formula></cfRule></conditionalFormatting><conditionalFormatting sqref="A1 B1"><cfRule type="cellIs" operator="greaterThan" priority="1" stopIfTrue="1" dxfId="0"><formula>0.5</formula></cfRule></conditionalFormatting><conditionalFormatting sqref="C1"><cfRule type="expression" priority="3" dxfId="0"><formula>C1&gt;0</formula></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles, "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+            assertEquals("75%", parsed.rows[0][0])
+            assertTrue(parsed.styles.at(0, 0).bold)
+            assertEquals(0x0000FF, parsed.styles.at(0, 0).textRgb)
+            assertEquals(null, parsed.styles.at(0, 0).fillRgb)
+            assertEquals(null, parsed.styles.at(0, 1).fillRgb)
+            assertEquals(0xFF0000, parsed.styles.at(0, 2).fillRgb)
+            assertEquals(1, parsed.unsupportedConditionalRules)
+        } finally { input.delete() }
+    }
 }

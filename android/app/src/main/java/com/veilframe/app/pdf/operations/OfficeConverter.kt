@@ -965,8 +965,11 @@ class OfficeConverter {
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0 && sheet.mergedRegions.isEmpty()) continue // Empty sheet
 
-                val displayedSheet = if (sheet.cachedFormulaCount == 0) sheet else
-                    sheet.copy(name = sheet.name + " [cached formulas; not recalculated]")
+                val notes = buildList {
+                    if (sheet.cachedFormulaCount > 0) add("cached formulas; not recalculated")
+                    if (sheet.unsupportedConditionalRules > 0) add("conditional formatting partial")
+                }
+                val displayedSheet = if (notes.isEmpty()) sheet else sheet.copy(name = sheet.name + " [" + notes.joinToString("; ") + "]")
                 val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits)
                 require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
                     "Workbook exceeds PDF page budget"

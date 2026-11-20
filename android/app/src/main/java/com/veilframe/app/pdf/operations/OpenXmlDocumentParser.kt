@@ -420,7 +420,8 @@ object OpenXmlDocumentParser {
         val frozenRows: Int = 0,
         val cachedFormulaCount: Int = 0,
         val dimensions: XlsxDimensions = XlsxDimensions(),
-        val styles: XlsxCellStyles = XlsxCellStyles()
+        val styles: XlsxCellStyles = XlsxCellStyles(),
+        val unsupportedConditionalRules: Int = 0
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -568,7 +569,7 @@ object OpenXmlDocumentParser {
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
                     cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions,
-                    styles = metadata.styles
+                    styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules
                 ))
             }
         }
@@ -576,7 +577,8 @@ object OpenXmlDocumentParser {
     }
 
     private data class ParsedXlsxStyles(
-        val formatter: XlsxValueFormatter, val visuals: List<XlsxCellStyle>
+        val formatter: XlsxValueFormatter, val visuals: List<XlsxCellStyle>,
+        val differential: List<XlsxConditionalFormatting.Delta?> = emptyList()
     )
 
     private fun parseXlsxTheme(xml: String): Map<String, Int> {
@@ -729,7 +731,24 @@ object OpenXmlDocumentParser {
                 else -> "top"
             }, textRotation = it.rotation)
         }
-        return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals)
+        val differential = collection("dxfs", "dxf").map { dxf ->
+            val font = one(dxf, "font")
+            val pattern = one(dxf, "fill")?.let { one(it, "patternFill") }
+            val allowed = dxf.childElements("font").size + dxf.childElements("fill").size
+            val invalid = (0 until dxf.childNodes.length).map { dxf.childNodes.item(it) }
+                .count { it.nodeType == Node.ELEMENT_NODE } != allowed ||
+                (font != null && (0 until font.childNodes.length).map { font.childNodes.item(it) }
+                    .any { it.nodeType == Node.ELEMENT_NODE && it.localName() !in setOf("b", "i", "color") }) ||
+                (one(dxf, "fill") != null && pattern == null) ||
+                (pattern != null && pattern.getAttribute("patternType") !in setOf("", "solid"))
+            if (invalid) null else XlsxConditionalFormatting.Delta(
+                bold = font?.let { one(it, "b") }?.let(::flag),
+                italic = font?.let { one(it, "i") }?.let(::flag),
+                textRgb = font?.let { rgb(one(it, "color")) },
+                fillRgb = pattern?.let { rgb(one(it, "fgColor")) ?: rgb(one(it, "bgColor")) }
+            )
+        }
+        return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals, differential)
     }
 
     private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
@@ -786,8 +805,51 @@ object OpenXmlDocumentParser {
 
     private data class WorksheetMetadata(
         val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions,
-        val styles: XlsxCellStyles
+        val styles: XlsxCellStyles, val unsupportedConditionalRules: Int
     )
+
+    private fun parseConditionalFormatting(root: Element, differential: List<XlsxConditionalFormatting.Delta?>):
+        List<XlsxConditionalFormatting.Rule> {
+        val result = mutableListOf<XlsxConditionalFormatting.Rule>()
+        val priorities = mutableSetOf<Int>()
+        var rangeCount = 0
+        for (group in root.childElements("conditionalFormatting")) {
+            val ranges = group.getAttribute("sqref").trim().split(Regex("\\s+")).map { ref ->
+                val clean = ref.replace("$", "")
+                if (':' in clean) parseMergeRange(clean) else {
+                    require(clean.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid conditional range" }
+                    val c = colRefToIndex(clean)
+                    val r = clean.dropWhile { it.isLetter() }.toInt()
+                    require(c in 0 until MAX_XLSX_COLUMNS && r in 1..MAX_XLSX_ROWS) { "Conditional range out of bounds" }
+                    CellRangeAddress(r - 1, r - 1, c, c)
+                }
+            }
+            rangeCount += ranges.size
+            require(rangeCount <= 2048) { "Too many conditional formatting ranges" }
+            for (rule in group.childElements("cfRule")) {
+                val priority = rule.getAttribute("priority").toIntOrNull()
+                require(priority != null && priority > 0 && priorities.add(priority)) { "Invalid conditional priority" }
+                val stop = when (rule.getAttribute("stopIfTrue")) {
+                    "", "0", "false" -> false
+                    "1", "true" -> true
+                    else -> throw IOException("Invalid conditional stop flag")
+                }
+                val op = rule.getAttribute("operator")
+                val operands = rule.childElements("formula").map { XlsxConditionalFormatting.number(it.textContent.trim()) }
+                val id = rule.getAttribute("dxfId").toIntOrNull()
+                if (rule.hasAttribute("dxfId")) require(id != null && id in differential.indices) { "Invalid differential style ID" }
+                val supported = rule.getAttribute("type") == "cellIs" &&
+                    op in XlsxConditionalFormatting.operators && operands.size == (if (op in setOf("between", "notBetween")) 2 else 1) &&
+                    operands.all { it != null }
+                val delta = if (supported) {
+                    if (id == null) XlsxConditionalFormatting.Delta() else differential[id]
+                } else null
+                result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, op, operands.filterNotNull(), delta))
+                require(result.size <= 256) { "Too many conditional formatting rules" }
+            }
+        }
+        return result.sortedBy { it.priority }
+    }
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
         if (!element.hasAttribute(name)) return null
@@ -833,6 +895,10 @@ object OpenXmlDocumentParser {
         }
         val rowHeights = mutableMapOf<Int, Float>()
         val styledRows = mutableMapOf<Int, IntArray>()
+        val conditional = parseConditionalFormatting(root, styleTable.differential)
+        val visuals = styleTable.visuals.toMutableList()
+        val derivedStyles = mutableMapOf<XlsxCellStyle, Int>()
+        var conditionalChecks = 0L
         // Prefer the first saved worksheet view, not the device's display setting.
         val firstView = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }.firstOrNull()
         val showGridLines = when (firstView?.getAttribute("showGridLines").orEmpty()) {
@@ -846,7 +912,7 @@ object OpenXmlDocumentParser {
         var cachedFormulaCount = 0
         fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
             XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights),
-            XlsxCellStyles(styleTable.visuals, styledRows, showGridLines))
+            XlsxCellStyles(visuals, styledRows, showGridLines), conditional.count { it.delta == null })
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {
@@ -933,6 +999,8 @@ object OpenXmlDocumentParser {
                             throw java.io.IOException("Invalid shared string reference at $cellRef")
                         cellVal = sharedStrings[idx]
                     }
+                    val rawNumeric = if (conditional.isNotEmpty() && (cellType.isEmpty() || cellType == "n"))
+                        XlsxConditionalFormatting.number(cellVal) else null
                     cellVal = styleTable.formatter.format(cellVal, cellType, style)
                     expandedTextChars += cellVal.length
                     require(expandedTextChars <= SpreadsheetGeometry.MAX_TEXT_CHARS) {
@@ -957,8 +1025,20 @@ object OpenXmlDocumentParser {
                     }
                     while (existingCells.size <= targetCol) existingCells.add("")
                     existingCells[targetCol] = cellVal
-                    if (style != 0 && styleTable.visuals[style] != styleTable.visuals[0]) {
-                        explicitVisuals.add(targetCol to style)
+                    var visualIndex = style
+                    if (rawNumeric != null) {
+                        conditionalChecks += conditional.sumOf { it.ranges.size.toLong() }
+                        require(conditionalChecks <= 8_000_000L) { "Conditional formatting evaluation exceeds budget" }
+                        val base = styleTable.visuals[style]
+                        val applied = XlsxConditionalFormatting.apply(base, targetRow - 1, targetCol, rawNumeric, conditional)
+                        if (applied != base) visualIndex = derivedStyles.getOrPut(applied) {
+                            require(visuals.size < 16384) { "Conditional style count exceeds budget" }
+                            visuals.add(applied)
+                            visuals.lastIndex
+                        }
+                    }
+                    if (visualIndex != 0 && visuals[visualIndex] != visuals[0]) {
+                        explicitVisuals.add(targetCol to visualIndex)
                     }
                 }
                 child = child.nextSibling
