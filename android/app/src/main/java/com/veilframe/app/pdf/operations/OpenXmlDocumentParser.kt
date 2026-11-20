@@ -684,7 +684,7 @@ object OpenXmlDocumentParser {
             XlsxCellBorders(side("left"), side("right"), side("top"), side("bottom"))
         }.ifEmpty { listOf(XlsxCellBorders()) }
         data class Xf(val number: Int = 0, val font: Int = 0, val fill: Int = 0,
-                      val align: String = "left", val border: Int = 0, val vertical: String = "top")
+                      val align: String = "left", val border: Int = 0, val vertical: String = "top", val rotation: Int = 0)
         fun resolve(xf: Element, base: Xf): Xf {
             fun selected(attribute: String, apply: String, inherited: Int): Int =
                 when (xf.getAttribute(apply)) {
@@ -699,10 +699,15 @@ object OpenXmlDocumentParser {
             }
             val align = alignment?.getAttribute("horizontal")?.takeIf { it.isNotEmpty() } ?: base.align
             val vertical = alignment?.getAttribute("vertical")?.takeIf { it.isNotEmpty() } ?: base.vertical
+            val rotation = alignment?.getAttribute("textRotation")?.takeIf { it.isNotEmpty() }?.let {
+                val value = it.toIntOrNull()
+                require(value != null && (value in 0..180 || value == 255)) { "Invalid worksheet text rotation" }
+                value
+            } ?: base.rotation
             val result = Xf(selected("numFmtId", "applyNumberFormat", base.number),
                 selected("fontId", "applyFont", base.font),
                 selected("fillId", "applyFill", base.fill), align,
-                selected("borderId", "applyBorder", base.border), vertical)
+                selected("borderId", "applyBorder", base.border), vertical, rotation)
             require(result.font in fonts.indices && result.fill in fills.indices && result.border in borders.indices) {
                 "Invalid cell font/fill/border reference"
             }
@@ -722,7 +727,7 @@ object OpenXmlDocumentParser {
             }, vertical = when (it.vertical) {
                 "top", "center", "bottom" -> it.vertical
                 else -> "top"
-            })
+            }, textRotation = it.rotation)
         }
         return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals)
     }

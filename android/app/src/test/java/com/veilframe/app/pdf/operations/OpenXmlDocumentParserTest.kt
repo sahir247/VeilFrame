@@ -180,7 +180,7 @@ class OpenXmlDocumentParserTest {
     @Test
     fun parsesExplicitCellAppearanceAndSparseStyleIndices() {
         val workbook = """<workbook><sheets><sheet name="Styles" sheetId="1"/></sheets></workbook>"""
-        val styles = """<styleSheet><fonts><font/><font><b/><i val="1"/><color rgb="FF112233"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFAABBCC"/></patternFill></fill></fills><cellStyleXfs><xf fontId="1" fillId="1"><alignment horizontal="center" vertical="center"/></xf></cellStyleXfs><cellXfs><xf/><xf xfId="0" applyFont="0" applyFill="0" applyAlignment="0"/><xf fontId="1" applyFont="1"><alignment horizontal="right" vertical="bottom"/></xf></cellXfs></styleSheet>"""
+        val styles = """<styleSheet><fonts><font/><font><b/><i val="1"/><color rgb="FF112233"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFAABBCC"/></patternFill></fill></fills><cellStyleXfs><xf fontId="1" fillId="1"><alignment horizontal="center" vertical="center" textRotation="135"/></xf></cellStyleXfs><cellXfs><xf/><xf xfId="0" applyFont="0" applyFill="0" applyAlignment="0"/><xf fontId="1" applyFont="1"><alignment horizontal="right" vertical="bottom"/></xf></cellXfs></styleSheet>"""
         val sheet = """<worksheet><sheetData><row r="1"><c r="C1" s="1" t="inlineStr"><is><t>center</t></is></c></row><row r="1"><c r="E1" s="2" t="inlineStr"><is><t>right</t></is></c></row><row r="2"><c r="A2" s="1"/></row></sheetData></worksheet>"""
         val file = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
             "xl/worksheets/sheet1.xml" to sheet))
@@ -192,6 +192,8 @@ class OpenXmlDocumentParserTest {
             assertEquals(0xAABBCC, center.fillRgb ?: -1)
             assertEquals("center", center.horizontal)
             assertEquals("center", center.vertical)
+            assertEquals(135, center.textRotation)
+            assertEquals(0, parsed.styles.at(0, 4).textRotation)
             assertEquals("bottom", parsed.styles.at(0, 4).vertical)
             assertEquals("right", parsed.styles.at(0, 4).horizontal)
             assertEquals(XlsxCellStyle(), parsed.styles.at(0, 1))

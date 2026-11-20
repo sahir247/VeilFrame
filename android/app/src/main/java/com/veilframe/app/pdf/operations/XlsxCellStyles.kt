@@ -11,7 +11,8 @@ data class XlsxCellStyle(
     val fillRgb: Int? = null,
     val horizontal: String = "left",
     val borders: XlsxCellBorders = XlsxCellBorders(),
-    val vertical: String = "top"
+    val vertical: String = "top",
+    val textRotation: Int = 0
 ) {
     internal fun font(base: PDFont): PDFont = when {
         bold && italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE

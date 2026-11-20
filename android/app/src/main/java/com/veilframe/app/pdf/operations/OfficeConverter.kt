@@ -1245,7 +1245,10 @@ class OfficeConverter {
 
                     // Text rendering: only on anchor slice to prevent duplicate text across panels
                     val isAnchor = (isLeftTrueEdge && isTopTrueEdge && geom.firstCol in tile.colGroup.activeCols)
-                    if (isAnchor && geom.wrappedLines.isNotEmpty()) {
+                    if (isAnchor && geom.wrappedLines.isNotEmpty() && style.textRotation != 0) {
+                        drawCellChunk(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight,
+                            geom.wrappedLines, fontNormal, limits.fontSizeCell, limits.lineHeight, style)
+                    } else if (isAnchor && geom.wrappedLines.isNotEmpty()) {
                         // Wrapping across the entire merge is invalid on a narrower
                         // anchor tile. Rewrap inside its actual visible rectangle.
                         val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
@@ -1310,6 +1313,13 @@ class OfficeConverter {
         val font = style.font(fontNormal)
         fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
+        if (style.textRotation != 0 && chunkLines.isNotEmpty()) {
+            require(completeCell) { "Cannot split rotated cell text across row fragments" }
+            drawRotatedSpreadsheetText(contentStream, cellLeft, cellTop, cellW, cellH,
+                chunkLines, font, fontSizeCell, lineHeight, style)
+            return
+        }
+
         // 2. Draw cell string values safely clipped within cell boundaries
         if (chunkLines.isNotEmpty()) {
             contentStream.saveGraphicsState()
@@ -1334,6 +1344,34 @@ class OfficeConverter {
             }
             contentStream.restoreGraphicsState()
         }
+    }
+
+    private fun drawRotatedSpreadsheetText(stream: PDPageContentStream, left: Float, top: Float,
+        width: Float, height: Float, lines: List<String>, font: PDFont, size: Float,
+        lineHeight: Float, style: XlsxCellStyle) {
+        val block = XlsxRotatedText.measureLines(lines, style.textRotation, font, size, lineHeight)
+        require(block.width <= width - 8f + 0.05f && block.height <= height - 8f + 0.05f) {
+            "Rotated cell text does not fit its visible rectangle; increase tile dimensions"
+        }
+        val xSpare = (width - 8f - block.width).coerceAtLeast(0f)
+        val ySpare = (height - 8f - block.height).coerceAtLeast(0f)
+        val x = left + 4f + when (style.horizontal) { "center" -> xSpare / 2f; "right" -> xSpare; else -> 0f }
+        val y = top - 4f - block.height - when (style.vertical) { "center" -> ySpare / 2f; "bottom" -> ySpare; else -> 0f }
+        stream.saveGraphicsState()
+        try {
+            stream.transform(Matrix(block.cosine, block.sine, -block.sine, block.cosine,
+                x - block.minX, y - block.minY))
+            setSpreadsheetTextColor(stream, style)
+            var baseline = block.unrotatedHeight - size
+            for (line in lines) {
+                stream.beginText()
+                stream.setFont(font, size)
+                stream.newLineAtOffset(spreadsheetTextX(line, font, size, -4f, block.unrotatedWidth + 8f, style), baseline)
+                safeShowText(stream, line, font)
+                stream.endText()
+                baseline -= lineHeight
+            }
+        } finally { stream.restoreGraphicsState() }
     }
 
     /** Overlay shared edges only after all fills/text for this page are complete. */

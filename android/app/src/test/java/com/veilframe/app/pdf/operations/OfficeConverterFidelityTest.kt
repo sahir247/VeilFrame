@@ -1594,4 +1594,22 @@ class OfficeConverterFidelityTest {
             assertEquals(centerDelta * 2f, bottomDelta, 0.5f)
         }
     }
+    @Test
+    fun rotatedSpreadsheetTextProducesRealPdfTransforms() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Rotation" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><cellXfs><xf/><xf><alignment textRotation="90"/></xf><xf><alignment textRotation="135"/></xf><xf><alignment textRotation="255"/></xf></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>UPWARD</t></is></c><c r="B1" s="2" t="inlineStr"><is><t>DOWNWARD</t></is></c><c r="C1" s="3" t="inlineStr"><is><t>XY</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles, "xl/worksheets/sheet1.xml" to sheet))
+        val target = File(tempFolder.root, "rotated.pdf")
+        OfficeConverter().convertXlsxToPdf(input, target, context)
+        PDDocument.load(target).use { pdf ->
+            val content = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)(?:^|\s)0\s+1\s+-1\s+0\s+[-.\d]+\s+[-.\d]+\s+cm\b""").containsMatchIn(content))
+            org.junit.Assert.assertTrue(content.contains("UPWARD") || PDFTextStripper().getText(pdf).filterNot { it.isWhitespace() }.contains("UPWARD"))
+        }
+        val up = XlsxRotatedText.measure("UPWARD", 90, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 9f, 11.7f)
+        assertEquals(9f, up.width, 0.05f)
+        assertTrue(up.height > 30f)
+        assertEquals(listOf("X", "Y"), XlsxRotatedText.lines("XY", 255))
+    }
 }

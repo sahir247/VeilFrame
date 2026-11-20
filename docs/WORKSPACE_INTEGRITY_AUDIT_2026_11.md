@@ -619,3 +619,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21 — Android compile correction
 
 - CI 44773929588 failed at compileDebugKotlin: Kotlin interpreted `$timestamp_` as an identifier in the gallery filename. Delimit the interpolated timestamp explicitly; no CI or runtime contract changes. Revalidation pending.
+
+### A28 — True rotated and stacked spreadsheet text
+
+- Resolve inherited OOXML textRotation (0–180 and upright stacked 255), validate range, calculate rotated text bounds and expand content-preserving row/column geometry before pagination. Emit real PDF graphics transforms, not raster images or flattened unrotated substitutes. Reject rotated cells/rows that cannot fit the visible tile rather than clipping; explicit stacked text uses Unicode code points, with existing PDF font limitations. Added parser and PDF transform/geometry fixtures. Exact Excel overflow, bidi and print placement remain separate. Reference: https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.alignment . CI pending.
