@@ -601,6 +601,7 @@ class ToolSessionManager(
 
     fun clearSelectedTarget(logMessage: Boolean = true) {
         val state = currentState
+        state.targetRevision++
         state.selectedUri = null
         state.selectedPathDisplay = "No file or folder selected"
         state.isFolderSelected = false

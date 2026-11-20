@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var navigationController: MainNavigationController
     internal lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
+    private var genericTargetIndexJob: Job? = null
     private lateinit var appUpdateManager: AppUpdateManager
     private lateinit var libraryCoordinator: LibraryCoordinator
     private lateinit var toolsCatalogueCoordinator: ToolsCatalogueCoordinator
@@ -863,7 +864,11 @@ class MainActivity : AppCompatActivity() {
         // Target Pickers inside Tool
         binding.btnPickFolder.setOnClickListener { launchers.launchFolderPicker() }
         binding.btnPickFile.setOnClickListener { openFilePickerForCurrentTool() }
-        binding.btnClearTarget.setOnClickListener { toolSessionManager.clearSelectedTarget(logMessage = true) }
+        binding.btnClearTarget.setOnClickListener {
+            genericTargetIndexJob?.cancel()
+            if (toolExecutionController.isExecuting) toolExecutionController.cancelExecution()
+            toolSessionManager.clearSelectedTarget(logMessage = true)
+        }
         binding.btnChangeTarget.setOnClickListener { openFilePickerForCurrentTool() }
 
         // Execution Monitor Console Toggle
@@ -1399,8 +1404,16 @@ class MainActivity : AppCompatActivity() {
         launchers.openFilePickerForCurrentTool(toolSessionManager.currentToolMode)
     }
 
+    private fun beginGenericTargetSelection(): com.veilframe.app.tools.ToolSessionState {
+        genericTargetIndexJob?.cancel()
+        if (toolExecutionController.isExecuting) toolExecutionController.cancelExecution()
+        // The previous artifact and COMPLETE state belong to the previous selection.
+        toolSessionManager.clearSelectedTarget(logMessage = false)
+        return toolSessionManager.currentState
+    }
+
     internal fun handleSingleFileSelected(uri: Uri) {
-        val state = toolSessionManager.currentState
+        val state = beginGenericTargetSelection()
         state.selectedUri = uri
         state.isFolderSelected = false
         state.selectedPathDisplay = safStorageManager.getDisplayName(uri)
@@ -1436,7 +1449,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun handleFolderSelected(uri: Uri) {
-        val state = toolSessionManager.currentState
+        val state = beginGenericTargetSelection()
         state.selectedUri = uri
         state.isFolderSelected = true
         state.selectedPathDisplay = safStorageManager.getDisplayName(uri)
@@ -1450,31 +1463,55 @@ class MainActivity : AppCompatActivity() {
         binding.tvTargetDetails.text = "Indexing directory contents..."
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_amber))
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
+        val owner = com.veilframe.app.tools.ToolTargetOwner(state)
+        val mode = toolSessionManager.currentToolMode
+        genericTargetIndexJob = lifecycleScope.launch(Dispatchers.IO) {
+            val cc = kotlin.coroutines.coroutineContext
             var count = 0
             var totalBytes = 0L
+            var entries = 0
+            var incomplete = false
+            val visited = HashSet<String>()
 
-            fun inspectDoc(doc: DocumentFile) {
+            fun inspectDoc(doc: DocumentFile, depth: Int) {
+                cc.ensureActive()
+                if (entries >= 50_000 || depth > 128) { incomplete = true; return }
+                entries++
                 if (doc.isDirectory) {
-                    doc.listFiles().forEach { inspectDoc(it) }
+                    if (!visited.add(doc.uri.toString())) { incomplete = true; return }
+                    for (child in doc.listFiles()) {
+                        if (entries >= 50_000) { incomplete = true; break }
+                        inspectDoc(child, depth + 1)
+                    }
                 } else if (doc.isFile) {
                     count++
-                    totalBytes += doc.length()
+                    val size = doc.length().coerceAtLeast(0)
+                    totalBytes = if (size > Long.MAX_VALUE - totalBytes) Long.MAX_VALUE else totalBytes + size
+                } else {
+                    incomplete = true
                 }
             }
 
-            rootDoc?.listFiles()?.forEach { inspectDoc(it) }
-
-            state.targetFileCount = count
-            state.targetTotalBytes = totalBytes
+            try {
+                val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
+                if (rootDoc == null) incomplete = true else inspectDoc(rootDoc, 0)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                incomplete = true
+            }
 
             withContext(Dispatchers.Main) {
-                binding.tvTargetDetails.text = "$count files • ${safStorageManager.formatBytes(totalBytes)} • Ready"
-                binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
+                if (toolSessionManager.currentToolMode != mode || !owner.owns(toolSessionManager.currentState)) return@withContext
+                state.targetFileCount = count
+                state.targetTotalBytes = totalBytes
+                binding.tvTargetDetails.text = "$count indexed files • ${safStorageManager.formatBytes(totalBytes)}" +
+                    if (incomplete) " • Partial index" else " • Ready"
+                binding.tvTargetDetails.setTextColor(getColor(if (incomplete) R.color.vf_accent_amber else R.color.vf_accent_green))
                 toolSessionManager.updatePrivacySummaryUI()
                 toolSessionManager.updatePrimaryActionDock(state)
-                consoleLogController.log("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count files, ${safStorageManager.formatBytes(totalBytes)})")
+                consoleLogController.log("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count indexed files, ${safStorageManager.formatBytes(totalBytes)})" +
+                    if (incomplete) " — index incomplete" else "")
             }
         }
     }

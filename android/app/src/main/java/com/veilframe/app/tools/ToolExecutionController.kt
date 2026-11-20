@@ -42,6 +42,11 @@ class ToolExecutionController(
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
 
     private var executionJob: Job? = null
+    private var executionGeneration = 0L
+
+    private fun ownsExecution(generation: Long, mode: ToolMode, owner: ToolTargetOwner): Boolean =
+        generation == executionGeneration && !activity.isFinishing && !activity.isDestroyed &&
+            sessionManager.currentToolMode == mode && owner.owns(sessionManager.currentState)
 
     val isExecuting: Boolean
         get() = executionJob?.isActive == true || sessionManager.currentState.jobState in listOf(
@@ -64,6 +69,7 @@ class ToolExecutionController(
     }
 
     fun cancelExecution() {
+        executionGeneration++
         executionJob?.cancel()
         executionJob = null
         val state = sessionManager.currentState
@@ -114,14 +120,22 @@ class ToolExecutionController(
         binding.progressIndicator.isIndeterminate = true
         binding.tvProgressDetails.text = ""
 
+        val mode = sessionManager.currentToolMode
+        val owner = ToolTargetOwner(state)
+        val generation = ++executionGeneration
+        if (mode == ToolMode.AI_BUNDLE) sessionManager.updateJobState(JobState.PREPARING, "Preparing AI bundle…")
         executionJob = scope.launch {
-            when (sessionManager.currentToolMode) {
+            if (!ownsExecution(generation, mode, owner)) return@launch
+            when (mode) {
                 ToolMode.AI_BUNDLE -> {
                     try {
-                        runAiBundle(uri, excludedPaths.orEmpty())
+                        runAiBundle(uri, state, excludedPaths.orEmpty()) {
+                            ownsExecution(generation, mode, owner)
+                        }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (failure: Exception) {
+                        if (!ownsExecution(generation, mode, owner)) return@launch
                         sessionManager.updateJobState(JobState.FAILED, "Bundle failed: ${failure.message}")
                         binding.progressIndicator.isIndeterminate = false
                         Toast.makeText(activity, "Bundle generation failed: ${failure.message}", Toast.LENGTH_LONG).show()
@@ -134,11 +148,12 @@ class ToolExecutionController(
                 ToolMode.VIDEO_COMPRESSOR -> getVideoStudioController()?.execute()
                 ToolMode.IMAGE_UPSCALER -> { /* Handled within ImageUpscalerController */ }
             }
-            sessionManager.updatePrimaryActionDock(sessionManager.currentState)
+            if (ownsExecution(generation, mode, owner)) sessionManager.updatePrimaryActionDock(state)
         }
     }
 
     private fun showBundleExclusions(state: ToolSessionState, uri: Uri) {
+        val owner = ToolTargetOwner(state)
         val container = android.widget.LinearLayout(activity).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             val padding = (20 * resources.displayMetrics.density).toInt()
@@ -165,7 +180,7 @@ class ToolExecutionController(
         dialog.show()
         dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
             if (activity.isFinishing || activity.isDestroyed || sessionManager.currentToolMode != ToolMode.AI_BUNDLE ||
-                sessionManager.currentState !== state || state.selectedUri != uri || !state.isFolderSelected) {
+                !owner.owns(sessionManager.currentState) || state.selectedUri != uri || !state.isFolderSelected) {
                 dialog.dismiss()
                 return@setOnClickListener
             }
@@ -180,8 +195,10 @@ class ToolExecutionController(
         }
     }
 
-    private suspend fun runAiBundle(uri: Uri, excludedPaths: Set<String>) {
-        val state = sessionManager.currentState
+    private suspend fun runAiBundle(uri: Uri, state: ToolSessionState, excludedPaths: Set<String>, owns: () -> Boolean) {
+        if (!owns()) return
+        val folder = state.isFolderSelected
+        val sourceName = state.selectedPathDisplay
         val tokenIndex = sessionManager.getSelectedOptionIndex()
         val tokenBudget = when (tokenIndex) {
             0 -> 32_000L
@@ -199,10 +216,8 @@ class ToolExecutionController(
             else -> "json"
         }
 
-        withContext(Dispatchers.Main) {
-            sessionManager.updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
-            onLog("[AI] Packaging context directly from target: ${state.selectedPathDisplay} (Budget: ${if (tokenBudget == 0L) "Unlimited" else "$tokenBudget tokens"})...")
-        }
+        sessionManager.updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
+        onLog("[AI] Packaging context directly from target: $sourceName (Budget: ${if (tokenBudget == 0L) "32 MiB byte cap" else "~$tokenBudget estimated tokens"})...")
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(activity.cacheDir, "AIBundle_${timeStamp}_${java.util.UUID.randomUUID()}.$formatKey")
@@ -223,8 +238,10 @@ class ToolExecutionController(
             excludedRelativePaths = excludedPaths
         )
 
+        var published = false
+        try {
         val bundleResult = withContext(Dispatchers.IO) {
-            if (state.isFolderSelected) {
+            if (folder) {
                 AiBundleEngine.buildBundleFromSaf(
                     context = activity,
                     treeUri = uri,
@@ -232,22 +249,25 @@ class ToolExecutionController(
                     config = bundleConfig,
                     onProgress = { currentFile, included ->
                         activity.runOnUiThread {
-                            binding.tvStatusText.text = "Bundled $included files ($currentFile)..."
+                            if (owns() && state.jobState == JobState.PROCESSING) {
+                                binding.tvStatusText.text = "Bundled $included files ($currentFile)..."
+                            }
                         }
                     }
                 )
             } else {
                 AiBundleEngine.buildSingleFileBundle(
-                    activity, uri, safStorageManager.getDisplayName(uri), outputFile, bundleConfig
+                    activity, uri, sourceName, outputFile, bundleConfig
                 )
             }
         }
 
-        state.lastGeneratedFile = outputFile
-        state.progressPercent = 100
-        state.progressDetailsText = "100% complete"
-
         withContext(Dispatchers.Main) {
+            if (!owns()) return@withContext
+            state.lastGeneratedFile = outputFile
+            state.progressPercent = 100
+            state.progressDetailsText = "100% complete"
+            published = true
             sessionManager.updateJobState(JobState.COMPLETE, "Bundle ready: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
             binding.progressIndicator.isIndeterminate = false
             binding.progressIndicator.progress = 100
@@ -266,6 +286,10 @@ class ToolExecutionController(
             binding.btnExecute.isEnabled = true
             binding.btnExportResult.isEnabled = true
             binding.btnShareResult.isEnabled = true
+        }
+        } finally {
+            // withContext can cancel after IO has atomically published the file, before Main sees it.
+            if (!published) outputFile.delete()
         }
     }
 
