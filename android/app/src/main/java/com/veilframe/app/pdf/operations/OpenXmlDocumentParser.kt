@@ -1006,15 +1006,36 @@ object OpenXmlDocumentParser {
                 // are deliberately disclosed as unsupported rather than guessed.
                 val text = type in XlsxConditionalFormatting.textOperators && literal.length in 1..1024 &&
                     literal.none { it in "*?~" } && (op.isEmpty() || op == type)
-                val delta = if (numeric || text) {
+                val scale = if (type == "colorScale") parseConditionalColorScale(rule) else null
+                val delta = if (scale != null) XlsxConditionalFormatting.Delta() else if (numeric || text) {
                     if (id == null) XlsxConditionalFormatting.Delta() else differential[id]
                 } else null
                 result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, if (text) type else op,
-                    operands.filterNotNull(), delta, if (text) literal else null))
+                    operands.filterNotNull(), delta, if (text) literal else null, scale))
                 require(result.size <= 256) { "Too many conditional formatting rules" }
             }
         }
         return result.sortedBy { it.priority }
+    }
+
+    private fun parseConditionalColorScale(rule: Element): XlsxConditionalFormatting.ColorScale? {
+        val scale = rule.childElements("colorScale").singleOrNull() ?: return null
+        val thresholds = scale.childElements("cfvo")
+        val colors = scale.childElements("color")
+        if (thresholds.size !in 2..3 || colors.size != thresholds.size) return null
+        val stops = thresholds.zip(colors).map { (threshold, color) ->
+            val type = threshold.getAttribute("type")
+            if (type !in setOf("min", "max", "num", "percent")) return null
+            val raw = threshold.getAttribute("val")
+            val value = if (type in setOf("num", "percent")) XlsxConditionalFormatting.number(raw) ?: return null else null
+            if (type == "percent" && (value == null || value < java.math.BigDecimal.ZERO || value > java.math.BigDecimal("100"))) return null
+            val rgb = color.getAttribute("rgb")
+            if (!rgb.matches(Regex("[0-9A-Fa-f]{8}")) || color.hasAttribute("theme") ||
+                color.hasAttribute("indexed") || color.hasAttribute("tint")) return null
+            XlsxConditionalFormatting.ScaleStop(type, value, rgb.takeLast(6).toInt(16))
+        }
+        if (stops.drop(1).any { it.type == "min" } || stops.dropLast(1).any { it.type == "max" }) return null
+        return XlsxConditionalFormatting.ColorScale(stops)
     }
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
@@ -1066,6 +1087,18 @@ object OpenXmlDocumentParser {
         val derivedStyles = mutableMapOf<XlsxCellStyle, Int>()
         var conditionalChecks = 0L
         val conditionalCost = conditional.sumOf { it.ranges.size.toLong() }
+        val scaleRules = conditional.filter { it.scale != null }
+        val scaleExtents = mutableMapOf<Int, XlsxConditionalFormatting.NumericExtent>()
+        data class DeferredNumeric(val row: Int, val col: Int, val style: Int, val raw: java.math.BigDecimal)
+        val deferredNumeric = mutableListOf<DeferredNumeric>()
+        fun internStyle(baseIndex: Int, applied: XlsxCellStyle): Int {
+            if (applied == styleTable.visuals[baseIndex]) return baseIndex
+            return derivedStyles.getOrPut(applied) {
+                require(visuals.size < 16384) { "Conditional style count exceeds budget" }
+                visuals.add(applied)
+                visuals.lastIndex
+            }
+        }
         // Prefer the first saved worksheet view, not the device's display setting.
         val firstView = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }.firstOrNull()
         val showGridLines = when (firstView?.getAttribute("showGridLines").orEmpty()) {
@@ -1199,12 +1232,22 @@ object OpenXmlDocumentParser {
                     if (rawNumeric != null || rawText != null) {
                         conditionalChecks += conditionalCost
                         require(conditionalChecks <= 8_000_000L) { "Conditional formatting evaluation exceeds budget" }
-                        val base = styleTable.visuals[style]
-                        val applied = XlsxConditionalFormatting.apply(base, targetRow - 1, targetCol, rawNumeric, conditional, rawText)
-                        if (applied != base) visualIndex = derivedStyles.getOrPut(applied) {
-                            require(visuals.size < 16384) { "Conditional style count exceeds budget" }
-                            visuals.add(applied)
-                            visuals.lastIndex
+                        val r = targetRow - 1
+                        if (rawNumeric != null && scaleRules.any { rule -> rule.ranges.any { it.contains(r, targetCol) } }) {
+                            // A scale needs the complete raw range, including later rows.
+                            conditionalChecks += conditionalCost
+                            require(conditionalChecks <= 8_000_000L && deferredNumeric.size < 200_000) {
+                                "Conditional color-scale evaluation exceeds budget"
+                            }
+                            deferredNumeric.add(DeferredNumeric(r, targetCol, style, rawNumeric))
+                            for (rule in scaleRules) if (rule.ranges.any { it.contains(r, targetCol) }) {
+                                scaleExtents[rule.priority] = scaleExtents[rule.priority]?.include(rawNumeric)
+                                    ?: XlsxConditionalFormatting.NumericExtent(rawNumeric, rawNumeric)
+                            }
+                        } else {
+                            val base = styleTable.visuals[style]
+                            val applied = XlsxConditionalFormatting.apply(base, r, targetCol, rawNumeric, conditional, rawText)
+                            visualIndex = internStyle(style, applied)
                         }
                     }
                     if (visualIndex != 0 && visuals[visualIndex] != visuals[0]) {
@@ -1223,6 +1266,19 @@ object OpenXmlDocumentParser {
                 for ((col, style) in explicitVisuals) codes[col] = style
                 styledRows[targetRow - 1] = codes
             }
+        }
+
+        for (cell in deferredNumeric) {
+            val base = styleTable.visuals[cell.style]
+            val applied = XlsxConditionalFormatting.apply(base, cell.row, cell.col, cell.raw, conditional,
+                scaleExtents = scaleExtents)
+            val code = internStyle(cell.style, applied)
+            if (code == 0 && cell.row !in styledRows) continue
+            val prior = styledRows[cell.row]
+            val codes = if (prior != null && prior.size > cell.col) prior else
+                prior?.copyOf(maxOf(cell.col + 1, prior.size * 2).coerceAtMost(MAX_XLSX_COLUMNS)) ?: IntArray(cell.col + 1)
+            codes[cell.col] = code
+            styledRows[cell.row] = codes
         }
 
         if (rowMap.isEmpty()) return metadata()

@@ -689,4 +689,20 @@ class OpenXmlDocumentParserTest {
             assertEquals(0, parsed.unsupportedConditionalRules)
         } finally { input.delete() }
     }
+    @Test
+    fun conditionalColorScaleUsesFullRawRangeAndThreeStops() {
+        val workbook = """<workbook><sheets><sheet name="Scale" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><cellXfs><xf numFmtId="9"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>0</v></c><c r="B1"><v>0.25</v></c></row><row r="2"><c r="A2"><v>0.5</v></c><c r="B2"><v>1</v></c></row></sheetData><conditionalFormatting sqref="A1:B2"><cfRule type="colorScale" priority="1"><colorScale><cfvo type="min"/><cfvo type="percent" val="50"/><cfvo type="max"/><color rgb="FF000000"/><color rgb="FF808080"/><color rgb="FFFFFFFF"/></colorScale></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles, "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+            assertEquals("25%", parsed.rows[0][1])
+            assertEquals(0x000000, parsed.styles.at(0,0).fillRgb)
+            assertEquals(0x404040, parsed.styles.at(0,1).fillRgb)
+            assertEquals(0x808080, parsed.styles.at(1,0).fillRgb)
+            assertEquals(0xFFFFFF, parsed.styles.at(1,1).fillRgb)
+            assertEquals(0, parsed.unsupportedConditionalRules)
+        } finally { input.delete() }
+    }
 }

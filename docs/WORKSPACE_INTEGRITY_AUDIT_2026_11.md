@@ -647,3 +647,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Literal text conditional-formatting rules
 
 - Add case-insensitive contains/not-contains/begins/ends matching on saved explicit string cells, with numeric/text type separation, same priority/stop and differential-property handling. Wildcards and arbitrary expressions remain disclosed as unsupported. Accept singleton `A1:A1` conditional ranges; precompute the rule-range budget cost. Added text/numeric interaction and stop-rule fixture. Numeric-as-text coercion, blank-cell rules and Excel locale-specific comparisons remain incomplete. CI pending.
+
+### A28 — Numeric color scales
+
+- Two/three-stop conditional scales with literal RGB and min/max/number/percent thresholds now use complete saved numeric range statistics. Deferred raw cells are bounded, evaluate after all input rows, and combine with existing priority/stop rules. Preserve underlying numeric formatting. Arbitrary formula/percentile thresholds, theme colors, data bars and icons remain unsupported; bounded scale admission may reject exceptionally large ranges. Added multi-row three-stop percentage regression. CI pending.
