@@ -1119,12 +1119,18 @@ class OfficeConverter {
             return
         }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
+        val stacked = chart.kind in setOf("bar", "column") && chart.grouping in setOf("stacked", "percentStacked")
+        val percentStacked = stacked && chart.grouping == "percentStacked"
         val maxAbs = chart.series.flatMap { it.values }.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }
             ?.takeIf { it > 0.0 } ?: 1.0
-        val min = minOf(0.0, chart.series.flatMap { it.values }.filterNotNull().minOrNull() ?: 0.0) / maxAbs
-        val max = maxOf(0.0, chart.series.flatMap { it.values }.filterNotNull().maxOrNull() ?: 0.0) / maxAbs
+        val stacks = if (stacked) XlsxStackedChart.segments(chart, maxAbs, percentStacked) else emptyList()
+        val bounds = if (stacked) stacks.flatten().filterNotNull().flatMap { listOf(it.start, it.end) }
+            else chart.series.flatMap { it.values }.filterNotNull().map { it / maxAbs }
+        val min = minOf(0.0, bounds.minOrNull() ?: 0.0)
+        val max = maxOf(0.0, bounds.maxOrNull() ?: 0.0)
         val high = if (max == min) min + 1.0 else max
-        fun fraction(v: Double) = ((v / maxAbs - min) / (high - min)).toFloat().coerceIn(0f, 1f)
+        fun normalizedFraction(v: Double) = ((v - min) / (high - min)).toFloat().coerceIn(0f, 1f)
+        fun fraction(v: Double) = normalizedFraction(v / maxAbs)
         for ((panel, indices) in chart.categories.indices.chunked(12).withIndex()) {
             checkpoint()
             require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
@@ -1144,18 +1150,21 @@ class OfficeConverter {
                     stream.moveTo(x1,y1); stream.lineTo(x2,y2); stream.stroke()
                 }
                 label(sheet.take(70) + " / Cached chart " + (panel + 1), 30f, 565f, 11f, true)
-                label(chart.title.take(100), 30f, 545f, 13f, true)
+                label(chart.title.take(86) + if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
                 label("Saved chart cache; reconstructed appearance, not recalculated", 30f, 529f)
                 val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
                 val horizontal = chart.kind == "bar"
                 val slot = (if (horizontal) height else width) / indices.size
-                val zero = if (horizontal) left + fraction(0.0)*width else bottom + fraction(0.0)*height
+                val zero = if (horizontal) left + normalizedFraction(0.0)*width else bottom + normalizedFraction(0.0)*height
                 stroke(0xB0B0B0); stream.setLineWidth(0.5f)
                 if (horizontal) line(zero,bottom,zero,bottom+height) else line(left,zero,left+width,zero)
                 for (tick in 0..4) {
                     val f = tick / 4f
-                    val v = (min + (high - min)*f) * maxAbs
-                    val value = String.format(java.util.Locale.US, "%.4g", v)
+                    val normalized = min + (high - min)*f
+                    val v = normalized * maxAbs
+                    val value = if (percentStacked) String.format(java.util.Locale.US, "%.0f%%", normalized*100)
+                        else if (v.isFinite()) String.format(java.util.Locale.US, "%.4g", v)
+                        else String.format(java.util.Locale.US, "%.4g x %.4g", normalized, maxAbs)
                     stroke(0xE0E0E0)
                     if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-25f,8f) }
                     else { val y = bottom + f*height; line(left,y,left+width,y); label(value,30f,y-3f,8f) }
@@ -1163,7 +1172,7 @@ class OfficeConverter {
                 for ((seriesIndex, series) in chart.series.withIndex()) {
                     checkpoint()
                     var previous: Pair<Float,Float>? = null
-                    val bar = slot * 0.8f / chart.series.size
+                    val bar = slot * 0.8f / (if (stacked) 1 else chart.series.size)
                     for ((local, index) in indices.withIndex()) {
                         val v = series.values[index]
                         if (v == null) { previous = null; continue }
@@ -1176,13 +1185,17 @@ class OfficeConverter {
                             previous = position to y
                         } else {
                             color(palette[seriesIndex])
-                            val offset = position - slot*0.4f + seriesIndex*bar
+                            val offset = position - slot*0.4f + (if (stacked) 0 else seriesIndex)*bar
+                            val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
+                                XlsxStackedChart.Segment(0.0, v / maxAbs)
+                            val start = normalizedFraction(segment.start)
+                            val end = normalizedFraction(segment.end)
                             if (horizontal) {
-                                val x = left + fraction(v)*width
-                                stream.addRect(minOf(x,zero),offset,kotlin.math.abs(x-zero),bar*0.9f)
+                                val x1 = left + start*width; val x2 = left + end*width
+                                stream.addRect(minOf(x1,x2),offset,kotlin.math.abs(x2-x1),bar*0.9f)
                             } else {
-                                val y = bottom + fraction(v)*height
-                                stream.addRect(offset,minOf(y,zero),bar*0.9f,kotlin.math.abs(y-zero))
+                                val y1 = bottom + start*height; val y2 = bottom + end*height
+                                stream.addRect(offset,minOf(y1,y2),bar*0.9f,kotlin.math.abs(y2-y1))
                             }
                             stream.fill()
                         }

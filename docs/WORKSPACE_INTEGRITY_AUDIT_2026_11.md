@@ -663,3 +663,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Hidden geometry in explicit print mode
 
 - Parse saved row/column visibility, validate flags and split-row conflicts. Omit hidden coordinates during saved-print pagination (including repeated titles); carry manual breaks across hidden runs to the next visible coordinate. Fully hidden areas fail explicitly, and partially visible merged cells fail rather than dropping or misplacing anchor content. Default full worksheet export preserves hidden values. Added PDF regression for hidden rows/columns, break propagation and full export. Default-hidden sheetFormatPr, filter evaluation and exact printer geometry remain separate. CI pending.
+
+### A28 — Signed stacked chart rendering
+
+- Recognize standard and 100% stacked bar/column grouping and render cumulative positive/negative vector segments from saved cached values. Normalize before summing to avoid overflow at very large magnitudes; use absolute-magnitude denominators for signed percentage stacks, retain missing points and keep raw values in the cache table. Existing clustered/line/pie paths remain separate. Source chart styling, saved anchors and renderer parity with Excel for mixed-sign 100% stacks are not claimed. Added numeric geometry regression. CI pending.

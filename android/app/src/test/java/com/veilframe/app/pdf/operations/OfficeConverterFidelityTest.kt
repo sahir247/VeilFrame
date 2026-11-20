@@ -1727,4 +1727,19 @@ class OfficeConverterFidelityTest {
             assertTrue(text.contains("SECRET_COLUMN") && text.contains("SECRET_ROW"))
         }
     }
+    @Test
+    fun signedStackGeometryPreservesMissingPointsAndAvoidsOverflow() {
+        val chart = XlsxCachedChart("Stack","column",listOf("A","B"),listOf(
+            XlsxCachedChart.Series("one",listOf(Double.MAX_VALUE,-2.0)),
+            XlsxCachedChart.Series("two",listOf(Double.MAX_VALUE,null)),
+            XlsxCachedChart.Series("three",listOf(-Double.MAX_VALUE,3.0))),"stacked")
+        val segments = XlsxStackedChart.segments(chart,Double.MAX_VALUE,false)
+        assertEquals(XlsxStackedChart.Segment(0.0,1.0),segments[0][0])
+        assertEquals(XlsxStackedChart.Segment(1.0,2.0),segments[1][0])
+        assertEquals(XlsxStackedChart.Segment(0.0,-1.0),segments[2][0])
+        assertEquals(null,segments[1][1])
+        val percent = XlsxStackedChart.segments(chart,Double.MAX_VALUE,true)
+        assertEquals(2.0/3.0,percent[1][0]!!.end,0.000001)
+        assertEquals(-1.0/3.0,percent[2][0]!!.end,0.000001)
+    }
 }

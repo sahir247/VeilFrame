@@ -639,9 +639,10 @@ object OpenXmlDocumentParser {
         val chartTypes = (0 until plot.childNodes.length).mapNotNull { plot.childNodes.item(it) as? Element }
             .filter { it.localName().endsWith("Chart") }
         val type = chartTypes.singleOrNull() ?: return null
+        val grouping = type.childElements("grouping").singleOrNull()?.getAttribute("val")
         val kind = when (type.localName()) {
             "barChart" -> {
-                if (type.childElements("grouping").singleOrNull()?.getAttribute("val") != "clustered") return null
+                if (grouping !in setOf("clustered", "stacked", "percentStacked")) return null
                 when (type.childElements("barDir").singleOrNull()?.getAttribute("val")) {
                     "col" -> "column"
                     "bar" -> "bar"
@@ -701,7 +702,8 @@ object OpenXmlDocumentParser {
             labels = categories
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1), values))
         }
-        return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed)
+        return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
+            grouping ?: "clustered")
     }
 
     private data class ParsedXlsxStyles(
