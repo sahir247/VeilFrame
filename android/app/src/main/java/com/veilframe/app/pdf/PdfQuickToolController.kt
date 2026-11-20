@@ -100,7 +100,7 @@ class PdfQuickToolController(
     enum class QuickMode(val title: String, val subtitle: String, val buttonText: String) {
         MERGE("Merge PDF", "Combine multiple documents into one", "Merge & Export PDF"),
         SPLIT("Split PDF", "Extract pages into separate documents", "Split & Export"),
-        COMPRESS("Compress PDF", "Reduce embedded image size without rasterizing pages", "Compress & Export PDF"),
+        COMPRESS("Compress PDF", "Preserve document structure, or explicitly choose image-only output", "Compress & Export PDF"),
         ROTATE("Rotate Pages", "Modulo 90°, 180°, 270° orientation fix", "Rotate & Export PDF"),
         REORDER("Reorder Pages", "Rearrange page sequence order", "Reorder & Export PDF"),
         DELETE("Delete Pages", "Purge unwanted sheets from document", "Delete Pages & Export"),
@@ -282,6 +282,7 @@ class PdfQuickToolController(
             QuickMode.COMPRESS -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Compress"
                 binding.panelParamCompress.visibility = View.VISIBLE
+                binding.chipGroupCompressEngine.check(R.id.chipCompressImages)
             }
             QuickMode.LOCK -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Encrypt"
@@ -1344,6 +1345,13 @@ class PdfQuickToolController(
     }
 
     private fun setupCompressControls() {
+        binding.chipGroupCompressEngine.setOnCheckedStateChangeListener { _, checked ->
+            binding.tvCompressionScope.text = if (R.id.chipCompressFullRender in checked) {
+                "Image-only output: text, vectors, forms, links, attachments and other interactive content are lost. Confirmation required."
+            } else {
+                "Optimizes eligible images; retains page drawing commands and document structure. Size reduction is not guaranteed."
+            }
+        }
         binding.sliderCompressQuality.addOnChangeListener { _, value, _ ->
             val label = when {
                 value <= 35f -> "Maximum Compression (${value.toInt()}%)"
@@ -2112,7 +2120,7 @@ class PdfQuickToolController(
         }
     }
 
-    private fun executeActiveOperation() {
+    private fun executeActiveOperation(rasterConfirmed: Boolean = false) {
         if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
             Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
             return
@@ -2127,6 +2135,23 @@ class PdfQuickToolController(
         }
 
         if (isExecuting) return
+        val rasterSelected = activeMode == QuickMode.COMPRESS && binding.chipCompressFullRender.isChecked
+        if (rasterSelected && !rasterConfirmed) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Create an image-only PDF?")
+                .setMessage("Every page will be rendered to a JPEG at the selected quality. Searchable and selectable text, vector graphics, editable forms, links, attachments, signatures and other PDF objects will not be preserved. Fine details can blur. The original file is unchanged. Signed or encrypted sources are refused.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create image-only PDF") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.COMPRESS &&
+                        selectedUris.firstOrNull() == source && binding.chipCompressFullRender.isChecked) {
+                        executeActiveOperation(rasterConfirmed = true)
+                    }
+                }.show()
+            return
+        }
+        val quality = if (activeMode == QuickMode.COMPRESS) binding.sliderCompressQuality.value.toInt() else 65
         isExecuting = true
         binding.btnQuickToolExecute.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
@@ -2349,16 +2374,19 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.COMPRESS -> {
-                        val quality = withContext(Dispatchers.Main) {
-                            binding.sliderCompressQuality.value.toInt()
-                        }
-                        finishPdfOutputOnDisk("${base}_compressed.pdf", origText) { output ->
-                            pdfCompressor.compressPdf(
-                                context = activity,
-                                inputUri = operationUris.first(),
-                                outputStream = output,
-                                qualityPercent = quality
-                            ).isSuccess
+                        val suffix = if (rasterSelected && rasterConfirmed) "image_only" else "compressed"
+                        finishPdfOutputOnDisk("${base}_$suffix.pdf", origText) { output ->
+                            if (rasterSelected && rasterConfirmed) {
+                                pdfCompressor.compressPdfRasterized(activity, operationUris.first(), output, quality).getOrThrow()
+                            } else {
+                                pdfCompressor.compressPdf(
+                                    context = activity,
+                                    inputUri = operationUris.first(),
+                                    outputStream = output,
+                                    qualityPercent = com.veilframe.app.pdf.operations.qualitySliderToCompressionPercent(quality)
+                                ).getOrThrow()
+                            }
+                            true
                         }
                     }
                     QuickMode.LOCK -> {

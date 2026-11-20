@@ -47,6 +47,13 @@ class PdfCompressionIntegrityTest {
     }
 
     @Test
+    fun higherDisplayedQualityMeansLessCompression() {
+        assertEquals(80, qualitySliderToCompressionPercent(20))
+        assertEquals(35, qualitySliderToCompressionPercent(65))
+        assertEquals(10, qualitySliderToCompressionPercent(90))
+    }
+
+    @Test
     fun structuralRewriteRejectsChangedCommandsAndGeometry() {
         PDDocument().use { original ->
             val page = PDPage(PDRectangle(300f, 420f))

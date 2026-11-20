@@ -176,6 +176,9 @@ private suspend fun copyCompressionStream(input: InputStream, output: OutputStre
     currentCoroutineContext().ensureActive()
 }
 
+/** UI expresses quality; the historical engine profile uses compression intensity. */
+internal fun qualitySliderToCompressionPercent(quality: Int): Int = 100 - quality.coerceIn(0, 100)
+
 /** Compress eligible opaque RGB images without rasterizing pages or rewriting signed documents. */
 class PdfCompressor {
 
@@ -679,15 +682,61 @@ class PdfCompressor {
     }
     
     /**
-     * Try full re-render approach - converts each page to JPEG image.
-     * Best for scanned documents but loses text searchability.
+     * Explicit image-only conversion. This route is never invoked by structural
+     * compression or automatic target-size search. The caller must obtain consent
+     * to losing vectors, text, forms, links, metadata, attachments and other objects.
      */
-    private suspend fun tryFullRerender(
+    suspend fun compressPdfRasterized(
         context: Context,
+        inputUri: Uri,
+        outputStream: OutputStream,
+        qualityPercent: Int,
+        onProgress: (Float) -> Unit = {}
+    ): Result<CompressionResult> = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
+        var directory: File? = null
+        try {
+            ensureActive()
+            require(qualityPercent in 0..100) { "Invalid image quality" }
+            directory = createOperationDirectory(context)
+            val source = File(directory, "source.pdf")
+            val input = context.contentResolver.openInputStream(inputUri)
+                ?: throw java.io.IOException("Cannot open source PDF")
+            input.use { stream -> source.outputStream().buffered().use { copyCompressionStream(stream, it) } }
+            val pages = sourcePageCount(source)
+            onProgress(.1f)
+            val profile = requireNotNull(profileFromSlider(qualitySliderToCompressionPercent(qualityPercent)))
+            val raster = renderImageOnlyPdf(source, profile) { onProgress(.1f + .8f * it) }
+            requirePageCount(raster, pages)
+            val size = raster.length()
+            check(size < source.length()) {
+                "Image-only PDF is not smaller than the source. Try a lower image quality or image optimization."
+            }
+            ensureActive()
+            raster.inputStream().use { copyCompressionStream(it, outputStream) }
+            outputStream.flush()
+            onProgress(1f)
+            Result.success(CompressionResult(
+                source.length(), size, size.toFloat() / source.length(),
+                System.currentTimeMillis() - start, pages, CompressionStrategy.FULL_RERENDER
+            ))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (oom: OutOfMemoryError) {
+            Result.failure(IllegalStateException("Not enough memory to rasterize PDF", oom))
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        } finally {
+            directory?.deleteRecursively()
+        }
+    }
+
+    /** Image-only renderer; the caller owns its per-operation scratch directory. */
+    private suspend fun renderImageOnlyPdf(
         inputFile: File,
         profile: CompressionProfile,
         onProgress: (Float) -> Unit
-    ): File? {
+    ): File {
         var outputDocument: PDDocument? = null
         var androidRenderer: android.graphics.pdf.PdfRenderer? = null
         var pfd: android.os.ParcelFileDescriptor? = null
@@ -698,11 +747,13 @@ class PdfCompressor {
             // Ensure the source PDF URI is processed as a local, temporary cache-file copy (inputFile is guaranteed to be a temp file here)
             pfd = android.os.ParcelFileDescriptor.open(inputFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
             androidRenderer = android.graphics.pdf.PdfRenderer(pfd)
+            // PdfRenderer takes ownership of the file descriptor.
+            pfd = null
             val totalPages = androidRenderer.pageCount
-            
-            if (totalPages == 0) return null
-            
-            outputDocument = PDDocument()
+
+            check(totalPages > 0) { "PDF contains no displayable pages" }
+
+            outputDocument = PDDocument(MemoryUsageSetting.setupTempFileOnly())
             
             for (pageIndex in 0 until totalPages) {
                 currentCoroutineContext().ensureActive()
@@ -778,11 +829,13 @@ class PdfCompressor {
             throw e
         } catch (t: Throwable) {
             outputFile.delete()
-            null
+            throw t
         } finally {
-            androidRenderer?.close()
-            pfd?.close()
-            outputDocument?.close()
+            try {
+                androidRenderer?.close()
+            } finally {
+                try { pfd?.close() } finally { outputDocument?.close() }
+            }
         }
     }
     

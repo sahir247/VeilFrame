@@ -527,7 +527,8 @@
                         android:id="@+id/chipGroupCompressEngine"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
+                        android:layout_marginBottom="8dp"
+                        app:selectionRequired="true"
                         app:singleSelection="true">
 
                         <com.google.android.material.chip.Chip
@@ -543,8 +544,17 @@
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Full Re-Render (Maximum Shrink)" />
+                            android:text="Image-only PDF (Lossy)" />
                     </com.google.android.material.chip.ChipGroup>
+
+                    <TextView
+                        android:id="@+id/tvCompressionScope"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:text="Optimizes eligible images; retains page drawing commands and document structure. Size reduction is not guaranteed."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
