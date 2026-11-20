@@ -179,7 +179,7 @@ class UpscaleInferenceEngine(
                             val checkpoint: () -> Unit = { cc.ensureActive() }
                             val res = when (model.id) {
                                 "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
-                                "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
+                                "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH, checkpoint)
                                 else -> AlgorithmicUpscaler.scaleLanczos(fullSource, targetW, targetH, checkpoint)
                             }
                             var handedOff = false

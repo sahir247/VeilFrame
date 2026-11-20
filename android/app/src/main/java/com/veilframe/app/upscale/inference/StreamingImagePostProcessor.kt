@@ -89,8 +89,8 @@ internal object StreamingImagePostProcessor {
                 try {
                     val image = if (scale == 1) input else when (algorithm) {
                         "nearest" -> AlgorithmicUpscaler.scaleNearest(input, w, band.readHeight * scale, checkpoint)
-                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(input, w, band.readHeight * scale)
-                        else -> AlgorithmicUpscaler.scaleLanczos(input, w, band.readHeight * scale, checkpoint)
+                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(input, w, band.readHeight * scale, checkpoint)
+                        else -> AlgorithmicUpscaler.scaleLanczos4Portable(input, w, band.readHeight * scale, checkpoint)
                     }
                     scaled = image
                     image.setHasAlpha(source.hasAlpha)

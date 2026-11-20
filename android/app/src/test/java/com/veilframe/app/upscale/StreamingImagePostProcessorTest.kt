@@ -27,6 +27,44 @@ class StreamingImagePostProcessorTest {
         assertEquals(259, bands.last().readTop + bands.last().readHeight)
     }
 
+    @Test fun cubicAndLanczosPreserveAlphaAndMatchBandCores() {
+        val source = Bitmap.createBitmap(5, 13, Bitmap.Config.ARGB_8888)
+        for (y in 0 until source.height) for (x in 0 until source.width) {
+            source.setPixel(x, y, Color.argb(if (x < 2) 0 else (80 + y * 13), 255, 0, 0))
+        }
+        try {
+            for (cubic in listOf(true, false)) {
+                fun scale(b: Bitmap): Bitmap = if (cubic)
+                    com.veilframe.app.upscale.inference.AlgorithmicUpscaler.scaleBicubic(b, b.width * 3, b.height * 3)
+                else com.veilframe.app.upscale.inference.AlgorithmicUpscaler.scaleLanczos4Portable(b, b.width * 3, b.height * 3)
+                val full = scale(source)
+                try {
+                    var globalY = 0
+                    for (band in UpscaleBandPlan(source.height, 3, 3, 4).bands()) {
+                        val input = Bitmap.createBitmap(source, 0, band.readTop, source.width, band.readHeight)
+                        val scaled = scale(input)
+                        try {
+                            for (row in 0 until band.outputRows) {
+                                for (x in 0 until full.width) {
+                                    val expected = full.getPixel(x, globalY)
+                                    val actual = scaled.getPixel(x, band.outputOffset + row)
+                                    assertEquals(expected, actual)
+                                    if (Color.alpha(actual) > 0) {
+                                        assertTrue(Color.red(actual) >= 250)
+                                        assertEquals(0, Color.green(actual))
+                                        assertEquals(0, Color.blue(actual))
+                                    }
+                                }
+                                globalY++
+                            }
+                        } finally { scaled.recycle(); if (input !== source) input.recycle() }
+                    }
+                    assertEquals(full.height, globalY)
+                } finally { full.recycle() }
+            }
+        } finally { source.recycle() }
+    }
+
     @Test fun haloDetailMatchesWholeImageAcrossEveryBand() {
         val w = 13
         val h = 19

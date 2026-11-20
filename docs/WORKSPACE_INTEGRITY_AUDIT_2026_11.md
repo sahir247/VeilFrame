@@ -319,3 +319,8 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A19 follow-up — Bound association work and preserve tiny observations
 
 - Bound scaled decoder output dimensions, per-frame observations and active track/detection pair construction in addition to the existing whole-scan budget. Fail closed on nonfinite, degenerate or wholly out-of-frame observations; preserve positive sub-two-pixel observations with outward padding. Regression cases cover tiny detections, malformed geometry and overcrowded frames. Device verification still pending.
+
+### A25/A26 — RIFE exception ownership and mathematically correct resampling
+
+- Hold the RIFE initialization mutex through exception cleanup; a failed initializer must not clear a later successful model/GPU state after releasing its lock. Release any owned model before resetting its lease. Native concurrent-failure/device timing remains pending.
+- Replace the Canvas bilinear implementation mislabeled Bicubic with a separable Keys cubic kernel. Portable Lanczos-4 and cubic filter premultiplied colors and unpremultiply only once, preserving transparent edges; use source halos and a fixed portable Lanczos backend across all streamed bands instead of switching native/portable kernels per band. Full opaque in-memory Lanczos may use native acceleration; bitwise native/portable parity is not claimed. The fixed portable streamed path trades throughput for consistent seams. Per-row cancellation and failed bitmap cleanup; add whole-versus-banded and alpha fixture. Neural tile quality, native throughput and physical-device testing remain PARTIAL.

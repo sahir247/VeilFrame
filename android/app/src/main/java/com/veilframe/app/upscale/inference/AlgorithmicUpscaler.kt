@@ -1,12 +1,10 @@
 package com.veilframe.app.upscale.inference
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
+import kotlin.math.roundToInt
 
 /**
  * Built-in mathematical image scaling filters (Lanczos-3, Bicubic, Nearest).
@@ -45,64 +43,43 @@ object AlgorithmicUpscaler {
         return result
     }
 
-    fun scaleBicubic(source: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
-        // High quality hardware-filtered bilinear/bicubic sampling via Canvas Paint
-        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-        val paint = Paint().apply {
-            isFilterBitmap = true
-            isAntiAlias = true
-            isDither = true
+    /** Keys cubic interpolation (a = -0.5), not Canvas bilinear filtering. */
+    fun scaleBicubic(source: Bitmap, targetWidth: Int, targetHeight: Int,
+                     checkpoint: (() -> Unit)? = null): Bitmap =
+        scaleSeparable(source, targetWidth, targetHeight, 2, checkpoint) { distance ->
+            val x = abs(distance)
+            when {
+                x < 1f -> ((1.5f * x - 2.5f) * x) * x + 1f
+                x < 2f -> ((-.5f * x + 2.5f) * x - 4f) * x + 2f
+                else -> 0f
+            }
         }
-        val srcRect = android.graphics.Rect(0, 0, source.width, source.height)
-        val dstRect = android.graphics.Rect(0, 0, targetWidth, targetHeight)
-        canvas.drawBitmap(source, srcRect, dstRect, paint)
-        return result
-    }
 
     /**
-     * High-performance Lanczos resampling.
-     * When OpenCV native runtime is available, executes 4-lobe Lanczos interpolation (INTER_LANCZOS4)
-     * accelerated via ARM NEON SIMD vector instructions.
-     * Transparently falls back to [scaleLanczos3] on non-native JVM test hosts.
+     * Select a single deterministic Lanczos-4 implementation for a banded job.
+     * A native error must not silently change the kernel at the next band.
+     * Alpha-bearing images use premultiplied channels in the portable path.
      */
     fun scaleLanczos(
         source: Bitmap,
         targetWidth: Int,
         targetHeight: Int,
-        checkpoint: (() -> Unit)? = null
+        checkpoint: (() -> Unit)? = null,
     ): Bitmap {
-        // 1. Native ARM NEON SIMD Lanczos-4 via libveilframe_ncnn.so (16KB page-aligned)
-        if (NcnnNative.isAvailable) {
-            val nativeResampled = NcnnNative.scaleLanczos4(source, targetWidth, targetHeight)
-            if (nativeResampled != null) return nativeResampled
-        }
-
-        // 2. In-tree OpenCV fallback
-        if (com.veilframe.app.cv.core.CvRuntime.initialize()) {
-            try {
-                val srcMat = org.opencv.core.Mat()
-                org.opencv.android.Utils.bitmapToMat(source, srcMat)
-                val dstMat = org.opencv.core.Mat()
-                org.opencv.imgproc.Imgproc.resize(
-                    srcMat,
-                    dstMat,
-                    org.opencv.core.Size(targetWidth.toDouble(), targetHeight.toDouble()),
-                    0.0,
-                    0.0,
-                    org.opencv.imgproc.Imgproc.INTER_LANCZOS4
-                )
-                val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-                org.opencv.android.Utils.matToBitmap(dstMat, result)
-                srcMat.release()
-                dstMat.release()
-                return result
-            } catch (t: Throwable) {
-                // fall through to Kotlin Lanczos3
+        checkpoint?.invoke()
+        if (!source.hasAlpha() && NcnnNative.isAvailable) {
+            val bitmap = NcnnNative.scaleLanczos4(source, targetWidth, targetHeight)
+            if (bitmap != null) {
+                try { checkpoint?.invoke(); return bitmap }
+                catch (failure: Throwable) { bitmap.recycle(); throw failure }
             }
         }
-        return scaleLanczos3(source, targetWidth, targetHeight, checkpoint)
+        return scaleLanczos4Portable(source, targetWidth, targetHeight, checkpoint)
     }
+
+    internal fun scaleLanczos4Portable(source: Bitmap, targetWidth: Int, targetHeight: Int,
+                                       checkpoint: (() -> Unit)? = null): Bitmap =
+        scaleWindowedSinc(source, targetWidth, targetHeight, 4, checkpoint)
 
     fun scaleLanczos3(
         source: Bitmap,
@@ -110,10 +87,11 @@ object AlgorithmicUpscaler {
         targetHeight: Int,
         checkpoint: (() -> Unit)? = null,
     ): Bitmap {
-        val srcW = source.width
-        val srcH = source.height
-        val a = 3 // 3 lobes
+        return scaleWindowedSinc(source, targetWidth, targetHeight, 3, checkpoint)
+    }
 
+    private fun scaleWindowedSinc(source: Bitmap, targetWidth: Int, targetHeight: Int,
+                                  a: Int, checkpoint: (() -> Unit)?): Bitmap {
         fun sinc(x: Float): Float {
             if (abs(x) < 1e-6f) return 1.0f
             val piX = (PI.toFloat() * x)
@@ -126,6 +104,23 @@ object AlgorithmicUpscaler {
             return sinc(absX) * sinc(absX / a)
         }
 
+        return scaleSeparable(source, targetWidth, targetHeight, a, checkpoint, ::lanczosKernel)
+    }
+
+    private fun scaleSeparable(source: Bitmap, targetWidth: Int, targetHeight: Int,
+                               a: Int, checkpoint: (() -> Unit)?, kernel: (Float) -> Float): Bitmap {
+        require(targetWidth > 0 && targetHeight > 0)
+        val srcW = source.width
+        val srcH = source.height
+        // Compute phase from integer quotient/remainder for exact integer-scale
+        // bands; avoid losing fractional phase in large source coordinates.
+        fun center(index: Int, src: Int, dst: Int): Double {
+            val numerator = (2L * index + 1) * src - dst
+            val denominator = 2L * dst
+            return Math.floorDiv(numerator, denominator).toDouble() +
+                Math.floorMod(numerator, denominator).toDouble() / denominator
+        }
+
         // Audit fix (perf): tap weights are precomputed once per destination
         // row/column. The old loop re-evaluated two sin() calls per tap per
         // output pixel (~billions of sin() calls at 4x of a 12 MP image —
@@ -135,17 +130,16 @@ object AlgorithmicUpscaler {
         val colTapIdx: Array<IntArray>
         val colTapW: Array<FloatArray>
         run {
-            val ratio = srcW.toFloat() / targetWidth.toFloat()
             colTapIdx = Array(targetWidth) { IntArray(0) }
             colTapW = Array(targetWidth) { FloatArray(0) }
             for (x in 0 until targetWidth) {
-                val center = (x + 0.5f) * ratio - 0.5f
+                val center = center(x, srcW, targetWidth)
                 val minS = (center - a).toInt().coerceAtLeast(0)
                 val maxS = (center + a).toInt().coerceAtMost(srcW - 1)
                 val idx = ArrayList<Int>(2 * a + 1)
                 val ws = ArrayList<Float>(2 * a + 1)
                 for (s in minS..maxS) {
-                    val w = lanczosKernel(center - s.toFloat())
+                    val w = kernel((center - s).toFloat())
                     if (w != 0.0f) {
                         idx.add(s)
                         ws.add(w)
@@ -158,17 +152,16 @@ object AlgorithmicUpscaler {
         val rowTapIdx: Array<IntArray>
         val rowTapW: Array<FloatArray>
         run {
-            val ratio = srcH.toFloat() / targetHeight.toFloat()
             rowTapIdx = Array(targetHeight) { IntArray(0) }
             rowTapW = Array(targetHeight) { FloatArray(0) }
             for (y in 0 until targetHeight) {
-                val center = (y + 0.5f) * ratio - 0.5f
+                val center = center(y, srcH, targetHeight)
                 val minS = (center - a).toInt().coerceAtLeast(0)
                 val maxS = (center + a).toInt().coerceAtMost(srcH - 1)
                 val idx = ArrayList<Int>(2 * a + 1)
                 val ws = ArrayList<Float>(2 * a + 1)
                 for (s in minS..maxS) {
-                    val w = lanczosKernel(center - s.toFloat())
+                    val w = kernel((center - s).toFloat())
                     if (w != 0.0f) {
                         idx.add(s)
                         ws.add(w)
@@ -208,20 +201,22 @@ object AlgorithmicUpscaler {
                 for (k in taps.indices) {
                     val w = weights[k]
                     val c = srcRowBuf[taps[k]]
-                    alpha += ((c ushr 24) and 0xff).toFloat() * w
-                    r += ((c ushr 16) and 0xff).toFloat() * w
-                    g += ((c shr 8) and 0xff).toFloat() * w
-                    b += (c and 0xff).toFloat() * w
+                    val opacity = ((c ushr 24) and 0xff).toFloat()
+                    val premul = opacity / 255f
+                    alpha += opacity * w
+                    r += ((c ushr 16) and 0xff).toFloat() * premul * w
+                    g += ((c shr 8) and 0xff).toFloat() * premul * w
+                    b += (c and 0xff).toFloat() * premul * w
                     sumWeight += w
                 }
 
                 val outBase = baseOffset + x * 4
                 if (sumWeight > 0.0f) {
                     val inv = 1.0f / sumWeight
-                    horizCache[outBase] = (alpha * inv).coerceIn(0.0f, 255.0f)
-                    horizCache[outBase + 1] = (r * inv).coerceIn(0.0f, 255.0f)
-                    horizCache[outBase + 2] = (g * inv).coerceIn(0.0f, 255.0f)
-                    horizCache[outBase + 3] = (b * inv).coerceIn(0.0f, 255.0f)
+                    horizCache[outBase] = alpha * inv
+                    horizCache[outBase + 1] = r * inv
+                    horizCache[outBase + 2] = g * inv
+                    horizCache[outBase + 3] = b * inv
                 } else {
                     horizCache[outBase] = 0f
                     horizCache[outBase + 1] = 0f
@@ -236,6 +231,7 @@ object AlgorithmicUpscaler {
         val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
         val tapBases = IntArray(2 * a + 1)
 
+        try {
         for (y in 0 until targetHeight) {
             checkpoint?.invoke() // B6: cancellable per output row
             val taps = rowTapIdx[y]
@@ -264,11 +260,17 @@ object AlgorithmicUpscaler {
 
                 if (sumWeight > 0.0f) {
                     val inv = 1.0f / sumWeight
-                    val finalA = (alpha * inv).toInt().coerceIn(0, 255)
-                    val finalR = (r * inv).toInt().coerceIn(0, 255)
-                    val finalG = (g * inv).toInt().coerceIn(0, 255)
-                    val finalB = (b * inv).toInt().coerceIn(0, 255)
-                    dstRowBuf[x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
+                    val rawAlpha = alpha * inv
+                    val finalA = rawAlpha.roundToInt().coerceIn(0, 255)
+                    if (finalA == 0) {
+                        dstRowBuf[x] = 0
+                    } else {
+                        val unpremultiply = inv * 255f / rawAlpha
+                        val finalR = (r * unpremultiply).roundToInt().coerceIn(0, 255)
+                        val finalG = (g * unpremultiply).roundToInt().coerceIn(0, 255)
+                        val finalB = (b * unpremultiply).roundToInt().coerceIn(0, 255)
+                        dstRowBuf[x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
+                    }
                 } else {
                     dstRowBuf[x] = 0
                 }
@@ -278,6 +280,11 @@ object AlgorithmicUpscaler {
             if ((y and 31) == 31) Thread.yield()
         }
 
+        result.setHasAlpha(source.hasAlpha())
         return result
+        } catch (failure: Throwable) {
+            result.recycle()
+            throw failure
+        }
     }
 }
