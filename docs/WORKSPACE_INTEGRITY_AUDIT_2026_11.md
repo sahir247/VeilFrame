@@ -347,3 +347,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21/A29 — Quick PDF operation ownership frozen at the execute event
 
 - Capture merge-page order, split source, selected deletion/rotation/reorder pages, lock options, HTML and signature placement data on Main before dispatch. PDF-to-image and split no longer index the mutable live selection on IO. The generated signature bitmap is released when its job completes. Common export handoff requires the execution's captured generation; obsolete jobs cannot reset the current workspace UI or open its picker. Form inspection and export now check ownership before changing UI; reject duplicate applies. Device navigation/cancellation and signature fixture execution pending.
+
+### A28/A29 — CI regression contract aligned with supported document formats
+
+- CI run 44721611957 (head 0bb1909) completed 1,419 Android tests with one failure: `DocToPdfScopeAndPreviewTest.docMimeTypes_strictlyScopedToOfficeAndTextDocuments` still required legacy binary Office/RTF after the intentional format-admission correction above. Replaced the stale requirements with an exact, duplicate-free allowlist of DOCX/XLSX/PPTX/plain text MIME types. Existing `OfficeSourceFormatTest` independently verifies admitted extensions and rejection of DOC/XLS/PPT/RTF. No production format support, CI gate, or assertion coverage is relaxed; unsupported types must remain excluded. Validation on the new head is pending; A28/A29 remain PARTIAL.
