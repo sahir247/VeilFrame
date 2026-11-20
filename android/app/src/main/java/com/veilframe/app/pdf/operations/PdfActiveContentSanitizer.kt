@@ -40,6 +40,10 @@ internal object PdfActiveContentSanitizer {
 
     fun remove(document: PDDocument, javascript: Boolean, attachments: Boolean) {
         visit(document, javascript, attachments, mutate = true)
+        verify(document, javascript, attachments)
+    }
+
+    fun verify(document: PDDocument, javascript: Boolean, attachments: Boolean) {
         visit(document, javascript, attachments, mutate = false)
     }
 

@@ -13,6 +13,8 @@ import com.tom_roush.pdfbox.cos.COSObject
 import java.util.ArrayDeque
 import java.util.Collections
 import java.util.IdentityHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -59,6 +61,17 @@ data class EditableMetadata(
  */
 internal fun stripPdfMetadata(document: PDDocument) {
     document.documentInformation = PDDocumentInformation()
+    visitMetadata(document, true)
+}
+
+internal fun verifyStrippedPdfMetadata(document: PDDocument) {
+    if (document.documentInformation.cosObject.keySet().isNotEmpty()) {
+        throw java.io.IOException("Document information remains after metadata removal")
+    }
+    visitMetadata(document, false)
+}
+
+private fun visitMetadata(document: PDDocument, mutate: Boolean) {
     val metadata = COSName.METADATA
     val pieceInfo = COSName.getPDFName("PieceInfo")
     val seen = Collections.newSetFromMap(IdentityHashMap<COSBase, Boolean>())
@@ -70,8 +83,12 @@ internal fun stripPdfMetadata(document: PDDocument) {
         when (node) {
             is COSObject -> node.getObject()?.let { pending.add(it) }
             is COSDictionary -> {
-                node.removeItem(metadata)
-                node.removeItem(pieceInfo)
+                if (mutate) {
+                    node.removeItem(metadata)
+                    node.removeItem(pieceInfo)
+                } else if (node.containsKey(metadata) || node.containsKey(pieceInfo)) {
+                    throw java.io.IOException("Metadata remains after saving PDF")
+                }
                 for (key in node.keySet()) {
                     node.getItem(key)?.let { pending.add(it) }
                 }
@@ -110,7 +127,7 @@ class PdfMetadataManager {
                     IllegalStateException("Cannot open input file")
                 )
             
-            document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
             val info = document.documentInformation
             
             val metadata = PdfMetadata(
@@ -130,6 +147,8 @@ class PdfMetadataManager {
             
             Result.success(metadata)
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -165,7 +184,8 @@ class PdfMetadataManager {
                     IllegalStateException("Cannot open input file")
                 )
             
-            document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
+            requirePdfRewriteAllowed(document)
             val info = document.documentInformation
             
             onProgress(0.4f)
@@ -184,6 +204,7 @@ class PdfMetadataManager {
             onProgress(0.7f)
             
             // Save with updated metadata
+            ensureActive()
             document.save(outputStream)
             outputStream.flush()
             
@@ -191,6 +212,8 @@ class PdfMetadataManager {
             
             Result.success(Unit)
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -219,21 +242,29 @@ class PdfMetadataManager {
                     IllegalStateException("Cannot open input file")
                 )
             
-            document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
             
             onProgress(0.4f)
             
+            requirePdfRewriteAllowed(document)
             stripPdfMetadata(document)
             
             onProgress(0.7f)
             
-            document.save(outputStream)
-            outputStream.flush()
+            exportVerifiedPdf(context, document, document.numberOfPages, ::verifyStrippedPdfMetadata) {
+                // This public API does not own the caller's output stream.
+                object : java.io.FilterOutputStream(outputStream) {
+                    override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
+                    override fun close() = flush()
+                }
+            }
             
             onProgress(1.0f)
             
             Result.success(Unit)
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         } finally {

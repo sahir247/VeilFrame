@@ -299,7 +299,7 @@ class PdfOcrProcessor(private val context: Context) {
             // Create a temp file
             val cacheDir = File(context.cacheDir, "ocr_cache")
             if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_searchable_${System.currentTimeMillis()}.pdf")
+            tempFile = File.createTempFile("temp_searchable_", ".pdf", cacheDir)
             
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -314,19 +314,19 @@ class PdfOcrProcessor(private val context: Context) {
             // Load with memory safety
             document = PDDocument.load(tempFile, MemoryUsageSetting.setupTempFileOnly())
             
+            requirePdfRewriteAllowed(document)
             val totalPages = document.numberOfPages
             progressCallback(10)
             
             val renderer = PDFRenderer(document)
-            // One embedded subset per document, reused across all OCR pages.
-            val font = context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) }
+            val fonts = SearchableOcrFonts(context, document)
             
             for (pageIndex in 0 until totalPages) {
                 ensureActive()
                 val page = document.getPage(pageIndex)
                 
                 // Render page to image for OCR
-                val dpi = getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
+                val dpi = getSafeOcrDpi(page.cropBox.width, page.cropBox.height)
                 val pageImage = renderer.renderImageWithDPI(pageIndex, dpi)
                 
                 try {
@@ -334,7 +334,7 @@ class PdfOcrProcessor(private val context: Context) {
                     val words = performOcrOnBitmap(pageImage)
 
                     if (words.isNotEmpty()) {
-                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, font)
+                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, fonts)
                     }
                 } finally {
                     pageImage.recycle()
@@ -350,12 +350,9 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(90)
             ensureActive()
             
-            // Save the document
-            val destination = context.contentResolver.openOutputStream(outputUri)
-                ?: throw IOException("Cannot open destination URI for writing")
-            destination.use { outputStream ->
-                document.save(outputStream)
-                outputStream.flush()
+            exportVerifiedPdf(context, document, totalPages) {
+                context.contentResolver.openOutputStream(outputUri)
+                    ?: throw IOException("Cannot open destination URI for writing")
             }
             
             document.close()
@@ -645,7 +642,7 @@ class PdfOcrProcessor(private val context: Context) {
         words: List<OcrWord>,
         imageWidth: Int,
         imageHeight: Int,
-        font: PDType0Font
+        fonts: SearchableOcrFonts
     ) {
         val crop = page.cropBox
         val geometry = OcrPageGeometry(
@@ -662,11 +659,7 @@ class PdfOcrProcessor(private val context: Context) {
                 val placement = geometry.place(box.left, box.top, box.right, box.bottom)
                 // Never silently remove characters. An unsupported font glyph fails the
                 // operation before the destination is opened.
-                val width = try {
-                    font.getStringWidth(word.text) / 1000f
-                } catch (e: IllegalArgumentException) {
-                    throw IOException("Searchable PDF font cannot encode all recognized characters", e)
-                }
+                val (font, width) = fonts.select(word.text)
                 if (!width.isFinite() || width <= 0f) throw IOException("Invalid OCR word width")
                 val fontSize = placement.height * 0.8f
                 val stretch = placement.width / (width * fontSize)
@@ -767,5 +760,24 @@ class PdfOcrProcessor(private val context: Context) {
      */
     fun close() {
         ocrEngine.close()
+    }
+}
+
+/** The OCR recognizer is Latin-only. Use embeddable font fallbacks, never drop glyphs. */
+internal class SearchableOcrFonts(context: Context, document: PDDocument) {
+    private val candidates = listOf<() -> PDType0Font>(
+        { context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_sans).use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_serif).use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_mono).use { PDType0Font.load(document, it) } }
+    ).map { loader -> lazy { runCatching(loader).getOrNull() } }
+
+    fun select(text: String): Pair<PDType0Font, Float> {
+        for (candidate in candidates) {
+            val font = candidate.value ?: continue
+            val width = try { font.getStringWidth(text) / 1000f } catch (_: IllegalArgumentException) { continue }
+            if (width.isFinite() && width > 0f) return font to width
+        }
+        throw IOException("Searchable PDF fonts cannot encode all recognized characters; no text was silently removed")
     }
 }

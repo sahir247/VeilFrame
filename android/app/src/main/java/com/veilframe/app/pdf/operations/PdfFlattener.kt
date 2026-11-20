@@ -89,6 +89,14 @@ class PdfFlattener {
                 )
             }
             
+            requirePdfRewriteAllowed(document)
+            if (config.flattenAnnotations && !config.flattenForms &&
+                document.documentCatalog.acroForm?.fields?.isNotEmpty() == true) {
+                throw IOException("Flattening annotations while retaining form widgets is unsupported")
+            }
+            if (config.rasterizeContent && (!config.flattenAnnotations || !config.flattenForms)) {
+                throw IOException("Rasterization requires explicit flattening of forms and annotations")
+            }
             progressCallback(10)
             
             // Flatten forms if requested
@@ -115,18 +123,18 @@ class PdfFlattener {
                 for (pageIndex in 0 until totalPages) {
                     ensureActive()
                     val page = document.getPage(pageIndex)
-                    val dpi = OcrDpiUtil.getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
+                    val crop = page.cropBox
+                    val dpi = OcrDpiUtil.getSafeOcrDpi(crop.width, crop.height)
                     val bitmap = renderer.renderImageWithDPI(pageIndex, dpi)
 
                     try {
                         val imageXObject = LosslessFactory.createFromImage(document, bitmap)
-                        val pageRect = page.mediaBox
                         PDPageContentStream(
                             document, page,
                             PDPageContentStream.AppendMode.OVERWRITE,
                             true, true
                         ).use { cs ->
-                            cs.drawImage(imageXObject, pageRect.lowerLeftX, pageRect.lowerLeftY, pageRect.width, pageRect.height)
+                            cs.drawImage(imageXObject, rasterPlacement(crop, page.rotation))
                         }
                         page.setAnnotations(emptyList())
                     } finally {
@@ -157,16 +165,17 @@ class PdfFlattener {
                 throw IOException("Some annotations could not be flattened")
             }
             ensureActive()
-            // Save the flattened document
-            val outputStream = context.contentResolver.openOutputStream(outputUri)
-                ?: return@withContext FlattenResult(
-                    success = false,
-                    errorMessage = "Cannot open destination URI for writing: $outputUri"
-                )
-
-            outputStream.use { stream ->
-                document.save(stream)
-                stream.flush()
+            exportVerifiedPdf(context, document, totalPages, verify = { saved ->
+                if (config.flattenForms && saved.documentCatalog.acroForm?.fields?.isNotEmpty() == true) {
+                    throw IOException("Form fields remain after saving")
+                }
+                if (config.flattenAnnotations && saved.pages.any { it.annotations.isNotEmpty() }) {
+                    throw IOException("Annotations remain after saving")
+                }
+                PdfActiveContentSanitizer.verify(saved, config.removeJavaScript, config.removeEmbeddedFiles)
+            }) {
+                context.contentResolver.openOutputStream(outputUri)
+                    ?: throw IOException("Cannot open destination URI for writing: $outputUri")
             }
 
             progressCallback(100)
@@ -201,8 +210,8 @@ class PdfFlattener {
      */
     internal fun flattenForms(document: PDDocument): Int {
         val form = document.documentCatalog.acroForm ?: return 0
-        if (form.fields.isEmpty()) return 0
         if (form.hasXFA()) throw IOException("XFA form flattening is not supported")
+        if (form.fields.isEmpty()) return 0
         val fields = form.fieldTree.toList()
         val attached = document.pages.flatMap { page -> page.annotations.map { it.cosObject } }.toSet()
         // Do not regenerate unplaced fields, such as document-level hidden values.
@@ -239,6 +248,8 @@ class PdfFlattener {
         val annotations = page.annotations.toList()
         // Preflight all annotations: do not silently remove ones with missing geometry.
         for (annotation in annotations) {
+            // Hidden annotations should never become visible page content.
+            if (annotation.isHidden || annotation.isInvisible || annotation.isNoView) continue
             val rect = annotation.rectangle
             val appearance = annotation.normalAppearanceStream
             val bbox = appearance?.bBox
@@ -248,6 +259,7 @@ class PdfFlattener {
             }
         }
         for (annotation in annotations) {
+            if (annotation.isHidden || annotation.isInvisible || annotation.isNoView) continue
             val rect = annotation.rectangle
             val appearance = annotation.normalAppearanceStream
             val bbox = appearance.bBox
@@ -291,5 +303,21 @@ class PdfFlattener {
 
     private fun removeEmbeddedFiles(document: PDDocument) {
         PdfActiveContentSanitizer.remove(document, javascript = false, attachments = true)
+    }
+}
+
+/** Maps a PDFRenderer image of the rotated crop box back into unrotated page space. */
+internal fun rasterPlacement(crop: PDRectangle, rotation: Int): com.tom_roush.pdfbox.util.Matrix {
+    val x = crop.lowerLeftX
+    val y = crop.lowerLeftY
+    val w = crop.width
+    val h = crop.height
+    require(x.isFinite() && y.isFinite() && w.isFinite() && h.isFinite() && w > 0 && h > 0)
+    return when (((rotation % 360) + 360) % 360) {
+        0 -> com.tom_roush.pdfbox.util.Matrix(w, 0f, 0f, h, x, y)
+        90 -> com.tom_roush.pdfbox.util.Matrix(0f, h, -w, 0f, x + w, y)
+        180 -> com.tom_roush.pdfbox.util.Matrix(-w, 0f, 0f, -h, x + w, y + h)
+        270 -> com.tom_roush.pdfbox.util.Matrix(0f, -h, w, 0f, x, y + h)
+        else -> throw IOException("Unsupported PDF rotation")
     }
 }
