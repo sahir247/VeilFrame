@@ -1274,7 +1274,7 @@ class BackgroundRemoverController(
         popup.menu.add(0, 3, 2, "Share").setIcon(R.drawable.ic_action_share)
         popup.menu.add(0, 4, 3, "Re-process").setIcon(R.drawable.ic_reset)
         if (originalMatte != null && originalInfo != null) {
-            popup.menu.add(0, 5, 4, "Save original-resolution PNG").setIcon(R.drawable.ic_action_save)
+            popup.menu.add(0, 5, 4, "Save original-resolution image").setIcon(R.drawable.ic_action_save)
                 .isEnabled = originalExportJob?.isActive != true && processingJob?.isActive != true
         }
 
@@ -1304,11 +1304,13 @@ class BackgroundRemoverController(
         val info = originalInfo ?: return
         val generation = sourceGeneration
         val strokes = originalStrokes
+        val jpeg = binding.chipFormatJpg.isChecked
         val trim = binding.switchTrimTransparent.isChecked
         val backdrop = when (binding.splitViewBgCompare.backgroundMode) {
             BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
             BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.BLACK
-            else -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.TRANSPARENT
+            else -> if (jpeg) com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
+                else com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.TRANSPARENT
         }
         val backgroundLabel = when (backdrop) {
             com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE -> "White backdrop."
@@ -1318,14 +1320,14 @@ class BackgroundRemoverController(
         val dimensionsLabel = if (trim) "Transparent borders are cropped before backdrop compositing."
             else "Full image dimensions are preserved."
         MaterialAlertDialogBuilder(activity)
-            .setTitle("Original-resolution PNG")
+            .setTitle(if (jpeg) "Original-resolution JPEG" else "Original-resolution PNG")
             .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte" +
                 (if (strokes.isNotEmpty()) " and recorded brush edits (edges rendered at original resolution)." else ".") +
                 " $dimensionsLabel $backgroundLabel")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Export") { _, _ ->
                 if (source === sourceImage && matte === originalMatte && strokes === originalStrokes && generation == sourceGeneration) {
-                    exportOriginalResolution(source, info, matte, generation, trim, backdrop, strokes)
+                    exportOriginalResolution(source, info, matte, generation, trim, backdrop, strokes, jpeg)
                 }
             }.show()
     }
@@ -1334,15 +1336,15 @@ class BackgroundRemoverController(
         source: RembgImageSource.Staged, info: RembgSourceInfo,
         matte: RembgAlphaMatte, generation: Long, trim: Boolean,
         backdrop: com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop,
-        strokes: List<CutoutStroke>
+        strokes: List<CutoutStroke>, jpeg: Boolean
     ) {
         if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
         val release = sourceLeases.acquire(source)
         val progress = M3ExpressiveProgressDialog(activity)
         try {
             progress.show(title = "Original-resolution export",
-                initialStatus = if (trim) "Finding original-pixel alpha bounds and encoding PNG…"
-                    else "Decoding original pixels in strips and encoding transparent PNG…",
+                initialStatus = if (trim) "Finding original-pixel alpha bounds and encoding…"
+                    else "Decoding original pixels in strips and encoding…",
                 isIndeterminate = true, cancelable = true, onCancel = { originalExportJob?.cancel() })
             originalExportJob = scope.launch(Dispatchers.Main) {
                 var destination: File? = null
@@ -1351,10 +1353,10 @@ class BackgroundRemoverController(
                     withContext(Dispatchers.IO) {
                         val cc = kotlin.coroutines.coroutineContext
                         val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
-                        val out = File.createTempFile("cutout_original_", ".png", dir)
+                        val out = File.createTempFile("cutout_original_", if (jpeg) ".jpg" else ".png", dir)
                         destination = out
                         OriginalResolutionCutout.export(source, info, matte, out, trim = trim, backdrop = backdrop,
-                            strokes = strokes) { cc.ensureActive() }
+                            strokes = strokes, jpeg = jpeg) { cc.ensureActive() }
                     }
                     if (generation != sourceGeneration || source !== sourceImage ||
                         matte !== originalMatte || strokes !== originalStrokes || activity.isFinishing || activity.isDestroyed) return@launch

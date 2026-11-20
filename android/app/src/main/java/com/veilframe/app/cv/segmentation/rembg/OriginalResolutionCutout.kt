@@ -54,17 +54,19 @@ internal object OriginalResolutionCutout {
     @Suppress("DEPRECATION")
     fun export(source: RembgImageSource.Staged, info: RembgSourceInfo, matte: RembgAlphaMatte,
                destination: File, trim: Boolean = false, backdrop: CutoutBackdrop = CutoutBackdrop.TRANSPARENT,
-               strokes: List<CutoutStroke> = emptyList(), checkpoint: () -> Unit = {}) {
-        require(supports(info)) { "Original-resolution PNG is limited to admitted JPEG/PNG sources" }
+               strokes: List<CutoutStroke> = emptyList(), jpeg: Boolean = false,
+               checkpoint: () -> Unit = {}) {
+        require(supports(info)) { "Original-resolution export is limited to admitted JPEG/PNG sources" }
+        require(!jpeg || backdrop != CutoutBackdrop.TRANSPARENT) { "JPEG requires an opaque backdrop" }
         require(source.file.canonicalFile != destination.canonicalFile)
         val parent = requireNotNull(destination.absoluteFile.parentFile)
         check(parent.isDirectory || parent.mkdirs())
         val rawBytes = info.width.toLong() * info.height * 4 + info.height
         // Conservative allowance for incompressible rows, chunk framing and zlib overhead.
         check(parent.usableSpace >= rawBytes + rawBytes / 100 + 1024 * 1024 + FREE_SPACE_RESERVE) {
-            "Insufficient storage for original-resolution PNG"
+            "Insufficient storage for original-resolution export"
         }
-        val stage = File.createTempFile("cutout_stage_", ".png", parent)
+        val stage = File.createTempFile("cutout_stage_", if (jpeg) ".jpg" else ".png", parent)
         try {
             checkpoint()
             val decoder = BitmapRegionDecoder.newInstance(source.file.absolutePath, false)
@@ -123,22 +125,27 @@ internal object OriginalResolutionCutout {
                 val crop = if (trim) CutoutBounds.find(width, height, checkpoint, ::readCompositeRow)
                     else CutoutBounds(0, 0, width, height)
                 val fullRow = if (crop.left != 0 || crop.width != width) IntArray(width) else null
-                stage.outputStream().buffered().use { output ->
-                    StreamingRgbaPng.write(output, crop.width, crop.height, checkpoint) { y, row ->
-                        val srcY = crop.top + y
-                        if (fullRow == null) readCompositeRow(srcY, row)
-                        else {
-                            readCompositeRow(srcY, fullRow)
-                            fullRow.copyInto(row, 0, crop.left, crop.left + crop.width)
-                        }
-                        backdrop.apply(row)
+                fun readOutputRow(y: Int, row: IntArray) {
+                    val srcY = crop.top + y
+                    if (fullRow == null) readCompositeRow(srcY, row)
+                    else {
+                        readCompositeRow(srcY, fullRow)
+                        fullRow.copyInto(row, 0, crop.left, crop.left + crop.width)
                     }
+                    backdrop.apply(row)
                 }
-                checkpoint()
-                // Validate actual bytes before publishing: dimensions alone do not
-                // verify IDAT CRCs, zlib completion or complete decoded scanlines.
-                stage.inputStream().buffered().use { input ->
-                    StreamingPngVerifier.verify(input, crop.width, crop.height, checkpoint)
+                if (jpeg) {
+                    StreamingJpeg.write(stage, crop.width, crop.height, checkpoint = checkpoint, readRow = ::readOutputRow)
+                    checkpoint()
+                    StreamingJpeg.verify(stage, crop.width, crop.height, checkpoint)
+                } else {
+                    stage.outputStream().buffered().use { output ->
+                        StreamingRgbaPng.write(output, crop.width, crop.height, checkpoint, ::readOutputRow)
+                    }
+                    checkpoint()
+                    stage.inputStream().buffered().use { input ->
+                        StreamingPngVerifier.verify(input, crop.width, crop.height, checkpoint)
+                    }
                 }
             } finally {
                 brushReplay?.close()
