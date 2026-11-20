@@ -144,8 +144,16 @@ class PdfQuickToolController(
     }
     private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
 
-    private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
-        val job = scope.launch(Dispatchers.IO, block = block)
+    private class ExecutionGeneration(val value: Long) :
+        kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+        companion object Key : kotlin.coroutines.CoroutineContext.Key<ExecutionGeneration>
+    }
+
+    private fun launchTransient(
+        owner: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
+        block: suspend CoroutineScope.() -> Unit
+    ): Job {
+        val job = scope.launch(Dispatchers.IO + owner, block = block)
         transientJobs.add(job)
         job.invokeOnCompletion { transientJobs.remove(job) }
         return job
@@ -2019,9 +2027,10 @@ class PdfQuickToolController(
         binding.btnSignCanvasSave.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
 
-        activeJob = launchTransient {
+        val generation = selectionGeneration
+        val base = primaryDocName.removeSuffix(".pdf")
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
-                val base = primaryDocName.removeSuffix(".pdf")
                 finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
                     val result = pdfSigner.signPdfWithItems(
                         inputUri = uri,
@@ -2029,6 +2038,7 @@ class PdfQuickToolController(
                         items = placements
                     )
                     withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                         binding.btnSignCanvasSave.isEnabled = true
                         if (result.success) {
                             binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -2038,8 +2048,11 @@ class PdfQuickToolController(
                     }
                     result.success
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                     binding.btnSignCanvasSave.isEnabled = true
                     isExecuting = false
                     Toast.makeText(activity, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -2147,29 +2160,69 @@ class PdfQuickToolController(
         val operationUris = selectedUris.toList()
         val operationFileName = primaryDocName
         val operationBase = primaryDocName.removeSuffix(".pdf")
+        val generation = selectionGeneration
+        val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            (mergePageAdapter?.itemCount ?: 0) > 0
+        val mergePlan = if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty() else emptyList()
+        val deletePages = if (operationMode == QuickMode.DELETE) rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty() else emptySet()
+        val rotatePages = if (operationMode == QuickMode.ROTATE) rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty() else emptySet()
+        val rotateAngle = when (binding.chipGroupRotateAngle.checkedChipId) {
+            R.id.chipRotate180 -> RotationAngle.ROTATE_180
+            R.id.chipRotate270 -> RotationAngle.ROTATE_270
+            else -> RotationAngle.ROTATE_90
+        }
+        val reorderPages = if (operationMode == QuickMode.REORDER)
+            rotateThumbnailAdapter?.getPageOrder()?.toList() ?: (1..primaryDocPages).toList() else emptyList()
+        val lockOptions = if (operationMode == QuickMode.LOCK) PdfSecurityOptions(
+            password = binding.etLockPassword.text?.toString().orEmpty(),
+            allowPrinting = binding.cbLockAllowPrint.isChecked,
+            allowCopying = binding.cbLockAllowCopy.isChecked,
+            allowModifying = binding.cbLockAllowFillForms.isChecked,
+            allowAnnotations = binding.cbLockAllowAnnotate.isChecked
+        ) else null
+        val htmlInput = if (operationMode == QuickMode.HTML_TO_PDF) binding.etSourceInput.text?.toString()?.trim().orEmpty() else ""
+        val signatureItems = if (operationMode == QuickMode.SIGN) binding.pdfSignCanvasView.getAllPlacements().toList() else emptyList()
 
-        activeJob = launchTransient {
+        val signatureInput = if (operationMode == QuickMode.SIGN && signatureItems.isEmpty()) {
+            val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+            val bitmap = binding.viewSignaturePad.getSignatureBitmap(
+                targetColor = selectedSignColor, opacity = opacity
+            )
+            val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
+            val pages = when {
+                binding.chipSignPageFirst.isChecked -> listOf(0)
+                binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
+                binding.chipSignPageCustom.isChecked -> {
+                    val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                    listOf((requested - 1).coerceIn(0, lastPage))
+                }
+                else -> listOf(lastPage)
+            }
+            val width = 180f * signScaleFactor
+            val height = 60f * signScaleFactor
+            val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+            val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+            bitmap to pages.map { page ->
+                SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
+            }
+        } else null
+
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
                 val base = operationBase
 
                 when (operationMode) {
                     QuickMode.MERGE -> {
-                        val plan = withContext(Dispatchers.Main) {
-                            val interleaved = binding.chipMergeModePages.isChecked &&
-                                (mergePageAdapter?.itemCount ?: 0) > 0
-                            interleaved to if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty()
-                                else emptyList()
-                        }
                         finishPdfOutputOnDisk("merged_document.pdf", origText) { output ->
-                            if (plan.first) {
-                                pdfMerger.mergePageItems(activity, plan.second, output).isSuccess
+                            if (interleaved) {
+                                pdfMerger.mergePageItems(activity, mergePlan, output).isSuccess
                             } else {
                                 pdfMerger.mergePdfs(activity, operationUris, output).isSuccess
                             }
                         }
                     }
                     QuickMode.SPLIT -> {
-                        val uri = selectedUris.first()
+                        val uri = operationUris.first()
                         val workJob = coroutineContext[Job]
                         if (splitAllPages) {
                             // Stream each produced PDF directly into ZIP: no O(page count)
@@ -2202,6 +2255,7 @@ class PdfQuickToolController(
                         } else if (splitSelectedMode) {
                             if (splitSelectedPages.isEmpty()) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2234,6 +2288,7 @@ class PdfQuickToolController(
                             val ranges = parsePageRanges(splitRangeText)
                             if (ranges.isEmpty()) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2296,11 +2351,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.DELETE -> {
-                        val pagesToDelete = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty()
-                        }
+                        val pagesToDelete = deletePages
                         if (pagesToDelete.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2318,14 +2372,8 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.ROTATE -> {
-                        val (angle, selectedPages) = withContext(Dispatchers.Main) {
-                            val rotation = when (binding.chipGroupRotateAngle.checkedChipId) {
-                                R.id.chipRotate180 -> RotationAngle.ROTATE_180
-                                R.id.chipRotate270 -> RotationAngle.ROTATE_270
-                                else -> RotationAngle.ROTATE_90
-                            }
-                            rotation to rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty()
-                        }
+                        val angle = rotateAngle
+                        val selectedPages = rotatePages
                         finishPdfOutputOnDisk("${base}_rotated.pdf", origText) { output ->
                             if (selectedPages.isNotEmpty()) {
                                 val rotations = selectedPages.associateWith { angle }
@@ -2340,10 +2388,7 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.REORDER -> {
-                        val pageOrder = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getPageOrder()?.toList()
-                                ?: (1..primaryDocPages).toList()
-                        }
+                        val pageOrder = reorderPages
                         finishPdfOutputOnDisk("${base}_reordered.pdf", origText) { output ->
                             pdfOrganizer.reorderPages(
                                 activity, operationUris.first(), output, pageOrder
@@ -2372,17 +2417,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.LOCK -> {
-                        val options = withContext(Dispatchers.Main) {
-                            PdfSecurityOptions(
-                                password = binding.etLockPassword.text?.toString().orEmpty(),
-                                allowPrinting = binding.cbLockAllowPrint.isChecked,
-                                allowCopying = binding.cbLockAllowCopy.isChecked,
-                                allowModifying = binding.cbLockAllowFillForms.isChecked,
-                                allowAnnotations = binding.cbLockAllowAnnotate.isChecked
-                            )
-                        }
+                        val options = requireNotNull(lockOptions)
                         if (options.password.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2400,9 +2438,7 @@ class PdfQuickToolController(
                     }
                     QuickMode.SIGN -> {
                         val uri = operationUris.first()
-                        val canvasPlacements = withContext(Dispatchers.Main) {
-                            binding.pdfSignCanvasView.getAllPlacements().toList()
-                        }
+                        val canvasPlacements = signatureItems
                         if (canvasPlacements.isNotEmpty()) {
                             finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
                                 pdfSigner.signPdfWithItems(
@@ -2411,32 +2447,11 @@ class PdfQuickToolController(
                             }
                         } else {
                             // Read all view controls on Main before invoking PDFBox on IO.
-                            val inputs = withContext(Dispatchers.Main) {
-                                val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-                                val bitmap = binding.viewSignaturePad.getSignatureBitmap(
-                                    targetColor = selectedSignColor, opacity = opacity
-                                )
-                                val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
-                                val pages = when {
-                                    binding.chipSignPageFirst.isChecked -> listOf(0)
-                                    binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
-                                    binding.chipSignPageCustom.isChecked -> {
-                                        val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                                        listOf((requested - 1).coerceIn(0, lastPage))
-                                    }
-                                    else -> listOf(lastPage)
-                                }
-                                val width = 180f * signScaleFactor
-                                val height = 60f * signScaleFactor
-                                val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                bitmap to pages.map { page ->
-                                    SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
-                                }
-                            }
+                            val inputs = requireNotNull(signatureInput)
                             val bitmap = inputs.first
                             if (bitmap == null) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2453,11 +2468,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.HTML_TO_PDF -> {
-                        val input = withContext(Dispatchers.Main) {
-                            binding.etSourceInput.text?.toString()?.trim().orEmpty()
-                        }
+                        val input = htmlInput
                         if (input.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2519,6 +2533,7 @@ class PdfQuickToolController(
                         }
                         if (!success) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2527,7 +2542,7 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.PDF_TO_IMAGE -> {
-                        val uri = selectedUris.first()
+                        val uri = operationUris.first()
                         val workJob = coroutineContext[Job]
                         val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
                         var handedOff = false
@@ -2561,6 +2576,7 @@ class PdfQuickToolController(
                     }
                     else -> {
                         withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration) return@withContext
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
                             binding.btnQuickToolExecute.text = origText
@@ -2571,13 +2587,14 @@ class PdfQuickToolController(
                 throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration) return@withContext
                     isExecuting = false
                     binding.btnQuickToolExecute.isEnabled = true
                     binding.btnQuickToolExecute.text = origText
                     Toast.makeText(activity, "Operation failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
-        }
+        }.also { job -> job.invokeOnCompletion { signatureInput?.first?.recycle() } }
     }
 
     /**
@@ -2599,10 +2616,10 @@ class PdfQuickToolController(
         activeJob = launchTransient {
             val analysis = pdfFormFiller.analyzeForm(activity, uri)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 isExecuting = false
                 binding.btnQuickToolExecute.isEnabled = true
                 binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 if (analysis.errorMessage != null) {
                     Toast.makeText(activity, analysis.errorMessage, Toast.LENGTH_LONG).show()
                     return@withContext
@@ -2824,6 +2841,7 @@ class PdfQuickToolController(
                     dialog.dismiss()
                     return@setOnClickListener
                 }
+                if (isExecuting) return@setOnClickListener
                 val values = readers.mapValues { it.value.invoke() }
                 isExecuting = true
                 binding.btnQuickToolExecute.isEnabled = false
@@ -2847,6 +2865,7 @@ class PdfQuickToolController(
                         val legacyBytes = if (result.success && file.length() > 0L &&
                             onSaveFileFromDiskRequest == null) file.readBytes() else null
                         withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
                             binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
@@ -2944,9 +2963,11 @@ class PdfQuickToolController(
     private suspend fun finishDiskExecution(
         success: Boolean, file: File, fileName: String, origBtnText: String
     ): Boolean {
+        val owner = requireNotNull(kotlin.coroutines.coroutineContext[ExecutionGeneration])
         val complete = success && file.isFile && file.length() > 0L
         val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) file.readBytes() else null
         return withContext(Dispatchers.Main) {
+            if (owner.value != selectionGeneration) return@withContext false
             isExecuting = false
             binding.btnQuickToolExecute.isEnabled = true
             binding.btnQuickToolExecute.text = origBtnText
