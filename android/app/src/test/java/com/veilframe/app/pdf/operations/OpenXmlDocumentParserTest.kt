@@ -56,6 +56,25 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun rejectsMalformedCellsAndPreservesAllInlineRuns() {
+        val workbook = """<workbook><sheets><sheet name="Data" sheetId="1"/></sheets></workbook>"""
+        fun file(cell: String) = createZipFile(mapOf(
+            "xl/workbook.xml" to workbook,
+            "xl/worksheets/sheet1.xml" to "<worksheet><sheetData><row r=\"1\">$cell</row></sheetData></worksheet>"
+        ))
+        val rich = file("""<c r="A1" t="inlineStr"><is><r><t>hello </t></r><r><t>world</t></r></is></c>""")
+        try { assertEquals("hello world", OpenXmlDocumentParser.parseXlsx(rich).sheets.single().rows.single().single()) }
+        finally { rich.delete() }
+        for (cell in listOf("""<c r="XFE1"><v>1</v></c>""",
+            """<c r="A2"><v>1</v></c>""", """<c r="A1" t="s"><v>999</v></c>""",
+            """<c r="A1"><f>1+2</f></c>""", """<c r="A1"><v>1</v></c><c r="A1"><v>2</v></c>""")) {
+            val bad = file(cell)
+            try { org.junit.Assert.assertThrows(Exception::class.java) { OpenXmlDocumentParser.parseXlsx(bad) } }
+            finally { bad.delete() }
+        }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

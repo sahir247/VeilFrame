@@ -5,6 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import com.tom_roush.pdfbox.cos.COSDictionary
+import com.tom_roush.pdfbox.cos.COSBase
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSObject
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.cos.COSStream
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
@@ -115,6 +118,28 @@ internal fun isPlainRgbCompressionImage(dictionary: COSDictionary): Boolean {
     return dictionary.getDictionaryObject(COSName.getPDFName("ColorSpace")) == COSName.getPDFName("DeviceRGB") &&
         dictionary.getInt(COSName.getPDFName("BitsPerComponent")) == 8 &&
         dictionary.keySet().all { it.name in allowed }
+}
+
+/** DefaultRGB can reinterpret the same DeviceRGB image differently in different
+ * resource scopes. Do not re-encode these documents without color-managed parity. */
+internal fun hasDefaultRgbOverride(document: PDDocument): Boolean {
+    val seen = java.util.Collections.newSetFromMap(IdentityHashMap<COSBase, Boolean>())
+    val pending = java.util.ArrayDeque<COSBase>()
+    pending.add(document.documentCatalog.cosObject)
+    val key = COSName.getPDFName("DefaultRGB")
+    while (pending.isNotEmpty()) {
+        val node = pending.removeLast()
+        if (!seen.add(node)) continue
+        when (node) {
+            is COSObject -> node.getObject()?.let { pending.add(it) }
+            is COSDictionary -> {
+                if (node.containsKey(key)) return true
+                for (name in node.keySet()) node.getItem(name)?.let { pending.add(it) }
+            }
+            is COSArray -> for (i in 0 until node.size()) node.get(i)?.let { pending.add(it) }
+        }
+    }
+    return false
 }
 
 /**
@@ -520,7 +545,10 @@ class PdfCompressor {
             document = PDDocument.load(inputFile, MemoryUsageSetting.setupTempFileOnly())
             val totalPages = document.numberOfPages
             
-            if (totalPages == 0) return null
+            if (totalPages == 0 || hasDefaultRgbOverride(document)) {
+                outputFile.delete()
+                return null
+            }
             
             // Compression must not silently remove document metadata or private application data.
             
@@ -528,6 +556,7 @@ class PdfCompressor {
             // Cache by actual original stream identity, not a name in the parent
             // resource dictionary (names are local to the XObject subdictionary).
             val optimizedImages = IdentityHashMap<COSStream, PDImageXObject>()
+            val attempted = java.util.Collections.newSetFromMap(IdentityHashMap<COSStream, Boolean>())
             
             // Process each page
             for (pageIndex in 0 until totalPages) {
@@ -536,7 +565,7 @@ class PdfCompressor {
                 val resources = page.resources ?: continue
                 
                 // Optimize images in this page
-                imagesOptimized += optimizePageImages(document, resources, profile, optimizedImages)
+                imagesOptimized += optimizePageImages(document, resources, profile, optimizedImages, attempted)
                 
                 val pageProgress = 0.10f + (0.45f * (pageIndex + 1).toFloat() / totalPages)
                 onProgress(pageProgress)
@@ -575,7 +604,8 @@ class PdfCompressor {
         document: PDDocument,
         resources: PDResources,
         profile: CompressionProfile,
-        optimizedCache: MutableMap<COSStream, PDImageXObject>
+        optimizedCache: MutableMap<COSStream, PDImageXObject>,
+        attempted: MutableSet<COSStream>
     ): Int {
         var optimizedCount = 0
         
@@ -589,10 +619,14 @@ class PdfCompressor {
                     if (xObject is PDImageXObject) {
                         val original = xObject.cosObject
                         val cached = optimizedCache[original]
-                        val optimized = cached ?: optimizeImage(document, xObject, profile)
-                        if (optimized != null) {
+                        val optimized = cached ?: if (attempted.add(original))
+                            optimizeImage(document, xObject, profile) else null
+                        if (optimized != null && optimized.cosObject !== original) {
                             resources.put(name, optimized)
                             optimizedCache[original] = optimized
+                            // A shared resource dictionary may already refer to the replacement.
+                            // Never degrade the newly encoded pixels again on the next page.
+                            optimizedCache[optimized.cosObject] = optimized
                             optimizedCount++
                         }
                     }
@@ -636,6 +670,15 @@ class PdfCompressor {
                 return null
             }
             
+            // A non-opaque pixel may disappear during downsampling. Validate the
+            // original at full resolution before any lossy operation.
+            if (originalImage.hasAlpha()) {
+                val row = IntArray(originalImage.width)
+                for (y in 0 until originalImage.height) {
+                    originalImage.getPixels(row, 0, row.size, 0, y, row.size, 1)
+                    if (row.any { (it ushr 24) != 255 }) return null
+                }
+            }
             // Calculate target dimensions based on compression level
             val scaleFactor = profile.scaleFactor
             val targetWidth = (originalImage.width * scaleFactor).toInt().coerceAtLeast(32)

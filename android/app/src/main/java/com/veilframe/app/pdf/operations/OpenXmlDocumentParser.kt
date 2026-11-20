@@ -448,21 +448,29 @@ object OpenXmlDocumentParser {
         }
     }
 
+    private const val MAX_XLSX_COLUMNS = 16_384
+    private const val MAX_XLSX_ROWS = 1_048_576
+    // Limits expanded dense placeholder cells, not the width or paper size of an
+    // otherwise admitted workbook. Reject instead of truncating.
+    private const val MAX_EXPANDED_CELLS_PER_SHEET = 2_000_000L
+
     fun colRefToIndex(ref: String): Int {
         var col = 0
         var hasLetters = false
         for (ch in ref) {
             if (ch in 'A'..'Z') {
                 col = col * 26 + (ch - 'A' + 1)
+                if (col > MAX_XLSX_COLUMNS) return -1
                 hasLetters = true
             } else if (ch in 'a'..'z') {
                 col = col * 26 + (ch - 'a' + 1)
+                if (col > MAX_XLSX_COLUMNS) return -1
                 hasLetters = true
             } else {
                 break
             }
         }
-        return if (hasLetters) (col - 1).coerceAtLeast(0) else -1
+        return if (hasLetters && col in 1..MAX_XLSX_COLUMNS) col - 1 else -1
     }
 
     private fun parseWorksheet(
@@ -523,16 +531,16 @@ object OpenXmlDocumentParser {
         val rowList = doc.getElementsByTagName("row")
         val rowMap = java.util.TreeMap<Int, MutableList<String>>()
         var autoRowIndex = 1
+        var expandedCells = 0L
+        val occupied = mutableMapOf<Int, MutableSet<Int>>()
 
         for (i in 0 until rowList.length) {
             val rowElem = rowList.item(i) as Element
             val explicitRowAttr = rowElem.getAttribute("r")
             val explicitRowNumber = explicitRowAttr.toIntOrNull()
-            val targetRow = if (explicitRowNumber != null && explicitRowNumber > 0) {
-                explicitRowNumber
-            } else {
-                autoRowIndex
-            }
+            val targetRow = if (explicitRowAttr.isEmpty()) autoRowIndex
+                else explicitRowNumber ?: throw java.io.IOException("Invalid worksheet row reference")
+            require(targetRow in 1..MAX_XLSX_ROWS) { "Worksheet row exceeds XLSX bounds" }
             autoRowIndex = maxOf(autoRowIndex, targetRow + 1)
 
             val existingCells = rowMap.getOrPut(targetRow) { mutableListOf() }
@@ -548,32 +556,40 @@ object OpenXmlDocumentParser {
                     if (vList.length > 0) {
                         cellVal = vList.item(0).textContent?.trim() ?: ""
                     } else {
+                        if (cElem.getElementsByTagName("f").length > 0) {
+                            throw java.io.IOException("Formula at $cellRef has no cached result; recalculate and save the workbook first")
+                        }
                         val tList = cElem.getElementsByTagName("t")
-                        if (tList.length > 0) {
-                            cellVal = tList.item(0).textContent?.trim() ?: ""
+                        cellVal = buildString {
+                            for (t in 0 until tList.length) append(tList.item(t).textContent.orEmpty())
                         }
                     }
 
                     if (cellType == "s") {
                         val idx = cellVal.toIntOrNull()
-                        if (idx != null && idx in sharedStrings.indices) {
-                            cellVal = sharedStrings[idx]
-                        }
+                        if (idx == null || idx !in sharedStrings.indices)
+                            throw java.io.IOException("Invalid shared string reference at $cellRef")
+                        cellVal = sharedStrings[idx]
                     }
 
-                    val targetCol = if (cellRef.isNotEmpty()) colRefToIndex(cellRef) else existingCells.size
-                    if (targetCol >= 0) {
-                        while (existingCells.size < targetCol) {
-                            existingCells.add("")
+                    val targetCol = if (cellRef.isEmpty()) existingCells.size else {
+                        require(cellRef.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) { "Invalid cell reference: $cellRef" }
+                        require(cellRef.dropWhile { it.isLetter() }.toIntOrNull() == targetRow) {
+                            "Cell $cellRef is assigned to the wrong row"
                         }
-                        if (existingCells.size == targetCol) {
-                            existingCells.add(cellVal)
-                        } else {
-                            existingCells[targetCol] = cellVal
-                        }
-                    } else {
-                        existingCells.add(cellVal)
+                        colRefToIndex(cellRef)
                     }
+                    require(targetCol in 0 until MAX_XLSX_COLUMNS) { "Cell column exceeds XLSX bounds" }
+                    require(occupied.getOrPut(targetRow) { mutableSetOf() }.add(targetCol)) {
+                        "Duplicate cell reference at row $targetRow, column ${targetCol + 1}"
+                    }
+                    val growth = (targetCol + 1 - existingCells.size).coerceAtLeast(0)
+                    expandedCells += growth
+                    require(expandedCells <= MAX_EXPANDED_CELLS_PER_SHEET) {
+                        "Worksheet exceeds expanded cell memory limit"
+                    }
+                    while (existingCells.size <= targetCol) existingCells.add("")
+                    existingCells[targetCol] = cellVal
                 }
                 child = child.nextSibling
             }

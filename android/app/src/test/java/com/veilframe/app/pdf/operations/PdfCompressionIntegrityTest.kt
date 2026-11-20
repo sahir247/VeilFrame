@@ -30,6 +30,20 @@ class PdfCompressionIntegrityTest {
     }
 
     @Test
+    fun defaultRgbOverrideIsDetectedInSharedResourceGraph() {
+        PDDocument().use { document ->
+            val resources = com.tom_roush.pdfbox.pdmodel.PDResources()
+            val page = PDPage().apply { this.resources = resources }
+            document.addPage(page)
+            assertFalse(hasDefaultRgbOverride(document))
+            resources.cosObject.setItem(COSName.getPDFName("ColorSpace"), COSDictionary().apply {
+                setItem(COSName.getPDFName("DefaultRGB"), COSName.getPDFName("DeviceRGB"))
+            })
+            assertTrue(hasDefaultRgbOverride(document))
+        }
+    }
+
+    @Test
     fun unsignedDocumentWithPagesPassesPreflight() {
         PDDocument().use { doc ->
             doc.addPage(PDPage())
