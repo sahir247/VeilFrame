@@ -1038,163 +1038,166 @@ class OfficeConverter {
         addPage(currentPage)
         var contentStream: PDPageContentStream? = PDPageContentStream(pdf, currentPage)
         try {
-        if (isExtended && plan.userUnit > 1.0f) {
-            contentStream?.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-        }
-
-        val naturalWidth = layout.naturalPageWidth
-        val naturalHeight = layout.naturalPageHeight
-
-        // Page title header in natural coordinates
-        contentStream?.beginText()
-        contentStream?.setFont(fontBold, 12f)
-        contentStream?.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
-        safeShowText(contentStream, "Spreadsheet: ${layout.name}", fontBold)
-        contentStream?.endText()
-
-        var yPosition = naturalHeight - limits.margin - 20f
-
-        for (rIdx in 0 until layout.rowCount) {
-            checkpoint()
-            val rowCellLines = layout.rowWrappedLines[rIdx]
-            val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-            val pageUsableHeight = (naturalHeight - (2 * limits.margin) - 20f).coerceAtLeast(30f)
-            val totalRowHeight = layout.rowHeights[rIdx]
-
-            if (totalRowHeight <= pageUsableHeight) {
-                if (yPosition - totalRowHeight < limits.margin) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
-                    }
-                    addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
-                }
-            } else {
-                if (yPosition - (limits.lineHeight * 2 + limits.paddingVertical) < limits.margin) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
-                    }
-                    addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
-                }
+            if (isExtended && plan.userUnit > 1.0f) {
+                contentStream?.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
             }
 
-            val totalLines = maxOf(1, maxLinesInRow)
-            var startLine = 0
-            while (startLine < totalLines) {
-                val availableHeight = (yPosition - limits.margin).coerceAtLeast(limits.lineHeight + limits.paddingVertical)
-                val remainingLines = totalLines - startLine
-                val maxFittingLines = ((availableHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
-                val linesInChunk = minOf(remainingLines, maxFittingLines)
-                val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
+            val naturalWidth = layout.naturalPageWidth
+            val naturalHeight = layout.naturalPageHeight
 
-                for (colIndex in 0 until layout.colCount) {
-                    val merged = layout.mergedGeometries.getOrNull(mergeIndex.at(rIdx, colIndex))
-                    if (merged != null) {
-                        // Merged cell: draw once across the full merged column span
-                        if (colIndex == merged.firstCol) {
-                            val cellLeft = layout.colX[merged.firstCol]
-                            val cellW = (merged.firstCol..merged.lastCol).sumOf { layout.colWidths[it].toDouble() }.toFloat()
-                            val isFirstRow = (rIdx == merged.firstRow && startLine == 0)
-                            val isLastRow = (rIdx == merged.lastRow && startLine + linesInChunk >= totalLines)
+            // Page title header in natural coordinates
+            contentStream?.beginText()
+            contentStream?.setFont(fontBold, 12f)
+            contentStream?.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
+            safeShowText(contentStream, "Spreadsheet: ${layout.name}", fontBold)
+            contentStream?.endText()
 
-                            contentStream?.setStrokingColor(210, 215, 220)
-                            contentStream?.setLineWidth(0.5f)
-                            if (isFirstRow) {
+            var yPosition = naturalHeight - limits.margin - 20f
+
+            for (rIdx in 0 until layout.rowCount) {
+                checkpoint()
+                val rowCellLines = layout.rowWrappedLines[rIdx]
+                val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
+                val pageUsableHeight = (naturalHeight - (2 * limits.margin) - 20f).coerceAtLeast(30f)
+                val totalRowHeight = layout.rowHeights[rIdx]
+
+                if (totalRowHeight <= pageUsableHeight) {
+                    if (yPosition - totalRowHeight < limits.margin) {
+                        contentStream?.close()
+                        contentStream = null
+                        currentPage = PDPage(pageBounds)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            currentPage.setUserUnit(plan.userUnit)
+                        }
+                        addPage(currentPage)
+                        contentStream = PDPageContentStream(pdf, currentPage)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                        }
+                        yPosition = naturalHeight - limits.margin - 20f
+                    }
+                } else {
+                    if (yPosition - (limits.lineHeight * 2 + limits.paddingVertical) < limits.margin) {
+                        contentStream?.close()
+                        contentStream = null
+                        currentPage = PDPage(pageBounds)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            currentPage.setUserUnit(plan.userUnit)
+                        }
+                        addPage(currentPage)
+                        contentStream = PDPageContentStream(pdf, currentPage)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                        }
+                        yPosition = naturalHeight - limits.margin - 20f
+                    }
+                }
+
+                val totalLines = maxOf(1, maxLinesInRow)
+                var startLine = 0
+                while (startLine < totalLines) {
+                    val availableHeight = (yPosition - limits.margin).coerceAtLeast(limits.lineHeight + limits.paddingVertical)
+                    val remainingLines = totalLines - startLine
+                    val maxFittingLines = ((availableHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
+                    val linesInChunk = minOf(remainingLines, maxFittingLines)
+                    val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
+
+                    for (colIndex in 0 until layout.colCount) {
+                        val merged = layout.mergedGeometries.getOrNull(mergeIndex.at(rIdx, colIndex))
+                        if (merged != null) {
+                            // Merged cell: draw once across the full merged column span
+                            if (colIndex == merged.firstCol) {
+                                val cellLeft = layout.colX[merged.firstCol]
+                                val cellW = (merged.firstCol..merged.lastCol).sumOf { layout.colWidths[it].toDouble() }.toFloat()
+                                val isFirstRow = (rIdx == merged.firstRow && startLine == 0)
+                                val isLastRow = (rIdx == merged.lastRow && startLine + linesInChunk >= totalLines)
+
+                                contentStream?.setStrokingColor(210, 215, 220)
+                                contentStream?.setLineWidth(0.5f)
+                                if (isFirstRow) {
+                                    contentStream?.moveTo(cellLeft, yPosition)
+                                    contentStream?.lineTo(cellLeft + cellW, yPosition)
+                                    contentStream?.stroke()
+                                }
+                                if (isLastRow) {
+                                    contentStream?.moveTo(cellLeft, yPosition - chunkHeight)
+                                    contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
+                                    contentStream?.stroke()
+                                }
                                 contentStream?.moveTo(cellLeft, yPosition)
-                                contentStream?.lineTo(cellLeft + cellW, yPosition)
+                                contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
                                 contentStream?.stroke()
-                            }
-                            if (isLastRow) {
-                                contentStream?.moveTo(cellLeft, yPosition - chunkHeight)
+
+                                contentStream?.moveTo(cellLeft + cellW, yPosition)
                                 contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
                                 contentStream?.stroke()
-                            }
-                            contentStream?.moveTo(cellLeft, yPosition)
-                            contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
-                            contentStream?.stroke()
 
-                            contentStream?.moveTo(cellLeft + cellW, yPosition)
-                            contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
-                            contentStream?.stroke()
+                                if (isFirstRow && merged.wrappedLines.isNotEmpty()) {
+                                    contentStream?.saveGraphicsState()
+                                    contentStream?.addRect(
+                                        cellLeft + 1f,
+                                        (yPosition - merged.totalHeight + 1f).coerceAtLeast(limits.margin),
+                                        (cellW - 2f).coerceAtLeast(1f),
+                                        (merged.totalHeight - 2f).coerceAtLeast(1f)
+                                    )
+                                    contentStream?.clip()
 
-                            if (isFirstRow && merged.wrappedLines.isNotEmpty()) {
-                                contentStream?.saveGraphicsState()
-                                contentStream?.addRect(
-                                    cellLeft + 1f,
-                                    (yPosition - merged.totalHeight + 1f).coerceAtLeast(limits.margin),
-                                    (cellW - 2f).coerceAtLeast(1f),
-                                    (merged.totalHeight - 2f).coerceAtLeast(1f)
-                                )
-                                contentStream?.clip()
-
-                                var textY = yPosition - 4f - limits.fontSizeCell
-                                for (lineText in merged.wrappedLines) {
-                                    contentStream?.beginText()
-                                    contentStream?.setFont(fontNormal, limits.fontSizeCell)
-                                    contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                                    safeShowText(contentStream, lineText, fontNormal)
-                                    contentStream?.endText()
-                                    textY -= limits.lineHeight
+                                    var textY = yPosition - 4f - limits.fontSizeCell
+                                    for (lineText in merged.wrappedLines) {
+                                        contentStream?.beginText()
+                                        contentStream?.setFont(fontNormal, limits.fontSizeCell)
+                                        contentStream?.newLineAtOffset(cellLeft + 4f, textY)
+                                        safeShowText(contentStream, lineText, fontNormal)
+                                        contentStream?.endText()
+                                        textY -= limits.lineHeight
+                                    }
+                                    contentStream?.restoreGraphicsState()
                                 }
-                                contentStream?.restoreGraphicsState()
                             }
+                            continue
                         }
-                        continue
+
+                        val cellLeft = layout.colX[colIndex]
+                        val cellW = layout.colWidths[colIndex]
+                        val lines = rowCellLines[colIndex]
+                        val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
+                            lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
+                        } else {
+                            emptyList()
+                        }
+
+                        drawCellChunk(
+                            contentStream = contentStream,
+                            cellLeft = cellLeft,
+                            cellTop = yPosition,
+                            cellW = cellW,
+                            cellH = chunkHeight,
+                            chunkLines = chunkLines,
+                            fontNormal = fontNormal,
+                            fontSizeCell = limits.fontSizeCell,
+                            lineHeight = limits.lineHeight
+                        )
                     }
 
-                    val cellLeft = layout.colX[colIndex]
-                    val cellW = layout.colWidths[colIndex]
-                    val lines = rowCellLines[colIndex]
-                    val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
-                        lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
-                    } else {
-                        emptyList()
-                    }
+                    yPosition -= chunkHeight
+                    startLine += linesInChunk
 
-                    drawCellChunk(
-                        contentStream = contentStream,
-                        cellLeft = cellLeft,
-                        cellTop = yPosition,
-                        cellW = cellW,
-                        cellH = chunkHeight,
-                        chunkLines = chunkLines,
-                        fontNormal = fontNormal,
-                        fontSizeCell = limits.fontSizeCell,
-                        lineHeight = limits.lineHeight
-                    )
-                }
-
-                yPosition -= chunkHeight
-                startLine += linesInChunk
-
-                if (startLine < totalLines) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
+                    if (startLine < totalLines) {
+                        contentStream?.close()
+                        contentStream = null
+                        currentPage = PDPage(pageBounds)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            currentPage.setUserUnit(plan.userUnit)
+                        }
+                        addPage(currentPage)
+                        contentStream = PDPageContentStream(pdf, currentPage)
+                        if (isExtended && plan.userUnit > 1.0f) {
+                            contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+                        }
+                        yPosition = naturalHeight - limits.margin - 20f
                     }
-                    addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
                 }
             }
-        }
 
         } finally {
             contentStream?.close()
@@ -1222,210 +1225,210 @@ class OfficeConverter {
             pdf.addPage(page)
             PDPageContentStream(pdf, page).use { contentStream ->
 
-            val pageW = tile.tilePageWidth
-            val pageH = tile.tilePageHeight
+                val pageW = tile.tilePageWidth
+                val pageH = tile.tilePageHeight
 
-            // 1. Title Banner
-            val startColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol)
-            val endColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol)
-            val startRowDisplay = tile.rowGroup.startRow + 1
-            val endRowDisplay = tile.rowGroup.endRow + 1
-            val panelNum = tile.colGroup.groupIndex + 1
-            val totalPanels = tile.colGroup.totalGroups
+                // 1. Title Banner
+                val startColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol)
+                val endColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol)
+                val startRowDisplay = tile.rowGroup.startRow + 1
+                val endRowDisplay = tile.rowGroup.endRow + 1
+                val panelNum = tile.colGroup.groupIndex + 1
+                val totalPanels = tile.colGroup.totalGroups
 
-            val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
+                val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
 
-            contentStream.beginText()
-            contentStream.setFont(fontBold, 11f)
-            contentStream.newLineAtOffset(margin, pageH - margin + 10f)
-            safeShowText(contentStream, headerText, fontBold)
-            contentStream.endText()
-
-            // 2. Horizontal Continuation Banners
-            val topOffset = margin + 14f
-            if (tile.colGroup.hasLeftContinuation) {
-                val prevColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol - 1)
                 contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                contentStream.newLineAtOffset(margin, pageH - topOffset)
-                safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                contentStream.setFont(fontBold, 11f)
+                contentStream.newLineAtOffset(margin, pageH - margin + 10f)
+                safeShowText(contentStream, headerText, fontBold)
                 contentStream.endText()
-            }
-            if (tile.colGroup.hasRightContinuation) {
-                val nextColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol + 1)
-                contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                val rightText = "Continues right -> $nextColRef"
-                val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
-                contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
-                safeShowText(contentStream, rightText, fontBold)
-                contentStream.endText()
-            }
 
-            // 3. Down Continuation Banner
-            if (tile.rowGroup.hasDownContinuation) {
-                val nextRowDisplay = tile.rowGroup.endRow + 2
-                contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                contentStream.newLineAtOffset(margin, margin - 14f)
-                safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
-                contentStream.endText()
-            }
-
-            // 4. Calculate Column Positions on this tile
-            val colsToDraw = mutableListOf<Int>()
-            if (tile.colGroup.frozenCols.isNotEmpty()) {
-                colsToDraw.addAll(tile.colGroup.frozenCols)
-            }
-            colsToDraw.addAll(tile.colGroup.activeCols)
-
-            val tileColX = mutableMapOf<Int, Float>()
-            var runningX = margin
-            for (c in colsToDraw) {
-                tileColX[c] = runningX
-                runningX += layout.colWidths[c]
-            }
-
-            // 5. Calculate row vertical positions on this tile
-            val rowsOnTile = (tile.rowGroup.startRow..tile.rowGroup.endRow).toList()
-            val rowTopMap = mutableMapOf<Int, Float>()
-            val rowBottomMap = mutableMapOf<Int, Float>()
-            val rowHeightMap = mutableMapOf<Int, Float>()
-            var yPosition = pageH - margin - 22f
-
-            for (rIdx in rowsOnTile) {
-                val rowHeight = if (tile.rowGroup.linesInStartRow != -1) {
-                    tile.rowGroup.groupTableHeight
-                } else {
-                    layout.rowHeights[rIdx]
+                // 2. Horizontal Continuation Banners
+                val topOffset = margin + 14f
+                if (tile.colGroup.hasLeftContinuation) {
+                    val prevColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol - 1)
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    contentStream.newLineAtOffset(margin, pageH - topOffset)
+                    safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                    contentStream.endText()
                 }
-                rowTopMap[rIdx] = yPosition
-                rowBottomMap[rIdx] = yPosition - rowHeight
-                rowHeightMap[rIdx] = rowHeight
-                yPosition -= rowHeight
-            }
+                if (tile.colGroup.hasRightContinuation) {
+                    val nextColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol + 1)
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    val rightText = "Continues right -> $nextColRef"
+                    val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
+                    contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
+                    safeShowText(contentStream, rightText, fontBold)
+                    contentStream.endText()
+                }
 
-            // 6. Draw unmerged cells
-            for (rIdx in rowsOnTile) {
-                checkpoint()
-                val cellTop = rowTopMap[rIdx]!!
-                val cellH = rowHeightMap[rIdx]!!
-                val rowLines = layout.rowWrappedLines[rIdx]
+                // 3. Down Continuation Banner
+                if (tile.rowGroup.hasDownContinuation) {
+                    val nextRowDisplay = tile.rowGroup.endRow + 2
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    contentStream.newLineAtOffset(margin, margin - 14f)
+                    safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
+                    contentStream.endText()
+                }
 
-                for (colIndex in colsToDraw) {
-                    // Skip cells that belong to any merged region
-                    if (mergeIndex.at(rIdx, colIndex) >= 0) {
-                        continue
-                    }
+                // 4. Calculate Column Positions on this tile
+                val colsToDraw = mutableListOf<Int>()
+                if (tile.colGroup.frozenCols.isNotEmpty()) {
+                    colsToDraw.addAll(tile.colGroup.frozenCols)
+                }
+                colsToDraw.addAll(tile.colGroup.activeCols)
 
-                    val cellLeft = tileColX[colIndex] ?: margin
-                    val cellW = layout.colWidths[colIndex]
-                    val fullLines = rowLines[colIndex]
-                    val chunkLines = if (tile.rowGroup.linesInStartRow != -1) {
-                        if (fullLines.isNotEmpty() && tile.rowGroup.startLineOfStartRow < fullLines.size) {
-                            fullLines.subList(
-                                tile.rowGroup.startLineOfStartRow,
-                                minOf(fullLines.size, tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow)
-                            )
-                        } else {
-                            emptyList()
-                        }
+                val tileColX = mutableMapOf<Int, Float>()
+                var runningX = margin
+                for (c in colsToDraw) {
+                    tileColX[c] = runningX
+                    runningX += layout.colWidths[c]
+                }
+
+                // 5. Calculate row vertical positions on this tile
+                val rowsOnTile = (tile.rowGroup.startRow..tile.rowGroup.endRow).toList()
+                val rowTopMap = mutableMapOf<Int, Float>()
+                val rowBottomMap = mutableMapOf<Int, Float>()
+                val rowHeightMap = mutableMapOf<Int, Float>()
+                var yPosition = pageH - margin - 22f
+
+                for (rIdx in rowsOnTile) {
+                    val rowHeight = if (tile.rowGroup.linesInStartRow != -1) {
+                        tile.rowGroup.groupTableHeight
                     } else {
-                        fullLines
+                        layout.rowHeights[rIdx]
+                    }
+                    rowTopMap[rIdx] = yPosition
+                    rowBottomMap[rIdx] = yPosition - rowHeight
+                    rowHeightMap[rIdx] = rowHeight
+                    yPosition -= rowHeight
+                }
+
+                // 6. Draw unmerged cells
+                for (rIdx in rowsOnTile) {
+                    checkpoint()
+                    val cellTop = rowTopMap[rIdx]!!
+                    val cellH = rowHeightMap[rIdx]!!
+                    val rowLines = layout.rowWrappedLines[rIdx]
+
+                    for (colIndex in colsToDraw) {
+                        // Skip cells that belong to any merged region
+                        if (mergeIndex.at(rIdx, colIndex) >= 0) {
+                            continue
+                        }
+
+                        val cellLeft = tileColX[colIndex] ?: margin
+                        val cellW = layout.colWidths[colIndex]
+                        val fullLines = rowLines[colIndex]
+                        val chunkLines = if (tile.rowGroup.linesInStartRow != -1) {
+                            if (fullLines.isNotEmpty() && tile.rowGroup.startLineOfStartRow < fullLines.size) {
+                                fullLines.subList(
+                                    tile.rowGroup.startLineOfStartRow,
+                                    minOf(fullLines.size, tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow)
+                                )
+                            } else {
+                                emptyList()
+                            }
+                        } else {
+                            fullLines
+                        }
+
+                        drawCellChunk(
+                            contentStream = contentStream,
+                            cellLeft = cellLeft,
+                            cellTop = cellTop,
+                            cellW = cellW,
+                            cellH = cellH,
+                            chunkLines = chunkLines,
+                            fontNormal = fontNormal,
+                            fontSizeCell = limits.fontSizeCell,
+                            lineHeight = limits.lineHeight
+                        )
+                    }
+                }
+
+                // 7. Draw merged cell geometries that intersect this tile
+                for (geom in layout.mergedGeometries) {
+                    checkpoint()
+                    if (geom.lastRow < tile.rowGroup.startRow || geom.firstRow > tile.rowGroup.endRow) continue
+                    val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
+                    val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
+                    if (visCols.isEmpty() || visRows.isEmpty()) continue
+
+                    val sliceLeft = tileColX[visCols.first()]!!
+                    val sliceRight = tileColX[visCols.last()]!! + layout.colWidths[visCols.last()]
+                    val sliceWidth = sliceRight - sliceLeft
+                    val sliceTop = rowTopMap[visRows.first()]!!
+                    val sliceBottom = rowBottomMap[visRows.last()]!!
+                    val sliceHeight = sliceTop - sliceBottom
+
+                    val isLeftTrueEdge = (visCols.first() == geom.firstCol)
+                    val isRightTrueEdge = (visCols.last() == geom.lastCol)
+                    val isTopTrueEdge = (visRows.first() == geom.firstRow && tile.rowGroup.startLineOfStartRow == 0)
+                    val isBottomTrueEdge = (visRows.last() == geom.lastRow)
+
+                    // Stroke outer perimeter lines only - zero internal gridlines!
+                    contentStream.setStrokingColor(210, 215, 220)
+                    contentStream.setLineWidth(0.5f)
+
+                    if (isTopTrueEdge) {
+                        contentStream.moveTo(sliceLeft, sliceTop)
+                        contentStream.lineTo(sliceRight, sliceTop)
+                        contentStream.stroke()
+                    }
+                    if (isBottomTrueEdge) {
+                        contentStream.moveTo(sliceLeft, sliceBottom)
+                        contentStream.lineTo(sliceRight, sliceBottom)
+                        contentStream.stroke()
+                    }
+                    if (isLeftTrueEdge) {
+                        contentStream.moveTo(sliceLeft, sliceTop)
+                        contentStream.lineTo(sliceLeft, sliceBottom)
+                        contentStream.stroke()
+                    }
+                    if (isRightTrueEdge) {
+                        contentStream.moveTo(sliceRight, sliceTop)
+                        contentStream.lineTo(sliceRight, sliceBottom)
+                        contentStream.stroke()
                     }
 
-                    drawCellChunk(
-                        contentStream = contentStream,
-                        cellLeft = cellLeft,
-                        cellTop = cellTop,
-                        cellW = cellW,
-                        cellH = cellH,
-                        chunkLines = chunkLines,
-                        fontNormal = fontNormal,
-                        fontSizeCell = limits.fontSizeCell,
-                        lineHeight = limits.lineHeight
-                    )
-                }
-            }
+                    // Text rendering: only on anchor slice to prevent duplicate text across panels
+                    val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
+                    if (isAnchor && geom.wrappedLines.isNotEmpty()) {
+                        // Wrapping across the entire merge is invalid on a narrower
+                        // anchor tile. Rewrap inside its actual visible rectangle.
+                        val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
+                            fontNormal, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
+                        val requiredHeight = 4f + limits.fontSizeCell +
+                            (anchorLines.size - 1).coerceAtLeast(0) * limits.lineHeight
+                        require(requiredHeight <= sliceHeight - 1f) {
+                            "Merged cell text does not fit its anchor tile; increase tile dimensions"
+                        }
+                        contentStream.saveGraphicsState()
+                        contentStream.addRect(
+                            sliceLeft + 1f,
+                            sliceBottom + 1f,
+                            (sliceWidth - 2f).coerceAtLeast(1f),
+                            (sliceHeight - 2f).coerceAtLeast(1f)
+                        )
+                        contentStream.clip()
 
-            // 7. Draw merged cell geometries that intersect this tile
-            for (geom in layout.mergedGeometries) {
-                checkpoint()
-                if (geom.lastRow < tile.rowGroup.startRow || geom.firstRow > tile.rowGroup.endRow) continue
-                val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
-                val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
-                if (visCols.isEmpty() || visRows.isEmpty()) continue
-
-                val sliceLeft = tileColX[visCols.first()]!!
-                val sliceRight = tileColX[visCols.last()]!! + layout.colWidths[visCols.last()]
-                val sliceWidth = sliceRight - sliceLeft
-                val sliceTop = rowTopMap[visRows.first()]!!
-                val sliceBottom = rowBottomMap[visRows.last()]!!
-                val sliceHeight = sliceTop - sliceBottom
-
-                val isLeftTrueEdge = (visCols.first() == geom.firstCol)
-                val isRightTrueEdge = (visCols.last() == geom.lastCol)
-                val isTopTrueEdge = (visRows.first() == geom.firstRow && tile.rowGroup.startLineOfStartRow == 0)
-                val isBottomTrueEdge = (visRows.last() == geom.lastRow)
-
-                // Stroke outer perimeter lines only - zero internal gridlines!
-                contentStream.setStrokingColor(210, 215, 220)
-                contentStream.setLineWidth(0.5f)
-
-                if (isTopTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceTop)
-                    contentStream.lineTo(sliceRight, sliceTop)
-                    contentStream.stroke()
-                }
-                if (isBottomTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceBottom)
-                    contentStream.lineTo(sliceRight, sliceBottom)
-                    contentStream.stroke()
-                }
-                if (isLeftTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceTop)
-                    contentStream.lineTo(sliceLeft, sliceBottom)
-                    contentStream.stroke()
-                }
-                if (isRightTrueEdge) {
-                    contentStream.moveTo(sliceRight, sliceTop)
-                    contentStream.lineTo(sliceRight, sliceBottom)
-                    contentStream.stroke()
-                }
-
-                // Text rendering: only on anchor slice to prevent duplicate text across panels
-                val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
-                if (isAnchor && geom.wrappedLines.isNotEmpty()) {
-                    // Wrapping across the entire merge is invalid on a narrower
-                    // anchor tile. Rewrap inside its actual visible rectangle.
-                    val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
-                        fontNormal, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
-                    val requiredHeight = 4f + limits.fontSizeCell +
-                        (anchorLines.size - 1).coerceAtLeast(0) * limits.lineHeight
-                    require(requiredHeight <= sliceHeight - 1f) {
-                        "Merged cell text does not fit its anchor tile; increase tile dimensions"
+                        var textY = sliceTop - 4f - limits.fontSizeCell
+                        for (lineText in anchorLines) {
+                            contentStream.beginText()
+                            contentStream.setFont(fontNormal, limits.fontSizeCell)
+                            contentStream.newLineAtOffset(sliceLeft + 4f, textY)
+                            safeShowText(contentStream, lineText, fontNormal)
+                            contentStream.endText()
+                            textY -= limits.lineHeight
+                        }
+                        contentStream.restoreGraphicsState()
                     }
-                    contentStream.saveGraphicsState()
-                    contentStream.addRect(
-                        sliceLeft + 1f,
-                        sliceBottom + 1f,
-                        (sliceWidth - 2f).coerceAtLeast(1f),
-                        (sliceHeight - 2f).coerceAtLeast(1f)
-                    )
-                    contentStream.clip()
-
-                    var textY = sliceTop - 4f - limits.fontSizeCell
-                    for (lineText in anchorLines) {
-                        contentStream.beginText()
-                        contentStream.setFont(fontNormal, limits.fontSizeCell)
-                        contentStream.newLineAtOffset(sliceLeft + 4f, textY)
-                        safeShowText(contentStream, lineText, fontNormal)
-                        contentStream.endText()
-                        textY -= limits.lineHeight
-                    }
-                    contentStream.restoreGraphicsState()
                 }
-            }
 
             }
         }
