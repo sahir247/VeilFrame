@@ -27,6 +27,32 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun rejectsDtdInUtf8AndUtf16BeforeXmlParsing() {
+        val xml = """<!DOCTYPE document [<!ENTITY secret SYSTEM "file:///private/file">]><document><body>&secret;</body></document>"""
+        for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE)) {
+            val bytes = xml.toByteArray(charset)
+            org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+                OpenXmlDocumentParser.XmlReadBudget().read(bytes.inputStream())
+            }
+        }
+        val valid = "<document><body>বাংলা</body></document>"
+        assertEquals(valid, OpenXmlDocumentParser.XmlReadBudget().read(valid.toByteArray(Charsets.UTF_16LE).inputStream()))
+    }
+
+    @Test
+    fun measuresActualInflatedPartAndCumulativeBytes() {
+        val budget = OpenXmlDocumentParser.XmlReadBudget(totalLimit = 12, partLimit = 8)
+        assertEquals("12345678", budget.read("12345678".byteInputStream(), reportedSize = 1))
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            budget.read("12345".byteInputStream(), reportedSize = 1)
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            OpenXmlDocumentParser.XmlReadBudget(totalLimit = 20, partLimit = 8)
+                .read("123456789".byteInputStream(), reportedSize = -1)
+        }
+    }
+
+    @Test
     fun workbookRelationshipsControlSheetOrderAndNonContiguousPartNames() {
         val workbook = """<workbook><sheets>
             <sheet name="First" sheetId="8" r:id="rId9"/>

@@ -4,14 +4,21 @@ import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.io.StringReader
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.util.zip.ZipEntry
+import org.xml.sax.InputSource
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * High-performance, offline OpenXML (.docx and .xlsx) parser.
  * Operates purely on standard Java ZIP streams and standard DOM XML parsing,
- * bypassing Apache POI/AWT entirely to guarantee zero crashes on Android ART
- * and seamless JVM test execution.
+ * bypassing Apache POI/AWT for the supported fallback document subset.
+ * Explicit XML admission bounds are not a guarantee of heap usage or full Office fidelity.
  */
 object OpenXmlDocumentParser {
 
@@ -58,15 +65,71 @@ object OpenXmlDocumentParser {
             get() = nodes.filterIsInstance<DocxNode.TableNode>().map { it.table }
     }
 
-    private fun newDocBuilder() = DocumentBuilderFactory.newInstance().apply {
-        isNamespaceAware = false
-        isValidating = false
-        try {
-            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        } catch (_: Throwable) {}
-    }.newDocumentBuilder()
+    private const val MAX_XML_PART_BYTES = 16L * 1024 * 1024
+    private const val MAX_XML_WORKBOOK_BYTES = 64L * 1024 * 1024
+
+    /**
+     * Measure actual inflated bytes, not just ZIP metadata. The fallback uses DOM,
+     * so its memory admission must happen before constructing the node tree.
+     * OpenXML XML parts use Unicode encodings; decode explicitly so the DTD guard
+     * cannot be bypassed by a different encoding or unsupported Android XML feature.
+     */
+    internal class XmlReadBudget(private val totalLimit: Long = MAX_XML_WORKBOOK_BYTES,
+                                 private val partLimit: Long = MAX_XML_PART_BYTES) {
+        private var consumed = 0L
+        fun read(stream: InputStream, reportedSize: Long = -1): String {
+            val allowed = minOf(totalLimit - consumed, partLimit)
+            if (allowed <= 0 || reportedSize > allowed) throw IOException("OpenXML XML admission limit exceeded")
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                if (count == 0) throw IOException("OpenXML XML stream made no progress")
+                if (out.size().toLong() + count > allowed) throw IOException("OpenXML XML admission limit exceeded")
+                out.write(buffer, 0, count)
+            }
+            val bytes = out.toByteArray()
+            consumed += bytes.size
+            fun b(i: Int) = bytes.getOrNull(i)?.toInt()?.and(255) ?: -1
+            val (charset, offset) = when {
+                b(0) == 0xEF && b(1) == 0xBB && b(2) == 0xBF -> Charsets.UTF_8 to 3
+                b(0) == 0xFE && b(1) == 0xFF -> Charsets.UTF_16BE to 2
+                b(0) == 0xFF && b(1) == 0xFE -> Charsets.UTF_16LE to 2
+                b(0) == 0 && b(1) == 0x3C -> Charsets.UTF_16BE to 0
+                b(0) == 0x3C && b(1) == 0 -> Charsets.UTF_16LE to 0
+                else -> Charsets.UTF_8 to 0
+            }
+            val xml = charset.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes, offset, bytes.size - offset)).toString()
+            // DTDs are unnecessary in OpenXML; refuse instead of expanding entities.
+            if (xml.contains("<!DOCTYPE") || xml.indexOf('\u0000') >= 0) {
+                throw IOException("OpenXML DTD or invalid XML character is not supported")
+            }
+            return xml
+        }
+        fun read(zip: ZipFile, entry: ZipEntry): String =
+            zip.getInputStream(entry).use { read(it, entry.size) }
+    }
+
+    private fun parseXml(xml: String): org.w3c.dom.Document {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isValidating = false
+            for ((feature, value) in listOf(
+                "http://apache.org/xml/features/disallow-doctype-decl" to true,
+                "http://apache.org/xml/features/nonvalidating/load-external-dtd" to false,
+                "http://xml.org/sax/features/external-general-entities" to false,
+                "http://xml.org/sax/features/external-parameter-entities" to false
+            )) {
+                try { setFeature(feature, value) } catch (_: javax.xml.parsers.ParserConfigurationException) {}
+            }
+        }
+        val builder = factory.newDocumentBuilder()
+        builder.setEntityResolver { _, _ -> throw org.xml.sax.SAXException("External OpenXML entities are forbidden") }
+        return builder.parse(InputSource(StringReader(xml)))
+    }
 
     private fun Node.localName(): String = nodeName.substringAfterLast(':')
 
@@ -74,20 +137,19 @@ object OpenXmlDocumentParser {
         val nodes = mutableListOf<DocxNode>()
         ZipFile(file).use { zip ->
             val entry = zip.getEntry("word/document.xml") ?: throw java.io.IOException("Word document XML missing")
-            zip.getInputStream(entry).use { stream ->
-                parseDocxStream(stream, nodes)
-            }
+            parseDocxStream(XmlReadBudget().read(zip, entry), nodes)
         }
         return DocxDocument(nodes)
     }
 
-    private fun parseDocxStream(stream: InputStream, outNodes: MutableList<DocxNode>) {
-        val doc = newDocBuilder().parse(stream)
+    private fun parseDocxStream(xml: String, outNodes: MutableList<DocxNode>) {
+        val doc = parseXml(xml)
+        require(doc.documentElement.localName() == "document") { "Invalid Word document XML root" }
         val bodyElements = doc.getElementsByTagName("w:body").let {
             if (it.length > 0) it else doc.getElementsByTagName("body")
         }
-        val body: Element = (if (bodyElements.length > 0) bodyElements.item(0) as? Element else doc.documentElement)
-            ?: return
+        require(bodyElements.length == 1) { "Word document body missing or ambiguous" }
+        val body = bodyElements.item(0) as Element
 
         var child = body.firstChild
         while (child != null) {
@@ -339,9 +401,10 @@ object OpenXmlDocumentParser {
         return resolved.removePrefix("/")
     }
 
-    private fun workbookRelationships(zip: ZipFile): Map<String, WorkbookRelationship>? {
+    private fun workbookRelationships(zip: ZipFile, budget: XmlReadBudget): Map<String, WorkbookRelationship>? {
         val entry = zip.getEntry("xl/_rels/workbook.xml.rels") ?: return null
-        val doc = zip.getInputStream(entry).use { newDocBuilder().parse(it) }
+        val doc = parseXml(budget.read(zip, entry))
+        require(doc.documentElement.localName() == "Relationships") { "Invalid workbook relationships root" }
         val relationships = doc.getElementsByTagName("*")
         val result = linkedMapOf<String, WorkbookRelationship>()
         for (i in 0 until relationships.length) {
@@ -360,9 +423,10 @@ object OpenXmlDocumentParser {
         return result
     }
 
-    private fun orderedSheetParts(zip: ZipFile, relationships: Map<String, WorkbookRelationship>?): List<SheetPart> {
+    private fun orderedSheetParts(zip: ZipFile, relationships: Map<String, WorkbookRelationship>?, budget: XmlReadBudget): List<SheetPart> {
         val entry = zip.getEntry("xl/workbook.xml") ?: throw java.io.IOException("Workbook XML missing")
-        val doc = zip.getInputStream(entry).use { newDocBuilder().parse(it) }
+        val doc = parseXml(budget.read(zip, entry))
+        require(doc.documentElement.localName() == "workbook") { "Invalid workbook XML root" }
         val nodes = doc.getElementsByTagName("*")
         val parts = mutableListOf<SheetPart>()
         val usedPaths = mutableSetOf<String>()
@@ -408,23 +472,27 @@ object OpenXmlDocumentParser {
     fun parseXlsx(file: File): XlsxWorkbookData {
         val sheets = mutableListOf<XlsxSheetData>()
         ZipFile(file).use { zip ->
-            val relationships = workbookRelationships(zip)
-            val parts = orderedSheetParts(zip, relationships)
+            val budget = XmlReadBudget()
+            val relationships = workbookRelationships(zip, budget)
+            val parts = orderedSheetParts(zip, relationships, budget)
             val sharedStrings = mutableListOf<String>()
-            val sharedPart = relationships?.values?.singleOrNull { it.type.endsWith("/sharedStrings") }?.path
+            val sharedParts = relationships?.values?.filter { it.type.endsWith("/sharedStrings") }.orEmpty()
+            require(sharedParts.size <= 1) { "Ambiguous workbook shared strings relationship" }
+            val sharedPart = sharedParts.singleOrNull()?.path
             val sstEntry = if (sharedPart != null) zip.getEntry(sharedPart)
                 ?: throw java.io.IOException("Missing shared strings part")
                 else zip.getEntry("xl/sharedStrings.xml")
             if (sstEntry != null) {
-                zip.getInputStream(sstEntry).use { stream -> parseSharedStrings(stream, sharedStrings) }
+                parseSharedStrings(budget.read(zip, sstEntry), sharedStrings)
             }
             for (part in parts) {
                 val sheetRows = mutableListOf<List<String>>()
                 val sheetSparseRows = mutableListOf<XlsxRow>()
                 val sheetMergedRegions = mutableListOf<CellRangeAddress>()
-                val (frozenCols, frozenRows) = zip.getInputStream(zip.getEntry(part.path)).use { stream ->
-                    parseWorksheet(stream, sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions)
-                }
+                val (frozenCols, frozenRows) = parseWorksheet(
+                    budget.read(zip, requireNotNull(zip.getEntry(part.path))),
+                    sharedStrings, sheetRows, sheetSparseRows, sheetMergedRegions
+                )
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows
@@ -434,8 +502,9 @@ object OpenXmlDocumentParser {
         return XlsxWorkbookData(sheets)
     }
 
-    private fun parseSharedStrings(stream: InputStream, outStrings: MutableList<String>) {
-        val doc = newDocBuilder().parse(stream)
+    private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
+        val doc = parseXml(xml)
+        require(doc.documentElement.nodeName == "sst") { "Unsupported shared strings XML root" }
         val siList = doc.getElementsByTagName("si")
         for (i in 0 until siList.length) {
             val si = siList.item(i) as Element
@@ -474,13 +543,13 @@ object OpenXmlDocumentParser {
     }
 
     private fun parseWorksheet(
-        stream: InputStream,
+        xml: String,
         sharedStrings: List<String>,
         outRows: MutableList<List<String>>,
         outSparseRows: MutableList<XlsxRow>? = null,
         outMergedRegions: MutableList<CellRangeAddress>? = null
     ): Pair<Int, Int> {
-        val doc = newDocBuilder().parse(stream)
+        val doc = parseXml(xml)
         require(doc.documentElement.localName() == "worksheet") { "Invalid worksheet XML root" }
         // This parser uses unprefixed worksheet element names. Refuse unsupported
         // prefixed XML rather than silently returning an empty worksheet.
