@@ -59,7 +59,9 @@ object AiBundleEngine {
     // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
         Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
-        Pattern.compile("""(?i)\bBearer\s+[A-Za-z0-9_./+=-]+"""),
+        Pattern.compile("""(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9_./+=-]+"""),
+        Pattern.compile("""\b(?:glpat-[A-Za-z0-9_-]{15,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{12,})\b"""),
+        Pattern.compile("""(?i)\b(?:accountkey|client[_-]?secret|refresh[_-]?token|private[_-]?token|aws[_-]?secret[_-]?access[_-]?key)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
         Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
         Pattern.compile("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"""),
         Pattern.compile("""\bAIza[A-Za-z0-9_-]{35}\b"""),
@@ -81,7 +83,10 @@ object AiBundleEngine {
         if (lower == ".env.example") return false
         return lower == ".env" || lower.startsWith(".env.") ||
             lower in setOf("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "keystore.properties",
-                "credentials.json", "service-account.json", ".npmrc", ".netrc", ".pypirc") ||
+                "credentials.json", "service-account.json", ".npmrc", ".netrc", ".pypirc",
+                "google-services.json", "secrets.properties", "secrets.json", "local.settings.json",
+                "application-default-credentials.json", "application_default_credentials.json") ||
+            lower.startsWith("secrets.") || lower.endsWith(".tfstate") || lower.endsWith(".tfstate.backup") ||
             lower.substringAfterLast('.', "") in setOf("pem", "key", "p12", "pfx", "jks", "keystore", "kdbx")
     }
 
@@ -104,6 +109,9 @@ object AiBundleEngine {
 
     private const val MAX_FILE_BYTES = 500 * 1024
     private const val MAX_DIRECTORY_DEPTH = 128
+    private const val MAX_ENTRIES = 50_000
+    private const val MAX_BUNDLE_BYTES = 32L * 1024 * 1024
+    private const val MAX_PATH_CHARS = 4096
     private class InputTooLarge : IOException("File exceeds 500 KiB input limit")
 
     suspend fun buildBundleFromSaf(
@@ -127,8 +135,11 @@ object AiBundleEngine {
     ): BundleResult {
         val format = config.outputFormat.lowercase(Locale.US)
         require(format in setOf("json", "md", "aibundle")) { "Unsupported bundle format" }
-        val budget = if (config.tokenBudget <= 0) Long.MAX_VALUE
-            else config.tokenBudget.coerceAtMost(Long.MAX_VALUE / 4) * 4
+        val budget = if (config.tokenBudget <= 0) MAX_BUNDLE_BYTES
+            else minOf(MAX_BUNDLE_BYTES, config.tokenBudget.coerceAtMost(Long.MAX_VALUE / 4) * 4)
+        // Reserve space for headers/omissions. The final serialized UTF-8 byte count
+        // is checked as well, including the report, before publication.
+        val contentBudget = budget - minOf(budget / 8, 256 * 1024L)
         val parent = requireNotNull(outputFile.absoluteFile.parentFile)
         check(parent.isDirectory || parent.mkdirs()) { "Cannot create bundle output directory" }
         val scratch = Files.createTempDirectory(context.cacheDir.toPath(), "bundle_").toFile()
@@ -140,19 +151,32 @@ object AiBundleEngine {
         var included = 0
         var omitted = 0
         var condensed = 0
+        var entered = 0
+        var omissionBytes = 0L
         val visited = HashSet<String>()
+        val includedPaths = HashSet<String>()
+        fun safePath(path: String): String = if (config.maskSecrets) maskSecrets(path) else path
+        val exportedRoot = safePath(rootName).take(MAX_PATH_CHARS)
         try {
             body.bufferedWriter(Charsets.UTF_8).use { writer ->
                 omissions.bufferedWriter(Charsets.UTF_8).use { skipped ->
                     fun omit(path: String, reason: String) {
-                        if (format == "json" && omitted > 0) skipped.write(",\n")
-                        skipped.write(if (format == "json") "{\"path\":${JSONObject.quote(path)},\"reason\":${JSONObject.quote(reason)}}"
-                        else "${JSONObject.quote(path)} — $reason\n")
+                        val shownPath = safePath(path).take(MAX_PATH_CHARS)
+                        val line = if (format == "json") {
+                            (if (omitted > 0) ",\n" else "") +
+                                "{\"path\":${JSONObject.quote(shownPath)},\"reason\":${JSONObject.quote(reason)}}"
+                        } else "${JSONObject.quote(shownPath)} — $reason\n"
+                        omissionBytes += line.toByteArray(Charsets.UTF_8).size
+                        if (omissionBytes > MAX_BUNDLE_BYTES) throw IOException("Omission report exceeds bundle limit")
+                        skipped.write(line)
                         omitted++
                     }
                     suspend fun include(uri: Uri, path: String, reportedSize: Long) {
                         currentCoroutineContext().ensureActive()
                         val name = path.substringAfterLast('/')
+                        if (path.length > MAX_PATH_CHARS) { omit(path, "path length limit"); return }
+                        val exportedPath = safePath(path)
+                        if (exportedPath in includedPaths) { omit(path, "duplicate exported path"); return }
                         if (config.maskSecrets && isSensitiveFileName(name)) {
                             omit(path, "potential credential container (masking enabled)")
                             return
@@ -182,22 +206,24 @@ object AiBundleEngine {
                                 content.lineSequence().any { it == ">>>" || it == "<<<" })) {
                             omit(path, "native delimiter conflict; select JSON format"); return
                         }
-                        val section = buildFileSection(path, content, format, included + 1)
+                        val section = buildFileSection(exportedPath, content, format, included + 1)
                         val separator = if (format == "json" && included > 0) ",\n" else ""
-                        val len = section.length.toLong() + separator.length
-                        if (len > budget - chars) { omit(path, "estimated content budget"); return }
+                        val len = section.toByteArray(Charsets.UTF_8).size.toLong() + separator.length
+                        if (len > contentBudget - chars) { omit(path, "estimated content budget"); return }
                         writer.write(separator)
                         writer.write(section)
                         chars += len
+                        includedPaths.add(exportedPath)
                         if (content != beforeCondense) condensed++
                         included++
-                        onProgress?.invoke(name, included)
+                        onProgress?.invoke(safePath(name), included)
                     }
                     suspend fun walk(doc: DocumentFile, path: String, depth: Int) {
                         currentCoroutineContext().ensureActive()
                         if (!visited.add(doc.uri.toString())) { omit(path, "repeated directory reference"); return }
                         for (child in doc.listFiles().sortedWith(compareBy({ it.name.orEmpty() }, { it.uri.toString() }))) {
                             currentCoroutineContext().ensureActive()
+                            if (++entered > MAX_ENTRIES) throw IOException("Folder exceeds the 50,000 entry inspection limit")
                             val name = child.name ?: "(unnamed)"
                             val relative = if (path.isEmpty()) name else "$path/$name"
                             if (child.isFile) files++
@@ -220,7 +246,7 @@ object AiBundleEngine {
             require(included > 0) { "No readable files fit this format, filters and estimated content budget" }
             val tokens = chars / 4 + if (chars % 4 == 0L) 0 else 1
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-            val safeName = JSONObject.quote(rootName)
+            val safeName = JSONObject.quote(exportedRoot)
             val security = if (config.maskSecrets) "Heuristic masking enabled; review for missed secrets before sharing."
                 else "Masking disabled; review all content before sharing."
             val temp = File.createTempFile("bundle_", ".tmp", parent)
@@ -239,21 +265,21 @@ object AiBundleEngine {
                 }
                 when (format) {
                     "json" -> {
-                        out.write("{\"project\":$safeName,\"generated\":${JSONObject.quote(timestamp)},\"included_files\":$included,\"evaluated_files\":$files,\"estimated_tokens\":$tokens,\"condensed_files\":$condensed,\"budget_scope\":\"estimated serialized file sections only\",\"security\":${JSONObject.quote(security)},\"files\":{\n")
+                        out.write("{\"project\":$safeName,\"generated\":${JSONObject.quote(timestamp)},\"included_files\":$included,\"evaluated_files\":$files,\"estimated_tokens\":$tokens,\"condensed_files\":$condensed,\"budget_scope\":\"UTF-8 bytes / 4; whole bundle checked before publication\",\"security\":${JSONObject.quote(security)},\"files\":{\n")
                         appendFile(body)
                         out.write("\n},\"omissions\":[\n")
                         appendFile(omissions)
                         out.write("\n]}\n")
                     }
                     "aibundle" -> {
-                        out.write("@VEILFRAME_BUNDLE\nversion=1\nproject=${rootName.replace('\n', ' ').replace('\r', ' ')}\ntimestamp=$timestamp\ntotal_tokens=$tokens\nincluded_files=$included\nexcluded_files=${files - included}\nmax_depth=${config.maxDepth ?: "unlimited"}\n\n@SUMMARY\nEvaluated files: $files\nCondensed manifests: $condensed\nBudget: estimate of file sections only\n\n@FILES\n")
+                        out.write("@VEILFRAME_BUNDLE\nversion=1\nproject=${exportedRoot.replace('\n', ' ').replace('\r', ' ')}\ntimestamp=$timestamp\ntotal_tokens=$tokens\nincluded_files=$included\nexcluded_files=${files - included}\nmax_depth=${config.maxDepth ?: "unlimited"}\n\n@SUMMARY\nEvaluated files: $files\nCondensed manifests: $condensed\nBudget: UTF-8 bytes / 4; complete bundle checked\n\n@FILES\n")
                         appendFile(body)
                         out.write("\n@OMISSIONS\n")
                         appendFile(omissions)
                         out.write("\n@SECURITY\n$security\n\n@END\n")
                     }
                     else -> {
-                        out.write("# VeilFrame AI Context Bundle: $safeName\n\nGenerated: $timestamp\nIncluded: $included / $files evaluated files\nEstimated content tokens: ~$tokens (not exact; excludes report/header)\nCondensed manifests: $condensed\n$security\n\n")
+                        out.write("# VeilFrame AI Context Bundle: $safeName\n\nGenerated: $timestamp\nIncluded: $included / $files evaluated files\nEstimated file-section tokens: ~$tokens (not exact); whole bundle budget checked\nCondensed manifests: $condensed\n$security\n\n")
                         appendFile(body)
                         out.write("\n## Omitted entries\n\n")
                         appendFile(omissions)
@@ -261,8 +287,13 @@ object AiBundleEngine {
                 }
             }
             currentCoroutineContext().ensureActive()
+            val finalBytes = temp.length()
+            if (finalBytes > budget) {
+                throw IOException("Complete bundle, including the omission report, exceeds the estimated budget. Increase the budget or narrow the selection.")
+            }
             Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            return BundleResult(files, included, tokens, outputFile.absolutePath, omitted)
+            val wholeEstimate = finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
+            return BundleResult(files, included, wholeEstimate, outputFile.absolutePath, omitted)
         } finally {
             staged?.delete()
             scratch.deleteRecursively()
@@ -294,7 +325,7 @@ object AiBundleEngine {
         val lowerName = name.lowercase(Locale.US)
         val lowerPath = path.lowercase(Locale.US)
         return lowerName.contains("test") || lowerName.contains("spec") ||
-                lowerPath.contains("/test/") || lowerPath.contains("/tests/") || lowerPath.contains("/androidTest/")
+                lowerPath.contains("/test/") || lowerPath.contains("/tests/") || lowerPath.contains("/androidtest/")
     }
 
     private fun buildFileSection(path: String, content: String, format: String, fileIndex: Int): String {

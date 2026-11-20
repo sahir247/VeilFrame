@@ -37,6 +37,33 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun reviewCanReachEveryCharacterWithoutSplittingUnicode() {
+        val file = java.io.File.createTempFile("bundle_review", ".txt")
+        try {
+            val content = "abc😀def ghi café"
+            file.writeText(content)
+            var offset = 0L
+            val restored = StringBuilder()
+            do {
+                val page = BundleReviewReader.read(file, offset, 4)
+                restored.append(page.text)
+                val next = page.nextOffset
+                if (next == null) break
+                offset = next
+            } while (true)
+            org.junit.Assert.assertEquals(content, restored.toString())
+        } finally { file.delete() }
+    }
+
+    @Test
+    fun additionalCredentialSchemesAreMasked() {
+        listOf("Basic dGVzdDp0ZXN0", "glpat-" + "x".repeat(24),
+            "client_secret=exampleSecretValue", "hf_" + "a".repeat(32)).forEach {
+            assertTrue(AiBundleEngine.maskSecrets(it).contains("[REDACTED_SECRET]"))
+        }
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)

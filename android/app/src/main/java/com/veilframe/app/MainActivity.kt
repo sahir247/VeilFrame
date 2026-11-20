@@ -977,42 +977,97 @@ class MainActivity : AppCompatActivity() {
             proceed()
             return
         }
-        // Never send a bundle to another app for preview. Bound the initial local preview
-        // independently of project size and require explicit confirmation before transfer.
-        lifecycleScope.launch {
-            val preview = withContext(Dispatchers.IO) {
-                runCatching {
-                    file.bufferedReader(Charsets.UTF_8).use { reader ->
-                        val chars = CharArray(12001)
-                        var count = 0
-                        while (count < chars.size) {
-                            val n = reader.read(chars, count, chars.size - count)
-                            if (n <= 0) break
-                            count += n
-                        }
-                        String(chars, 0, minOf(count, 12000)) to (count > 12000)
-                    }
-                }.getOrNull()
-            }
-            if (isFinishing || isDestroyed || toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE ||
-                toolSessionManager.currentState.lastGeneratedFile != file) return@launch
-            if (preview == null) {
-                Toast.makeText(this@MainActivity, "Cannot inspect bundle; transfer cancelled", Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            val note = if (preview.second) "First 12,000 characters only. Review the remaining content before sharing."
-                else "Complete bundle preview."
-            MaterialAlertDialogBuilder(this@MainActivity)
-                .setTitle("Review AI bundle")
-                .setMessage("Secret masking is heuristic and may have been disabled. Credentials, personal data, and confidential code can remain.\n\n" +
-                    note + "\n\n" + preview.first)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("$action anyway") { _, _ ->
-                    if (toolSessionManager.currentToolMode == ToolMode.AI_BUNDLE &&
-                        toolSessionManager.currentState.lastGeneratedFile == file && file.isFile) proceed()
-                }
-                .show()
+        val originalLength = file.length()
+        val originalModified = file.lastModified()
+        fun stillCurrent(): Boolean = !isFinishing && !isDestroyed &&
+            toolSessionManager.currentToolMode == ToolMode.AI_BUNDLE &&
+            toolSessionManager.currentState.lastGeneratedFile == file && file.isFile &&
+            file.length() == originalLength && file.lastModified() == originalModified
+
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
         }
+        val warning = android.widget.TextView(this).apply {
+            text = "Masking is heuristic and may be disabled. Credentials, personal data and confidential code can remain. Review the exact local artifact before transferring."
+        }
+        val status = android.widget.TextView(this)
+        val nav = android.widget.LinearLayout(this)
+        val previous = android.widget.Button(this).apply { text = "Previous"; isEnabled = false }
+        val next = android.widget.Button(this).apply { text = "Next"; isEnabled = false }
+        nav.addView(previous)
+        nav.addView(next)
+        val pageText = android.widget.TextView(this).apply {
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(pageText)
+        }
+        content.addView(warning)
+        content.addView(nav)
+        content.addView(status)
+        content.addView(scroll, android.widget.LinearLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, (280 * resources.displayMetrics.density).toInt()
+        ))
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Review AI bundle")
+            .setView(content)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("$action after review", null)
+            .create()
+        val offsets = mutableListOf(0L)
+        var position = 0
+        var following: Long? = null
+        var pageJob: kotlinx.coroutines.Job? = null
+
+        fun loadPage() {
+            pageJob?.cancel()
+            val index = position
+            val offset = offsets[index]
+            previous.isEnabled = false
+            next.isEnabled = false
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled = false
+            status.text = "Loading bundle page ${index + 1}…"
+            pageJob = lifecycleScope.launch {
+                val page = withContext(Dispatchers.IO) {
+                    runCatching { com.veilframe.app.tools.BundleReviewReader.read(file, offset) }.getOrNull()
+                }
+                if (!dialog.isShowing || position != index) return@launch
+                if (page == null || !stillCurrent()) {
+                    status.text = "Bundle changed or could not be read. Transfer blocked."
+                    pageText.text = ""
+                    return@launch
+                }
+                following = page.nextOffset
+                pageText.text = page.text
+                status.text = "Page ${index + 1}" + if (following == null) " — end of bundle" else " — more content follows"
+                scroll.scrollTo(0, 0)
+                previous.isEnabled = index > 0
+                next.isEnabled = following != null
+                dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled = true
+            }
+        }
+        previous.setOnClickListener { if (position > 0) { position--; loadPage() } }
+        next.setOnClickListener {
+            following?.let { offset ->
+                if (position + 1 == offsets.size) offsets.add(offset)
+                position++
+                loadPage()
+            }
+        }
+        dialog.setOnDismissListener { pageJob?.cancel() }
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            if (stillCurrent()) {
+                dialog.dismiss()
+                proceed()
+            } else {
+                Toast.makeText(this, "Bundle changed; review it again", Toast.LENGTH_LONG).show()
+                dialog.dismiss()
+            }
+        }
+        loadPage()
     }
 
     private var lastNavClickTime = 0L
