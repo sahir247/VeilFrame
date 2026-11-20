@@ -53,13 +53,16 @@ object MultiPersonMattingEngine {
         context: Context,
         rgbaBitmap: Bitmap,
         modelType: Int,
-        useGpu: Boolean = false
+        useGpu: Boolean = false,
+        checkpoint: () -> Unit = {}
     ): Bitmap? {
+        checkpoint()
         val width = rgbaBitmap.width
         val height = rgbaBitmap.height
 
         // 1. Detect all salient subjects (humans, animals, furniture, objects)
         val allSubjects = detectSalientSubjects(context, rgbaBitmap)
+        checkpoint()
         val personSubjects = allSubjects.filter { it.category == SubjectCategory.PERSON }
         val nonPersonSubjects = allSubjects.filter { it.category != SubjectCategory.PERSON }
 
@@ -106,6 +109,7 @@ object MultiPersonMattingEngine {
             }
         }
 
+        checkpoint()
         // 3. Global Base Matting Pass
         // letterbox = false ensures 100% of tensor resolution is used for real content (no dead gray bars)
         val baseMask = NcnnMattingNative.nativeProcess(rgbaBitmap, effectiveModelType, useGpu, letterbox = false)
@@ -114,24 +118,31 @@ object MultiPersonMattingEngine {
                 return null
             }
 
-        // 4. Multi-Subject Focused RoI Passes
-        val totalArea = width.toFloat() * height.toFloat()
-        if (allRoIs.size >= 2) {
-            Log.i(TAG, "Multi-subject scene confirmed (${allRoIs.size} subjects). Running Subject-Level HD Matting...")
-            fuseSubjectRois(context, rgbaBitmap, baseMask, allRoIs, effectiveModelType, useGpu)
-        } else if (allRoIs.size == 1) {
-            val roi = allRoIs[0]
-            val boxArea = roi.box.width() * roi.box.height()
-            // If the single subject occupies a sub-region (< 45% of image), run dedicated RoI pass for fine details
-            if (boxArea / totalArea < 0.45f) {
-                Log.i(TAG, "Sub-region subject detected (${(boxArea / totalArea * 100).toInt()}% of frame). Running RoI refinement...")
-                fuseSubjectRois(context, rgbaBitmap, baseMask, allRoIs, effectiveModelType, useGpu)
+        try {
+            checkpoint()
+            // 4. Multi-Subject Focused RoI Passes
+            val totalArea = width.toFloat() * height.toFloat()
+            if (allRoIs.size >= 2) {
+                Log.i(TAG, "Multi-subject scene confirmed (${allRoIs.size} subjects). Running Subject-Level HD Matting...")
+                fuseSubjectRois(context, rgbaBitmap, baseMask, allRoIs, effectiveModelType, useGpu, checkpoint)
+            } else if (allRoIs.size == 1) {
+                val roi = allRoIs[0]
+                val boxArea = roi.box.width() * roi.box.height()
+                // If the single subject occupies a sub-region (< 45% of image), run dedicated RoI pass for fine details
+                if (boxArea / totalArea < 0.45f) {
+                    Log.i(TAG, "Sub-region subject detected (${(boxArea / totalArea * 100).toInt()}% of frame). Running RoI refinement...")
+                    fuseSubjectRois(context, rgbaBitmap, baseMask, allRoIs, effectiveModelType, useGpu, checkpoint)
+                }
             }
-        }
 
-        // 5. In-tree OpenCV Morphological, Noise Filtering & Edge Continuity Refinement
-        val refinedMask = refineWithOpenCv(baseMask, rgbaBitmap, isObjectOrAnimal = personBoxes.isEmpty())
-        return refinedMask
+            // 5. In-tree OpenCV Morphological, Noise Filtering & Edge Continuity Refinement
+            checkpoint()
+            val refinedMask = refineWithOpenCv(baseMask, rgbaBitmap, isObjectOrAnimal = personBoxes.isEmpty())
+            return refinedMask
+        } catch (failure: Throwable) {
+            if (!baseMask.isRecycled) baseMask.recycle()
+            throw failure
+        }
     }
 
     /**
@@ -193,12 +204,14 @@ object MultiPersonMattingEngine {
         baseMask: Bitmap,
         subjectRois: List<SubjectRoI>,
         effectiveModelType: Int,
-        useGpu: Boolean
+        useGpu: Boolean,
+        checkpoint: () -> Unit
     ) {
         val srcW = sourceBitmap.width
         val srcH = sourceBitmap.height
 
         for ((idx, roi) in subjectRois.withIndex()) {
+            checkpoint()
             val box = roi.box
             val padX = box.width() * SUBJECT_MARGIN_RATIO
             val padY = box.height() * SUBJECT_MARGIN_RATIO
@@ -248,8 +261,10 @@ object MultiPersonMattingEngine {
                 subjectMask = NcnnMattingNative.nativeProcess(subjectCrop, roiModelType, useGpu, letterbox = false)
 
                 if (subjectMask != null) {
-                    mergeAlphaRegion(baseMask, subjectMask, cropLeft, cropTop)
+                    mergeAlphaRegion(baseMask, subjectMask, cropLeft, cropTop, checkpoint = checkpoint)
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (t: Throwable) {
                 Log.w(TAG, "Failed RoI pass for subject #$idx (${roi.label}): ${t.message}")
             } finally {
@@ -270,7 +285,8 @@ object MultiPersonMattingEngine {
         subjectMask: Bitmap,
         left: Int,
         top: Int,
-        maxStripRows: Int = 64
+        maxStripRows: Int = 64,
+        checkpoint: () -> Unit = {}
     ) {
         val width = subjectMask.width
         val height = subjectMask.height
@@ -284,6 +300,7 @@ object MultiPersonMattingEngine {
         val basePixels = IntArray(width * stripeRows)
         var row = 0
         while (row < height) {
+            checkpoint()
             val rows = min(stripeRows, height - row)
             val count = width * rows
             subjectMask.getPixels(subjectPixels, 0, width, 0, row, width, rows)

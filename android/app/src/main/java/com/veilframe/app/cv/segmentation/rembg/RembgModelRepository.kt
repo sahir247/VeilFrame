@@ -53,6 +53,53 @@ class RembgModelRepository(
         return binary
     }
 
+    /** Copy then verify the exact private files consumed by the native loader.
+     * A concurrent download/delete may disrupt the copy, but cannot replace a
+     * verified snapshot between digest validation and native open.
+     */
+    internal fun <T> withVerifiedSnapshot(model: RembgModel, checkpoint: () -> Unit = {},
+                                          load: (File, File?) -> T): T {
+        require(!model.isBundled)
+        val candidates = listOf(getModelFile(model)) +
+            if (model == RembgModel.COLOROS_LIFT_SHIFT)
+                listOf(File(context.filesDir, "models/lift_shift/image_matting_mobile.tflite"))
+            else emptyList()
+        val source = candidates.firstOrNull { it.isFile }
+            ?: throw java.io.IOException("Model ${model.displayName} is unavailable")
+        val maxBinBytes = (model.estimatedSizeBytes * 1.25).toLong().coerceAtLeast(20L * 1024 * 1024)
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "matting_verified_").toFile()
+        try {
+            fun stage(input: File, name: String, expected: String, min: Long, max: Long): File {
+                val target = File(dir, name)
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                var size = 0L
+                input.inputStream().use { src ->
+                    target.outputStream().buffered().use { out ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            checkpoint()
+                            val n = src.read(buffer)
+                            if (n < 0) break
+                            if (n == 0 || n.toLong() > max - size) throw java.io.IOException("Invalid model stream")
+                            size += n
+                            digest.update(buffer, 0, n)
+                            out.write(buffer, 0, n)
+                        }
+                    }
+                }
+                val actual = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it.toInt() and 255) }
+                if (size !in min..max || !actual.equals(expected, ignoreCase = true))
+                    throw java.io.IOException("Model checksum validation failed; download it again")
+                checkpoint()
+                return target
+            }
+            val bin = stage(source, "weights.bin", model.sha256, model.minBytes, maxBinBytes)
+            val param = if (model.paramFileName.isNotEmpty()) stage(getParamFile(model), "graph.param",
+                model.paramSha256, 500L, 10L * 1024 * 1024) else null
+            return load(bin, param)
+        } finally { dir.deleteRecursively() }
+    }
+
     internal fun matchesPinnedArtifact(file: File, expected: String, minBytes: Long, maxBytes: Long,
                                        checkpoint: () -> Unit = {}): Boolean {
         if (!expected.matches(Regex("[a-fA-F0-9]{64}")) || !file.isFile ||

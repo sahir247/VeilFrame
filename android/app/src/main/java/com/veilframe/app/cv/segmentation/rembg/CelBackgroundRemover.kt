@@ -54,38 +54,6 @@ class CelBackgroundRemover(
             RembgModel.COLOROS_LIFT_SHIFT -> throw IllegalArgumentException("Lift & Shift uses the LiteRT matting engine, not NCNN")
         }
 
-        val isLoaded = NcnnMattingNative.isModelLoaded(modelType)
-        if (!isLoaded) {
-            val initSuccess = if (model.isBundled) {
-                NcnnMattingNative.nativeInit(
-                    context.assets,
-                    "models/u2netp/${model.paramFileName}",
-                    "models/u2netp/${model.fileName}",
-                    modelType,
-                    true,
-                    true
-                )
-            } else {
-                val loadContext = kotlin.coroutines.coroutineContext
-                val binFile = withContext(Dispatchers.IO) {
-                    repository.verifiedModelFile(model) { loadContext.ensureActive() }
-                } ?: throw IllegalStateException("Model ${model.displayName} is missing or failed checksum validation. Delete and download it again in Model Manager.")
-                val paramFile = repository.getParamFile(model)
-                NcnnMattingNative.nativeInit(
-                    null,
-                    paramFile.absolutePath,
-                    binFile.absolutePath,
-                    modelType,
-                    true,
-                    false
-                )
-            }
-
-            if (!initSuccess) {
-                throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
-            }
-        }
-
         onProgress(RembgProgress(30, "Decoding image…"))
         ensureActive()
         val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
@@ -109,8 +77,35 @@ class CelBackgroundRemover(
             onProgress(RembgProgress(55, "Running neural matting…"))
             ensureActive()
 
-            maskBitmap = MultiPersonMattingEngine.process(context, rgbaBitmap, modelType, useGpu = true)
-                ?: throw IllegalStateException("Native neural matting returned null mask for ${model.displayName}")
+            maskBitmap = NcnnMattingTransactions.run(checkpoint) {
+                // Keep initialization, routing and every ROI pass in one ownership interval.
+                val isLoaded = NcnnMattingNative.isModelLoaded(modelType)
+                if (!isLoaded) {
+                    val initSuccess = if (model.isBundled) {
+                        NcnnMattingNative.nativeInit(
+                            context.assets,
+                            "models/u2netp/${model.paramFileName}",
+                            "models/u2netp/${model.fileName}",
+                            modelType,
+                            true,
+                            true
+                        )
+                    } else {
+                        repository.withVerifiedSnapshot(model, checkpoint) { binFile, paramFile ->
+                            NcnnMattingNative.nativeInit(
+                                null, requireNotNull(paramFile).absolutePath, binFile.absolutePath,
+                                modelType, true, false
+                            )
+                        }
+                    }
+        
+                    if (!initSuccess) {
+                        throw IllegalStateException("Failed to initialize NCNN neural matting engine for ${model.displayName}")
+                    }
+                }
+                MultiPersonMattingEngine.process(context, rgbaBitmap, modelType, useGpu = true, checkpoint = checkpoint)
+                    ?: throw IllegalStateException("Native neural matting returned null mask for ${model.displayName}")
+            }
 
             onProgress(RembgProgress(80, "Building cutout…"))
             ensureActive()
