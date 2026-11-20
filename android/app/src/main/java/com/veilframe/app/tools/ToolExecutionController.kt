@@ -16,6 +16,8 @@ import com.veilframe.app.storage.SafStorageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -339,125 +341,135 @@ class ToolExecutionController(
 
             val batchRoot = java.nio.file.Files.createTempDirectory(activity.cacheDir.toPath(), "batch_video_").toFile()
             val stagingDir = File(batchRoot, "inputs")
-            val outputBatchDir = File(batchRoot, "outputs").apply { check(mkdir()) }
+            val outputBatchDir = File(batchRoot, "outputs")
             var finalArtifact: File? = null
             var published = false
             try {
-            safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
-            val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
+                check(outputBatchDir.mkdir())
+                safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+                val inspectedCount = withContext(Dispatchers.IO) { stagingDir.walkTopDown().count { it.isFile } }
 
-            val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "wmv", "3gp")
-            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in videoExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
-
-            if (candidateFiles.isEmpty()) {
-                stagingDir.deleteRecursively()
-                outputBatchDir.deleteRecursively()
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "No supported video files found in folder.")
-                    onLog("[WARN] No video files (.mp4, .mkv, .webm, .mov, etc.) found in selected folder ($inspectedCount files inspected).")
-                    sessionManager.updatePrimaryActionDock(state)
+                val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "wmv", "3gp")
+                val candidateFiles = withContext(Dispatchers.IO) {
+                    stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in videoExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
                 }
-                return
-            }
+                withContext(Dispatchers.IO) { BatchOutputPaths.prepare(stagingDir, outputBatchDir, candidateFiles) }
 
-            withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing ${candidateFiles.size} videos (noise: $noiseLevel)...")
-                onLog("[BATCH] Found ${candidateFiles.size} videos with mixed formats. Beginning sanitization...")
-            }
-
-            var successCount = 0
-            var metadataOnlyFallbackCount = 0
-            candidateFiles.forEachIndexed { idx, inputFile ->
-                val targetExt = when (formatIndex) {
-                    1 -> "mp4"
-                    2 -> "mkv"
-                    3 -> "webm"
-                    else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
+                if (candidateFiles.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        sessionManager.updateJobState(JobState.FAILED, "No supported video files found in folder.")
+                        onLog("[WARN] No video files (.mp4, .mkv, .webm, .mov, etc.) found in selected folder ($inspectedCount files inspected).")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
                 }
-                val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "sanitized", targetExt)
 
                 withContext(Dispatchers.Main) {
-                    val percent = ((idx * 100) / candidateFiles.size)
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.progressIndicator.progress = percent
-                    binding.tvProgressDetails.text = "Sanitizing ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
-                    onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Sanitizing ${inputFile.name} -> $targetExt (noise: $noiseLevel)")
+                    sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing ${candidateFiles.size} videos (noise: $noiseLevel)...")
+                    onLog("[BATCH] Found ${candidateFiles.size} videos with mixed formats. Beginning sanitization...")
                 }
 
-                val ok = withContext(Dispatchers.IO) {
-                    backend.cleanVideoDetailed(
-                        inputFile.absolutePath,
-                        outputFile.absolutePath,
-                        noiseLevel = noiseLevel,
-                        scrubAudio = scrubAudio,
-                        crf = crf,
-                        stripExif = stripExif,
-                        reencodeBitstream = reencodeBitstream
-                    )
+                var successCount = 0
+                var metadataOnlyFallbackCount = 0
+                candidateFiles.forEachIndexed { idx, inputFile ->
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val targetExt = when (formatIndex) {
+                        1 -> "mp4"
+                        2 -> "mkv"
+                        3 -> "webm"
+                        else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "mp4" }
+                    }
+                    val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "sanitized", targetExt)
+
+                    withContext(Dispatchers.Main) {
+                        val percent = ((idx * 100) / candidateFiles.size)
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.progressIndicator.progress = percent
+                        binding.tvProgressDetails.text = "Sanitizing ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
+                        onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Sanitizing ${inputFile.name} -> $targetExt (noise: $noiseLevel)")
+                    }
+
+                    val ok = withContext(Dispatchers.IO) {
+                        backend.cleanVideoDetailed(
+                            inputFile.absolutePath,
+                            outputFile.absolutePath,
+                            noiseLevel = noiseLevel,
+                            scrubAudio = scrubAudio,
+                            crf = crf,
+                            stripExif = stripExif,
+                            reencodeBitstream = reencodeBitstream
+                        )
+                    }
+                    if (ok.isSuccess && outputFile.exists() && outputFile.length() > 0) {
+                        successCount++
+                        if (ok.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) {
+                            metadataOnlyFallbackCount++
+                        }
+                    } else {
+                        // FFmpeg may leave a partial file after both the primary and fallback passes fail.
+                        outputFile.delete()
+                    }
                 }
-                if (ok.isSuccess && outputFile.exists() && outputFile.length() > 0) {
-                    successCount++
-                    if (ok.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) {
-                        metadataOnlyFallbackCount++
+
+                if (successCount == 0) {
+                    withContext(Dispatchers.Main) {
+                        sessionManager.updateJobState(JobState.FAILED, "Batch video sanitization failed.")
+                        onLog("[ERR] Failed to sanitize any video files in the batch.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
+                }
+
+                val finalFile = withContext(Dispatchers.IO) {
+                val cc = kotlin.coroutines.coroutineContext
+                val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
+                check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
+                val completedFile = if (actualOutputs.size == 1) {
+                    val singleFile = actualOutputs.single()
+                    File.createTempFile("VeilFrame_Videos_", ".${singleFile.extension}", activity.cacheDir).also {
+                        finalArtifact = it
+                        singleFile.inputStream().buffered().use { input ->
+                            it.outputStream().buffered().use { output ->
+                                SafStorageManager.copyChecked(input, output) { cc.ensureActive() }
+                            }
+                        }
                     }
                 } else {
-                    // FFmpeg may leave a partial file after both the primary and fallback passes fail.
-                    outputFile.delete()
+                    File.createTempFile("VeilFrame_Batch_Videos_", ".zip", activity.cacheDir).also {
+                        finalArtifact = it
+                        safStorageManager.zipDirectory(outputBatchDir, it) { cc.ensureActive() }
+                    }
                 }
-            }
+                check(completedFile.isFile && completedFile.length() > 0) { "Batch artifact was not created" }
+                completedFile
+                }
 
-            stagingDir.deleteRecursively()
-
-            if (successCount == 0) {
-                outputBatchDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Batch video sanitization failed.")
-                    onLog("[ERR] Failed to sanitize any video files in the batch.")
+                    if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                    state.lastGeneratedFile = finalFile
+                    state.progressPercent = 100
+                    state.progressDetailsText = "100% complete"
+                    published = true
+                    sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = 100
+                    binding.tvProgressDetails.text = "100% complete"
+
+                    binding.cardResultSummary.visibility = View.VISIBLE
+                    binding.tvResultTitle.text = finalFile.name
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos processed; $metadataOnlyFallbackCount metadata-only fallback(s)"
+
+                    onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos processed; $metadataOnlyFallbackCount used metadata-only fallback (no temporal noise filter).")
+                    onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
                     sessionManager.updatePrimaryActionDock(state)
+                    binding.btnExportResult.isEnabled = true
+                    binding.btnShareResult.isEnabled = true
                 }
-                return
-            }
-
-            val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
-            check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
-            val finalFile = if (actualOutputs.size == 1) {
-                val singleFile = actualOutputs.single()
-                File.createTempFile("VeilFrame_Videos_", ".${singleFile.extension}", activity.cacheDir).also {
-                    finalArtifact = it
-                    singleFile.copyTo(it, overwrite = true)
-                }
-            } else {
-                File.createTempFile("VeilFrame_Batch_Videos_", ".zip", activity.cacheDir).also {
-                    finalArtifact = it
-                    safStorageManager.zipDirectory(outputBatchDir, it)
-                }
-            }
-            check(finalFile.isFile && finalFile.length() > 0) { "Batch artifact was not created" }
-
-            withContext(Dispatchers.Main) {
-                if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
-                state.lastGeneratedFile = finalFile
-                state.progressPercent = 100
-                state.progressDetailsText = "100% complete"
-                published = true
-                sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
-                binding.progressIndicator.isIndeterminate = false
-                binding.progressIndicator.progress = 100
-                binding.tvProgressDetails.text = "100% complete"
-
-                binding.cardResultSummary.visibility = View.VISIBLE
-                binding.tvResultTitle.text = finalFile.name
-                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos processed; $metadataOnlyFallbackCount metadata-only fallback(s)"
-
-                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} videos processed; $metadataOnlyFallbackCount used metadata-only fallback (no temporal noise filter).")
-                onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
-                sessionManager.updatePrimaryActionDock(state)
-                binding.btnExportResult.isEnabled = true
-                binding.btnShareResult.isEnabled = true
-            }
             } finally {
-                batchRoot.deleteRecursively()
-                if (!published) finalArtifact?.delete()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    batchRoot.deleteRecursively()
+                    if (!published) finalArtifact?.delete()
+                }
             }
         } else {
             // Single video file
@@ -567,154 +579,164 @@ class ToolExecutionController(
 
             val batchRoot = java.nio.file.Files.createTempDirectory(activity.cacheDir.toPath(), "batch_img_").toFile()
             val stagingDir = File(batchRoot, "inputs")
-            val outputBatchDir = File(batchRoot, "outputs").apply { check(mkdir()) }
+            val outputBatchDir = File(batchRoot, "outputs")
             var finalArtifact: File? = null
             var published = false
             try {
-            safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
-            val inspectedCount = stagingDir.walkTopDown().count { it.isFile }
+                check(outputBatchDir.mkdir())
+                safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
+                val inspectedCount = withContext(Dispatchers.IO) { stagingDir.walkTopDown().count { it.isFile } }
 
-            val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "gif")
-            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
-
-            if (candidateFiles.isEmpty()) {
-                stagingDir.deleteRecursively()
-                outputBatchDir.deleteRecursively()
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "No supported image files found in folder.")
-                    onLog("[WARN] No image files (.jpg, .png, .webp, .bmp, .heic, etc.) found in selected folder ($inspectedCount files inspected).")
-                    sessionManager.updatePrimaryActionDock(state)
+                val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "gif")
+                val candidateFiles = withContext(Dispatchers.IO) {
+                    stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList().sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
                 }
-                return
-            }
+                withContext(Dispatchers.IO) { BatchOutputPaths.prepare(stagingDir, outputBatchDir, candidateFiles) }
 
-            withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Purifying ${candidateFiles.size} images (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
-                onLog("[BATCH] Found ${candidateFiles.size} images. Beginning forensic purification (Defense: ${effectiveDefense.uppercase()})...")
-            }
-
-            var successCount = 0
-            candidateFiles.forEachIndexed { idx, inputFile ->
-                val targetExt = when (formatIndex) {
-                    1 -> "jpg"
-                    2 -> "png"
-                    3 -> "webp"
-                    4 -> "bmp"
-                    5 -> "tiff"
-                    6 -> "gif"
-                    7 -> "heif"
-                    else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "jpg" }
+                if (candidateFiles.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        sessionManager.updateJobState(JobState.FAILED, "No supported image files found in folder.")
+                        onLog("[WARN] No image files (.jpg, .png, .webp, .bmp, .heic, etc.) found in selected folder ($inspectedCount files inspected).")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
                 }
-                val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "cleaned", targetExt)
 
                 withContext(Dispatchers.Main) {
-                    val percent = ((idx * 100) / candidateFiles.size)
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.progressIndicator.progress = percent
-                    binding.tvProgressDetails.text = "Purifying ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
-                    onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Purifying ${inputFile.name} -> $targetExt")
+                    sessionManager.updateJobState(JobState.PROCESSING, "Purifying ${candidateFiles.size} images (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
+                    onLog("[BATCH] Found ${candidateFiles.size} images. Beginning forensic purification (Defense: ${effectiveDefense.uppercase()})...")
                 }
 
-                val ok = withContext(Dispatchers.IO) {
-                    if (effectiveDefense != "metadata") {
-                        val res = backend.cleanImageWithDefenseDetailed(
-                            inputFile.absolutePath,
-                            outputFile.absolutePath,
-                            defenseMode = effectiveDefense,
-                            stripExif = stripExif,
-                            quality = quality,
-                            targetExtension = targetExt,
-                            onMilestone = { milestone ->
-                                activity.runOnUiThread { onLog(milestone) }
-                            }
-                        )
-                        if (!res.isAuditPassed && res.isSuccess) {
-                            activity.runOnUiThread {
-                                val heuristic = if (res.residualHeuristicPassed) {
-                                    " Single-image residual heuristic crossed its threshold."
-                                } else {
-                                    " Single-image residual heuristic did not establish suppression."
+                var successCount = 0
+                candidateFiles.forEachIndexed { idx, inputFile ->
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val targetExt = when (formatIndex) {
+                        1 -> "jpg"
+                        2 -> "png"
+                        3 -> "webp"
+                        4 -> "bmp"
+                        5 -> "tiff"
+                        6 -> "gif"
+                        7 -> "heif"
+                        else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "jpg" }
+                    }
+                    val outputFile = BatchOutputPaths.outputFor(stagingDir, outputBatchDir, inputFile, idx, "cleaned", targetExt)
+
+                    withContext(Dispatchers.Main) {
+                        val percent = ((idx * 100) / candidateFiles.size)
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.progressIndicator.progress = percent
+                        binding.tvProgressDetails.text = "Purifying ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
+                        onLog("[RUN] [${idx + 1}/${candidateFiles.size}] Purifying ${inputFile.name} -> $targetExt")
+                    }
+
+                    val ok = withContext(Dispatchers.IO) {
+                        if (effectiveDefense != "metadata") {
+                            val res = backend.cleanImageWithDefenseDetailed(
+                                inputFile.absolutePath,
+                                outputFile.absolutePath,
+                                defenseMode = effectiveDefense,
+                                stripExif = stripExif,
+                                quality = quality,
+                                targetExtension = targetExt,
+                                onMilestone = { milestone ->
+                                    activity.runOnUiThread { onLog(milestone) }
                                 }
-                                onLog(
-                                    "[PRNU] Output file was created, but camera PRNU removal was NOT verified: no independent multi-image camera reference is used." +
-                                        heuristic +
-                                        " Residual sPCE=${res.measuredPce}; max strip=${res.measuredMaxStrip}."
-                                )
+                            )
+                            if (!res.isAuditPassed && res.isSuccess) {
+                                activity.runOnUiThread {
+                                    val heuristic = if (res.residualHeuristicPassed) {
+                                        " Single-image residual heuristic crossed its threshold."
+                                    } else {
+                                        " Single-image residual heuristic did not establish suppression."
+                                    }
+                                    onLog(
+                                        "[PRNU] Output file was created, but camera PRNU removal was NOT verified: no independent multi-image camera reference is used." +
+                                            heuristic +
+                                            " Residual sPCE=${res.measuredPce}; max strip=${res.measuredMaxStrip}."
+                                    )
+                                }
                             }
+                            res.isSuccess
+                        } else {
+                            backend.cleanImage(
+                                inputFile.absolutePath,
+                                outputFile.absolutePath,
+                                stripExif = stripExif,
+                                quality = quality,
+                                targetExtension = targetExt,
+                                stripThumbnails = true,
+                                sanitizeIcc = true
+                            )
                         }
-                        res.isSuccess
+                    }
+                    if (ok && outputFile.isFile && outputFile.length() > 0) {
+                        successCount++
                     } else {
-                        backend.cleanImage(
-                            inputFile.absolutePath,
-                            outputFile.absolutePath,
-                            stripExif = stripExif,
-                            quality = quality,
-                            targetExtension = targetExt,
-                            stripThumbnails = true,
-                            sanitizeIcc = true
-                        )
+                        // Failed encoders may leave an original or partially written image.
+                        check(!outputFile.exists() || outputFile.delete()) { "Could not remove failed image artifact" }
                     }
                 }
-                if (ok && outputFile.isFile && outputFile.length() > 0) {
-                    successCount++
+
+                if (successCount == 0) {
+                    withContext(Dispatchers.Main) {
+                        sessionManager.updateJobState(JobState.FAILED, "Batch image sanitization failed.")
+                        onLog("[ERR] Failed to sanitize any image files in the batch.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
+                }
+
+                val finalFile = withContext(Dispatchers.IO) {
+                val cc = kotlin.coroutines.coroutineContext
+                val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
+                check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
+                val completedFile = if (actualOutputs.size == 1) {
+                    val singleFile = actualOutputs.single()
+                    File.createTempFile("VeilFrame_Images_", ".${singleFile.extension}", activity.cacheDir).also {
+                        finalArtifact = it
+                        singleFile.inputStream().buffered().use { input ->
+                            it.outputStream().buffered().use { output ->
+                                SafStorageManager.copyChecked(input, output) { cc.ensureActive() }
+                            }
+                        }
+                    }
                 } else {
-                    // Failed encoders may leave an original or partially written image.
-                    check(!outputFile.exists() || outputFile.delete()) { "Could not remove failed image artifact" }
+                    File.createTempFile("VeilFrame_Batch_Images_", ".zip", activity.cacheDir).also {
+                        finalArtifact = it
+                        safStorageManager.zipDirectory(outputBatchDir, it) { cc.ensureActive() }
+                    }
                 }
-            }
+                check(completedFile.isFile && completedFile.length() > 0) { "Batch artifact was not created" }
+                completedFile
+                }
 
-            stagingDir.deleteRecursively()
-
-            if (successCount == 0) {
-                outputBatchDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Batch image sanitization failed.")
-                    onLog("[ERR] Failed to sanitize any image files in the batch.")
+                    if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                    state.lastGeneratedFile = finalFile
+                    state.progressPercent = 100
+                    state.progressDetailsText = "100% complete"
+                    published = true
+                    sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = 100
+                    binding.tvProgressDetails.text = "100% complete"
+
+                    binding.cardResultSummary.visibility = View.VISIBLE
+                    binding.tvResultTitle.text = finalFile.name
+                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount images scrubbed"
+
+                    onLog("[OK] Batch completed: $successCount/${candidateFiles.size} images scrubbed successfully.")
+                    onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
                     sessionManager.updatePrimaryActionDock(state)
+                    binding.btnExportResult.isEnabled = true
+                    binding.btnShareResult.isEnabled = true
                 }
-                return
-            }
-
-            val actualOutputs = outputBatchDir.walkTopDown().filter { it.isFile }.toList()
-            check(actualOutputs.size == successCount) { "Batch output count does not match successful encodes" }
-            val finalFile = if (actualOutputs.size == 1) {
-                val singleFile = actualOutputs.single()
-                File.createTempFile("VeilFrame_Images_", ".${singleFile.extension}", activity.cacheDir).also {
-                    finalArtifact = it
-                    singleFile.copyTo(it, overwrite = true)
-                }
-            } else {
-                File.createTempFile("VeilFrame_Batch_Images_", ".zip", activity.cacheDir).also {
-                    finalArtifact = it
-                    safStorageManager.zipDirectory(outputBatchDir, it)
-                }
-            }
-            check(finalFile.isFile && finalFile.length() > 0) { "Batch artifact was not created" }
-
-            withContext(Dispatchers.Main) {
-                if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
-                state.lastGeneratedFile = finalFile
-                state.progressPercent = 100
-                state.progressDetailsText = "100% complete"
-                published = true
-                sessionManager.updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${safStorageManager.formatBytes(finalFile.length())})")
-                binding.progressIndicator.isIndeterminate = false
-                binding.progressIndicator.progress = 100
-                binding.tvProgressDetails.text = "100% complete"
-
-                binding.cardResultSummary.visibility = View.VISIBLE
-                binding.tvResultTitle.text = finalFile.name
-                binding.tvResultDetails.text = "${safStorageManager.formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount images scrubbed"
-
-                onLog("[OK] Batch completed: $successCount/${candidateFiles.size} images scrubbed successfully.")
-                onLog("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
-                sessionManager.updatePrimaryActionDock(state)
-                binding.btnExportResult.isEnabled = true
-                binding.btnShareResult.isEnabled = true
-            }
             } finally {
-                batchRoot.deleteRecursively()
-                if (!published) finalArtifact?.delete()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    batchRoot.deleteRecursively()
+                    if (!published) finalArtifact?.delete()
+                }
             }
         } else {
             // Single image file

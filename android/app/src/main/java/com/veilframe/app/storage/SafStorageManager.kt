@@ -164,7 +164,8 @@ class SafStorageManager(private val context: Context) {
                 ?: throw IOException("Provider returned no input stream")
             input.use { source ->
                 temp.outputStream().buffered().use { output ->
-                    copyChecked(source, output) { cc.ensureActive() }
+                    val available = (parent.usableSpace - 25L * 1024 * 1024).coerceAtLeast(0L)
+                    copyChecked(source, output, available) { cc.ensureActive() }
                 }
             }
             cc.ensureActive()
@@ -226,12 +227,12 @@ class SafStorageManager(private val context: Context) {
                 ?: throw IOException("Cannot access selected directory")
             val visited = HashSet<String>()
             var entries = 0
-            suspend fun copyDocRecursive(doc: DocumentFile, currentDir: File, depth: Int) {
+            suspend fun copyDocRecursive(doc: Uri, currentDir: File, depth: Int) {
                 cc.ensureActive()
-                require(depth <= 128 && visited.add(doc.uri.toString())) { "Folder depth or duplicate directory identity exceeded" }
+                require(depth <= 128 && visited.add(doc.toString())) { "Folder depth or duplicate directory identity exceeded" }
                 // Query directly: DocumentFile.listFiles() can swallow provider exceptions.
                 val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-                    doc.uri, DocumentsContract.getDocumentId(doc.uri))
+                    doc, DocumentsContract.getDocumentId(doc))
                 val cursor = context.contentResolver.query(childrenUri,
                     arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                         DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
@@ -239,13 +240,17 @@ class SafStorageManager(private val context: Context) {
                 data class Child(val uri: Uri, val name: String, val mime: String)
                 val children = mutableListOf<Child>()
                 cursor.use {
+                    if (it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) ||
+                        !it.extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()) {
+                        throw IOException("Provider directory listing is incomplete")
+                    }
                     while (it.moveToNext()) {
                         cc.ensureActive()
                         require(++entries <= 50_000) { "Folder staging entry limit exceeded" }
                         val id = it.getString(0) ?: throw IOException("Missing document identity")
                         val name = it.getString(1) ?: throw IOException("Missing document name")
                         val mime = it.getString(2) ?: throw IOException("Missing document MIME type")
-                        children += Child(DocumentsContract.buildDocumentUriUsingTree(doc.uri, id), name, mime)
+                        children += Child(DocumentsContract.buildDocumentUriUsingTree(doc, id), name, mime)
                     }
                 }
                 for (child in children) {
@@ -254,16 +259,14 @@ class SafStorageManager(private val context: Context) {
                     require(!target.exists()) { "Duplicate folder entry name" }
                     if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         check(target.mkdir()) { "Cannot create staged subdirectory" }
-                        val nested = DocumentFile.fromSingleUri(context, child.uri)
-                            ?: throw IOException("Cannot access nested directory")
-                        copyDocRecursive(nested, target, depth + 1)
+                        copyDocRecursive(child.uri, target, depth + 1)
                     } else {
                         if (!copyUriToFile(child.uri, target)) throw IOException("Could not stage a selected file")
                         if (destDir.usableSpace < 25L * 1024 * 1024) throw IOException("Insufficient staging storage")
                     }
                 }
             }
-            copyDocRecursive(rootDoc, destDir, 0)
+            copyDocRecursive(rootDoc.uri, destDir, 0)
             completed = true
             destDir
         } finally {
@@ -271,14 +274,15 @@ class SafStorageManager(private val context: Context) {
         }
     }
 
-    fun zipDirectory(sourceDir: File, zipFile: File) {
+    fun zipDirectory(sourceDir: File, zipFile: File, checkpoint: () -> Unit = {}) {
         zipFile.parentFile?.mkdirs()
         ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             sourceDir.walkTopDown().filter { it.isFile }.forEach { file ->
                 val entryName = file.relativeTo(sourceDir).path.replace('\\', '/')
+                checkpoint()
                 zos.putNextEntry(ZipEntry(entryName))
                 FileInputStream(file).use { fis ->
-                    fis.copyTo(zos)
+                    copyChecked(fis, zos, checkpoint = checkpoint)
                 }
                 zos.closeEntry()
             }
@@ -318,7 +322,8 @@ class SafStorageManager(private val context: Context) {
         }
 
         internal fun copyChecked(input: java.io.InputStream, output: java.io.OutputStream,
-                                 checkpoint: () -> Unit = {}): Long {
+                                 maxBytes: Long = Long.MAX_VALUE, checkpoint: () -> Unit = {}): Long {
+            require(maxBytes >= 0L)
             val buffer = ByteArray(64 * 1024)
             var total = 0L
             while (true) {
@@ -326,6 +331,7 @@ class SafStorageManager(private val context: Context) {
                 val count = input.read(buffer)
                 if (count < 0) return total
                 if (count == 0) throw IOException("Provider stream made no progress")
+                if (count.toLong() > maxBytes - total) throw IOException("Transfer exceeds its available storage budget")
                 output.write(buffer, 0, count)
                 total = Math.addExact(total, count.toLong())
             }
