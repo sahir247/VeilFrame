@@ -821,14 +821,13 @@ class ToolExecutionController(
         }
     }
 
-    fun shareLastResult() {
-        val file = sessionManager.currentState.lastGeneratedFile
-        if (file == null || !file.exists()) {
+    fun shareLastResult(file: File? = sessionManager.currentState.lastGeneratedFile): Boolean {
+        if (file == null || !file.isFile) {
             Toast.makeText(activity, "No output artifact to share", Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
 
-        try {
+        return try {
             val mimeType = safStorageManager.getMimeTypeForFile(file)
             val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -840,8 +839,10 @@ class ToolExecutionController(
             activity.startActivity(Intent.createChooser(intent, "Share Output Artifact").apply {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
+            true
         } catch (e: Exception) {
             Toast.makeText(activity, "Share failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            false
         }
     }
 }

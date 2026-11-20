@@ -9,9 +9,43 @@ import java.io.IOException
 internal object BundleReviewReader {
     data class Page(val text: String, val nextOffset: Long?)
 
+    /** An owned private copy, never rewritten by a new bundle job or workspace reset. */
+    fun freeze(source: File, destination: File, checkpoint: () -> Unit = {}) {
+        val initialLength = source.length()
+        val initialModified = source.lastModified()
+        require(source.isFile && initialLength in 1L..(32L * 1024 * 1024)) { "Invalid review source" }
+        val directory = requireNotNull(destination.parentFile)
+        check(directory.mkdir()) { "Cannot create private review directory" }
+        try {
+            var written = 0L
+            source.inputStream().use { input ->
+                destination.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        checkpoint()
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        written += n
+                        if (written > initialLength) throw IOException("Bundle changed while snapshotting")
+                        output.write(buffer, 0, n)
+                    }
+                }
+            }
+            checkpoint()
+            if (written != initialLength || source.length() != initialLength ||
+                source.lastModified() != initialModified) throw IOException("Bundle changed while snapshotting")
+        } catch (failure: Throwable) {
+            directory.deleteRecursively()
+            throw failure
+        }
+    }
+
     fun read(file: File, offset: Long, pageSize: Int = 12_000): Page {
         require(offset >= 0 && pageSize in 2..48_000)
-        file.bufferedReader(Charsets.UTF_8).use { reader ->
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        java.io.InputStreamReader(file.inputStream(), decoder).buffered().use { reader ->
             var remaining = offset
             while (remaining > 0) {
                 val skipped = reader.skip(remaining)

@@ -72,6 +72,7 @@ import com.veilframe.app.ui.settings.SettingsOverlayCoordinator
 import com.veilframe.app.ui.tools.ToolsCatalogueCoordinator
 import com.veilframe.app.updates.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -153,6 +154,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
             cacheDir.listFiles()?.forEach { candidate ->
+                if (candidate.isDirectory && candidate.name.startsWith("bundle_review_") &&
+                    candidate.lastModified() < cutoff) candidate.deleteRecursively()
                 if (candidate.isFile && candidate.lastModified() < cutoff &&
                     candidate.name.endsWith(".pdf") &&
                     (candidate.name.startsWith("veilframe_unlocked_") ||
@@ -954,9 +957,9 @@ class MainActivity : AppCompatActivity() {
     private fun launchExportCurrentArtifact() {
         val file = toolSessionManager.currentState.lastGeneratedFile
         if (file != null && file.exists()) {
-            reviewBundleBeforeTransfer(file, "Save") {
-                val mimeType = safStorageManager.getExportMimeType(file)
-                launchers.launchExportDocument(file.name, mimeType)
+            reviewBundleBeforeTransfer(file, "Save") { reviewed, owned ->
+                val mimeType = safStorageManager.getExportMimeType(reviewed)
+                launchers.launchExportDocument(reviewed.name, mimeType, reviewed, owned)
             }
         } else {
             Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
@@ -969,14 +972,18 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "No output artifact to share", Toast.LENGTH_SHORT).show()
             return
         }
-        reviewBundleBeforeTransfer(file, "Share") { toolExecutionController.shareLastResult() }
+        reviewBundleBeforeTransfer(file, "Share") { reviewed, _ -> toolExecutionController.shareLastResult(reviewed) }
     }
 
-    private fun reviewBundleBeforeTransfer(file: File, action: String, proceed: () -> Unit) {
+    private fun reviewBundleBeforeTransfer(file: File, action: String, proceed: (File, Boolean) -> Boolean) {
         if (toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE) {
-            proceed()
+            proceed(file, false)
             return
         }
+        val reviewDirectory = File(cacheDir, "bundle_review_${java.util.UUID.randomUUID()}")
+        val reviewedFile = File(reviewDirectory, file.name)
+        var frozen = false
+        var handedOff = false
         val originalLength = file.length()
         val originalModified = file.lastModified()
         fun stillCurrent(): Boolean = !isFinishing && !isDestroyed &&
@@ -1030,8 +1037,18 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled = false
             status.text = "Loading bundle page ${index + 1}…"
             pageJob = lifecycleScope.launch {
-                val page = withContext(Dispatchers.IO) {
-                    runCatching { com.veilframe.app.tools.BundleReviewReader.read(file, offset) }.getOrNull()
+                val page = try {
+                    withContext(Dispatchers.IO) {
+                        if (!frozen) {
+                            val cc = kotlin.coroutines.coroutineContext
+                            com.veilframe.app.tools.BundleReviewReader.freeze(file, reviewedFile) { cc.ensureActive() }
+                        }
+                        com.veilframe.app.tools.BundleReviewReader.read(reviewedFile, offset)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
                 }
                 if (!dialog.isShowing || position != index) return@launch
                 if (page == null || !stillCurrent()) {
@@ -1039,6 +1056,7 @@ class MainActivity : AppCompatActivity() {
                     pageText.text = ""
                     return@launch
                 }
+                frozen = true
                 following = page.nextOffset
                 pageText.text = page.text
                 status.text = "Page ${index + 1}" + if (following == null) " — end of bundle" else " — more content follows"
@@ -1056,12 +1074,19 @@ class MainActivity : AppCompatActivity() {
                 loadPage()
             }
         }
-        dialog.setOnDismissListener { pageJob?.cancel() }
+        dialog.setOnDismissListener {
+            val job = pageJob
+            job?.cancel()
+            if (!handedOff) {
+                if (job != null) job.invokeOnCompletion { reviewDirectory.deleteRecursively() }
+                else reviewDirectory.deleteRecursively()
+            }
+        }
         dialog.show()
         dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-            if (stillCurrent()) {
+            if (frozen && reviewedFile.isFile && stillCurrent()) {
+                handedOff = proceed(reviewedFile, true)
                 dialog.dismiss()
-                proceed()
             } else {
                 Toast.makeText(this, "Bundle changed; review it again", Toast.LENGTH_LONG).show()
                 dialog.dismiss()

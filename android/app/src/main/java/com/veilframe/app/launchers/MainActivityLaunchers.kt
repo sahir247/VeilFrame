@@ -27,6 +27,10 @@ class MainActivityLaunchers(private val activity: MainActivity) {
 
     // Pending export buffers and files for SAF CreateDocument callbacks
     private var pendingMarkdownSaveContent: String? = null
+    private data class PendingArtifact(val file: File, val ownedReview: Boolean) {
+        fun release() { if (ownedReview) file.parentFile?.deleteRecursively() }
+    }
+    private var pendingArtifact: PendingArtifact? = null
     private var pendingImgStudioExportFile: File? = null
     private var pendingVidStudioExportFile: File? = null
     private var pendingDocScannerExportFile: File? = null
@@ -84,25 +88,31 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         }
     }
 
-    // Generic Artifact Export launcher
+    // Generic artifact picker owns the exact source selected before launch.
     private val exportDocumentLauncher = activity.registerForActivityResult(
         CreateDocumentWithMime()
     ) { destinationUri ->
-        if (destinationUri != null) {
-            val sourceFile = activity.toolSessionManager.currentState.lastGeneratedFile
-            if (sourceFile != null && sourceFile.exists()) {
-                activity.lifecycleScope.launch(Dispatchers.IO) {
-                    val success = activity.safStorageManager.copyFileToUri(sourceFile, destinationUri)
+        val artifact = pendingArtifact
+        pendingArtifact = null
+        if (destinationUri == null) {
+            artifact?.release()
+        } else if (artifact == null || !artifact.file.isFile) {
+            artifact?.release()
+            Toast.makeText(activity, "Original export unavailable; generate and review it again", Toast.LENGTH_LONG).show()
+        } else {
+            activity.lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val success = activity.safStorageManager.copyFileToUri(artifact.file, destinationUri)
                     withContext(Dispatchers.Main) {
                         if (success) {
-                            activity.consoleLogController.log("[EXPORT] Artifact written to storage: ${destinationUri.lastPathSegment ?: destinationUri.path}")
+                            activity.consoleLogController.log("[EXPORT] Artifact written to storage")
                             Toast.makeText(activity, "Saved to device storage", Toast.LENGTH_LONG).show()
                         } else {
                             activity.consoleLogController.log("[ERR] Failed to write exported file to destination.")
-                            Toast.makeText(activity, "Export write failed", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "Export write failed", Toast.LENGTH_LONG).show()
                         }
                     }
-                }
+                } finally { artifact.release() }
             }
         }
     }
@@ -592,8 +602,25 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         markdownSaveAsLauncher.launch(suggestedName)
     }
 
-    fun launchExportDocument(fileName: String, mimeType: String) {
-        exportDocumentLauncher.launch(fileName to mimeType)
+    fun launchExportDocument(
+        fileName: String, mimeType: String,
+        sourceFile: File? = activity.toolSessionManager.currentState.lastGeneratedFile,
+        ownedReview: Boolean = false
+    ): Boolean {
+        if (sourceFile == null || !sourceFile.isFile || pendingArtifact != null) {
+            Toast.makeText(activity, "Export unavailable or another save is pending", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val artifact = PendingArtifact(sourceFile, ownedReview)
+        pendingArtifact = artifact
+        return try {
+            exportDocumentLauncher.launch(fileName to mimeType)
+            true
+        } catch (failure: Exception) {
+            pendingArtifact = null
+            Toast.makeText(activity, "Cannot open export picker: ${failure.message}", Toast.LENGTH_LONG).show()
+            false
+        }
     }
 
     fun launchImgStudioExport(file: File, mime: String = activity.safStorageManager.getExportMimeType(file)) {

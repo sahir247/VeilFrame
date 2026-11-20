@@ -64,6 +64,27 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun reviewSnapshotDoesNotFollowSourceReplacement() {
+        val root = java.nio.file.Files.createTempDirectory("bundle_snapshot").toFile()
+        try {
+            val source = java.io.File(root, "bundle.md").apply { writeText("reviewed first") }
+            val snapshot = java.io.File(java.io.File(root, "owned"), source.name)
+            BundleReviewReader.freeze(source, snapshot)
+            source.writeText("different content")
+            org.junit.Assert.assertEquals("reviewed first", BundleReviewReader.read(snapshot, 0).text)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun escapedQuotedSecretAndNativeDelimitersFailSafely() {
+        val input = """password = "fake\\"suffix-secret" """
+        assertFalse(AiBundleEngine.maskSecrets(input).contains("suffix-secret"))
+        assertFalse(AiBundleEngine.isNativeBundleEntrySafe("file.kt", "before\n  >>>\r\nafter"))
+        assertFalse(AiBundleEngine.isNativeBundleEntrySafe("bad\"name.kt", "normal code"))
+        assertTrue(AiBundleEngine.isNativeBundleEntrySafe("file.kt", "fun add(a: Int) = a"))
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)

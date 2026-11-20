@@ -60,6 +60,9 @@ object AiBundleEngine {
     private val SECRET_PATTERNS = listOf(
         Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
         Pattern.compile("""(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9_./+=-]+"""),
+        // Match whole escaped quoted values instead of leaving a secret suffix.
+        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth|client[_-]?secret|refresh[_-]?token|private[_-]?key|accountkey)\b["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')"""),
+        Pattern.compile("""(?i)\b(?:password|passwd|api[_-]?key|secret|token|private[_-]?key|client[_-]?secret)\b\s*[:=]\s*[|>]\s*\r?\n(?:[ \t]+[^\r\n]*(?:\r?\n|$))+"""),
         Pattern.compile("""\b(?:glpat-[A-Za-z0-9_-]{15,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{12,})\b"""),
         Pattern.compile("""(?i)\b(?:accountkey|client[_-]?secret|refresh[_-]?token|private[_-]?token|aws[_-]?secret[_-]?access[_-]?key)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
         Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
@@ -202,8 +205,7 @@ object AiBundleEngine {
                         if (config.compressManifests && name.lowercase(Locale.US) in MANIFEST_LOCK_FILES) {
                             content = condenseManifest(content)
                         }
-                        if (format == "aibundle" && (path.any { it == '"' || it == '\\' || it.code < 32 } ||
-                                content.lineSequence().any { it == ">>>" || it == "<<<" })) {
+                        if (format == "aibundle" && !isNativeBundleEntrySafe(exportedPath, content)) {
                             omit(path, "native delimiter conflict; select JSON format"); return
                         }
                         val section = buildFileSection(exportedPath, content, format, included + 1)
@@ -291,7 +293,7 @@ object AiBundleEngine {
             if (finalBytes > budget) {
                 throw IOException("Complete bundle, including the omission report, exceeds the estimated budget. Increase the budget or narrow the selection.")
             }
-            Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             val wholeEstimate = finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
             return BundleResult(files, included, wholeEstimate, outputFile.absolutePath, omitted)
         } finally {
@@ -320,6 +322,10 @@ object AiBundleEngine {
             .onUnmappableCharacter(CodingErrorAction.REPORT)
             .decode(ByteBuffer.wrap(bytes)).toString()
     }
+
+    internal fun isNativeBundleEntrySafe(path: String, content: String): Boolean =
+        path.none { it == '"' || it == '\\' || it.code < 32 || it.code == 127 } &&
+            content.lineSequence().none { it.trim() == ">>>" || it.trim() == "<<<" }
 
     private fun isTestFile(name: String, path: String): Boolean {
         val lowerName = name.lowercase(Locale.US)
