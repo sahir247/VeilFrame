@@ -50,6 +50,35 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A31 | P1 | PATCHED | ML Kit OCR failure can be treated as empty recognition; cancelled recognizer may outlive bitmap | `pdf/operations/OcrEngine.kt:24-62` | Propagate detector failure; protect asynchronous input bitmap lifetime and distinguish genuinely empty pages. |
 | A32 | P1 | PATCHED | PDF raster compression swallowed individual page render errors, permitting partial or blank-page output | `pdf/operations/PdfCompressor.kt:809-823` (baseline) | Reject the entire faulty candidate; verify original page count and content fixtures. |
 
+## Remaining-work classification (after 2026-11-20 follow-up)
+
+Status and verification are separate axes. The original 32 finding statuses above are intentionally retained until their acceptance criteria are met. A missing benchmark is not the same as missing code. Do not turn a partial finding into PATCHED or VERIFIED merely by moving the goalposts.
+
+| Finding | Outstanding source scope | Outstanding validation |
+|---|---|---|
+| A02 | Additional scripts/fonts only if broader recognition is intended; current Latin contract remains explicit. | Actual device OCR, text extraction and multilingual corpus. |
+| A05 | Explicit PDF metadata scope is implemented; arbitrary hidden/opaque content is outside that scope unless a separate privacy contract is designed. | Adversarial PDFs, raw bytes and provider failures. |
+| A06 | Broader support for view-dependent/unsupported form and annotation appearances; currently fails closed. | Rendered before/after comparisons and form fixtures. |
+| A07 | Broader nonstandard payload sanitization if claimed; reachable standard references already handled. | Malicious corpus, independent parser, serialized bytes. |
+| A08 | File-backed original-resolution compositing/export for images exceeding the bitmap budget. | High-resolution, EXIF, transparency and peak-memory/device quality. |
+| A11 | Structural default and explicitly consented image-only mode implemented; additional color/interactive fidelity coverage may reveal defects. | Rendered comparisons, signed and encrypted input handling, device raster export. |
+| A14 | No specific remaining implementation defect established by the latest evidence; investigate failures rather than assuming closure. | Preview/export equivalence and native cancellation. |
+| A15 | Recovery rejects missing/foreign originals; additional image integrity and failed-generation reclamation work. | Process death, simultaneous saves and storage failure injection. |
+| A16 | Selective per-file review/exclusion workflow; detector coverage remains heuristic. | Adversarial credential fixtures and provider UI. |
+| A17 | Model-specific tokenizer integration and independent native-format parser interoperability. | Large SAF trees, provider errors, roundtrip compatibility. |
+| A19 | Real sequential decoder with presentation timestamps for exhaustive frame admission; current modes are sampled. | Detection recall, rotation, variable frame rate and FFmpeg rendering parity. |
+| A21 | Complete resource ownership and controller/binding lifecycle decomposition. | Navigation, activity recreation and service cancellation stress. |
+| A22 | No independent attribution-resistance claim can be established from source fixes alone. | Held-out consented multi-camera original/export corpus and independent detectors. |
+| A23 | Investigate quality failures from evidence; production EIS path already corrected. | Real footage, crop and tracking quality, multistream scenarios. |
+| A24 | Pinned U2-Net-P/MODNet graph activations inspected; downloaded bytes now revalidated. No additional activation change justified. | Actual CPU/Vulkan inference and photographic mask quality for both models. |
+| A25 | Coordinate native load/replacement ownership and remaining concurrency findings if reproduced. | Native concurrency, cancellation latency and memory stress. |
+| A26 | Additional neural tiling improvements depend on measured seams/fidelity; portable kernels corrected. | Native/device benchmarks and whole-image versus tiled quality. |
+| A27 | No specific outstanding implementation defect established by the latest encoded-artifact checks. | Real encoded video/GIF/APNG fixtures, camera scans and physical print tests. |
+| A28 | Full Office rendering semantics, streaming limits across all routes, layout/style/chart/formula fidelity. | Office corpus, reopen and device memory comparisons. |
+| A29 | Architectural decomposition along ownership boundaries; avoid blanket refactors without coverage. | Lifecycle/regression suites across affected workspaces. |
+
+Evidence checkpoint: CI run [44733311963](https://github.com/sahir247/VeilFrame/actions/runs/44733311963) passed on `5aeb53e`, including Android ARM64 debug build, complete Android unit suite and APK verification. Signed release and physical-device acceptance did not execute. Subsequent remediation commits are not covered by that result; their own CI and device checks remain pending.
+
 ## Implementation log
 
 - Ledger initialized before fixes; no tests executed yet.
