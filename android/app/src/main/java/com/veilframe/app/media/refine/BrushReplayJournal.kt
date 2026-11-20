@@ -1,4 +1,4 @@
-package com.veilframe.app.cv.segmentation.rembg
+package com.veilframe.app.media.refine
 
 /** A brush segment in the untrimmed editor's own coordinate system. */
 internal data class CutoutStroke(val width: Int, val height: Int,

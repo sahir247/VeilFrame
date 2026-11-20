@@ -27,8 +27,8 @@ import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgImageSource
 import com.veilframe.app.cv.segmentation.rembg.RembgResult
 import com.veilframe.app.cv.segmentation.rembg.RembgAlphaMatte
-import com.veilframe.app.cv.segmentation.rembg.BrushReplayJournal
-import com.veilframe.app.cv.segmentation.rembg.CutoutStroke
+import com.veilframe.app.media.refine.BrushReplayJournal
+import com.veilframe.app.media.refine.CutoutStroke
 import com.veilframe.app.cv.segmentation.rembg.RembgSourceInfo
 import com.veilframe.app.cv.segmentation.rembg.OriginalResolutionCutout
 import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog

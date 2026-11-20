@@ -1,8 +1,8 @@
 package com.veilframe.app.ui.views
 
 import android.animation.ValueAnimator
-import com.veilframe.app.cv.segmentation.rembg.BrushReplayJournal
-import com.veilframe.app.cv.segmentation.rembg.CutoutStroke
+import com.veilframe.app.media.refine.BrushReplayJournal
+import com.veilframe.app.media.refine.CutoutStroke
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap

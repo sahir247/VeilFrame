@@ -1,5 +1,8 @@
 package com.veilframe.app.cv.segmentation.rembg
 
+import com.veilframe.app.media.refine.CutoutStroke
+import com.veilframe.app.media.refine.BrushReplayJournal
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color

@@ -1,4 +1,4 @@
-package com.veilframe.app.cv.segmentation.rembg
+package com.veilframe.app.media.refine
 
 import org.junit.Assert.*
 import org.junit.Test
