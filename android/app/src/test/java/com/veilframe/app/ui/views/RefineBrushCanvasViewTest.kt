@@ -174,6 +174,37 @@ class RefineBrushCanvasViewTest {
     }
 
     @Test
+    fun restoreUsesAlignedSourcePreviewAndPreservesSourceAlpha() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        val source = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.RED)
+            for (y in 0 until 20) for (x in 10 until 20) setPixel(x, y, Color.argb(128, 0, 0, 255))
+        }
+        val cutout = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
+        try {
+            view.setBitmaps(source, cutout)
+            assertFalse(view.hasEdits)
+            view.brushMode = RefineBrushCanvasView.BrushMode.RESTORE
+            view.brushRadiusPx = 4f
+            view.applyStrokeDirect(12f, 20f, 12f, 20f)
+            view.getRefinedBitmap()!!.let { assertEquals(Color.RED, it.getPixel(12, 20)); it.recycle() }
+            view.applyStrokeDirect(30f, 20f, 30f, 20f)
+            view.getRefinedBitmap()!!.let { assertEquals(Color.argb(128, 0, 0, 255), it.getPixel(30, 20)); it.recycle() }
+            assertTrue(view.hasEdits)
+            view.undo()
+            view.undo()
+            assertFalse(view.hasEdits)
+        } finally { view.cleanup(); source.recycle(); cutout.recycle() }
+    }
+
+    @Test
+    fun historyCapacityRejectsUnboundedFullResolutionCopies() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        assertTrue(view.historyCapacity(50, 50) >= 2)
+        assertEquals(0, view.historyCapacity(16000, 8000))
+    }
+
+    @Test
     fun `test cleanup frees resources`() {
         val context = RuntimeEnvironment.getApplication()
         val view = RefineBrushCanvasView(context)

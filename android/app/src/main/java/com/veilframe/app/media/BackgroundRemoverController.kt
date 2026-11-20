@@ -1079,7 +1079,13 @@ class BackgroundRemoverController(
 
     fun enterRefineMode() {
         val src = sourceBitmap ?: return
-        val res = resultBitmap ?: return
+        // Trim is an export/display option, never the coordinate system of a brush.
+        val res = rawCutoutBitmap ?: return
+        if (!binding.refineBrushCanvas.canEdit(res)) {
+            Toast.makeText(activity, "Cutout exceeds the safe manual-refinement memory budget.", Toast.LENGTH_LONG).show()
+            return
+        }
+        binding.refineBrushCanvas.setBitmaps(src, res)
 
         isRefineMode = true
         binding.splitViewBgCompare.visibility = View.GONE
@@ -1089,7 +1095,6 @@ class BackgroundRemoverController(
         binding.refineBrushCanvas.visibility = View.VISIBLE
         binding.cardBgRefineDock.visibility = View.VISIBLE
 
-        binding.refineBrushCanvas.setBitmaps(src, res)
         binding.toolbarBgRemover.title = "Refine Cutout"
         binding.toolbarBgRemover.subtitle = "Erase residue or restore details"
         (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
@@ -1097,7 +1102,7 @@ class BackgroundRemoverController(
 
     fun exitRefineMode(applyEdits: Boolean) {
         if (applyEdits) {
-            val edited = binding.refineBrushCanvas.getRefinedBitmap()
+            val edited = if (binding.refineBrushCanvas.hasEdits) binding.refineBrushCanvas.getRefinedBitmap() else null
             if (edited != null) {
                 val prevRaw = rawCutoutBitmap
                 val prevRes = resultBitmap
@@ -1120,6 +1125,7 @@ class BackgroundRemoverController(
             }
         }
 
+        binding.refineBrushCanvas.cleanup()
         isRefineMode = false
         binding.cardBgRefineDock.translationY = 0f
         binding.refineBrushCanvas.alpha = 1f
