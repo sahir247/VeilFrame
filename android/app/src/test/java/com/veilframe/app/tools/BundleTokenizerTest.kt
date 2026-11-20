@@ -14,7 +14,8 @@ class BundleTokenizerTest {
     }
 
     @Test fun distinctNamedEncodingsAndStableBudgetChoices() {
-        assertEquals(5L, BundleTokenizer.count("お誕生日おめでとう", BundleTokenizer.NAME))
+        // OpenAI Cookbook reference tokenizer: 8 o200k, 9 cl100k tokens.
+        assertEquals(8L, BundleTokenizer.count("お誕生日おめでとう", BundleTokenizer.NAME))
         assertEquals(9L, BundleTokenizer.count("お誕生日おめでとう", BundleTokenizer.CL100K))
         assertEquals(64_000L, BundleBudgetOptions.at(1).tokens)
         assertEquals(0L, BundleBudgetOptions.at(4).tokens)
@@ -22,8 +23,8 @@ class BundleTokenizerTest {
         val file = File.createTempFile("bundle_encoding", ".txt")
         try {
             file.writeText("お誕生日おめでとう")
-            assertEquals(5L, BundleTokenizer.verify(file, 5, BundleTokenizer.NAME))
-            assertThrows(IOException::class.java) { BundleTokenizer.verify(file, 5, BundleTokenizer.CL100K) }
+            assertEquals(8L, BundleTokenizer.verify(file, 8, BundleTokenizer.NAME))
+            assertThrows(IOException::class.java) { BundleTokenizer.verify(file, 8, BundleTokenizer.CL100K) }
         } finally { file.delete() }
     }
 
