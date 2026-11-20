@@ -561,3 +561,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A17 — Multiple exact offline token encodings
 
 - Add cl100k_base alongside o200k_base with a shared option table preserving existing option indices. Section packing and complete serialized artifact verification use the selected encoding. Add multilingual count and budget regression. Chat wrappers remain outside the contract. CI pending.
+
+### A21/A29 — Own bundle dialogs and teardown callbacks
+
+- Bundle selector returns its owned dialog, dismissed on replacement, cancellation and destruction; generation invalidated on activity release without updating destroyed views. Direct sublist paging avoids allocating skipped suffixes. Activity owns one review dialog, dismissing it before replacement and on destruction; existing dismissal cleanup cancels page jobs and reclaims unhanded review snapshots. No broad controller rewrite. Android lifecycle tests remain pending.

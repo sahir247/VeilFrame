@@ -45,6 +45,16 @@ class ToolExecutionController(
 
     private var executionJob: Job? = null
     private var executionGeneration = 0L
+    private var selectionDialog: androidx.appcompat.app.AlertDialog? = null
+
+    /** Activity teardown invalidates callbacks without updating destroyed views. */
+    fun release() {
+        executionGeneration++
+        executionJob?.cancel()
+        executionJob = null
+        selectionDialog?.dismiss()
+        selectionDialog = null
+    }
 
     private fun ownsExecution(generation: Long, mode: ToolMode, owner: ToolTargetOwner): Boolean =
         generation == executionGeneration && !activity.isFinishing && !activity.isDestroyed &&
@@ -71,9 +81,7 @@ class ToolExecutionController(
     }
 
     fun cancelExecution() {
-        executionGeneration++
-        executionJob?.cancel()
-        executionJob = null
+        release()
         val state = sessionManager.currentState
         sessionManager.updateJobState(JobState.CANCELLED, "Processing cancelled by user.")
         onLog("[USER] Execution cancelled by user.")
@@ -173,6 +181,8 @@ class ToolExecutionController(
     private fun showBundleExclusions(state: ToolSessionState, uri: Uri) {
         val owner = ToolTargetOwner(state)
         val depth = selectedBundleDepth()
+        selectionDialog?.dismiss()
+        selectionDialog = null
         val generation = ++executionGeneration
         val mode = ToolMode.AI_BUNDLE
         sessionManager.updateJobState(JobState.PREPARING, "Indexing file names for exclusion…")
@@ -183,11 +193,13 @@ class ToolExecutionController(
                 if (!ownsExecution(generation, mode, owner)) return@launch
                 sessionManager.updateJobState(JobState.IDLE, "Review files before generation.")
                 sessionManager.updatePrimaryActionDock(state)
-                BundleFileSelectionDialog.show(activity, inventory.files) { excluded ->
+                val dialog = BundleFileSelectionDialog.show(activity, inventory.files) { excluded ->
                     if (!ownsExecution(generation, mode, owner) || selectedBundleDepth() != depth) {
                         Toast.makeText(activity, "Target or folder depth changed; review files again.", Toast.LENGTH_LONG).show()
                     } else executeSelectedModeInternal(excluded, inventory.fingerprint)
                 }
+                selectionDialog = dialog
+                dialog.setOnDismissListener { if (selectionDialog === dialog) selectionDialog = null }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

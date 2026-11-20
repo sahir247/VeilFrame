@@ -15,7 +15,7 @@ internal object BundleFileSelectionDialog {
     private const val PAGE_SIZE = 40
     private const val MAX_EXCLUSIONS = 2000
 
-    fun show(activity: AppCompatActivity, files: List<String>, onGenerate: (Set<String>) -> Unit) {
+    fun show(activity: AppCompatActivity, files: List<String>, onGenerate: (Set<String>) -> Unit): androidx.appcompat.app.AlertDialog {
         val selection = linkedSetOf<String>()
         var filtered = files
         var page = 0
@@ -56,7 +56,8 @@ internal object BundleFileSelectionDialog {
             next.isEnabled = page + 1 < pages
         }
         fun render() {
-            visible = filtered.drop(page * PAGE_SIZE).take(PAGE_SIZE)
+            val from = page * PAGE_SIZE
+            visible = filtered.subList(from, minOf(filtered.size, from + PAGE_SIZE))
             list.clearChoices()
             list.adapter = ArrayAdapter(activity, android.R.layout.simple_list_item_multiple_choice, visible)
             for ((index, path) in visible.withIndex()) list.setItemChecked(index, path in selection)
@@ -81,7 +82,7 @@ internal object BundleFileSelectionDialog {
         previous.setOnClickListener { if (page > 0) { page--; render() } }
         next.setOnClickListener { if ((page + 1) * PAGE_SIZE < filtered.size) { page++; render() } }
         render()
-        MaterialAlertDialogBuilder(activity)
+        return MaterialAlertDialogBuilder(activity)
             .setTitle("Exclude files from AI bundle")
             .setView(root)
             .setNegativeButton("Cancel", null)

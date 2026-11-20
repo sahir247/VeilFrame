@@ -360,6 +360,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         launchers.releasePendingCutout()
+        if (::toolExecutionController.isInitialized) toolExecutionController.release()
+        activeBundleReview?.dismiss()
+        activeBundleReview = null
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
             docScannerController.release()
@@ -981,7 +984,11 @@ class MainActivity : AppCompatActivity() {
         reviewBundleBeforeTransfer(file, "Share") { reviewed, _ -> toolExecutionController.shareLastResult(reviewed) }
     }
 
+    private var activeBundleReview: androidx.appcompat.app.AlertDialog? = null
+
     private fun reviewBundleBeforeTransfer(file: File, action: String, proceed: (File, Boolean) -> Boolean) {
+        activeBundleReview?.dismiss()
+        activeBundleReview = null
         if (toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE) {
             proceed(file, false)
             return
@@ -1098,6 +1105,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.setOnDismissListener {
+            if (activeBundleReview === dialog) activeBundleReview = null
             val job = pageJob
             job?.cancel()
             if (!handedOff) {
@@ -1105,6 +1113,7 @@ class MainActivity : AppCompatActivity() {
                 else reviewDirectory.deleteRecursively()
             }
         }
+        activeBundleReview = dialog
         dialog.show()
         dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
             if (reviewGate.canTransfer(allowUnread.isChecked) && frozen && reviewedFile.isFile && stillCurrent()) {
