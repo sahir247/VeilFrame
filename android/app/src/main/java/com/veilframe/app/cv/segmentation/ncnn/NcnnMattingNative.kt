@@ -50,6 +50,10 @@ object NcnnMattingNative {
     @JvmStatic
     external fun isModelLoaded(modelType: Int): Boolean
 
+    /** Reports the loaded backend, not merely the requested GPU preference. */
+    @JvmStatic
+    external fun isModelGpu(modelType: Int): Boolean
+
     @JvmStatic
     external fun nativeRelease()
 }

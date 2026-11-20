@@ -86,16 +86,18 @@ class CelBackgroundRemover(
             inMutable = true
         )
 
-         val rgbaBitmap = if (sourceBitmap.config == Bitmap.Config.ARGB_8888) {
-            sourceBitmap
-        } else {
-            sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
-        }
+        var rgbaBitmap = sourceBitmap
+        val cc = kotlin.coroutines.coroutineContext
+        val checkpoint: () -> Unit = { cc.ensureActive() }
 
         var maskBitmap: Bitmap? = null
         var compositeSource: Bitmap? = null
         var cutoutBitmap: Bitmap? = null
         try {
+            if (sourceBitmap.config != Bitmap.Config.ARGB_8888) {
+                rgbaBitmap = sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                    ?: throw IllegalStateException("Cannot allocate matting input")
+            }
             onProgress(RembgProgress(55, "Running neural matting…"))
             ensureActive()
 
@@ -107,14 +109,14 @@ class CelBackgroundRemover(
 
             val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
-            cutoutBitmap = applyFullResolutionColors(colors, maskBitmap)
+            cutoutBitmap = applyFullResolutionColors(colors, maskBitmap, checkpoint)
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
             maskBitmap.recycle()
             maskBitmap = null
 
             onProgress(RembgProgress(90, "Refining edges…"))
-            cutoutBitmap = applyEdgePostProcessing(cutoutBitmap, tightenEdges, featherEdges, trim)
+            cutoutBitmap = applyEdgePostProcessing(cutoutBitmap, tightenEdges, featherEdges, trim, checkpoint)
 
             onProgress(RembgProgress(100, "Done"))
             ensureActive()
@@ -137,30 +139,36 @@ class CelBackgroundRemover(
         tightenEdges: Boolean,
         featherEdges: Boolean,
         trim: Boolean,
+        checkpoint: () -> Unit,
     ): Bitmap {
         var resultBitmap = bitmap
+        try {
         if (tightenEdges) {
-            val tightened = MaskPostprocessor.tightenEdges(resultBitmap, radius = 1)
+            val tightened = MaskPostprocessor.tightenEdges(resultBitmap, radius = 1, checkpoint = checkpoint)
             if (tightened !== resultBitmap) {
                 resultBitmap.recycle()
                 resultBitmap = tightened
             }
         }
         if (featherEdges) {
-            val feathered = MaskPostprocessor.featherEdges(resultBitmap, radius = 1)
+            val feathered = MaskPostprocessor.featherEdges(resultBitmap, radius = 1, checkpoint = checkpoint)
             if (feathered !== resultBitmap) {
                 resultBitmap.recycle()
                 resultBitmap = feathered
             }
         }
         if (trim) {
-            val trimmed = MaskPostprocessor.trimTransparent(resultBitmap)
+            val trimmed = MaskPostprocessor.trimTransparent(resultBitmap, checkpoint)
             if (trimmed !== resultBitmap) {
                 resultBitmap.recycle()
                 resultBitmap = trimmed
             }
         }
         return resultBitmap
+        } catch (failure: Throwable) {
+            if (resultBitmap !== bitmap && !resultBitmap.isRecycled) resultBitmap.recycle()
+            throw failure
+        }
     }
 
     fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {
@@ -188,7 +196,7 @@ class CelBackgroundRemover(
         private const val LOW_RES_DIMENSION_PX = 800
         private const val LARGE_IMAGE_PIXELS = 3_000_000L
 
-        internal fun applyFullResolutionColors(source: Bitmap, alphaSource: Bitmap): Bitmap {
+        internal fun applyFullResolutionColors(source: Bitmap, alphaSource: Bitmap, checkpoint: () -> Unit = {}): Bitmap {
             val w = source.width
             val h = source.height
             val mw = alphaSource.width
@@ -209,6 +217,7 @@ class CelBackgroundRemover(
                 var lastY0 = -1
                 var lastY1 = -1
                 for (y in 0 until h) {
+                    checkpoint()
                     val sy = ((y + 0.5) * mh / h - 0.5).coerceIn(0.0, (mh - 1).toDouble())
                     val y0 = sy.toInt()
                     val y1 = minOf(y0 + 1, mh - 1)

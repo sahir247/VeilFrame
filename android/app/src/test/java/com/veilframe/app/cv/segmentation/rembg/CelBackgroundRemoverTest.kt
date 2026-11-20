@@ -13,6 +13,13 @@ import java.io.ByteArrayOutputStream
 class CelBackgroundRemoverTest {
 
     @Test
+    fun decoderIntermediateHonorsActualEdgeLimit() {
+        assertEquals(2, RembgImageUtils.sampleSizeForMax(8192, 6000, 4096))
+        assertEquals(4, RembgImageUtils.sampleSizeForMax(8193, 6000, 4096))
+        assertEquals(1, RembgImageUtils.sampleSizeForMax(4096, 3000, 4096))
+    }
+
+    @Test
     fun originalResolutionBudgetRejectsUnboundedAllocations() {
         assertEquals(true, RembgImageUtils.canCompositeOriginal(6000, 4000, 512L * 1024 * 1024))
         assertEquals(false, RembgImageUtils.canCompositeOriginal(6000, 4000, 128L * 1024 * 1024))

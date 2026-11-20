@@ -324,12 +324,13 @@ object ColorOsMattingPlugin {
             }
             val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
-            cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask)
+            val cc = kotlin.coroutines.coroutineContext
+            cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask) { cc.ensureActive() }
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
 
             val finalCutout = if (trim) {
-                val trimmed = MaskPostprocessor.trimTransparent(cutoutBitmap)
+                val trimmed = MaskPostprocessor.trimTransparent(cutoutBitmap) { cc.ensureActive() }
                 if (trimmed !== cutoutBitmap && !cutoutBitmap.isRecycled) cutoutBitmap.recycle()
                 trimmed
             } else {

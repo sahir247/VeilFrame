@@ -23,6 +23,7 @@ object RembgImageUtils {
         val orientation = readOrientation(bytes)
         val options = BitmapFactory.Options().apply {
             this.inMutable = inMutable
+            inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         if (maxDimension != null) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -34,13 +35,23 @@ object RembgImageUtils {
         }
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             ?: throw IllegalArgumentException("Could not decode image")
-        val oriented = applyOrientation(orientation, bitmap)
+        val oriented = try {
+            applyOrientation(orientation, bitmap)
+        } catch (failure: Throwable) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            throw failure
+        }
         if (maxDimension == null || (oriented.width <= maxDimension && oriented.height <= maxDimension)) {
             return oriented
         }
-        val scaled = scaleToFit(oriented, maxDimension, maxDimension)
-        if (scaled !== oriented) oriented.recycle()
-        return scaled
+        return try {
+            val scaled = scaleToFit(oriented, maxDimension, maxDimension)
+            if (scaled !== oriented) oriented.recycle()
+            scaled
+        } catch (failure: Throwable) {
+            if (!oriented.isRecycled) oriented.recycle()
+            throw failure
+        }
     }
 
     // Reserve memory for EXIF rotation, original RGB, composited output and edge passes.
@@ -105,12 +116,13 @@ object RembgImageUtils {
         return rotated
     }
 
-    private fun sampleSizeForMax(width: Int, height: Int, maxDimension: Int): Int {
-        var sample = 1
-        while (width / sample > maxDimension * 2 || height / sample > maxDimension * 2) {
-            sample *= 2
-        }
-        return max(1, sample)
+    internal fun sampleSizeForMax(width: Int, height: Int, maxDimension: Int): Int {
+        require(width > 0 && height > 0 && maxDimension > 0)
+        var sample = 1L
+        val largest = max(width, height).toLong()
+        // Bound the actual decoder intermediate, not only the final scaled bitmap.
+        while ((largest + sample - 1) / sample > maxDimension) sample *= 2
+        return sample.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     private fun readOrientation(bytes: ByteArray): Int =
