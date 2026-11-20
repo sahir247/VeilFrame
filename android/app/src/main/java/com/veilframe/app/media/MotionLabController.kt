@@ -11,7 +11,8 @@ import android.util.Log
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import com.arthenica.ffmpegkit.FFmpegKit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import com.arthenica.ffmpegkit.ReturnCode
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -78,6 +79,8 @@ class MotionLabController(
     }
 
     private var sourceUri: Uri? = null
+    private var ownedTrimFile: File? = null
+    private var sourceGeneration = 0L
     val currentSourceUri: Uri? get() = sourceUri
     private var videoDurationMs: Long = 0L
     private var multiplier = 2
@@ -187,11 +190,6 @@ class MotionLabController(
             }
         }
         outputFile = null
-        try {
-            activity.cacheDir.listFiles { _, name ->
-                name.startsWith("motion_clip_") || name.startsWith("motion_temp_in_")
-            }?.forEach { it.delete() }
-        } catch (_: Throwable) {}
         binding.cardMotionLabResult.visibility = View.GONE
         updateControlStates()
         Toast.makeText(activity, "Work discarded", Toast.LENGTH_SHORT).show()
@@ -207,16 +205,12 @@ class MotionLabController(
             }
         }
         outputFile = null
-        try {
-            activity.cacheDir.listFiles { _, name ->
-                name.startsWith("motion_clip_") || name.startsWith("motion_temp_in_")
-            }?.forEach { it.delete() }
-        } catch (_: Throwable) {}
         reset()
         MotionLabForegroundService.stop(activity)
     }
 
     fun reset() {
+        sourceGeneration++
         cancelRequested = true
         activeJobId?.let { id ->
             VeilFrameProcessingService.cancelProcessing(activity, id)
@@ -230,6 +224,8 @@ class MotionLabController(
                 if (file.exists()) file.delete()
             } catch (_: Throwable) {}
         }
+        ownedTrimFile?.delete()
+        ownedTrimFile = null
         sourceUri = null
         outputFile = null
         videoDurationMs = 0L
@@ -256,6 +252,7 @@ class MotionLabController(
     }
 
     fun cancel() {
+        sourceGeneration++
         cancelRequested = true
         activeJobId?.let { id ->
             VeilFrameProcessingService.cancelProcessing(activity, id)
@@ -264,7 +261,8 @@ class MotionLabController(
         rifeDownloadJob?.cancel()
         job?.cancel()
         isTrimming = false
-        FFmpegKit.cancel()
+        // The trim coroutine cancels its own native session; the foreground
+        // service likewise owns its native sessions. Never cancel globally.
         MotionLabForegroundService.stop(activity)
         outputFile?.let { file ->
             try { if (file.exists()) file.delete() } catch (_: Throwable) {}
@@ -342,6 +340,7 @@ class MotionLabController(
 
     fun setSource(uri: Uri) {
         if (job?.isActive == true || activeJobId != null || isTrimming) return
+        sourceGeneration++
         try {
             val retriever = android.media.MediaMetadataRetriever()
             if (uri.scheme == "file" && uri.path != null) {
@@ -381,6 +380,7 @@ class MotionLabController(
         fpsLabel: String,
         name: String
     ) {
+        val generation = sourceGeneration
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_motion_long_video_warning, null)
         val cbDoNotShow = dialogView.findViewById<MaterialCheckBox>(R.id.cbDoNotShowAgain)
         val tvMessage = dialogView.findViewById<TextView>(R.id.tvWarningMessage)
@@ -395,7 +395,7 @@ class MotionLabController(
                     val prefs = activity.getSharedPreferences("veilframe_motion_lab", Context.MODE_PRIVATE)
                     prefs.edit().putBoolean("skip_long_video_warning", true).apply()
                 }
-                applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
+                if (generation == sourceGeneration) applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
             }
             .setNegativeButton("Cancel") { _, _ ->
                 // User chose not to load long video
@@ -410,6 +410,10 @@ class MotionLabController(
         fpsLabel: String,
         name: String
     ) {
+        if (ownedTrimFile?.let { Uri.fromFile(it) } != uri) {
+            ownedTrimFile?.delete()
+            ownedTrimFile = null
+        }
         sourceUri = uri
         outputFile = null
         videoDurationMs = durationMs
@@ -619,6 +623,8 @@ class MotionLabController(
     }
 
     private fun executeTrim(inputUri: Uri, startSec: Float, durationSec: Float) {
+        if (isProcessing || sourceUri != inputUri) return
+        val generation = ++sourceGeneration
         isTrimming = true
         binding.containerMotionLabProgress.visibility = View.VISIBLE
         binding.progressMotionLab.isIndeterminate = true
@@ -626,77 +632,78 @@ class MotionLabController(
         updateControlStates()
 
         job = scope.launch(Dispatchers.IO) {
+            var ownedInput: File? = null
+            val trimmedFile = File(activity.cacheDir, "motion_clip_${UUID.randomUUID()}.mp4")
+            var handedOff = false
             try {
-                // Ensure local input file for FFmpeg fast seeking
                 val localInputFile = if (inputUri.scheme == "file") {
                     File(inputUri.path ?: "")
                 } else {
-                    val temp = File(activity.cacheDir, "motion_temp_in_${System.currentTimeMillis()}.mp4")
+                    val temp = File(activity.cacheDir, "motion_temp_in_${UUID.randomUUID()}.mp4")
+                    ownedInput = temp
                     activity.contentResolver.openInputStream(inputUri)?.use { input ->
-                        temp.outputStream().use { output -> input.copyTo(output) }
-                    }
+                        temp.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    } ?: error("Cannot open source video")
                     temp
                 }
-
-                if (!localInputFile.exists() || localInputFile.length() == 0L) {
-                    throw IllegalStateException("Failed to read source video for trimming")
-                }
-
-                val trimmedFile = File(activity.cacheDir, "motion_clip_${System.currentTimeMillis()}.mp4")
+                check(localInputFile.isFile && localInputFile.length() > 0) { "Failed to read source video" }
                 val startStr = String.format(Locale.US, "%.3f", startSec)
                 val durStr = String.format(Locale.US, "%.3f", durationSec)
-
-                // 1. Attempt ultra-fast stream copy
-                val copyArgs = arrayOf(
-                    "-y",
-                    "-ss", startStr,
-                    "-i", localInputFile.absolutePath,
-                    "-t", durStr,
-                    "-c", "copy",
-                    "-avoid_negative_ts", "make_zero",
-                    trimmedFile.absolutePath
-                )
-                val copySession = FFmpegKit.executeWithArguments(copyArgs)
-                val copySuccess = ReturnCode.isSuccess(copySession.returnCode) && trimmedFile.exists() && trimmedFile.length() > 0
-
-                val finalSuccess = if (copySuccess) {
-                    true
-                } else {
-                    // 2. Fallback to ultrafast libx264 re-encode
-                    trimmedFile.delete()
-                    val encArgs = arrayOf(
-                        "-y",
-                        "-ss", startStr,
-                        "-i", localInputFile.absolutePath,
-                        "-t", durStr,
-                        "-c:v", "libx264",
-                        "-preset", "ultrafast",
-                        "-crf", "18",
-                        "-c:a", "copy",
-                        trimmedFile.absolutePath
-                    )
-                    val encSession = FFmpegKit.executeWithArguments(encArgs)
-                    ReturnCode.isSuccess(encSession.returnCode) && trimmedFile.exists() && trimmedFile.length() > 0
+                // Decode and seek accurately; a stream copy can start at an earlier
+                // keyframe and include footage outside the selected clip.
+                val session = executeOwnedFfmpeg(arrayOf(
+                    "-y", "-nostdin", "-ss", startStr, "-i", localInputFile.absolutePath,
+                    "-t", durStr, "-map", "0:v:0", "-map", "0:a:0?",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-c:a", "aac", "-movflags", "+faststart", trimmedFile.absolutePath
+                ))
+                check(ReturnCode.isSuccess(session.returnCode) && trimmedFile.isFile && trimmedFile.length() > 0) {
+                    "Trim failed. Please try another segment."
                 }
-
+                val retriever = android.media.MediaMetadataRetriever()
+                val clipDuration = try {
+                    retriever.setDataSource(trimmedFile.absolutePath)
+                    retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull()?.takeIf { it > 0L } ?: error("Trimmed video has no readable duration")
+                } finally { retriever.release() }
                 withContext(Dispatchers.Main) {
+                    if (generation != sourceGeneration || sourceUri != inputUri) return@withContext
+                    // setSource() rejects an active trim job; commit the validated
+                    // result directly on the UI owner instead.
                     isTrimming = false
-                    binding.containerMotionLabProgress.visibility = View.GONE
-                    if (finalSuccess) {
-                        setSource(Uri.fromFile(trimmedFile))
-                        Toast.makeText(activity, "Clip trimmed (${String.format(Locale.US, "%.1f", durationSec)}s)", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(activity, "Trim failed. Please try another segment.", Toast.LENGTH_LONG).show()
-                    }
-                    updateControlStates()
+                    val previous = ownedTrimFile
+                    ownedTrimFile = trimmedFile
+                    applySourceInternal(Uri.fromFile(trimmedFile), clipDuration, clipDuration / 1000L,
+                        "", trimmedFile.name)
+                    handedOff = true
+                    previous?.takeIf { it != trimmedFile }?.delete()
+                    Toast.makeText(activity, "Clip trimmed (${String.format(Locale.US, "%.1f", clipDuration / 1000.0)}s)", Toast.LENGTH_SHORT).show()
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "executeTrim error", e)
                 withContext(Dispatchers.Main) {
-                    isTrimming = false
-                    binding.containerMotionLabProgress.visibility = View.GONE
-                    Toast.makeText(activity, "Trim error: ${e.message}", Toast.LENGTH_LONG).show()
-                    updateControlStates()
+                    if (generation == sourceGeneration) Toast.makeText(activity, "Trim error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                ownedInput?.delete()
+                if (!handedOff) trimmedFile.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (generation == sourceGeneration) {
+                        job = null
+                        isTrimming = false
+                        binding.containerMotionLabProgress.visibility = View.GONE
+                        updateControlStates()
+                    }
                 }
             }
         }
