@@ -30,6 +30,33 @@ object MediaProcessor {
  * Uses Android FFmpeg execution layer (FFmpegKit) directly via argument array execution.
  * Shell string concatenation and shell escaping are completely eliminated.
  */
+/**
+ * Once native cancellation is requested, scratch inputs/outputs cannot be
+ * released until the completion callback actually fires. Preserve interrupts
+ * but do not let repeated interrupts release ownership prematurely.
+ */
+internal fun awaitFfmpegTermination(latch: java.util.concurrent.CountDownLatch) {
+    var interrupted = Thread.interrupted()
+    try {
+        while (true) {
+            try {
+                latch.await()
+                return
+            } catch (_: InterruptedException) {
+                interrupted = true
+            }
+        }
+    } finally {
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+}
+
+/** Temporal resampling must follow the frame-indexed stabilization transform. */
+internal fun gifVideoFilters(filters: List<String>, fps: Int): List<String> {
+    require(fps > 0)
+    return filters + "fps=$fps"
+}
+
 object VideoProcessor {
 
     private const val TAG = "VeilFrame.VideoProcessor"
@@ -497,6 +524,8 @@ object VideoProcessor {
         onSessionId: ((Long) -> Unit)? = null,
         onProgressPhase: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
     ): CompressionResult {
+        require(srcFile.canonicalFile != outFile.canonicalFile) { "Stabilization source and destination must differ" }
+        requireReadableVideo(srcFile)
         val safeConfig = eisConfig.clamped()
         val trfParent = outFile.parentFile ?: srcFile.parentFile ?: File(System.getProperty("java.io.tmpdir") ?: ".")
 
@@ -582,6 +611,12 @@ object VideoProcessor {
                 )
             }
 
+            val verificationError = validateStandaloneOutput(srcFile, outFile)
+            if (verificationError != null) {
+                outFile.delete()
+                return CompressionResult(success = false, outputPath = outFile.absolutePath,
+                    sizeBytes = 0L, error = "STABILIZATION_OUTPUT_INVALID: $verificationError")
+            }
             val originalSize = srcFile.length()
             val finalSize = outFile.length()
             val savings = if (originalSize > 0) ((originalSize - finalSize).toDouble() / originalSize.toDouble()) * 100.0 else 0.0
@@ -609,6 +644,45 @@ object VideoProcessor {
      * MMR does not expose track selection. Reject ambiguous sources rather than
      * scanning one stream and applying masks to another.
      */
+    /** Check the encoded container, not just FFmpeg return code and file length. */
+    private fun requireReadableVideo(file: File): Long? {
+        val extractor = android.media.MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            val tracks = (0 until extractor.trackCount).filter { index ->
+                extractor.getTrackFormat(index).getString(android.media.MediaFormat.KEY_MIME)
+                    ?.startsWith("video/") == true
+            }
+            check(tracks.size == 1) { "Expected one readable video track" }
+            val index = tracks.single()
+            val format = extractor.getTrackFormat(index)
+            check(format.getInteger(android.media.MediaFormat.KEY_WIDTH) > 0 &&
+                format.getInteger(android.media.MediaFormat.KEY_HEIGHT) > 0) { "Invalid encoded video dimensions" }
+            extractor.selectTrack(index)
+            check(extractor.sampleTime >= 0L) { "Encoded video contains no samples" }
+            return if (format.containsKey(android.media.MediaFormat.KEY_DURATION))
+                format.getLong(android.media.MediaFormat.KEY_DURATION).takeIf { it > 0L } else null
+        } finally {
+            extractor.release()
+        }
+    }
+
+    private fun validateStandaloneOutput(source: File, output: File): String? = try {
+        val sourceDuration = requireReadableVideo(source)
+        val outputDuration = requireReadableVideo(output)
+        if (sourceDuration != null && outputDuration != null) {
+            // Container duration fields have rounding and VFR uncertainty.
+            // Reject material truncation/extension without claiming frame parity.
+            val tolerance = maxOf(300_000L, sourceDuration / 50)
+            check(kotlin.math.abs(sourceDuration - outputDuration) <= tolerance) {
+                "Encoded video duration materially differs from source"
+            }
+        }
+        null
+    } catch (failure: Exception) {
+        failure.message ?: "Encoded video verification failed"
+    }
+
     internal fun requireSingleVideoTrack(file: File) {
         val extractor = android.media.MediaExtractor()
         try {
@@ -630,6 +704,7 @@ object VideoProcessor {
         onSessionId: ((Long) -> Unit)? = null,
         onProgress: ((phaseLabel: String, encodedMs: Long, percent: Int) -> Unit)? = null
     ): CompressionResult {
+        require(srcFile.canonicalFile != outFile.canonicalFile) { "Redaction source and destination must differ" }
         requireSingleVideoTrack(srcFile)
         val durMs = try {
             val mmr = android.media.MediaMetadataRetriever()
@@ -695,6 +770,12 @@ object VideoProcessor {
             )
         }
 
+        val verificationError = validateStandaloneOutput(srcFile, outFile)
+        if (verificationError != null) {
+            outFile.delete()
+            return CompressionResult(success = false, outputPath = outFile.absolutePath,
+                sizeBytes = 0L, error = "REDACTION_OUTPUT_INVALID: $verificationError")
+        }
         val originalSize = srcFile.length()
         val finalSize = outFile.length()
         val savings = if (originalSize > 0) ((originalSize - finalSize).toDouble() / originalSize.toDouble()) * 100.0 else 0.0
@@ -792,6 +873,14 @@ object VideoProcessor {
 
             cmd.add("-i")
             cmd.add(srcFile.absolutePath)
+            if (isStabilized) {
+                // Pass 1 analyzes stream 0:v:0. FFmpeg automatic selection
+                // otherwise may transform a different (larger) video stream.
+                cmd.add("-map"); cmd.add("0:v:0")
+                if (!isGifMode && audioAction != "mute" && !audioCodec.equals("mute", ignoreCase = true)) {
+                    cmd.add("-map"); cmd.add("0:a:0?")
+                }
+            }
 
             // Strip metadata tags for privacy
             cmd.add("-map_metadata")
@@ -923,7 +1012,7 @@ object VideoProcessor {
             // Video codec, GIF Animation mode, & CRF / Target Bitrate
             if (isGifMode) {
                 val gifFps = if (fps != null && fps > 0) fps else 15
-                val baseVf = listOf("fps=$gifFps") + vfFilters.filterNot { it.startsWith("setpts") }
+                val baseVf = gifVideoFilters(vfFilters, gifFps)
                 val baseChain = baseVf.joinToString(",")
                 val gifVf = if (baseChain.isNotEmpty()) {
                     "$baseChain,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
@@ -1226,6 +1315,7 @@ object VideoProcessor {
                 failure.addSuppressed(cancelError)
             }
             if (failure is InterruptedException) Thread.currentThread().interrupt()
+            awaitFfmpegTermination(latch)
             throw failure
         }
         return resultHolder[0]
