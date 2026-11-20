@@ -10,7 +10,8 @@ data class XlsxCellStyle(
     val textRgb: Int? = null,
     val fillRgb: Int? = null,
     val horizontal: String = "left",
-    val borders: XlsxCellBorders = XlsxCellBorders()
+    val borders: XlsxCellBorders = XlsxCellBorders(),
+    val vertical: String = "top"
 ) {
     internal fun font(base: PDFont): PDFont = when {
         bold && italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE

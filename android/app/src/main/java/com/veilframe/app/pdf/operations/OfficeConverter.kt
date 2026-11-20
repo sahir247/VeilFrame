@@ -1216,7 +1216,8 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontSizeCell = limits.fontSizeCell,
                             lineHeight = limits.lineHeight,
-                            style = layout.cellStyles.at(rIdx, colIndex)
+                            style = layout.cellStyles.at(rIdx, colIndex),
+                            completeCell = tile.rowGroup.linesInStartRow == -1
                         )
                     }
                 }
@@ -1264,7 +1265,10 @@ class OfficeConverter {
                         contentStream.clip()
 
                         setSpreadsheetTextColor(contentStream, style)
-                        var textY = sliceTop - 4f - limits.fontSizeCell
+                        val completeMerge = visRows.size == geom.lastRow - geom.firstRow + 1 &&
+                            visCols.size == geom.lastCol - geom.firstCol + 1 && tile.rowGroup.linesInStartRow == -1
+                        var textY = spreadsheetFirstBaseline(sliceTop, sliceHeight, limits.fontSizeCell,
+                            limits.lineHeight, anchorLines.size, if (completeMerge) style.vertical else "top")
                         for (lineText in anchorLines) {
                             contentStream.beginText()
                             contentStream.setFont(font, limits.fontSizeCell)
@@ -1299,7 +1303,8 @@ class OfficeConverter {
         fontNormal: PDFont,
         fontSizeCell: Float,
         lineHeight: Float,
-        style: XlsxCellStyle
+        style: XlsxCellStyle,
+        completeCell: Boolean = true
     ) {
         if (contentStream == null) return
         val font = style.font(fontNormal)
@@ -1317,7 +1322,8 @@ class OfficeConverter {
             contentStream.clip()
 
             setSpreadsheetTextColor(contentStream, style)
-            var textY = cellTop - 4f - fontSizeCell
+            var textY = spreadsheetFirstBaseline(cellTop, cellH, fontSizeCell, lineHeight,
+                chunkLines.size, if (completeCell) style.vertical else "top")
             for (lineText in chunkLines) {
                 contentStream.beginText()
                 contentStream.setFont(font, fontSizeCell)
@@ -1398,6 +1404,20 @@ class OfficeConverter {
     private fun setSpreadsheetTextColor(stream: PDPageContentStream?, style: XlsxCellStyle) {
         val rgb = style.textRgb ?: 0
         stream?.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+    }
+
+    // Lay out the complete wrapped text block, preserving symmetric padding.
+    // Fragmented rows/merges deliberately remain top-aligned on each panel.
+    private fun spreadsheetFirstBaseline(top: Float, height: Float, size: Float,
+                                         lineHeight: Float, lines: Int, vertical: String): Float {
+        val textHeight = size + (lines - 1).coerceAtLeast(0) * lineHeight
+        val spare = (height - 8f - textHeight).coerceAtLeast(0f)
+        val offset = when (vertical) {
+            "center" -> spare / 2f
+            "bottom" -> spare
+            else -> 0f
+        }
+        return top - 4f - size - offset
     }
 
     private fun spreadsheetTextX(text: String, font: PDFont, size: Float, left: Float,

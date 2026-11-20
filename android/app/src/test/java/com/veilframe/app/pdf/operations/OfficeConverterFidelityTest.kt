@@ -1569,4 +1569,29 @@ class OfficeConverterFidelityTest {
         assertEquals(1, mergedGeoms.size)
         assertEquals(199, mergedGeoms[0].lastRow) // preserve declared blank merged rows
     }
+    @Test
+    fun explicitVerticalAlignmentPositionsTextInsideSavedRowHeight() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Vertical" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><cellXfs><xf/><xf><alignment vertical="center"/></xf><xf><alignment vertical="bottom"/></xf></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1" ht="100"><c r="A1" t="inlineStr"><is><t>X</t></is></c><c r="B1" s="1" t="inlineStr"><is><t>Y</t></is></c><c r="C1" s="2" t="inlineStr"><is><t>Z</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root, "vertical.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context)
+        PDDocument.load(output).use { pdf ->
+            val y = mutableMapOf<String, Float>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(text: com.tom_roush.pdfbox.text.TextPosition) {
+                    if (text.unicode in setOf("X", "Y", "Z")) y[text.unicode] = text.yDirAdj
+                    super.processTextPosition(text)
+                }
+            }
+            stripper.getText(pdf)
+            assertEquals(3, y.size)
+            val centerDelta = y.getValue("Y") - y.getValue("X")
+            val bottomDelta = y.getValue("Z") - y.getValue("X")
+            assertTrue(centerDelta > 30f)
+            assertEquals(centerDelta * 2f, bottomDelta, 0.5f)
+        }
+    }
 }
