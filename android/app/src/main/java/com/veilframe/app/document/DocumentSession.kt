@@ -28,6 +28,22 @@ private inline fun writeSessionFileAtomically(file: File, writer: (FileOutputStr
     }
 }
 
+/** Validates the editor's ordered TL/TR/BR/BL boundary, not an auto-reordered polygon. */
+internal fun isValidDocumentCrop(points: List<org.opencv.core.Point>, width: Int, height: Int): Boolean {
+    if (width < 2 || height < 2 || points.size != 4 ||
+        points.any { !it.x.isFinite() || !it.y.isFinite() ||
+            it.x < 0.0 || it.y < 0.0 || it.x > width || it.y > height }) return false
+    for (i in points.indices) {
+        val a = points[i]
+        val b = points[(i + 1) % 4]
+        val c = points[(i + 2) % 4]
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        if (dx * dx + dy * dy < 4.0 || dx * (c.y - b.y) - dy * (c.x - b.x) <= 1.0) return false
+    }
+    return true
+}
+
 /** Borrowed cached image or temporary export decode with explicit ownership. */
 internal class ExportPageBitmap(val bitmap: Bitmap, private val temporary: Boolean) : Closeable {
     override fun close() {
@@ -181,10 +197,14 @@ data class ScannedPage(
             // 1. Perspective Warp Crop (if 4 corners specified in original image coordinates)
             val quad = corners
             if (quad != null) {
-                require(quad.size == 4 && quad.all { it.x.isFinite() && it.y.isFinite() }) {
-                    "Invalid document crop geometry"
+                require(isValidDocumentCrop(quad, orig.width, orig.height)) {
+                    "Invalid document crop: corners must form a convex, non-crossing boundary"
                 }
-                val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(currentMat, quad)
+                // The crop editor's selected coordinates are authoritative. Do not
+                // silently nudge them with subpixel detection or rotate after warping.
+                val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
+                    currentMat, quad, refineSubPix = false, autoSkewCorrection = false
+                )
                 if (warped.empty()) {
                     warped.release()
                     throw java.io.IOException("Perspective correction returned no image")
@@ -577,6 +597,18 @@ class DocumentSession(
     )
 
     /** Capture on the UI owner before scheduling disk work. */
+    /** Capture immutable edit metadata and strong bitmap references on the UI owner. */
+    internal fun snapshotForExport(): DocumentSession = synchronized(_pages) {
+        DocumentSession(id = id, title = title).also { snapshot ->
+            snapshot._pages.addAll(_pages.map { page ->
+                page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) })
+            })
+            snapshot.activePageIndex = activePageIndex
+            snapshot.createdAt = createdAt
+            snapshot.lastModifiedAt = lastModifiedAt
+        }
+    }
+
     internal fun captureSaveSnapshot(): SaveSnapshot = synchronized(_pages) {
         SaveSnapshot(id, saveSequence.incrementAndGet(),
             _pages.map { page -> page to page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) }) },

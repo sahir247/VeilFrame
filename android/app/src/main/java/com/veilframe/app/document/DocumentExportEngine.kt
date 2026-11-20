@@ -77,8 +77,8 @@ object DocumentExportEngine {
     }
 
     enum class ExportQuality(val displayName: String, val jpegQuality: Int) {
-        ORIGINAL("Original Quality (100%)", 100),
-        HIGH("High (Lossless / 95%)", 95),
+        ORIGINAL("Maximum Encoder Quality (100%)", 100),
+        HIGH("High (95%)", 95),
         MEDIUM("Medium (Balanced / 80%)", 80),
         LOW("Low (Compact / 60%)", 60)
     }
@@ -108,8 +108,9 @@ object DocumentExportEngine {
     ): ExportResult = withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
         val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
-        val timestamp = System.currentTimeMillis()
+        val timestamp = "${System.currentTimeMillis()}_${java.util.UUID.randomUUID()}"
 
+        require(!session.isEmpty) { "No document pages to export" }
         val effectiveFormat = if (options.format == OutputFormat.IMAGES && options.isZipArchive) {
             OutputFormat.IMAGES_ZIP
         } else {
@@ -149,7 +150,7 @@ object DocumentExportEngine {
     ): ExportResult = withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
         val exportDir = File(context.filesDir, "exports").apply { mkdirs() }
-        val timestamp = System.currentTimeMillis()
+        val timestamp = "${System.currentTimeMillis()}_${java.util.UUID.randomUUID()}"
         val exportBitmap = requireExportBitmap(context, page, pageIndex)
 
         exportBitmap.use { owned ->
@@ -287,7 +288,7 @@ object DocumentExportEngine {
         session: DocumentSession,
         options: ExportOptions,
         exportDir: File,
-        timestamp: Long
+        timestamp: String
     ): List<File> {
         val files = mutableListOf<File>()
         val baseTitle = sanitizeFileName(session.title)

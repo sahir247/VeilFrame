@@ -30,6 +30,31 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun exportSnapshotDoesNotFollowChangesOrReorder() {
+        val session = DocumentSession()
+        val page = ScannedPage(id = "first", corners = listOf(org.opencv.core.Point(3.0, 4.0)))
+        session.addPage(page)
+        session.addPage(ScannedPage(id = "second"))
+        session.title = "Before"
+        val captured = session.snapshotForExport()
+        page.corners!![0].x = 80.0
+        session.movePage(0, 1)
+        session.title = "After"
+        assertEquals("Before", captured.title)
+        assertEquals(listOf("first", "second"), captured.pages.map { it.id })
+        assertEquals(3.0, captured.pages.first().corners!![0].x, 0.0)
+    }
+
+    @Test
+    fun validatesOrderedManualCropRatherThanReorderingCrossedHandles() {
+        fun point(x: Double, y: Double) = org.opencv.core.Point(x, y)
+        val quad = listOf(point(0.0, 0.0), point(100.0, 0.0), point(100.0, 80.0), point(0.0, 80.0))
+        assertTrue(isValidDocumentCrop(quad, 100, 80))
+        assertFalse(isValidDocumentCrop(listOf(quad[0], quad[2], quad[1], quad[3]), 100, 80))
+        assertFalse(isValidDocumentCrop(quad.toMutableList().apply { this[1] = point(Double.NaN, 0.0) }, 100, 80))
+    }
+
+    @Test
     fun deletionPermanentlyRetiresQueuedAndLiveAutosaves() {
         val context = RuntimeEnvironment.getApplication()
         val session = DocumentSession()

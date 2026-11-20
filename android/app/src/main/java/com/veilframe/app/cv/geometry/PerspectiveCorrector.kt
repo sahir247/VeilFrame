@@ -102,6 +102,9 @@ object PerspectiveCorrector {
                 }
             }
             return out
+        } catch (failure: Throwable) {
+            out.release()
+            throw failure
         } finally {
             transform.release()
         }
@@ -135,6 +138,9 @@ object PerspectiveCorrector {
                 Core.BORDER_REPLICATE
             )
             return leveled
+        } catch (failure: Throwable) {
+            leveled.release()
+            throw failure
         } finally {
             rotMatrix.release()
         }

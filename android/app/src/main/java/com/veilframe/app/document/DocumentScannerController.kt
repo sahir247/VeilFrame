@@ -113,6 +113,7 @@ class DocumentScannerController(
     private var sessionGeneration = 0L
     private var importJob: Job? = null
     private var restoreJob: Job? = null
+    private var exportJob: Job? = null
 
     // Decoupled live analyzer flow: 60fps UI observation without GC pressure
     private val _scannerState = MutableSharedFlow<ScanResult>(
@@ -1341,6 +1342,10 @@ class DocumentScannerController(
             val sourceCorners = dlgBinding.docInteractiveCropView.getCornersInSource()
             if (ownsDialog() && sourceCorners.size == 4) {
                 val cvCorners = sourceCorners.map { Point(it.x.toDouble(), it.y.toDouble()) }
+                if (!isValidDocumentCrop(cvCorners, origBmp.width, origBmp.height)) {
+                    Toast.makeText(activity, "Crop corners must form a non-crossing document boundary", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
                 page.corners = cvCorners
                 renderCurrentPage {
                     Toast.makeText(activity, "Crop adjusted", Toast.LENGTH_SHORT).show()
@@ -1526,48 +1531,50 @@ class DocumentScannerController(
     }
 
     private fun executeExport(options: DocumentExportEngine.ExportOptions, isCurrentPageOnly: Boolean) {
+        if (exportJob?.isActive == true || session.isEmpty) return
+        val generation = sessionGeneration
+        val snapshot = session.snapshotForExport()
         Toast.makeText(activity, "Compiling document export...", Toast.LENGTH_SHORT).show()
-
-        scope.launch(Dispatchers.IO) {
+        exportJob = scope.launch {
+            var result: DocumentExportEngine.ExportResult? = null
+            var handedOff = false
             try {
-                val result = if (isCurrentPageOnly) {
-                    val activeIndex = session.activePageIndex
-                    val page = session.pages[activeIndex]
-                    DocumentExportEngine.exportSinglePage(activity, page, activeIndex, session.title, options)
+                val exported = if (isCurrentPageOnly) {
+                    val index = snapshot.activePageIndex
+                    DocumentExportEngine.exportSinglePage(activity, snapshot.pages[index], index, snapshot.title, options)
                 } else {
-                    DocumentExportEngine.exportDocument(activity, session, options)
+                    DocumentExportEngine.exportDocument(activity, snapshot, options)
                 }
-
-                withContext(Dispatchers.Main) {
-                    if (result.files.size > 1 && options.format == DocumentExportEngine.OutputFormat.IMAGES && !options.isZipArchive) {
-                        // User exported multiple images as individual images (not ZIP)
-                        scope.launch(Dispatchers.IO) {
-                            var savedCount = 0
-                            for (imgFile in result.files) {
-                                val savedUri = saveImageToMediaStore(activity, imgFile, options.imageFormat.mimeType)
-                                if (savedUri != null) savedCount++
-                            }
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(
-                                    activity,
-                                    "Saved $savedCount images to Pictures/VeilFrame",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
+                result = exported
+                if (generation != sessionGeneration) return@launch
+                if (exported.files.size > 1 && options.format == DocumentExportEngine.OutputFormat.IMAGES && !options.isZipArchive) {
+                    val saved = withContext(Dispatchers.IO) {
+                        var count = 0
+                        for (file in exported.files) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            if (saveImageToMediaStore(activity, file, options.imageFormat.mimeType) != null) count++
                         }
-                    } else {
-                        onExportFileRequest(result.file, result.mimeType)
+                        count
                     }
+                    if (generation == sessionGeneration) Toast.makeText(activity,
+                        "Saved $saved of ${exported.files.size} images to Pictures/VeilFrame", Toast.LENGTH_LONG).show()
+                    // Keep the complete internal export in Library, even if external storage fails.
+                    handedOff = true
+                } else {
+                    onExportFileRequest(exported.file, exported.mimeType)
+                    handedOff = true
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                if (generation == sessionGeneration) Toast.makeText(activity, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                if (!handedOff) result?.files?.forEach { it.delete() }
             }
         }
     }
 
-    private fun saveImageToMediaStore(context: android.content.Context, file: File, mimeType: String): Uri? {
+    private suspend fun saveImageToMediaStore(context: android.content.Context, file: File, mimeType: String): Uri? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val cv = ContentValues().apply {
@@ -1577,22 +1584,41 @@ class DocumentScannerController(
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv) ?: return null
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    file.inputStream().use { input -> input.copyTo(out) }
+                var published = false
+                try {
+                    val sink = context.contentResolver.openOutputStream(uri)
+                        ?: throw java.io.IOException("Cannot open image destination")
+                    sink.use { out ->
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                out.write(buffer, 0, n)
+                            }
+                        }
+                    }
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    cv.clear()
+                    cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    check(context.contentResolver.update(uri, cv, null, null) == 1) { "Image publication failed" }
+                    published = true
+                    uri
+                } finally {
+                    if (!published) runCatching { context.contentResolver.delete(uri, null, null) }
                 }
-                cv.clear()
-                cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
-                uri
             } else {
                 @Suppress("DEPRECATION")
                 val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VeilFrame")
-                dir.mkdirs()
+                check(dir.isDirectory || dir.mkdirs())
                 val dest = File(dir, file.name)
-                file.copyTo(dest, overwrite = true)
-                Uri.fromFile(dest)
+                try { file.copyTo(dest, overwrite = false); Uri.fromFile(dest) }
+                catch (failure: Exception) { if (failure !is kotlin.io.FileAlreadyExistsException) dest.delete(); throw failure }
             }
-        } catch (e: Throwable) {
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
             android.util.Log.e("VeilFrame.DocScanner", "Failed to save image to MediaStore", e)
             null
         }
@@ -1889,7 +1915,7 @@ class DocumentScannerController(
     }
 
     val isBusyProcessing: Boolean
-        get() = isInternalProcessing.get() || scannerJob?.isActive == true || activeAnalysisJob?.isActive == true
+        get() = isInternalProcessing.get() || scannerJob?.isActive == true || activeAnalysisJob?.isActive == true || exportJob?.isActive == true
 
     override fun hasPickedMedia(): Boolean = session.pageCount > 0
     override fun hasUnsavedWork(): Boolean = session.pageCount > 0
@@ -1902,6 +1928,7 @@ class DocumentScannerController(
         ++sessionGeneration
         importJob?.cancel()
         restoreJob?.cancel()
+        exportJob?.cancel()
         cancelProcessing()
         // Existing autosaved documents remain recoverable; a fresh session must not
         // overwrite the last saved document with an empty manifest.
