@@ -76,6 +76,36 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun recoveryRejectsMissingOriginalAndForeignSessionPaths() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val other = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(originalBitmapCache = bmp, renderedVersion = -1L))
+            other.addPage(ScannedPage(originalBitmapCache = bmp, renderedVersion = -1L))
+            assertTrue(session.saveToDisk(context))
+            assertTrue(other.saveToDisk(context))
+            val dir = DocumentSession.getSessionDirectory(context, session.id)
+            val manifest = java.io.File(dir, "manifest.json")
+            val original = java.io.File(session.pages.single().originalImagePath)
+            val json = org.json.JSONObject(manifest.readText())
+            val page = json.getJSONArray("pages").getJSONObject(0)
+            page.put("originalImagePath", other.pages.single().originalImagePath)
+            manifest.writeText(json.toString())
+            assertNull(DocumentSession.loadFromDisk(context, session.id))
+            page.put("originalImagePath", original.absolutePath)
+            manifest.writeText(json.toString())
+            assertTrue(original.delete())
+            assertNull(DocumentSession.loadFromDisk(context, session.id))
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+            DocumentSession.deleteSession(context, other.id)
+        }
+    }
+
+    @Test
     fun capturedSnapshotOwnsItsSessionIdentityAndPageMetadata() {
         val session = DocumentSession()
         val page = ScannedPage(rotationDegrees = 90)

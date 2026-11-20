@@ -58,6 +58,8 @@ object AiBundleEngine {
 
     // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
+        // Explicit environment-variable names and short credentials are still credentials.
+        Pattern.compile("""(?i)\b(?:aws[_-]?(?:secret[_-]?access[_-]?key|session[_-]?token)|db[_-]?password|database[_-]?password|database[_-]?url|github[_-]?token|gitlab[_-]?token|openai[_-]?api[_-]?key|stripe[_-]?secret[_-]?key|smtp[_-]?password|redis[_-]?password|access[_-]?key|api[_-]?secret)\b["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n]++)*+"|'(?:\\.|[^'\\\r\n]++)*+'|[^\s,;}"']++)"""),
         Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
         Pattern.compile("""(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9_./+=-]+"""),
         // Match whole escaped quoted values instead of leaving a secret suffix.
@@ -65,7 +67,7 @@ object AiBundleEngine {
         Pattern.compile("""(?i)\b(?:password|passwd|api[_-]?key|secret|token|private[_-]?key|client[_-]?secret)\b\s*[:=]\s*[|>]\s*\r?\n(?:[ \t]+[^\r\n]*(?:\r?\n|$))++"""),
         Pattern.compile("""\b(?:glpat-[A-Za-z0-9_-]{15,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{12,})\b"""),
         Pattern.compile("""(?i)\b(?:accountkey|client[_-]?secret|refresh[_-]?token|private[_-]?token|aws[_-]?secret[_-]?access[_-]?key)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
-        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']{4,})"""),
+        Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
         Pattern.compile("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"""),
         Pattern.compile("""\bAIza[A-Za-z0-9_-]{35}\b"""),
         Pattern.compile("""\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"""),
@@ -86,6 +88,7 @@ object AiBundleEngine {
         if (lower == ".env.example") return false
         return lower == ".env" || lower.startsWith(".env.") ||
             lower in setOf("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "keystore.properties",
+                "credentials", ".git-credentials", "auth.json", "kubeconfig", "terraform.tfvars",
                 "credentials.json", "service-account.json", ".npmrc", ".netrc", ".pypirc",
                 "google-services.json", "secrets.properties", "secrets.json", "local.settings.json",
                 "application-default-credentials.json", "application_default_credentials.json") ||
@@ -178,6 +181,7 @@ object AiBundleEngine {
                         currentCoroutineContext().ensureActive()
                         val name = path.substringAfterLast('/')
                         if (path.length > MAX_PATH_CHARS) { omit(path, "path length limit"); return }
+                        if (!isSafeBundlePath(path)) { omit(path, "unsafe relative path"); return }
                         val exportedPath = safePath(path)
                         if (exportedPath in includedPaths) { omit(path, "duplicate exported path"); return }
                         if (config.maskSecrets && isSensitiveFileName(name)) {
@@ -229,6 +233,7 @@ object AiBundleEngine {
                             val name = child.name ?: "(unnamed)"
                             val relative = if (path.isEmpty()) name else "$path/$name"
                             if (child.isFile) files++
+                            if (!isSafeBundlePath(name) || name.contains('/')) { omit(relative, "unsafe entry name"); continue }
                             if (name.startsWith(".") && name != ".env.example") { omit(relative, "hidden entry"); continue }
                             if (child.isDirectory) {
                                 when {
@@ -323,7 +328,12 @@ object AiBundleEngine {
             .decode(ByteBuffer.wrap(bytes)).toString()
     }
 
+    internal fun isSafeBundlePath(path: String): Boolean =
+        path.isNotBlank() && path.none { it == '\\' || it.code < 32 || it.code == 127 } &&
+            path.split('/').all { it.isNotBlank() && it != "." && it != ".." }
+
     internal fun isNativeBundleEntrySafe(path: String, content: String): Boolean =
+        isSafeBundlePath(path) &&
         path.none { it == '"' || it == '\\' || it.code < 32 || it.code == 127 } &&
             content.lineSequence().none { it.trim() == ">>>" || it.trim() == "<<<" }
 
@@ -341,7 +351,8 @@ object AiBundleEngine {
             }
             "aibundle" -> {
                 val ext = path.substringAfterLast('.', "").lowercase(Locale.US)
-                val id = "F%03d".format(fileIndex)
+                    .takeIf { it.matches(Regex("[a-z0-9]{1,24}")) } ?: "text"
+                val id = String.format(Locale.ROOT, "F%03d", fileIndex)
                 "@FILE id=\"$id\" path=\"$path\" language=\"$ext\"\n<<<\n$content\n>>>\n\n"
             }
             else -> {

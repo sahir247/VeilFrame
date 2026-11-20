@@ -85,6 +85,33 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun masksShortAndEnvironmentNamedCredentials() {
+        for ((input, secret) in listOf(
+            "password=abc" to "abc",
+            "AWS_SESSION_TOKEN=exampleSessionValue" to "exampleSessionValue",
+            "DB_PASSWORD=xy" to "xy",
+            "OPENAI_API_KEY=exampleProviderValue" to "exampleProviderValue",
+            "DATABASE_URL=sqlite:///private-db" to "sqlite:///private-db"
+        )) {
+            val masked = AiBundleEngine.maskSecrets(input)
+            assertTrue(masked.contains("[REDACTED_SECRET]"))
+            assertFalse(masked.contains(secret))
+        }
+        assertTrue(AiBundleEngine.isSensitiveFileName("terraform.tfvars"))
+        assertTrue(AiBundleEngine.isSensitiveFileName(".git-credentials"))
+    }
+
+    @Test
+    fun rejectsUnsafeRelativePaths() {
+        for (path in listOf("../secret.txt", "/abs.txt", "src/../secret", "src//file",
+            "a\\b", "a\nfile", "src/./file")) {
+            assertFalse(path, AiBundleEngine.isSafeBundlePath(path))
+            assertFalse(path, AiBundleEngine.isNativeBundleEntrySafe(path, "code"))
+        }
+        assertTrue(AiBundleEngine.isSafeBundlePath("src/hello world.kt"))
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)

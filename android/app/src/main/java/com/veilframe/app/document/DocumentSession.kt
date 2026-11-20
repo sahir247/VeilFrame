@@ -761,10 +761,17 @@ class DocumentSession(
                     lastModifiedAt = json.optLong("lastModifiedAt", System.currentTimeMillis())
                 }
 
-                val pagesArray = json.optJSONArray("pages") ?: JSONArray()
+                val pagesArray = json.getJSONArray("pages")
+                require(pagesArray.length() > 0) { "Saved document has no pages" }
                 val loadedPages = mutableListOf<ScannedPage>()
+                val pageIds = HashSet<String>()
                 for (i in 0 until pagesArray.length()) {
                     val p = pagesArray.getJSONObject(i)
+                    val pageId = p.getString("id")
+                    require(pageId.isNotBlank() && pageId.none { it == '/' || it == '\\' } && pageIds.add(pageId)) { "Invalid or duplicate page identity" }
+                    val original = requireNotNull(ownedSessionFile(sessionDir, p.optString("originalImagePath", ""))) { "Saved original page unavailable" }
+                    val processed = ownedSessionFile(sessionDir, p.optString("processedImagePath", ""))
+                    val thumbnail = ownedSessionFile(sessionDir, p.optString("thumbnailPath", ""))
                     val modeStr = p.optString("mode", DocumentScanner.DocumentMode.ENHANCED.name)
                     val mode = try {
                         DocumentScanner.DocumentMode.valueOf(modeStr)
@@ -782,10 +789,11 @@ class DocumentSession(
                     }
 
                     val page = ScannedPage(
-                        id = p.getString("id"),
-                        originalImagePath = p.optString("originalImagePath", ""),
-                        processedImagePath = p.optString("processedImagePath", "").takeIf { it.isNotEmpty() },
-                        thumbnailPath = p.optString("thumbnailPath", "").takeIf { it.isNotEmpty() },
+                        id = pageId,
+                        originalImagePath = original.absolutePath,
+                        processedImagePath = processed?.absolutePath,
+                        thumbnailPath = thumbnail?.absolutePath,
+                        persistedRenderVersion = if (processed != null) 0L else -1L,
                         rotationDegrees = p.optInt("rotationDegrees", 0),
                         mode = mode,
                         corners = cornersList,
@@ -816,6 +824,13 @@ class DocumentSession(
             }
         }
 
+        // Recovery may reuse only files owned by this session, never arbitrary paths.
+        private fun ownedSessionFile(sessionDir: File, path: String): File? {
+            if (path.isBlank()) return null
+            val file = File(path).canonicalFile
+            return file.takeIf { it.parentFile == sessionDir.canonicalFile && it.isFile && it.length() > 0L }
+        }
+
         fun listSavedSessions(context: Context): List<SavedSessionMeta> {
             val baseDir = getSessionsBaseDir(context)
             val list = mutableListOf<SavedSessionMeta>()
@@ -823,6 +838,7 @@ class DocumentSession(
 
             for (dir in dirs) {
                 if (dir.isDirectory) synchronized(sessionLock(dir.name)) {
+                    if (retiredDirectories.contains(dir.absolutePath)) return@synchronized
                     val manifest = File(dir, "manifest.json")
                     if (manifest.exists() || File(dir, "manifest.json.bak").exists()) {
                         try {
@@ -835,7 +851,7 @@ class DocumentSession(
                             val count = pagesArr?.length() ?: 0
                             val firstThumb = if (count > 0) {
                                 val firstPage = pagesArr!!.getJSONObject(0)
-                                firstPage.optString("thumbnailPath", "").takeIf { it.isNotEmpty() && File(it).exists() }
+                                ownedSessionFile(dir, firstPage.optString("thumbnailPath", ""))?.absolutePath
                             } else null
 
                             list.add(
