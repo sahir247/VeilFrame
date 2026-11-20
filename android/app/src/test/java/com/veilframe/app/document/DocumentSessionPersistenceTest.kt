@@ -30,6 +30,27 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun deletionPermanentlyRetiresQueuedAndLiveAutosaves() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(originalBitmapCache = bmp, renderedVersion = -1L))
+            val pending = session.captureSaveSnapshot()
+            assertTrue(session.saveToDisk(context))
+            assertTrue(DocumentSession.deleteSession(context, session.id))
+            assertFalse(session.saveToDisk(context, pending))
+            assertFalse(session.saveToDisk(context))
+            assertFalse(DocumentSession.getSessionDirectory(context, session.id).exists())
+            assertNull(DocumentSession.loadFromDisk(context, session.id))
+            assertFalse(DocumentSession.listSavedSessions(context).any { it.sessionId == session.id })
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
     fun capturedSnapshotOwnsItsSessionIdentityAndPageMetadata() {
         val session = DocumentSession()
         val page = ScannedPage(rotationDegrees = 90)

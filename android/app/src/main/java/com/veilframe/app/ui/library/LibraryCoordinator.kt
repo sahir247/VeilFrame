@@ -58,7 +58,11 @@ class LibraryCoordinator(
         }
     }
 
+    private val refreshGeneration = java.util.concurrent.atomic.AtomicLong()
+
     fun refresh() {
+        val generation = refreshGeneration.incrementAndGet()
+        val checkedFilterId = binding.chipGroupLibraryFilter.checkedChipId
         scope.launch(Dispatchers.IO) {
             val exportDirs = listOf(
                 File(activity.filesDir, "exports"),
@@ -106,7 +110,6 @@ class LibraryCoordinator(
                 .sortedByDescending { it.file.lastModified() }
 
             val savedSessions = DocumentSession.listSavedSessions(activity)
-            val checkedFilterId = binding.chipGroupLibraryFilter.checkedChipId
             val filteredItems = when (checkedFilterId) {
                 R.id.chipLibraryImages -> allItems.filter { item ->
                     val ext = item.file.extension.lowercase()
@@ -127,7 +130,7 @@ class LibraryCoordinator(
             }
 
             withContext(Dispatchers.Main) {
-                if (activity.isFinishing || activity.isDestroyed) return@withContext
+                if (activity.isFinishing || activity.isDestroyed || generation != refreshGeneration.get()) return@withContext
 
                 val density = activity.resources.displayMetrics.density
                 val margin12 = (12 * density).toInt()
@@ -228,8 +231,14 @@ class LibraryCoordinator(
                                     .setTitle("Delete Document Session")
                                     .setMessage("Delete \"${session.title}\" and all scanned pages permanently? This action cannot be undone.")
                                     .setPositiveButton("Delete") { _, _ ->
-                                        DocumentSession.deleteSession(activity, session.sessionId)
-                                        refresh()
+                                        refreshGeneration.incrementAndGet()
+                                        scope.launch {
+                                            val deleted = withContext(Dispatchers.IO) {
+                                                DocumentSession.deleteSession(activity, session.sessionId)
+                                            }
+                                            if (!deleted) android.widget.Toast.makeText(activity, "Could not delete document; retry", android.widget.Toast.LENGTH_LONG).show()
+                                            refresh()
+                                        }
                                     }
                                     .setNegativeButton("Cancel", null)
                                     .show()

@@ -246,9 +246,20 @@ class DocumentScannerController(
         binding.btnDocPageDelete.setOnClickListener {
             if (!session.isEmpty) {
                 session.removePage(session.activePageIndex)
-                persistSession()
+                if (session.isEmpty) {
+                    val retiredId = session.id
+                    session.id = java.util.UUID.randomUUID().toString()
+                    session.title = "Scanned Document"
+                    session.createdAt = System.currentTimeMillis()
+                    scope.launch(Dispatchers.IO) {
+                        val deleted = DocumentSession.deleteSession(activity, retiredId)
+                        withContext(Dispatchers.Main) {
+                            if (!deleted) Toast.makeText(activity, "Could not delete saved document; retry in Library", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } else persistSession()
                 updateUi()
-                Toast.makeText(activity, "Page deleted", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Page removed from document", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -1165,7 +1176,9 @@ class DocumentScannerController(
                 }
             }
             job.await().getOrNull()
-        } catch (e: Throwable) {
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
             android.util.Log.w("VeilFrame.DocScanner", "detectCornersFromBitmap failed", e)
             null
         }
@@ -1286,35 +1299,35 @@ class DocumentScannerController(
         val initialCorners = page.corners?.map { PointF(it.x.toFloat(), it.y.toFloat()) }
         dlgBinding.docInteractiveCropView.setSource(origBmp, initialCorners)
 
-        // If corners were not yet detected, run model detection automatically
-        if (initialCorners == null) {
-            scope.launch {
-                val detected = detectCornersFromBitmap(origBmp)
-                if (detected != null && detected.size == 4) {
-                    dlgBinding.docInteractiveCropView.setCorners(
-                        detected.map { PointF(it.x.toFloat(), it.y.toFloat()) }
-                    )
-                }
-            }
-        }
-
-        dlgBinding.btnCropAutoDetect.setOnClickListener {
+        val generation = sessionGeneration
+        val cropView = dlgBinding.docInteractiveCropView
+        var detectionTicket = 0L
+        var detectionJob: Job? = null
+        fun ownsDialog(): Boolean = dialog.isShowing && generation == sessionGeneration &&
+            session.currentPage === page && session.pages.any { it === page }
+        fun requestDetection(explicit: Boolean) {
+            val ticket = ++detectionTicket
+            val revision = cropView.interactionRevision
+            detectionJob?.cancel()
             dlgBinding.btnCropAutoDetect.isEnabled = false
             dlgBinding.btnCropAutoDetect.text = "Detecting…"
-            scope.launch {
+            detectionJob = scope.launch {
                 val detected = detectCornersFromBitmap(origBmp)
-                if (detected != null && detected.size == 4) {
-                    dlgBinding.docInteractiveCropView.setCorners(
-                        detected.map { PointF(it.x.toFloat(), it.y.toFloat()) }
-                    )
-                    Toast.makeText(activity, "Document corners auto-detected", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(activity, "Could not detect document boundaries", Toast.LENGTH_SHORT).show()
+                if (!ownsDialog() || ticket != detectionTicket) return@launch
+                if (revision == cropView.interactionRevision) {
+                    if (detected != null && detected.size == 4) {
+                        cropView.setCorners(detected.map { PointF(it.x.toFloat(), it.y.toFloat()) })
+                        if (explicit) Toast.makeText(activity, "Document corners auto-detected", Toast.LENGTH_SHORT).show()
+                    } else if (explicit) {
+                        Toast.makeText(activity, "Could not detect document boundaries", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 dlgBinding.btnCropAutoDetect.isEnabled = true
                 dlgBinding.btnCropAutoDetect.text = "Auto Detect"
             }
         }
+
+        dlgBinding.btnCropAutoDetect.setOnClickListener { requestDetection(true) }
 
         dlgBinding.btnCropResetFull.setOnClickListener {
             dlgBinding.docInteractiveCropView.resetToFullImage()
@@ -1326,7 +1339,7 @@ class DocumentScannerController(
 
         dlgBinding.btnCropApply.setOnClickListener {
             val sourceCorners = dlgBinding.docInteractiveCropView.getCornersInSource()
-            if (sourceCorners.size == 4) {
+            if (ownsDialog() && sourceCorners.size == 4) {
                 val cvCorners = sourceCorners.map { Point(it.x.toDouble(), it.y.toDouble()) }
                 page.corners = cvCorners
                 renderCurrentPage {
@@ -1338,7 +1351,12 @@ class DocumentScannerController(
             dialog.dismiss()
         }
 
+        dialog.setOnDismissListener {
+            detectionTicket++
+            detectionJob?.cancel()
+        }
         dialog.show()
+        if (initialCorners == null) requestDetection(false)
     }
 
     private fun applyFilterToCurrentPage(mode: DocumentScanner.DocumentMode, preset: String = "None") {

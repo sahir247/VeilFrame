@@ -265,3 +265,8 @@ Mask-enabled bundle generation now excludes known credential containers by case-
 ### A05 — Metadata rewrite raw-byte regression
 
 Added a loaded-document full-rewrite fixture with an uncompressed metadata stream and private author sentinel; checks the serialized bytes for retained payload and independently verifies the reopened document structure. Removed shared mutable date formatter from concurrent metadata reads. Scope remains explicit PDF metadata, not opaque attachments or image payloads. Pending CI; A05 remains PARTIAL.
+
+### A14/A15/A21 — Explicit deletion wins over autosave and interactive crop owns user input
+
+- Library deletion now runs on IO, reports filesystem failure, serializes manifest enumeration with writers, and retires the deleted session identity for the remainder of this process. A pending or live autosave cannot recreate it. Removing the last page also retires the previous document identity rather than silently leaving an obsolete one-page recovery document in Library. Added a recovery/deletion regression; validate process-death and physical storage failure separately. Library refresh captures UI filter before IO and rejects obsolete query results. Reject path traversal / mismatched manifest session identities.
+- Crop detection results are scoped to dialog generation, current page identity, request ticket and a monotonic user interaction revision. A drag beginning during inference, reset, dismissal or workspace switch cannot be overwritten by an obsolete detection. The crop view returns detached mutable PointF values rather than leaking internal state; detection cancellation propagates. A14/A15/A21 remain PARTIAL until device lifecycle, concurrent native and recovery acceptance.

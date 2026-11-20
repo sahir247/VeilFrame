@@ -590,6 +590,9 @@ class DocumentSession(
         return synchronized(sessionLock(sessionId)) {
         try {
             val sessionDir = getSessionDirectory(context, sessionId)
+            // Explicit deletion retires this identity for the lifetime of the process.
+            // A queued snapshot must never recreate a deleted private document.
+            if (retiredDirectories.contains(sessionDir.absolutePath)) return@synchronized false
             check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
             val manifestFile = File(sessionDir, "manifest.json")
             // A queued snapshot from another controller/instance must not overwrite a
@@ -699,22 +702,27 @@ class DocumentSession(
         private val writerEpoch = UUID.randomUUID().toString()
         private val saveSequence = java.util.concurrent.atomic.AtomicLong()
         private val sessionLocks = Array(32) { Any() }
+        private val retiredDirectories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         private fun sessionLock(id: String): Any = sessionLocks[(id.hashCode() and Int.MAX_VALUE) % sessionLocks.size]
         fun getSessionsBaseDir(context: Context): File {
             return File(context.filesDir, "document_sessions").apply { mkdirs() }
         }
 
         fun getSessionDirectory(context: Context, sessionId: String): File {
+            require(sessionId.isNotBlank() && sessionId != "." && sessionId != ".." &&
+                !sessionId.contains('/') && !sessionId.contains('\\')) { "Invalid document session identity" }
             return File(getSessionsBaseDir(context), sessionId)
         }
 
         fun loadFromDisk(context: Context, sessionId: String): DocumentSession? = synchronized(sessionLock(sessionId)) {
             val sessionDir = getSessionDirectory(context, sessionId)
             val manifestFile = File(sessionDir, "manifest.json")
+            if (retiredDirectories.contains(sessionDir.absolutePath)) return@synchronized null
             try {
                 val json = JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+                require(json.getString("id") == sessionId) { "Session manifest identity mismatch" }
                 val session = DocumentSession(
-                    id = json.getString("id"),
+                    id = sessionId,
                     title = json.optString("title", "Scanned Document")
                 ).apply {
                     createdAt = json.optLong("createdAt", System.currentTimeMillis())
@@ -782,12 +790,13 @@ class DocumentSession(
             val dirs = baseDir.listFiles() ?: return emptyList()
 
             for (dir in dirs) {
-                if (dir.isDirectory) {
+                if (dir.isDirectory) synchronized(sessionLock(dir.name)) {
                     val manifest = File(dir, "manifest.json")
                     if (manifest.exists() || File(dir, "manifest.json.bak").exists()) {
                         try {
                             val json = JSONObject(AtomicFile(manifest).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
                             val id = json.getString("id")
+                            require(id == dir.name) { "Session manifest identity mismatch" }
                             val title = json.optString("title", "Scanned Document")
                             val lastMod = json.optLong("lastModifiedAt", dir.lastModified())
                             val pagesArr = json.optJSONArray("pages")
@@ -813,12 +822,16 @@ class DocumentSession(
             return list.sortedByDescending { it.lastModifiedAt }
         }
 
-        fun deleteSession(context: Context, sessionId: String) = synchronized(sessionLock(sessionId)) {
+        fun deleteSession(context: Context, sessionId: String): Boolean = synchronized(sessionLock(sessionId)) {
             try {
                 val dir = getSessionDirectory(context, sessionId)
-                dir.deleteRecursively()
-                Unit
-            } catch (_: Exception) {}
+                retiredDirectories.add(dir.absolutePath)
+                // Retry is allowed on deletion failure; autosaves cannot write here again.
+                !dir.exists() || (dir.deleteRecursively() && !dir.exists())
+            } catch (e: Exception) {
+                Log.e("DocumentSession", "Could not delete recovery document", e)
+                false
+            }
         }
     }
 }
