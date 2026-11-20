@@ -574,7 +574,7 @@ object OpenXmlDocumentParser {
                 require(sheets.sumOf { it.charts.size } + charts.size <= 64) { "Workbook chart count exceeds budget" }
                 val localNames = definedNames.filter { it.getAttribute("localSheetId").toIntOrNull() == sheetIndex }
                 val printAreas = localNames.filter { it.getAttribute("name") == "_xlnm.Print_Area" }
-                val printTitles = localNames.any { it.getAttribute("name") == "_xlnm.Print_Titles" }
+                val printTitles = localNames.filter { it.getAttribute("name") == "_xlnm.Print_Titles" }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
@@ -582,7 +582,7 @@ object OpenXmlDocumentParser {
                     styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules,
                     charts = charts, unsupportedDrawings = unsupportedDrawings,
                     printSettings = metadata.printSettings.copy(area = printAreas.singleOrNull()?.textContent,
-                        unsupportedFeatures = metadata.printSettings.unsupportedFeatures || printTitles,
+                        titles = printTitles.singleOrNull()?.textContent, ambiguousTitles = printTitles.size > 1,
                         ambiguousArea = printAreas.size > 1)
                 ))
             }

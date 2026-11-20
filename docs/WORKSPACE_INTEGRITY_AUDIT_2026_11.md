@@ -655,3 +655,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Disjoint saved print areas and pagination edge cases
 
 - Support ordered, nonoverlapping unions of up to 64 rectangular local-sheet print areas, including quoted names containing commas and escaped apostrophes. Each area is independently planned; cells in gaps are omitted only in explicit saved-print mode. Reject overlapping or malformed ranges. Check aggregate page budget before drawing; fit-to-page can try smaller scales if a larger attempt exceeds the page budget. Partial manual breaks are disclosed rather than promoted to full-row/full-column breaks. Added multi-area PDF fixture. Excel may use printer-specific scaling across areas; current per-area approximation is not exact. CI pending.
+
+### A28 — Saved print-title repetition
+
+- Resolve local-sheet saved print-title row/column ranges, reserve physical geometry on every printed panel, repeat only once per page. Preserve manual breaks and fit targets after title reservation. Render noncontiguous title/body coordinates with actual visible neighbors for shared borders; reject merges cut by the title/body boundary. Full worksheet export is unaffected. Titles must precede or be a prefix of the selected area; other ranges fail explicitly. Added PDF repetition/no-duplication regression. Printer-exact behavior and hidden geometry remain pending; CI pending.

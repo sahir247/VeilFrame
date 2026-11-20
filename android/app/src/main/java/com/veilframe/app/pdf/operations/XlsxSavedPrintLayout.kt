@@ -6,13 +6,42 @@ data class XlsxSavedPrintSettings(
     val fitToPage: Boolean = false, val gridLines: Boolean = false,
     val centerHorizontal: Boolean = false, val centerVertical: Boolean = false,
     val rowBreaks: List<String> = emptyList(), val colBreaks: List<String> = emptyList(),
-    val area: String? = null, val ambiguousArea: Boolean = false, val unsupportedFeatures: Boolean = false
+    val area: String? = null, val ambiguousArea: Boolean = false, val unsupportedFeatures: Boolean = false,
+    val titles: String? = null, val ambiguousTitles: Boolean = false
 )
 
 internal object XlsxSavedPrintLayout {
     data class Plan(val width: Float, val height: Float, val left: Float, val top: Float,
         val bottom: Float, val contentWidth: Float, val contentHeight: Float, val scale: Float,
-        val tiles: List<Pair<IntRange, IntRange>>)
+        val tiles: List<Pair<List<Int>, List<Int>>>)
+
+    data class Titles(val rows: IntRange? = null, val columns: IntRange? = null)
+
+    fun titles(name: String, settings: XlsxSavedPrintSettings): Titles {
+        require(!settings.ambiguousTitles) { "Duplicate print-title definitions" }
+        val ref = settings.titles ?: return Titles()
+        var rows: IntRange? = null
+        var columns: IntRange? = null
+        for (part in splitReferences(ref)) {
+            val range = localReference(name, part).replace("$", "")
+            when {
+                range.matches(Regex("[1-9][0-9]{0,6}:[1-9][0-9]{0,6}")) -> {
+                    require(rows == null) { "Multiple print-title row ranges" }
+                    val (first,last) = range.split(':').map { it.toInt() }
+                    require(first in 1..1048576 && last in first..1048576 && last-first < 512) { "Invalid or oversized print-title rows" }
+                    rows = first-1..last-1
+                }
+                range.matches(Regex("[A-Za-z]{1,3}:[A-Za-z]{1,3}")) -> {
+                    require(columns == null) { "Multiple print-title column ranges" }
+                    val (first,last) = range.split(':').map { OpenXmlDocumentParser.colRefToIndex(it + "1") }
+                    require(first in 0 until 16384 && last in first until 16384 && last-first < 512) { "Invalid or oversized print-title columns" }
+                    columns = first..last
+                }
+                else -> throw IllegalArgumentException("Unsupported saved print-title reference")
+            }
+        }
+        return Titles(rows,columns)
+    }
 
     fun areas(name: String, settings: XlsxSavedPrintSettings, rows: List<List<String>>,
         merges: List<OpenXmlDocumentParser.CellRangeAddress>): List<OpenXmlDocumentParser.CellRangeAddress> {
@@ -23,7 +52,18 @@ internal object XlsxSavedPrintLayout {
             require(extent.rows > 0 && extent.columns > 0) { "Empty print area" }
             return listOf(OpenXmlDocumentParser.CellRangeAddress(0, extent.rows - 1, 0, extent.columns - 1))
         }
-        require(ref.length <= 16_384) { "Saved print-area definition exceeds budget" }
+        val ranges = splitReferences(ref).map { parseArea(name, it) }
+        for ((index, range) in ranges.withIndex()) for (other in ranges.take(index)) {
+            require(range.lastRow < other.firstRow || other.lastRow < range.firstRow ||
+                range.lastCol < other.firstCol || other.lastCol < range.firstCol) {
+                "Overlapping saved print areas are ambiguous"
+            }
+        }
+        return ranges
+    }
+
+    private fun splitReferences(ref: String): List<String> {
+        require(ref.length <= 16_384) { "Saved print definition exceeds budget" }
         val parts = mutableListOf<String>()
         var quoted = false
         var start = 0
@@ -42,24 +82,21 @@ internal object XlsxSavedPrintLayout {
         }
         require(!quoted) { "Malformed quoted print-area sheet name" }
         parts.add(ref.substring(start).trim())
-        val ranges = parts.map { parseArea(name, it) }
-        for ((index, range) in ranges.withIndex()) for (other in ranges.take(index)) {
-            require(range.lastRow < other.firstRow || other.lastRow < range.firstRow ||
-                range.lastCol < other.firstCol || other.lastCol < range.firstCol) {
-                "Overlapping saved print areas are ambiguous"
-            }
-        }
-        return ranges
+        return parts
     }
 
-    private fun parseArea(name: String, ref: String): OpenXmlDocumentParser.CellRangeAddress {
+    private fun localReference(name: String, ref: String): String {
         val separator = ref.lastIndexOf('!')
         require(separator > 0) { "Unsupported saved print area" }
         val owner = ref.substring(0, separator).let {
             if (it.startsWith("'") && it.endsWith("'")) it.substring(1,it.length-1).replace("''","'") else it
         }
         require(owner == name) { "Unsupported cross-sheet print area" }
-        val range = ref.substring(separator + 1).replace("$","")
+        return ref.substring(separator + 1)
+    }
+
+    private fun parseArea(name: String, ref: String): OpenXmlDocumentParser.CellRangeAddress {
+        val range = localReference(name, ref).replace("$","")
         require(range.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}(?::[A-Za-z]{1,3}[1-9][0-9]{0,6})?"))) {
             "Saved print areas must be rectangular cell ranges"
         }
@@ -75,7 +112,8 @@ internal object XlsxSavedPrintLayout {
         return OpenXmlDocumentParser.CellRangeAddress(first.first,last.first,first.second,last.second)
     }
 
-    fun plan(layout: SheetLayout, area: OpenXmlDocumentParser.CellRangeAddress, settings: XlsxSavedPrintSettings): Plan {
+    fun plan(layout: SheetLayout, area: OpenXmlDocumentParser.CellRangeAddress, settings: XlsxSavedPrintSettings,
+        titles: Titles = Titles()): Plan {
         fun mm(v: Float) = v * 72f / 25.4f
         val portrait = when (settings.setup["paperSize"] ?: "1") {
             "1" -> 612f to 792f
@@ -107,19 +145,28 @@ internal object XlsxSavedPrintLayout {
         }.toSet()
         val rb = if (settings.fitToPage) emptySet() else breaks(settings.rowBreaks,1_048_575)
         val cb = if (settings.fitToPage) emptySet() else breaks(settings.colBreaks,16_383)
-        fun groups(range: IntRange, sizes: FloatArray, limit: Float, scale: Float, breaks: Set<Int>): List<IntRange>? {
-            val result = mutableListOf<IntRange>()
-            var start = range.first; var used = 0f
+        fun groups(range: IntRange, sizes: FloatArray, limit: Float, scale: Float, breaks: Set<Int>,
+            titleRange: IntRange?): List<List<Int>>? {
+            val prefix = titleRange?.toList().orEmpty()
+            require(titleRange == null || (titleRange.first <= range.first && titleRange.last < sizes.size)) {
+                "Print titles inside or after the body are unsupported; use full worksheet export"
+            }
+            val prefixSize = prefix.sumOf { sizes[it].toDouble() }.toFloat() * scale
+            if (prefixSize > limit + 0.01f) return null
+            val result = mutableListOf<List<Int>>()
+            var active = mutableListOf<Int>()
+            var used = prefixSize
             for (i in range) {
+                if (titleRange != null && i in titleRange) continue
                 val size = sizes[i] * scale
-                if (size > limit + 0.01f) return null
-                if (i > start && (i in breaks || used + size > limit + 0.01f)) {
-                    result.add(start until i); start = i; used = 0f
+                if (prefixSize + size > limit + 0.01f) return null
+                if (active.isNotEmpty() && (i in breaks || used + size > limit + 0.01f)) {
+                    result.add(prefix + active); active = mutableListOf(); used = prefixSize
                     if (result.size >= SpreadsheetGeometry.MAX_PAGES) return null
                 }
-                used += size
+                active.add(i); used += size
             }
-            result.add(start..range.last)
+            if (active.isNotEmpty() || result.isEmpty()) result.add(prefix + active)
             return result
         }
         fun target(key: String): Int {
@@ -139,8 +186,8 @@ internal object XlsxSavedPrintLayout {
         // requested page counts. Manual breaks are ignored in this mode.
         for (percent in requested downTo (if (settings.fitToPage) 10 else requested)) {
             val scale = percent / 100f
-            val rs = groups(area.firstRow..area.lastRow,layout.rowHeights,h,scale,rb) ?: continue
-            val cs = groups(area.firstCol..area.lastCol,layout.colWidths,w,scale,cb) ?: continue
+            val rs = groups(area.firstRow..area.lastRow,layout.rowHeights,h,scale,rb,titles.rows) ?: continue
+            val cs = groups(area.firstCol..area.lastCol,layout.colWidths,w,scale,cb,titles.columns) ?: continue
             if ((fitW > 0 && cs.size > fitW) || (fitH > 0 && rs.size > fitH)) continue
             if (rs.size.toLong()*cs.size > SpreadsheetGeometry.MAX_PAGES) continue
             val tiles = when (settings.setup["pageOrder"]) {

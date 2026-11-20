@@ -72,8 +72,10 @@ internal class SpreadsheetBorderResolver(
         return if (second.width > first.width) second else first
     }
 
-    fun horizontal(belowRow: Int, col: Int): XlsxBorderLine? =
-        choose(side(belowRow - 1, col, Side.BOTTOM), side(belowRow, col, Side.TOP))
+    fun horizontal(belowRow: Int, col: Int): XlsxBorderLine? = horizontalBetween(belowRow - 1, belowRow, col)
+
+    fun horizontalBetween(aboveRow: Int, belowRow: Int, col: Int): XlsxBorderLine? =
+        choose(side(aboveRow, col, Side.BOTTOM), side(belowRow, col, Side.TOP))
 
     fun vertical(row: Int, leftCol: Int?, rightCol: Int?): XlsxBorderLine? =
         choose(leftCol?.let { side(row, it, Side.RIGHT) }, rightCol?.let { side(row, it, Side.LEFT) })

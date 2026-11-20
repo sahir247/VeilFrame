@@ -1041,8 +1041,10 @@ class OfficeConverter {
         font: PDType1Font, limits: LayoutLimits, checkpoint: () -> Unit) {
         val settings = sheet.printSettings
         val areas = XlsxSavedPrintLayout.areas(sheet.name, settings, sheet.rows, sheet.mergedRegions)
-        val requiredRows = maxOf(sheet.rows.size, areas.maxOf { it.lastRow } + 1)
-        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, areas.maxOf { it.lastCol } + 1)
+        val titles = XlsxSavedPrintLayout.titles(sheet.name, settings)
+        val requiredRows = maxOf(sheet.rows.size, areas.maxOf { it.lastRow } + 1, (titles.rows?.last ?: -1) + 1)
+        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, areas.maxOf { it.lastCol } + 1,
+            (titles.columns?.last ?: -1) + 1)
         require(requiredRows.toLong() * requiredCols <= SpreadsheetGeometry.MAX_GRID_CELLS) { "Print area exceeds layout budget" }
         val rows = List(requiredRows) { r ->
             val existing = sheet.rows.getOrNull(r).orEmpty()
@@ -1051,7 +1053,7 @@ class OfficeConverter {
         }
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
             styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits)
-        val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings) }
+        val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
         require(plans.sumOf { it.tiles.size.toLong() } + pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) {
             "Saved print areas exceed PDF page budget"
         }
@@ -1071,8 +1073,13 @@ class OfficeConverter {
                 stream.saveGraphicsState()
                 try {
                     stream.transform(Matrix(plan.scale, 0f, 0f, plan.scale, left, top))
-                    fun x(c: Int) = layout.colX[c] - layout.colX[colRange.first]
-                    fun y(r: Int) = -(layout.rowY[r] - layout.rowY[rowRange.first])
+                    val xs = mutableMapOf<Int,Float>()
+                    val ys = mutableMapOf<Int,Float>()
+                    var runningX = 0f; var runningY = 0f
+                    for (c in colRange) { xs[c] = runningX; runningX += layout.colWidths[c] }
+                    for (r in rowRange) { ys[r] = -runningY; runningY += layout.rowHeights[r] }
+                    fun x(c: Int) = xs.getValue(c)
+                    fun y(r: Int) = ys.getValue(r)
                     for (r in rowRange) {
                         checkpoint()
                         for (c in colRange) {
@@ -1082,17 +1089,17 @@ class OfficeConverter {
                         }
                     }
                     for (geom in layout.mergedGeometries) {
-                        if (geom.lastRow < rowRange.first || geom.firstRow > rowRange.last ||
-                            geom.lastCol < colRange.first || geom.firstCol > colRange.last) continue
-                        require(geom.firstRow in rowRange && geom.lastRow in rowRange &&
-                            geom.firstCol in colRange && geom.lastCol in colRange) {
+                        if (rowRange.none { it in geom.firstRow..geom.lastRow } ||
+                            colRange.none { it in geom.firstCol..geom.lastCol }) continue
+                        require((geom.firstRow..geom.lastRow).all { it in ys } &&
+                            (geom.firstCol..geom.lastCol).all { it in xs }) {
                             "Saved print boundary cuts through a merged cell; use content-preserving export"
                         }
                         drawCellChunk(stream, x(geom.firstCol), y(geom.firstRow), geom.totalWidth, geom.totalHeight,
                             geom.wrappedLines, font, limits.fontSizeCell, limits.lineHeight,
                             layout.cellStyles.at(geom.firstRow,geom.firstCol))
                     }
-                    renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange.toList(), { y(it) },
+                    renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
                 } finally { stream.restoreGraphicsState() }
                 if (plan.bottom >= 12f) {
@@ -1624,10 +1631,11 @@ class OfficeConverter {
     /** Overlay shared edges only after all fills/text for this page are complete. */
     private fun renderSpreadsheetEdges(
         stream: PDPageContentStream, layout: SheetLayout, mergeIndex: SpreadsheetMergeIndex,
-        rows: IntRange, cols: List<Int>, top: (Int) -> Float, bottom: (Int) -> Float,
+        rows: Iterable<Int>, cols: List<Int>, top: (Int) -> Float, bottom: (Int) -> Float,
         left: (Int) -> Float, startsRow: Boolean, endsRow: Boolean, checkpoint: () -> Unit
     ) {
-        if (rows.isEmpty() || cols.isEmpty()) return
+        val visibleRows = rows.toList()
+        if (visibleRows.isEmpty() || cols.isEmpty()) return
         val resolver = SpreadsheetBorderResolver(layout, mergeIndex)
         var previous: XlsxBorderLine? = null
         stream.saveGraphicsState()
@@ -1652,13 +1660,14 @@ class OfficeConverter {
             }
             // Each horizontal boundary is emitted once (top of each row;
             // bottom of the final row). Split text-row fragments have no fake edges.
-            for (r in rows) {
+            for ((rowIndex,r) in visibleRows.withIndex()) {
                 checkpoint()
-                if (r != rows.first || startsRow) for (c in cols) {
-                    segment(resolver.horizontal(r, c), left(c), top(r),
+                if (rowIndex != 0 || startsRow) for (c in cols) {
+                    val prior = visibleRows.getOrNull(rowIndex - 1) ?: (r - 1)
+                    segment(resolver.horizontalBetween(prior, r, c), left(c), top(r),
                         left(c) + layout.colWidths[c], top(r))
                 }
-                if (r == rows.last && endsRow) for (c in cols) {
+                if (rowIndex == visibleRows.lastIndex && endsRow) for (c in cols) {
                     segment(resolver.horizontal(r + 1, c), left(c), bottom(r),
                         left(c) + layout.colWidths[c], bottom(r))
                 }

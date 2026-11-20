@@ -1689,4 +1689,22 @@ class OfficeConverterFidelityTest {
             assertTrue(!text.contains("OMITME"))
         }
     }
+    @Test
+    fun savedPrintTitlesRepeatOnlyInExplicitPrintMode() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Print!&#36;A&#36;1:&#36;B&#36;3</definedName><definedName name="_xlnm.Print_Titles" localSheetId="0">Print!&#36;1:&#36;1,Print!&#36;A:&#36;A</definedName></definedNames></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>HEADER</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>BODYONE</t></is></c></row><row r="3"><c r="B3" t="inlineStr"><is><t>BODYTWO</t></is></c></row></sheetData><rowBreaks><brk id="2" man="1"/></rowBreaks></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root, "titles.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context, savedPrintLayout = true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2, pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertEquals(2, Regex("HEADER").findAll(text).count())
+            assertEquals(1, Regex("BODYONE").findAll(text).count())
+            assertEquals(1, Regex("BODYTWO").findAll(text).count())
+        }
+        val normal = File(tempFolder.root, "titles-full.pdf")
+        OfficeConverter().convertXlsxToPdf(input, normal, context)
+        PDDocument.load(normal).use { pdf -> assertEquals(1, Regex("HEADER").findAll(PDFTextStripper().getText(pdf)).count()) }
+    }
 }
