@@ -34,7 +34,16 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     private var pendingImgStudioExportFile: File? = null
     private var pendingVidStudioExportFile: File? = null
     private var pendingDocScannerExportFile: File? = null
-    private var pendingBgRemoverExportFile: File? = null
+    private data class PendingCutout(val file: File, val owned: Boolean) {
+        fun release() { if (owned) file.delete() }
+    }
+    private var pendingCutout: PendingCutout? = null
+
+    /** The picker is activity-owned. A recreated activity cannot use an old pending payload. */
+    fun releasePendingCutout() {
+        pendingCutout?.release()
+        pendingCutout = null
+    }
     private var pendingPdfSignatureSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveFile: File? = null
@@ -375,19 +384,25 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     private val bgRemoverExportLauncher = activity.registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingBgRemoverExportFile
-        pendingBgRemoverExportFile = null
-        if (destUri != null && file != null) {
-            activity.lifecycleScope.launch(Dispatchers.IO) {
-                val ok = activity.safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) {
-                        Toast.makeText(activity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(activity, "Failed to save PNG cutout to storage", Toast.LENGTH_SHORT).show()
+        val artifact = pendingCutout
+        pendingCutout = null
+        if (artifact != null && destUri != null) {
+            try {
+                val transfer = activity.lifecycleScope.launch(Dispatchers.IO) {
+                    val ok = activity.safStorageManager.copyFileToUri(artifact.file, destUri)
+                    withContext(Dispatchers.Main) {
+                        if (ok) Toast.makeText(activity, "Cutout saved to storage", Toast.LENGTH_LONG).show()
+                        else Toast.makeText(activity, "Failed to save cutout to storage", Toast.LENGTH_SHORT).show()
                     }
                 }
+                transfer.invokeOnCompletion { artifact.release() }
+            } catch (failure: Throwable) {
+                artifact.release()
+                throw failure
             }
+        } else {
+            artifact?.release()
+            if (destUri != null) Toast.makeText(activity, "Cutout export expired; generate it again", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -762,9 +777,23 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         bgRemoverPickerLauncher.launch(request)
     }
 
-    fun launchBgRemoverExport(file: File, mime: String = activity.safStorageManager.getExportMimeType(file)) {
-        pendingBgRemoverExportFile = file
-        bgRemoverExportLauncher.launch(file.name to mime)
+    fun launchBgRemoverExport(
+        file: File, mime: String = activity.safStorageManager.getExportMimeType(file), owned: Boolean = false
+    ): Boolean {
+        if (!file.isFile || file.length() <= 0L || pendingCutout != null) {
+            Toast.makeText(activity, "Cutout unavailable or a save is already pending", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        pendingCutout = PendingCutout(file, owned)
+        return try {
+            bgRemoverExportLauncher.launch(file.name to mime)
+            true
+        } catch (failure: Exception) {
+            // The caller still owns the file when launch fails.
+            pendingCutout = null
+            Toast.makeText(activity, "Cannot open cutout save picker", Toast.LENGTH_LONG).show()
+            false
+        }
     }
 
     fun launchQualityPicker(request: PickVisualMediaRequest = PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()) {

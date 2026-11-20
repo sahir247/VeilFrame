@@ -11,6 +11,33 @@ import org.junit.Test
 class CvDispatcherWatchdogTest {
 
     @Test
+    fun joinWorkerWaitsForNonCooperativeWorkAfterCancellation() = runBlocking {
+        val dispatcher = CvDispatcher()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val exited = java.util.concurrent.atomic.AtomicBoolean(false)
+        val job = dispatcher.submit(name = "blocking_native_fixture", priority = CvPriority.INTERACTIVE) {
+            started.countDown()
+            try {
+                check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                7
+            } finally { exited.set(true) }
+        }
+        try {
+            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            job.cancel("owner left")
+            // A cancelled handle is not evidence that a noncooperative native worker exited.
+            assertTrue(!exited.get())
+            release.countDown()
+            kotlinx.coroutines.withTimeout(5000) { job.joinWorker() }
+            assertTrue(exited.get())
+        } finally {
+            release.countDown()
+            dispatcher.shutdown()
+        }
+    }
+
+    @Test
     fun testJobCompletesNormallyBeforeTimeoutCancelsWatchdog() = runBlocking {
         val dispatcher = CvDispatcher()
         val job = dispatcher.submit(

@@ -77,7 +77,7 @@ class BackgroundRemoverController(
     private val binding: LayoutBackgroundRemoverBinding,
     private val scope: CoroutineScope,
     private val onPickImageRequest: () -> Unit,
-    private val onExportPngRequest: (File) -> Unit,
+    private val onExportPngRequest: (File, Boolean) -> Boolean,
     private val onNavigateBack: () -> Unit
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     private var processingJob: Job? = null
@@ -1312,7 +1312,7 @@ class BackgroundRemoverController(
                 try {
                     withContext(Dispatchers.IO) {
                         val cc = kotlin.coroutines.coroutineContext
-                        val dir = File(activity.filesDir, "exports").apply { mkdirs() }
+                        val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
                         val out = File.createTempFile("cutout_original_", ".png", dir)
                         destination = out
                         OriginalResolutionCutout.export(source, info, matte, out) { cc.ensureActive() }
@@ -1320,8 +1320,7 @@ class BackgroundRemoverController(
                     if (generation != sourceGeneration || source !== sourceImage ||
                         matte !== originalMatte || activity.isFinishing || activity.isDestroyed) return@launch
                     progress.dismiss()
-                    onExportPngRequest(checkNotNull(destination))
-                    handedOff = true
+                    handedOff = onExportPngRequest(checkNotNull(destination), true)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -1598,14 +1597,10 @@ class BackgroundRemoverController(
                         updateSaveCutoutButton()
                     }
                 } else if (outFile.exists() && outFile.length() > 0) {
-                    onExportPngRequest(outFile)
-                    currentSaveCutoutState = SaveCutoutState.SAVED
+                    // Launching a destination chooser is not a completed save.
+                    onExportPngRequest(outFile, false)
+                    currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
                     updateSaveCutoutButton()
-                    saveStateJob = scope.launch {
-                        delay(2000)
-                        currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
-                        updateSaveCutoutButton()
-                    }
                 } else {
                     Toast.makeText(activity, "Save failed: ${saveErrorMessage ?: "Unknown error"}", Toast.LENGTH_SHORT).show()
                     currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN

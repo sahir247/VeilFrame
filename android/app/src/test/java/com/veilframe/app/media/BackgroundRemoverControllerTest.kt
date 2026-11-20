@@ -52,7 +52,7 @@ class BackgroundRemoverControllerTest {
             binding = binding,
             scope = scope,
             onPickImageRequest = {},
-            onExportPngRequest = {},
+            onExportPngRequest = { _, _ -> false },
             onNavigateBack = {}
         )
         controller.init()

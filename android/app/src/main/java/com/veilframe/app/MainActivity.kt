@@ -359,6 +359,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        launchers.releasePendingCutout()
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
             docScannerController.release()
@@ -736,9 +737,9 @@ class MainActivity : AppCompatActivity() {
             onPickImageRequest = {
                 launchers.launchBgRemoverPicker()
             },
-            onExportPngRequest = { file ->
+            onExportPngRequest = { file, owned ->
                 val mime = safStorageManager.getExportMimeType(file)
-                launchers.launchBgRemoverExport(file, mime)
+                launchers.launchBgRemoverExport(file, mime, owned)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
