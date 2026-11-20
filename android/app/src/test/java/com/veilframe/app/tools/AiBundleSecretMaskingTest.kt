@@ -138,6 +138,16 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun documentIdentityExclusionAlsoRejectsEarlierAlias() {
+        val excluded = AiBundleEngine.ExcludedDocumentIdentities()
+        val inventory = listOf("src/alias.kt" to "provider:42", "private.kt" to "provider:42", "readme.md" to "provider:43")
+        val paths = AiBundleEngine.FileExclusions(setOf("private.kt"))
+        for ((path, identity) in inventory) if (paths.excludes(path)) excluded.exclude(identity)
+        paths.requireAllMatched()
+        org.junit.Assert.assertEquals(listOf("readme.md"), inventory.filterNot { excluded.contains(it.second) }.map { it.first })
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)
