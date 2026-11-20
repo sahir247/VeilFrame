@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
+import android.system.StructPollfd
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.FFmpegSession
@@ -26,6 +27,12 @@ internal object SequentialVideoFrameDecoder {
     private class PipeReader(
         val fd: FileDescriptor, val done: CountDownLatch, val cancelled: () -> Boolean
     ) {
+        private val poll = StructPollfd().apply {
+            this.fd = this@PipeReader.fd
+            events = OsConstants.POLLIN.toShort()
+        }
+        private val pollSet = arrayOf(poll)
+
         fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             val start = android.os.SystemClock.elapsedRealtime()
             while (true) {
@@ -42,7 +49,16 @@ internal object SequentialVideoFrameDecoder {
                 if (finished) return -1
                 if (android.os.SystemClock.elapsedRealtime() - start > STALL_MS)
                     throw IOException("Sequential video transport stalled")
-                Thread.sleep(10)
+                try {
+                    // Wake as soon as a producer makes bytes available rather than
+                    // sleeping between small writes on a narrow kernel pipe.
+                    Os.poll(pollSet, 100)
+                    val errors = OsConstants.POLLERR or OsConstants.POLLNVAL
+                    if (poll.revents.toInt() and errors != 0)
+                        throw IOException("Frame pipe reported an error")
+                } catch (e: ErrnoException) {
+                    if (e.errno != OsConstants.EINTR) throw IOException("Frame pipe poll failed", e)
+                }
             }
         }
 
