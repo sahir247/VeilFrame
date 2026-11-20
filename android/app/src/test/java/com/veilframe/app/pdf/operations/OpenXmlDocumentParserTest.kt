@@ -199,6 +199,31 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun resolvesThemeRelationshipAndCustomIndexedColorsWithTint() {
+        val workbook = """<workbook><sheets><sheet name="Palette" sheetId="1" r:id="r1"/></sheets></workbook>"""
+        val rels = """<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="themes/custom.xml"/></Relationships>"""
+        // Deliberately not in spreadsheet index order.
+        val theme = """<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="Test"><a:dk1><a:sysClr val="windowText" lastClr="123456"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:accent1><a:srgbClr val="0000FF"/></a:accent1></a:clrScheme></a:themeElements></a:theme>"""
+        val styles = """<styleSheet><fonts><font><color theme="1"/></font><font><color theme="4" tint="0.5"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor indexed="2"/></patternFill></fill></fills><cellXfs><xf/><xf fontId="1" fillId="1"/></cellXfs><colors><indexedColors><rgbColor rgb="FF000000"/><rgbColor rgb="FFFFFFFF"/><rgbColor rgb="FF123ABC"/></indexedColors></colors></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" s="1"><v>2</v></c></row></sheetData></worksheet>"""
+        fun parse(styleXml: String): OpenXmlDocumentParser.XlsxSheetData {
+            val file = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/_rels/workbook.xml.rels" to rels,
+                "xl/themes/custom.xml" to theme, "xl/styles.xml" to styleXml, "xl/worksheets/sheet1.xml" to sheet))
+            try { return OpenXmlDocumentParser.parseXlsx(file).sheets.single() }
+            finally { file.delete() }
+        }
+        val parsed = parse(styles)
+        assertEquals(0x123456, parsed.styles.at(0, 0).textRgb ?: -1)
+        assertEquals(0x8080FF, parsed.styles.at(0, 1).textRgb ?: -1)
+        assertEquals(0x123ABC, parsed.styles.at(0, 1).fillRgb ?: -1)
+        for (bad in listOf(styles.replace("tint=\"0.5\"", "tint=\"NaN\""),
+            styles.replace("theme=\"4\"", "theme=\"99\""),
+            styles.replace("indexed=\"2\"", "indexed=\"2\" rgb=\"FF000000\""))) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { parse(bad) }
+        }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

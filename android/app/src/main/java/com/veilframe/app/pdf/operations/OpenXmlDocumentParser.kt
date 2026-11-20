@@ -530,9 +530,15 @@ object OpenXmlDocumentParser {
             val styleEntry = styleParts.singleOrNull()?.let {
                 zip.getEntry(it.path) ?: throw IOException("Missing workbook styles part")
             } ?: zip.getEntry("xl/styles.xml")
+            val themeParts = relationships?.values?.filter { it.type.endsWith("/theme") }.orEmpty()
+            require(themeParts.size <= 1) { "Ambiguous workbook theme relationship" }
+            val themeEntry = themeParts.singleOrNull()?.let {
+                zip.getEntry(it.path) ?: throw IOException("Missing workbook theme part")
+            } ?: zip.getEntry("xl/theme/theme1.xml")
+            val theme = themeEntry?.let { parseXlsxTheme(budget.read(zip, it)) }.orEmpty()
             val styleTable = if (styleEntry == null) ParsedXlsxStyles(
                 XlsxValueFormatter(date1904, listOf(0), emptyMap()), listOf(XlsxCellStyle()))
-                else parseXlsxStyles(budget.read(zip, styleEntry), date1904)
+                else parseXlsxStyles(budget.read(zip, styleEntry), date1904, theme)
             val sharedStrings = mutableListOf<String>()
             val sharedParts = relationships?.values?.filter { it.type.endsWith("/sharedStrings") }.orEmpty()
             require(sharedParts.size <= 1) { "Ambiguous workbook shared strings relationship" }
@@ -573,7 +579,30 @@ object OpenXmlDocumentParser {
         val formatter: XlsxValueFormatter, val visuals: List<XlsxCellStyle>
     )
 
-    private fun parseXlsxStyles(xml: String, date1904: Boolean): ParsedXlsxStyles {
+    private fun parseXlsxTheme(xml: String): Map<String, Int> {
+        val root = parseXml(xml).documentElement
+        require(root.localName() == "theme") { "Invalid workbook theme root" }
+        val elements = root.childElements("themeElements").singleOrNull()
+            ?: throw IOException("Missing or ambiguous workbook theme elements")
+        val scheme = elements.childElements("clrScheme").singleOrNull()
+            ?: throw IOException("Missing or ambiguous workbook color scheme")
+        val result = mutableMapOf<String, Int>()
+        for (slot in XlsxColors.themeSlots) {
+            val entries = scheme.childElements(slot)
+            require(entries.size <= 1) { "Duplicate theme color slot" }
+            val element = entries.singleOrNull() ?: continue
+            val srgb = element.childElements("srgbClr")
+            val system = element.childElements("sysClr")
+            require(srgb.size + system.size <= 1) { "Ambiguous theme color" }
+            val value = srgb.singleOrNull()?.getAttribute("val")
+                ?: system.singleOrNull()?.getAttribute("lastClr")?.takeIf { it.isNotEmpty() }
+                ?: continue
+            result[slot] = XlsxColors.parseRgb(value)
+        }
+        return result
+    }
+
+    private fun parseXlsxStyles(xml: String, date1904: Boolean, theme: Map<String, Int>): ParsedXlsxStyles {
         val root = parseXml(xml).documentElement
         require(root.localName() == "styleSheet") { "Invalid workbook styles root" }
         fun collection(name: String, item: String): List<Element> {
@@ -596,12 +625,36 @@ object OpenXmlDocumentParser {
                 "Invalid or duplicate number format"
             }
         }
+        val palettes = root.childElements("colors").flatMap { it.childElements("indexedColors") }
+        require(palettes.size <= 1) { "Ambiguous indexed color palette" }
+        val indexed = palettes.singleOrNull()?.childElements("rgbColor")?.let { entries ->
+            require(entries.size in 1..256) { "Invalid indexed color palette length" }
+            entries.map { XlsxColors.parseArgb(it.getAttribute("rgb")) }
+        }
         fun rgb(element: Element?): Int? {
-            if (element == null || !element.hasAttribute("rgb")) return null
-            // OOXML cell colors store ARGB. Ordinary Excel PDF rendering is opaque.
-            val raw = element.getAttribute("rgb")
-            require(raw.matches(Regex("[0-9A-Fa-f]{8}"))) { "Invalid explicit cell RGB color" }
-            return raw.takeLast(6).toInt(16)
+            if (element == null) return null
+            val sources = listOf("rgb", "theme", "indexed").filter { element.hasAttribute(it) }
+            require(sources.size <= 1) { "Ambiguous cell color source" }
+            val tint = if (element.hasAttribute("tint")) {
+                val parsed = element.getAttribute("tint").toDoubleOrNull()
+                require(parsed != null && parsed.isFinite() && parsed in -1.0..1.0) { "Invalid cell tint" }
+                parsed
+            } else 0.0
+            val base = when (sources.singleOrNull()) {
+                "rgb" -> XlsxColors.parseArgb(element.getAttribute("rgb"))
+                "theme" -> {
+                    val index = element.getAttribute("theme").toIntOrNull()
+                    require(index != null && index in XlsxColors.themeSlots.indices) { "Invalid theme color index" }
+                    theme[XlsxColors.themeSlots[index]]
+                }
+                "indexed" -> {
+                    val index = element.getAttribute("indexed").toIntOrNull()
+                        ?: throw IOException("Invalid indexed color")
+                    XlsxColors.indexed(index, indexed)
+                }
+                else -> null // Automatic/system-dependent or absent color.
+            }
+            return base?.let { XlsxColors.tint(it, tint) }
         }
         fun one(parent: Element, name: String): Element? {
             val children = parent.childElements(name)
