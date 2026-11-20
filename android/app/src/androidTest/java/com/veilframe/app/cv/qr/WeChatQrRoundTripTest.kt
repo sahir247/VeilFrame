@@ -1,6 +1,8 @@
 package com.veilframe.app.cv.qr
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.zxing.BarcodeFormat
@@ -69,6 +71,29 @@ class WeChatQrRoundTripTest {
         } finally {
             mat.release()
         }
+    }
+
+    @Test
+    fun wechatDecodesEncodedPngAndJpegArtifacts() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val engine = WeChatQrEngine.install(context)
+        assertTrue("WeChatQRCode must be available", engine.isAvailable)
+        val bitmap = renderQr(payload)
+        try {
+            for (format in listOf(Bitmap.CompressFormat.PNG, Bitmap.CompressFormat.JPEG)) {
+                val bytes = ByteArrayOutputStream().use { out ->
+                    assertTrue("Encoding failed: $format", bitmap.compress(format, 95, out))
+                    out.toByteArray()
+                }
+                val decoded = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
+                try {
+                    val mat = BitmapBridge.toMat(decoded)
+                    try {
+                        assertTrue("Encoded $format lost its payload", engine.decode(mat).any { it.rawValue == payload })
+                    } finally { mat.release() }
+                } finally { decoded.recycle() }
+            }
+        } finally { bitmap.recycle() }
     }
 
     @Test

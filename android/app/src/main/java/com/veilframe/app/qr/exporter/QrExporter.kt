@@ -19,6 +19,9 @@ import com.veilframe.app.qr.model.QrFrame
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrOutputFormat
 import com.veilframe.app.qr.model.QrOutputResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.graphics.Canvas
@@ -27,6 +30,7 @@ import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,6 +40,18 @@ import java.util.Locale
  * vector SVG, animated GIF, and video (MP4/MOV) with EFQRCode-grade typed error boundary.
  */
 object QrExporter {
+
+    /** Successful publication requires the single pending row to have been updated. */
+    private suspend fun publishPending(context: Context, uri: Uri, values: ContentValues) {
+        currentCoroutineContext().ensureActive()
+        requirePublishedRow(context.contentResolver.update(uri, values, null, null))
+    }
+
+    @VisibleForTesting
+    internal fun requirePublishedRow(updatedRows: Int) {
+        if (updatedRows != 1) throw IOException("MediaStore publication updated $updatedRows rows; expected 1")
+    }
+
 
     private fun timestampName(ext: String): String {
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -98,7 +114,7 @@ object QrExporter {
 
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -132,6 +148,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -218,7 +235,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -243,6 +260,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -481,7 +499,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -506,6 +524,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -685,7 +704,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Video.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -709,6 +728,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -856,7 +876,7 @@ object QrExporter {
                         }
                         cv.clear()
                         cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                        context.contentResolver.update(uri, cv, null, null)
+                        publishPending(context, uri, cv)
                         QrOutputResult.Success(uri)
                     } else {
                         @Suppress("DEPRECATION")
@@ -888,6 +908,7 @@ object QrExporter {
                 tempPdf.delete()
             }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         } finally {
             document.close()
@@ -948,7 +969,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -972,6 +993,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
