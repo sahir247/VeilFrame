@@ -320,6 +320,7 @@ class PdfOcrProcessor(private val context: Context) {
             
             val renderer = PDFRenderer(document)
             val fonts = SearchableOcrFonts(context, document)
+            val layerDigests = linkedMapOf<Int, ByteArray>()
             
             for (pageIndex in 0 until totalPages) {
                 ensureActive()
@@ -333,8 +334,10 @@ class PdfOcrProcessor(private val context: Context) {
                     ensureActive()
                     val words = performOcrOnBitmap(pageImage)
 
-                    if (words.isNotEmpty()) {
-                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, fonts)
+                    val visibleWords = words.filter { it.text.isNotBlank() }
+                    if (visibleWords.isNotEmpty()) {
+                        addTextLayerToPage(document, page, visibleWords, pageImage.width, pageImage.height, fonts)
+                        layerDigests[pageIndex] = digestOcrWords(visibleWords.asSequence().map { it.text })
                     }
                 } finally {
                     pageImage.recycle()
@@ -350,7 +353,15 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(90)
             ensureActive()
             
-            exportVerifiedPdf(context, document, totalPages) {
+            val verificationContext = kotlin.coroutines.coroutineContext
+            exportVerifiedPdf(context, document, totalPages, verify = { saved ->
+                for ((index, digest) in layerDigests) {
+                    verificationContext.ensureActive()
+                    if (!digest.contentEquals(digestSerializedOcrLayer(saved.getPage(index)) { verificationContext.ensureActive() })) {
+                        throw IOException("OCR text did not survive serialization on page ${index + 1}")
+                    }
+                }
+            }) {
                 context.contentResolver.openOutputStream(outputUri)
                     ?: throw IOException("Cannot open destination URI for writing")
             }
@@ -665,6 +676,7 @@ class PdfOcrProcessor(private val context: Context) {
                 val stretch = placement.width / (width * fontSize)
                 stream.beginText()
                 stream.setFont(font, fontSize)
+                stream.setRenderingMode(com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode.NEITHER)
                 stream.setTextMatrix(Matrix(
                     placement.ux * stretch, placement.uy * stretch,
                     -placement.uy, placement.ux,

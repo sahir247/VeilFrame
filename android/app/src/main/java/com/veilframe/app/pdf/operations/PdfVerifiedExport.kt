@@ -18,6 +18,7 @@ internal fun requirePdfRewriteAllowed(document: PDDocument) {
         throw IOException("This digitally signed or rights-enabled PDF cannot be safely rewritten")
     }
     if (!document.currentAccessPermission.canModify()) throw IOException("PDF modification is not permitted")
+    if (document.isEncrypted) throw IOException("Encrypted PDF rewrite is unsupported; unlock a permitted copy first")
 }
 
 /** Stage and reopen the actual serialized document before opening a destination.

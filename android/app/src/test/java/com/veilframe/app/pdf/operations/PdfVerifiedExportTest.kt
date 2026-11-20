@@ -67,7 +67,11 @@ class PdfVerifiedExportTest {
             }
             ByteArrayOutputStream().use { output -> document.save(output); output.toByteArray() }
         }
-        PDDocument.load(bytes).use { assertEquals(input, PDFTextStripper().getText(it).trim()) }
+        PDDocument.load(bytes).use {
+            assertEquals(input, PDFTextStripper().getText(it).trim())
+            assertArrayEquals(digestOcrWords(sequenceOf(input)), digestSerializedOcrLayer(it.getPage(0)))
+            assertFalse(digestOcrWords(sequenceOf("cafe naive Angstrom €")).contentEquals(digestSerializedOcrLayer(it.getPage(0))))
+        }
     }
 
     @Test
