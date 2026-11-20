@@ -172,7 +172,7 @@ class OpenXmlDocumentParserTest {
         for (bad in listOf(sheet.replace("width=\"40\"", "width=\"NaN\""),
             sheet.replace("</cols>", "<col min=\"3\" max=\"4\" width=\"10\"/></cols>"),
             sheet.replace("ht=\"60\"", "ht=\"500\""),
-            sheet.replace("r=\"2\"><c r=\"A2\"", "r=\"1\"><c r=\"A1\""))) {
+            sheet.replace("r=\"2\"><c r=\"A2\"", "r=\"1\" ht=\"61\"><c r=\"A1\""))) {
             org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { parse(bad) }
         }
     }
@@ -181,7 +181,7 @@ class OpenXmlDocumentParserTest {
     fun parsesExplicitCellAppearanceAndSparseStyleIndices() {
         val workbook = """<workbook><sheets><sheet name="Styles" sheetId="1"/></sheets></workbook>"""
         val styles = """<styleSheet><fonts><font/><font><b/><i val="1"/><color rgb="FF112233"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFAABBCC"/></patternFill></fill></fills><cellStyleXfs><xf fontId="1" fillId="1"><alignment horizontal="center"/></xf></cellStyleXfs><cellXfs><xf/><xf xfId="0" applyFont="0" applyFill="0" applyAlignment="0"/><xf fontId="1" applyFont="1"><alignment horizontal="right"/></xf></cellXfs></styleSheet>"""
-        val sheet = """<worksheet><sheetData><row r="1"><c r="C1" s="1" t="inlineStr"><is><t>center</t></is></c><c r="E1" s="2" t="inlineStr"><is><t>right</t></is></c></row><row r="2"><c r="A2" s="1"/></row></sheetData></worksheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="C1" s="1" t="inlineStr"><is><t>center</t></is></c></row><row r="1"><c r="E1" s="2" t="inlineStr"><is><t>right</t></is></c></row><row r="2"><c r="A2" s="1"/></row></sheetData></worksheet>"""
         val file = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
             "xl/worksheets/sheet1.xml" to sheet))
         try {

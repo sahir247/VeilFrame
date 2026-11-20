@@ -803,8 +803,13 @@ object OpenXmlDocumentParser {
             require(targetRow in 1..MAX_XLSX_ROWS) { "Worksheet row exceeds XLSX bounds" }
             autoRowIndex = maxOf(autoRowIndex, targetRow + 1)
 
-            require(targetRow !in rowMap) { "Duplicate worksheet row reference" }
-            optionalDimension(rowElem, "ht", 409.5f)?.let { rowHeights[targetRow - 1] = it }
+            // Some producers split a row across disjoint row elements. Preserve
+            // their cells while rejecting conflicting geometry or cell identities.
+            optionalDimension(rowElem, "ht", 409.5f)?.let { height ->
+                val prior = rowHeights[targetRow - 1]
+                require(prior == null || prior == height) { "Conflicting worksheet row heights" }
+                rowHeights[targetRow - 1] = height
+            }
             val existingCells = rowMap.getOrPut(targetRow) { mutableListOf() }
             val explicitVisuals = mutableListOf<Pair<Int, Int>>()
 
@@ -876,9 +881,14 @@ object OpenXmlDocumentParser {
                 child = child.nextSibling
             }
             if (explicitVisuals.isNotEmpty()) {
-                styledRows[targetRow - 1] = IntArray(existingCells.size).also { codes ->
-                    for ((col, style) in explicitVisuals) codes[col] = style
+                val prior = styledRows[targetRow - 1]
+                val needed = explicitVisuals.maxOf { it.first } + 1
+                val codes = if (prior != null && prior.size >= needed) prior else {
+                    val capacity = maxOf(needed, (prior?.size ?: 0) * 2).coerceAtMost(MAX_XLSX_COLUMNS)
+                    prior?.copyOf(capacity) ?: IntArray(capacity)
                 }
+                for ((col, style) in explicitVisuals) codes[col] = style
+                styledRows[targetRow - 1] = codes
             }
         }
 
