@@ -26,6 +26,10 @@ import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgImageSource
 import com.veilframe.app.cv.segmentation.rembg.RembgResult
+import com.veilframe.app.cv.segmentation.rembg.RembgAlphaMatte
+import com.veilframe.app.cv.segmentation.rembg.RembgSourceInfo
+import com.veilframe.app.cv.segmentation.rembg.OriginalResolutionCutout
+import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import java.util.concurrent.atomic.AtomicReference
@@ -82,12 +86,24 @@ class BackgroundRemoverController(
 
     private fun invalidateSourceLoad() {
         sourceGeneration++
+        originalExportJob?.cancel()
+        originalExportJob = null
         sourceLoadJob?.cancel()
         sourceLoadJob = null
     }
     private var sourceImage: RembgImageSource.Staged? = null
     private val sourceLeases = ResourceLeases<RembgImageSource.Staged> { it.file.delete() }
     private var removalGeneration = 0L
+    private var originalMatte: RembgAlphaMatte? = null
+    private var originalInfo: RembgSourceInfo? = null
+    private var originalExportJob: Job? = null
+
+    private fun invalidateOriginalExport() {
+        originalExportJob?.cancel()
+        originalExportJob = null
+        originalMatte = null
+        originalInfo = null
+    }
 
     private fun releaseSourceImage() {
         sourceImage?.let(sourceLeases::retire)
@@ -110,6 +126,7 @@ class BackgroundRemoverController(
     }
 
     private fun releaseCutoutBitmaps() {
+        invalidateOriginalExport()
         if (resultBitmap !== rawCutoutBitmap) {
             resultBitmap?.let(cutoutLeases::retire)
         }
@@ -666,8 +683,11 @@ class BackgroundRemoverController(
                                 } else newRaw
                                 val prevRaw = rawCutoutBitmap
                                 val prevRes = resultBitmap
+                                invalidateOriginalExport()
                                 rawCutoutBitmap = newRaw
                                 resultBitmap = newResult
+                                originalMatte = result.originalMatte
+                                originalInfo = result.sourceInfo.takeIf { result.originalMatte != null }
                                 pending.compareAndSet(result, null)
                                 if (prevRaw !== newRaw && prevRaw !== newResult) prevRaw?.let(cutoutLeases::retire)
                                 if (prevRes !== newResult && prevRes !== newRaw && prevRes !== prevRaw) prevRes?.let(cutoutLeases::retire)
@@ -1081,6 +1101,8 @@ class BackgroundRemoverController(
             if (edited != null) {
                 val prevRaw = rawCutoutBitmap
                 val prevRes = resultBitmap
+                // The original neural matte no longer represents manual brush edits.
+                invalidateOriginalExport()
                 rawCutoutBitmap = edited
                 resultBitmap = if (binding.switchTrimTransparent.isChecked) {
                     com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(edited)
@@ -1232,6 +1254,10 @@ class BackgroundRemoverController(
         popup.menu.add(0, 2, 1, "Copy Image").setIcon(R.drawable.ic_action_copy)
         popup.menu.add(0, 3, 2, "Share").setIcon(R.drawable.ic_action_share)
         popup.menu.add(0, 4, 3, "Re-process").setIcon(R.drawable.ic_reset)
+        if (originalMatte != null && originalInfo != null) {
+            popup.menu.add(0, 5, 4, "Save original-resolution PNG").setIcon(R.drawable.ic_action_save)
+                .isEnabled = originalExportJob?.isActive != true && processingJob?.isActive != true
+        }
 
         try {
             val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
@@ -1246,10 +1272,72 @@ class BackgroundRemoverController(
                 2 -> copyImageToClipboard()
                 3 -> shareCutoutImage()
                 4 -> executeRemoval()
+                5 -> confirmOriginalResolutionExport()
             }
             true
         }
         popup.show()
+    }
+
+    private fun confirmOriginalResolutionExport() {
+        val source = sourceImage ?: return
+        val matte = originalMatte ?: return
+        val info = originalInfo ?: return
+        val generation = sourceGeneration
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Original-resolution transparent PNG")
+            .setMessage("Export ${info.width}×${info.height} original colors with the neural matte. This is an untrimmed transparent PNG; preview trim and background-color settings do not apply. Manual refinement requires the regular export path.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Export") { _, _ ->
+                if (source === sourceImage && matte === originalMatte && generation == sourceGeneration) {
+                    exportOriginalResolution(source, info, matte, generation)
+                }
+            }.show()
+    }
+
+    private fun exportOriginalResolution(
+        source: RembgImageSource.Staged, info: RembgSourceInfo,
+        matte: RembgAlphaMatte, generation: Long
+    ) {
+        if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
+        val release = sourceLeases.acquire(source)
+        val progress = M3ExpressiveProgressDialog(activity)
+        try {
+            progress.show(title = "Original-resolution export",
+                initialStatus = "Decoding original pixels in strips and encoding transparent PNG…",
+                isIndeterminate = true, cancelable = true, onCancel = { originalExportJob?.cancel() })
+            originalExportJob = scope.launch(Dispatchers.Main) {
+                var destination: File? = null
+                var handedOff = false
+                try {
+                    withContext(Dispatchers.IO) {
+                        val cc = kotlin.coroutines.coroutineContext
+                        val dir = File(activity.filesDir, "exports").apply { mkdirs() }
+                        val out = File.createTempFile("cutout_original_", ".png", dir)
+                        destination = out
+                        OriginalResolutionCutout.export(source, info, matte, out) { cc.ensureActive() }
+                    }
+                    if (generation != sourceGeneration || source !== sourceImage ||
+                        matte !== originalMatte || activity.isFinishing || activity.isDestroyed) return@launch
+                    progress.dismiss()
+                    onExportPngRequest(checkNotNull(destination))
+                    handedOff = true
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (generation == sourceGeneration && source === sourceImage) {
+                        Toast.makeText(activity, "Original-resolution export failed: ${failure.message}", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    progress.dismiss()
+                    if (!handedOff) destination?.delete()
+                }
+            }.also { it.invokeOnCompletion { release() } }
+        } catch (failure: Throwable) {
+            release()
+            progress.dismiss()
+            throw failure
+        }
     }
 
     private fun saveAsSticker() {
@@ -1557,7 +1645,8 @@ class BackgroundRemoverController(
     override fun hasPickedMedia(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || sourceBitmap != null
     override fun hasUnsavedWork(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || resultBitmap != null
     override val isProcessing: Boolean
-        get() = processingJob?.isActive == true || binding.cardBgProcessingOverlay.visibility == View.VISIBLE
+        get() = processingJob?.isActive == true || originalExportJob?.isActive == true ||
+            binding.cardBgProcessingOverlay.visibility == View.VISIBLE
     override val supportsBackgroundExecution: Boolean get() = false
 
     override fun discardAndReleaseAllResources() {
@@ -1578,6 +1667,8 @@ class BackgroundRemoverController(
 
     fun cancelProcessing() {
         removalGeneration++
+        originalExportJob?.cancel()
+        originalExportJob = null
         processingJob?.cancel()
         processingJob = null
         binding.cardBgProcessingOverlay.visibility = View.GONE

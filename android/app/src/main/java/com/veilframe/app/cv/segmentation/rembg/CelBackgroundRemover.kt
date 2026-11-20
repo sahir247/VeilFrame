@@ -117,7 +117,13 @@ class CelBackgroundRemover(
 
             val colors = RembgImageUtils.decodeCompositeSource(imageSource, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
+            val originalMatte = if (imageSource is RembgImageSource.Staged &&
+                !trim && !tightenEdges && !featherEdges && OriginalResolutionCutout.supports(sourceInfo) &&
+                (colors.width != sourceInfo.width || colors.height != sourceInfo.height)) {
+                RembgAlphaMatte.fromBitmap(maskBitmap, checkpoint)
+            } else null
             cutoutBitmap = applyFullResolutionColors(colors, maskBitmap, checkpoint)
+            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution transparent PNG is available in More options.")
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
             maskBitmap.recycle()
@@ -128,7 +134,7 @@ class CelBackgroundRemover(
 
             onProgress(RembgProgress(100, "Done"))
             ensureActive()
-            val result = RembgResult(cutoutBitmap, sourceInfo, model, warnings)
+            val result = RembgResult(cutoutBitmap, sourceInfo, model, warnings, originalMatte)
             cutoutBitmap = null
             result
         } finally {

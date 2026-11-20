@@ -332,7 +332,13 @@ object ColorOsMattingPlugin {
             val colors = RembgImageUtils.decodeCompositeSource(imageSource, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
             val cc = kotlin.coroutines.coroutineContext
+            val originalMatte = if (imageSource is RembgImageSource.Staged && !trim &&
+                OriginalResolutionCutout.supports(sourceInfo) &&
+                (colors.width != sourceInfo.width || colors.height != sourceInfo.height)) {
+                RembgAlphaMatte.fromAlpha(TENSOR_WIDTH, TENSOR_HEIGHT, cleanMaskBytes)
+            } else null
             cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask) { cc.ensureActive() }
+            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution transparent PNG is available in More options.")
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
 
@@ -346,7 +352,7 @@ object ColorOsMattingPlugin {
             cutoutBitmap = finalCutout
             onProgress(RembgProgress(100, "Done"))
             ensureActive()
-            val result = RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings)
+            val result = RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings, originalMatte)
             cutoutBitmap = null
             result
         } finally {
