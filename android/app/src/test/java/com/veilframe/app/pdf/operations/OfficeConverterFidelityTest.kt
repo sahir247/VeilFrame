@@ -1496,6 +1496,27 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun explicitSharedBorderIsDrawnOnceAfterCellFillsWithGridlinesDisabled() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Borders" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"/></patternFill></fill></fills><borders><border/><border><right style="thin"><color rgb="FF00FF00"/></right></border><border><left style="thick"><color rgb="FF0000FF"/></left></border></borders><cellXfs><xf/><xf borderId="1"/><xf borderId="2" fillId="1"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetViews><sheetView showGridLines="false"/></sheetViews><sheetData><row r="1"><c r="A1" s="1"><v>1</v></c><c r="B1" s="2"><v>2</v></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root, "shared-border.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(1, pdf.numberOfPages)
+            val instructions = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            val fill = Regex("""(?m)(?:^|\s)1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+(?:rg|scn?)\b""").find(instructions)
+            val blue = Regex("""(?m)(?:^|\s)0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+(?:RG|SCN?)\b""").find(instructions)
+            assertNotNull(fill)
+            assertNotNull(blue)
+            assertTrue(blue!!.range.first > fill!!.range.last)
+            assertEquals(1, Regex("""(?m)^\s*S\s*$""").findAll(instructions).count())
+        }
+    }
+
+    @Test
     fun savedDimensionsAreMinimumsAndFrozenPanelsNeverOverflowOrDuplicateWithinPanel() {
         val sheet = OpenXmlDocumentParser.XlsxSheetData(
             name = "Sized",
