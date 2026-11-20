@@ -64,14 +64,18 @@ data class VideoPiiScanResult(
  * Leverages [PiiMultiModalDetector] ([PiiNcnnEngine] UltraFace + YOLOv8n, WeChatQR + ML Kit barcodes,
  * and ML Kit OCR + `PiiTextClassifier`) across bounded, uniformly spaced keyframes, associates moving
  * detections into motion-aware tracks, bridges short detector dropouts, and emits swept bounding-box
- * intervals to protect targets between observed keyframes. Sampling is not exhaustive: the 120-frame
+ * intervals to protect targets between observed keyframes. Sampling is not exhaustive: the selected sample
  * ceiling can leave long gaps, so capped scans are explicitly marked incomplete.
  */
 object VideoPiiRedactionEngine {
+    enum class ScanDensity(val targetStepMs: Long, val maxSamples: Int) {
+        STANDARD(350L, 120),
+        DENSE(100L, 600)
+    }
 
     private const val MIN_SAMPLE_FRAMES = 6
-    private const val MAX_SAMPLE_FRAMES = 120
-    private const val TARGET_SAMPLE_STEP_MS = 350L
+    private const val MAX_OBSERVATIONS = 12_000
+    private const val MAX_FALLBACK_PIXELS = 16_000_000L
     private const val MAX_ANALYSIS_EDGE_PX = 1280
     private const val BOX_MARGIN_RATIO = 0.12f
     private const val MIN_BOX_PAD_PX = 6f
@@ -88,11 +92,13 @@ object VideoPiiRedactionEngine {
         confThreshold: Float = 0.36f,
         includeOcrText: Boolean = true,
         isCancelled: () -> Boolean = { false },
-        onProgress: ((sampled: Int, total: Int) -> Unit)? = null
+        onProgress: ((sampled: Int, total: Int) -> Unit)? = null,
+        density: ScanDensity = ScanDensity.STANDARD
     ): VideoPiiScanResult {
         require(trimStartMs >= 0 && trimEndMs > trimStartMs) { "Invalid video scan interval" }
         val spanMs = trimEndMs - trimStartMs
-        val sampleCount = sampleCountForSpan(spanMs)
+        require(trimEndMs <= Long.MAX_VALUE / 1000L) { "Video scan timestamp exceeds supported range" }
+        val sampleCount = sampleCountForSpan(spanMs, density)
         // The end is exclusive: requesting the container duration can decode no frame.
         val stepMs = (spanMs - 1).toDouble() / (sampleCount - 1).coerceAtLeast(1).toDouble()
         val durationSec = spanMs / 1000.0
@@ -107,6 +113,7 @@ object VideoPiiRedactionEngine {
         val observationsByFrame = mutableListOf<Pair<Double, List<PiiDetection>>>()
         val counts = linkedMapOf<PiiClass, Int>()
         var sampledCount = 0
+        var observationCount = 0
         var failedFrameCount = 0
         val failedEnginesAggregate = mutableMapOf<String, String>()
         val successfulEnginesAggregate = mutableSetOf<String>()
@@ -139,11 +146,13 @@ object VideoPiiRedactionEngine {
             }
             // A failed/rotated/scaled decode falls back to the original path, so
             // a metadata orientation mismatch cannot silently misplace redactions.
-            val rawBmp = if (scaledCompatible) scaledBmp else try {
+            val rawBmp = if (scaledCompatible) scaledBmp else if (
+                frameW.toLong() * frameH <= MAX_FALLBACK_PIXELS
+            ) try {
                 retriever.getFrameAtTime(timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
             } catch (_: RuntimeException) {
                 null
-            }
+            } else null
             if (rawBmp == null) {
                 failedFrameCount++
                 onProgress?.invoke(i + 1, sampleCount)
@@ -178,6 +187,10 @@ object VideoPiiRedactionEngine {
                 successfulEnginesAggregate.addAll(summary.successfulEngines)
 
                 val detections = summary.detections
+                if (detections.size > MAX_OBSERVATIONS - observationCount) {
+                    throw IllegalStateException("Video contains too many observations for a bounded scan. Split the source into shorter clips; no partial masks were applied.")
+                }
+                observationCount += detections.size
                 val relTimeSec = ((timestampMs / 1000.0) - relativeOffsetSec).coerceIn(0.0, durationSec)
                 observationsByFrame += relTimeSec to detections
                 for (det in detections) {
@@ -194,19 +207,25 @@ object VideoPiiRedactionEngine {
             onProgress?.invoke(i + 1, sampleCount)
         }
 
+        if (isCancelled()) return VideoPiiScanResult(
+            regions = emptyList(), frameWidth = frameW, frameHeight = frameH,
+            detectedCounts = counts, sampledFrames = sampledCount, attemptedFrames = sampleCount,
+            failedFrameExtractions = failedFrameCount, failedEngines = failedEnginesAggregate,
+            successfulEngines = successfulEnginesAggregate, isScanDegraded = true, isCancelled = true
+        )
         val trackResult = buildTrackedRegions(
             frames = observationsByFrame,
             frameW = frameW,
             frameH = frameH,
             durationSec = durationSec,
-            sampleStepSec = (stepMs / 1000.0).coerceAtLeast(0.1)
+            sampleStepSec = (stepMs / 1000.0).coerceAtLeast(0.1),
+            isCancelled = isCancelled
         )
 
         val wasCancelled = isCancelled()
-        // The 120-frame ceiling expands the interval on longer clips. A capped scan is
+        // The selected sample ceiling expands the interval on longer clips. A capped scan is
         // incomplete coverage even when all sampled frames and detectors succeeded.
-        val isSamplingCapped = sampleCount == MAX_SAMPLE_FRAMES &&
-                spanMs > TARGET_SAMPLE_STEP_MS * (MAX_SAMPLE_FRAMES - 1)
+        val isSamplingCapped = stepMs > density.targetStepMs
         // Any missing frame, detector failure, cancellation, or capped sampling makes the
         // result partial. A partial scan must never clear prior redactions or imply "clean".
         val isScanDegraded = isScanIncomplete(
@@ -248,10 +267,11 @@ object VideoPiiRedactionEngine {
         return if (normalized == 90 || normalized == 270) height to width else width to height
     }
 
-    internal fun sampleCountForSpan(spanMs: Long): Int {
+    internal fun sampleCountForSpan(spanMs: Long, density: ScanDensity = ScanDensity.STANDARD): Int {
         require(spanMs > 0)
-        val requested = 1L + (spanMs - 1L) / TARGET_SAMPLE_STEP_MS + 1L
-        return requested.coerceIn(MIN_SAMPLE_FRAMES.toLong(), MAX_SAMPLE_FRAMES.toLong())
+        val intervals = (spanMs - 1) / density.targetStepMs +
+            if ((spanMs - 1) % density.targetStepMs == 0L) 0L else 1L
+        return (intervals + 1L).coerceIn(MIN_SAMPLE_FRAMES.toLong(), density.maxSamples.toLong())
             .coerceAtMost(spanMs).toInt()
     }
 
@@ -278,7 +298,8 @@ object VideoPiiRedactionEngine {
         frameW: Int,
         frameH: Int,
         durationSec: Double,
-        sampleStepSec: Double = 0.5
+        sampleStepSec: Double = 0.5,
+        isCancelled: () -> Boolean = { false }
     ): Pair<List<TimedPiiRegion>, Int> {
         if (frames.isEmpty() || frameW < 4 || frameH < 4) return emptyList<TimedPiiRegion>() to 0
 
@@ -291,19 +312,24 @@ object VideoPiiRedactionEngine {
 
         val tracks = mutableListOf<MutableList<TimedPiiObservation>>()
 
+        val activeTracks = mutableListOf<Int>()
         for ((timeSec, dets) in sortedFrames) {
+            if (isCancelled()) throw kotlinx.coroutines.CancellationException("Video PII tracking cancelled")
+            require(timeSec.isFinite() && timeSec >= 0.0 && timeSec < durationSec) { "Observation outside scan timeline" }
             val validDets = dets.filter { it.rect.width() >= 2f && it.rect.height() >= 2f }
+            activeTracks.removeAll { timeSec - tracks[it].last().timeSec > maxTrackGapSec }
             if (validDets.isEmpty()) continue
 
             // Build scored candidate pairs (trackIdx, detIdx, score) for greedy 1-to-1 matching
             data class MatchCandidate(val trackIdx: Int, val detIdx: Int, val matchScore: Float)
             val candidates = mutableListOf<MatchCandidate>()
 
-            for (tIdx in tracks.indices) {
+            for (tIdx in activeTracks) {
+                if (isCancelled()) throw kotlinx.coroutines.CancellationException("Video PII tracking cancelled")
                 val track = tracks[tIdx]
                 val lastObs = track.last()
                 val dt = timeSec - lastObs.timeSec
-                if (dt < 0.0 || dt > maxTrackGapSec) continue
+                if (dt <= 0.0 || dt > maxTrackGapSec) continue
 
                 val predictedRect = predictNextRect(track, dt)
                 val predDiag = hypot(predictedRect.width().toDouble(), predictedRect.height().toDouble()).toFloat()
@@ -353,6 +379,7 @@ object VideoPiiRedactionEngine {
             for (dIdx in validDets.indices) {
                 if (matchedDets[dIdx]) continue
                 val det = validDets[dIdx]
+                activeTracks += tracks.size
                 tracks += mutableListOf(
                     TimedPiiObservation(
                         timeSec = timeSec,
@@ -371,6 +398,7 @@ object VideoPiiRedactionEngine {
 
         val rawIntervals = mutableListOf<TimedPiiRegion>()
         for (track in tracks) {
+            if (isCancelled()) throw kotlinx.coroutines.CancellationException("Video PII tracking cancelled")
             rawIntervals += materializeTrackRegions(
                 track = track,
                 maxW = maxW,
@@ -381,7 +409,7 @@ object VideoPiiRedactionEngine {
             )
         }
 
-        val coalesced = coalesceStationarySegments(rawIntervals)
+        val coalesced = coalesceStationarySegments(rawIntervals, isCancelled = isCancelled)
         return coalesced.sortedBy { it.startSec } to tracks.size
     }
 
@@ -491,16 +519,20 @@ object VideoPiiRedactionEngine {
 
     private fun coalesceStationarySegments(
         regions: List<TimedPiiRegion>,
-        iouThreshold: Float = 0.68f
+        iouThreshold: Float = 0.68f,
+        isCancelled: () -> Boolean = { false }
     ): List<TimedPiiRegion> {
         if (regions.size <= 1) return regions
         val merged = mutableListOf<TimedPiiRegion>()
         for (region in regions.sortedBy { it.startSec }) {
-            val matchIdx = merged.indexOfLast { existing ->
+            if (isCancelled()) throw kotlinx.coroutines.CancellationException("Video PII tracking cancelled")
+            // Limit candidate search. Missing a merge adds a mask; it never drops one.
+            val matchIdx = (merged.lastIndex downTo maxOf(0, merged.size - 256)).firstOrNull { index ->
+                val existing = merged[index]
                 existing.piiClass == region.piiClass &&
                     region.startSec <= existing.endSec + 0.35 &&
                     PiiNcnnEngine.calculateIoU(existing.rect, region.rect) >= iouThreshold
-            }
+            } ?: -1
             if (matchIdx >= 0) {
                 val prev = merged[matchIdx]
                 merged[matchIdx] = prev.copy(
@@ -529,34 +561,23 @@ object VideoPiiRedactionEngine {
             current = coalesceStationarySegments(current, threshold)
             if (current.size <= maxFilters) return current
         }
-        // Final fallback: pair adjacent same-class windows with smallest temporal span gap
-        val working = current.toMutableList()
-        while (working.size > maxFilters) {
-            var bestI = 0
-            var bestJ = 1
-            var bestGap = Double.MAX_VALUE
-            for (i in 0 until working.size) {
-                for (j in i + 1 until min(working.size, i + 8)) {
-                    if (working[i].piiClass == working[j].piiClass) {
-                        val gap = (working[j].startSec - working[i].endSec).coerceAtLeast(0.0)
-                        if (gap < bestGap) {
-                            bestGap = gap
-                            bestI = i
-                            bestJ = j
-                        }
-                    }
+        // Bounded linear grouping of consecutive temporal windows. Every
+        // original span/rectangle is contained in its group union, including
+        // late detections. No repeated O(n^2) search for best merges.
+        val sorted = current.sortedBy { it.startSec }
+        return (0 until maxFilters).mapNotNull { bucket ->
+            val from = (bucket.toLong() * sorted.size / maxFilters).toInt()
+            val to = ((bucket + 1L) * sorted.size / maxFilters).toInt()
+            if (from == to) null else {
+                var union = sorted[from]
+                for (i in from + 1 until to) {
+                    val next = sorted[i]
+                    union = union.copy(startSec = min(union.startSec, next.startSec),
+                        endSec = max(union.endSec, next.endSec), rect = unionRect(union.rect, next.rect))
                 }
+                union
             }
-            val a = working[bestI]
-            val b = working[bestJ]
-            working[bestI] = a.copy(
-                startSec = min(a.startSec, b.startSec),
-                endSec = max(a.endSec, b.endSec),
-                rect = unionRect(a.rect, b.rect)
-            )
-            working.removeAt(bestJ)
         }
-        return working
     }
 
     /**

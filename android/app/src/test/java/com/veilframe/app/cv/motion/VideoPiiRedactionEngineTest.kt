@@ -35,6 +35,25 @@ class VideoPiiRedactionEngineTest {
     }
 
     @Test
+    fun denseScanningIncreasesCoverageWithoutUnboundedAllocation() {
+        val dense = VideoPiiRedactionEngine.ScanDensity.DENSE
+        assertEquals(101, VideoPiiRedactionEngine.sampleCountForSpan(10_001, dense))
+        assertEquals(600, VideoPiiRedactionEngine.sampleCountForSpan(Long.MAX_VALUE, dense))
+        assertEquals(2, VideoPiiRedactionEngine.sampleCountForSpan(2, dense))
+        assertEquals(120, VideoPiiRedactionEngine.sampleCountForSpan(120_000))
+    }
+
+    @Test
+    fun cancelledTrackingDoesNotMaterializePartialMasks() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(
+                listOf(0.0 to listOf(PiiDetection(RectF(1f, 1f, 40f, 40f), PiiClass.FACE, .9f, "face"))),
+                320, 240, 1.0, isCancelled = { true }
+            )
+        }
+    }
+
+    @Test
     fun testAnyFrameOrDetectorFailureMakesScanIncomplete() {
         assertTrue(
             VideoPiiRedactionEngine.isScanIncomplete(

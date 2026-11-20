@@ -2635,6 +2635,22 @@ class VideoStudioController(
             return
         }
 
+        val generation = activeGeneration
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Video PII scan coverage")
+            .setMessage("Both modes sample frames, not every decoded frame. Brief targets and detector failures can still be missed; audio is not scanned.")
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Standard") { _, _ ->
+                if (generation == activeGeneration && currentItem === item) startVideoPiiScan(VideoPiiRedactionEngine.ScanDensity.STANDARD)
+            }
+            .setPositiveButton("Dense (slower)") { _, _ ->
+                if (generation == activeGeneration && currentItem === item) startVideoPiiScan(VideoPiiRedactionEngine.ScanDensity.DENSE)
+            }.show()
+    }
+
+    private fun startVideoPiiScan(density: VideoPiiRedactionEngine.ScanDensity) {
+        val item = currentItem ?: return
+        if (piiScanJob?.isActive == true) return
         val gen = activeGeneration
         val scanProgressDialog = M3ExpressiveProgressDialog(activity)
         scanProgressDialog.show(
@@ -2673,12 +2689,13 @@ class VideoStudioController(
                         fallbackWidth = item.width,
                         fallbackHeight = item.height,
                         includeOcrText = true,
+                        density = density,
                         isCancelled = { activeGeneration != gen || !isActive },
                         onProgress = { sampled, total ->
                             scope.launch(Dispatchers.Main) {
                                 if (activeGeneration == gen && scanProgressDialog.isShowing) {
                                     val pct = if (total > 0) ((sampled.toFloat() / total) * 100).toInt().coerceIn(0, 100) else 0
-                                    scanProgressDialog.updateProgress(pct, "Scanning keyframe $sampled of $total ($pct%)")
+                                    scanProgressDialog.updateProgress(pct, "Scanning sample $sampled of $total ($pct%)")
                                 }
                             }
                         }
@@ -2728,7 +2745,7 @@ class VideoStudioController(
                             if (scanResult.failedEngines.isNotEmpty()) add("detectors unavailable: ${scanResult.failedEngines.keys.joinToString(", ")}")
                         }
                         if (scanResult.isSamplingCapped) {
-                            add("sparse sampling: ~${scanResult.actualSampleIntervalMs} ms between keyframes")
+                            add("sparse sampling: ~${scanResult.actualSampleIntervalMs} ms between samples")
                         }
                     }
                     val scanSubtitle = buildString {
