@@ -51,7 +51,8 @@ internal object OriginalResolutionCutout {
 
     @Suppress("DEPRECATION")
     fun export(source: RembgImageSource.Staged, info: RembgSourceInfo, matte: RembgAlphaMatte,
-               destination: File, trim: Boolean = false, checkpoint: () -> Unit = {}) {
+               destination: File, trim: Boolean = false, backdrop: CutoutBackdrop = CutoutBackdrop.TRANSPARENT,
+               checkpoint: () -> Unit = {}) {
         require(supports(info)) { "Original-resolution PNG is limited to admitted JPEG/PNG sources" }
         require(source.file.canonicalFile != destination.canonicalFile)
         val parent = requireNotNull(destination.absoluteFile.parentFile)
@@ -123,6 +124,7 @@ internal object OriginalResolutionCutout {
                             readCompositeRow(srcY, fullRow)
                             fullRow.copyInto(row, 0, crop.left, crop.left + crop.width)
                         }
+                        backdrop.apply(row)
                     }
                 }
                 checkpoint()

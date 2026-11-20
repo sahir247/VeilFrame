@@ -42,6 +42,32 @@ class OriginalResolutionCutoutDeviceTest {
         }
     }
 
+    @Test fun trimPrecedesOpaqueBackdropAndKeepsOriginalPixelCoordinates() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_backdrop").toFile()
+        val input = Bitmap.createBitmap(8, 6, Bitmap.Config.ARGB_8888)
+        try {
+            input.eraseColor(Color.TRANSPARENT)
+            input.setPixel(2, 2, Color.RED)
+            input.setPixel(5, 4, Color.argb(128, 255, 0, 0))
+            val source = File(dir, "source.png")
+            source.outputStream().use { assertTrue(input.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            val output = File(dir, "output.png")
+            OriginalResolutionCutout.export(RembgImageSource.Staged(source),
+                RembgSourceInfo(8, 6, "image/png", source.length()),
+                RembgAlphaMatte.fromAlpha(1, 1, byteArrayOf(255.toByte())), output,
+                trim = true, backdrop = CutoutBackdrop.WHITE)
+            val decoded = checkNotNull(BitmapFactory.decodeFile(output.absolutePath))
+            try {
+                assertEquals(4, decoded.width)
+                assertEquals(3, decoded.height)
+                assertEquals(Color.RED, decoded.getPixel(0, 0))
+                assertEquals(Color.WHITE, decoded.getPixel(1, 1))
+                assertEquals(0xFFFF7F7F.toInt(), decoded.getPixel(3, 2))
+            } finally { decoded.recycle() }
+        } finally { input.recycle(); dir.deleteRecursively() }
+    }
+
     @Test fun multipleStripsKeepOriginalColorAndSourceAlpha() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_strips").toFile()

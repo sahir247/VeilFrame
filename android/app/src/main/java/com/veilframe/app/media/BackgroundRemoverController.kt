@@ -1291,22 +1291,33 @@ class BackgroundRemoverController(
         val info = originalInfo ?: return
         val generation = sourceGeneration
         val trim = binding.switchTrimTransparent.isChecked
+        val backdrop = when (binding.splitViewBgCompare.backgroundMode) {
+            BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
+            BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.BLACK
+            else -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.TRANSPARENT
+        }
+        val backgroundLabel = when (backdrop) {
+            com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE -> "White backdrop."
+            com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.BLACK -> "Black backdrop."
+            else -> "Transparent backdrop."
+        }
+        val dimensionsLabel = if (trim) "Transparent borders are cropped before backdrop compositing."
+            else "Full image dimensions are preserved."
         MaterialAlertDialogBuilder(activity)
-            .setTitle("Original-resolution transparent PNG")
-            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte. " +
-                if (trim) "Transparent borders will be cropped at original pixel resolution. Background-color settings do not apply."
-                else "The full image dimensions will be preserved. Background-color settings do not apply.")
+            .setTitle("Original-resolution PNG")
+            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte. $dimensionsLabel $backgroundLabel")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Export") { _, _ ->
                 if (source === sourceImage && matte === originalMatte && generation == sourceGeneration) {
-                    exportOriginalResolution(source, info, matte, generation, trim)
+                    exportOriginalResolution(source, info, matte, generation, trim, backdrop)
                 }
             }.show()
     }
 
     private fun exportOriginalResolution(
         source: RembgImageSource.Staged, info: RembgSourceInfo,
-        matte: RembgAlphaMatte, generation: Long, trim: Boolean
+        matte: RembgAlphaMatte, generation: Long, trim: Boolean,
+        backdrop: com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop
     ) {
         if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
         val release = sourceLeases.acquire(source)
@@ -1325,7 +1336,7 @@ class BackgroundRemoverController(
                         val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
                         val out = File.createTempFile("cutout_original_", ".png", dir)
                         destination = out
-                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim) { cc.ensureActive() }
+                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim, backdrop = backdrop) { cc.ensureActive() }
                     }
                     if (generation != sourceGeneration || source !== sourceImage ||
                         matte !== originalMatte || activity.isFinishing || activity.isDestroyed) return@launch
