@@ -444,14 +444,14 @@ class DocumentSession(
         set(value) { id = value }
 
     internal val _pages = mutableListOf<ScannedPage>()
-    val pages: List<ScannedPage> get() = _pages.toList()
+    val pages: List<ScannedPage> get() = synchronized(_pages) { _pages.toList() }
 
     var createdAt: Long = System.currentTimeMillis()
     var lastModifiedAt: Long = System.currentTimeMillis()
 
     var activePageIndex: Int = 0
 
-    fun replaceAllPages(newPages: List<ScannedPage>) {
+    fun replaceAllPages(newPages: List<ScannedPage>) = synchronized(_pages) {
         _pages.clear()
         _pages.addAll(newPages)
         activePageIndex = 0
@@ -508,6 +508,8 @@ class DocumentSession(
         val newPage = ScannedPage(
             originalBitmapCache = copyOrig,
             processedBitmapCache = copyProc,
+            renderedVersion = if (src.renderedVersion == src.editVersion && copyProc != null) 0L else -1L,
+            persistedRenderVersion = -1L,
             rotationDegrees = src.rotationDegrees,
             mode = src.mode,
             corners = src.corners?.map { org.opencv.core.Point(it.x, it.y) },
@@ -564,21 +566,46 @@ class DocumentSession(
     // DISK PERSISTENCE LAYER (Process-Death Survival)
     // =========================================================================
 
-    @Synchronized
-    fun saveToDisk(context: Context): Boolean {
-        val sessionId = id
+    internal data class SaveSnapshot(
+        val sessionId: String,
+        val sequence: Long,
+        val pages: List<Pair<ScannedPage, ScannedPage>>,
+        val title: String,
+        val created: Long,
+        val modified: Long,
+        val active: Int
+    )
+
+    /** Capture on the UI owner before scheduling disk work. */
+    internal fun captureSaveSnapshot(): SaveSnapshot = synchronized(_pages) {
+        SaveSnapshot(id, saveSequence.incrementAndGet(),
+            _pages.map { page -> page to page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) }) },
+            title, createdAt, lastModifiedAt, activePageIndex.coerceIn(0, (_pages.size - 1).coerceAtLeast(0)))
+    }
+
+    fun saveToDisk(context: Context): Boolean = saveToDisk(context, captureSaveSnapshot())
+
+    internal fun saveToDisk(context: Context, snapshot: SaveSnapshot): Boolean {
+        val sessionId = snapshot.sessionId
+        return synchronized(sessionLock(sessionId)) {
         try {
             val sessionDir = getSessionDirectory(context, sessionId)
             check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
+            val manifestFile = File(sessionDir, "manifest.json")
+            // A queued snapshot from another controller/instance must not overwrite a
+            // later committed snapshot. The epoch scopes monotonic tickets to this process.
+            val current = try {
+                JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+            } catch (_: java.io.FileNotFoundException) { null }
+            if (current?.optString("writerEpoch") == writerEpoch &&
+                current.optLong("writerSequence", -1L) > snapshot.sequence) return@synchronized true
 
-            val pagePairs = synchronized(_pages) {
-                _pages.map { page -> page to page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) }) }
-            }
+            val pagePairs = snapshot.pages
             val pagesSnapshot = pagePairs.map { it.second }
-            val snapshotTitle = title
-            val snapshotCreated = createdAt
-            val snapshotModified = lastModifiedAt
-            val snapshotActive = activePageIndex.coerceIn(0, (pagesSnapshot.size - 1).coerceAtLeast(0))
+            val snapshotTitle = snapshot.title
+            val snapshotCreated = snapshot.created
+            val snapshotModified = snapshot.modified
+            val snapshotActive = snapshot.active
 
             // 1. Save all page images to session folder
             for (page in pagesSnapshot) {
@@ -588,6 +615,8 @@ class DocumentSession(
             // 2. Write session JSON manifest
             val json = JSONObject().apply {
                 put("id", sessionId)
+                put("writerEpoch", writerEpoch)
+                put("writerSequence", snapshot.sequence)
                 put("title", snapshotTitle)
                 put("createdAt", snapshotCreated)
                 put("lastModifiedAt", snapshotModified)
@@ -632,7 +661,6 @@ class DocumentSession(
                 put("pages", pagesArray)
             }
 
-            val manifestFile = File(sessionDir, "manifest.json")
             writeSessionFileAtomically(manifestFile) { stream ->
                 stream.write(json.toString().toByteArray(Charsets.UTF_8))
             }
@@ -659,14 +687,19 @@ class DocumentSession(
             sessionDir.listFiles()?.forEach { file ->
                 if (generated.matches(file.name) && file.absolutePath !in retained) file.delete()
             }
-            return true
+            true
         } catch (e: Exception) {
             Log.e("DocumentSession", "Could not persist session $sessionId; last committed manifest retained", e)
-            return false
+            false
+        }
         }
     }
 
     companion object {
+        private val writerEpoch = UUID.randomUUID().toString()
+        private val saveSequence = java.util.concurrent.atomic.AtomicLong()
+        private val sessionLocks = Array(32) { Any() }
+        private fun sessionLock(id: String): Any = sessionLocks[(id.hashCode() and Int.MAX_VALUE) % sessionLocks.size]
         fun getSessionsBaseDir(context: Context): File {
             return File(context.filesDir, "document_sessions").apply { mkdirs() }
         }
@@ -675,10 +708,10 @@ class DocumentSession(
             return File(getSessionsBaseDir(context), sessionId)
         }
 
-        fun loadFromDisk(context: Context, sessionId: String): DocumentSession? {
+        fun loadFromDisk(context: Context, sessionId: String): DocumentSession? = synchronized(sessionLock(sessionId)) {
             val sessionDir = getSessionDirectory(context, sessionId)
             val manifestFile = File(sessionDir, "manifest.json")
-            return try {
+            try {
                 val json = JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
                 val session = DocumentSession(
                     id = json.getString("id"),
@@ -780,10 +813,11 @@ class DocumentSession(
             return list.sortedByDescending { it.lastModifiedAt }
         }
 
-        fun deleteSession(context: Context, sessionId: String) {
+        fun deleteSession(context: Context, sessionId: String) = synchronized(sessionLock(sessionId)) {
             try {
                 val dir = getSessionDirectory(context, sessionId)
                 dir.deleteRecursively()
+                Unit
             } catch (_: Exception) {}
         }
     }

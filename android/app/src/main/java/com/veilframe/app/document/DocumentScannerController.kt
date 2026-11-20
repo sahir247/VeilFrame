@@ -109,6 +109,10 @@ class DocumentScannerController(
     private val onRequestCameraPermission: () -> Unit = {}
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     val session = DocumentSession()
+    // Main-thread ownership token for asynchronous import, restore and discard.
+    private var sessionGeneration = 0L
+    private var importJob: Job? = null
+    private var restoreJob: Job? = null
 
     // Decoupled live analyzer flow: 60fps UI observation without GC pressure
     private val _scannerState = MutableSharedFlow<ScanResult>(
@@ -988,7 +992,7 @@ class DocumentScannerController(
 
             job.await().fold(
                 onOk = { result ->
-                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
+                    if (session.pages.any { it === page } && page.editVersion == targetVersion) {
                         if (result != null) {
                             page.corners = result.first
                             page.mode = result.second
@@ -1000,6 +1004,8 @@ class DocumentScannerController(
                         }
                         persistSession()
                         updateUi()
+                    } else {
+                        result?.third?.takeUnless { it === sourceBitmap || it.isRecycled }?.recycle()
                     }
                 },
                 onErr = { err ->
@@ -1014,50 +1020,66 @@ class DocumentScannerController(
 
     fun handlePhotosImported(uris: List<Uri>) {
         if (uris.isEmpty()) return
-
-        scope.launch(Dispatchers.IO) {
+        val generation = sessionGeneration
+        importJob?.cancel()
+        importJob = scope.launch(Dispatchers.IO) {
             val loadedPages = mutableListOf<ScannedPage>()
-            for (uri in uris) {
-                try {
-                    activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        val bmp = BitmapFactory.decodeStream(stream)
-                        if (bmp != null) {
-                            loadedPages.add(
-                                ScannedPage(
-                                    sourceUri = uri,
-                                    originalBitmapCache = bmp,
-                                    processedBitmapCache = bmp,
-                                    renderedVersion = -1L,
+            var handedOff = false
+            try {
+                for (uri in uris) {
+                    ensureActive()
+                    try {
+                        activity.contentResolver.openInputStream(uri)?.use { stream ->
+                            BitmapFactory.decodeStream(stream)?.let { bmp ->
+                                loadedPages.add(ScannedPage(
+                                    sourceUri = uri, originalBitmapCache = bmp,
+                                    processedBitmapCache = bmp, renderedVersion = -1L,
                                     persistedRenderVersion = -1L
-                                )
-                            )
+                                ))
+                            }
                         }
-                    }
-                } catch (_: Exception) {}
-            }
-
-            withContext(Dispatchers.Main) {
-                session.addPages(loadedPages)
-                persistSession()
-                updateUi()
-                updateCameraDoneBadge()
-                for (p in loadedPages) {
-                    runAutoCropOnPage(p)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {}
                 }
+                withContext(Dispatchers.Main) {
+                    if (generation != sessionGeneration) return@withContext
+                    session.addPages(loadedPages)
+                    handedOff = true
+                    if (loadedPages.size != uris.size) {
+                        Toast.makeText(activity, "Imported ${loadedPages.size} of ${uris.size} pages", Toast.LENGTH_LONG).show()
+                    }
+                    if (loadedPages.isEmpty()) return@withContext
+                    persistSession()
+                    updateUi()
+                    updateCameraDoneBadge()
+                    for (page in loadedPages) runAutoCropOnPage(page)
+                }
+            } finally {
+                if (!handedOff) loadedPages.forEach { it.originalBitmapCache?.recycle() }
             }
         }
     }
 
     fun resumeSession(sessionId: String) {
-        scope.launch(Dispatchers.IO) {
+        val generation = ++sessionGeneration
+        importJob?.cancel()
+        restoreJob?.cancel()
+        restoreJob = scope.launch(Dispatchers.IO) {
             val loaded = DocumentSession.loadFromDisk(activity, sessionId)
             withContext(Dispatchers.Main) {
+                if (generation != sessionGeneration) return@withContext
                 if (loaded != null && !loaded.isEmpty) {
                     session.replaceAllPages(loaded.pages)
                     session.id = loaded.id
                     session.title = loaded.title
+                    session.createdAt = loaded.createdAt
+                    session.lastModifiedAt = loaded.lastModifiedAt
+                    session.selectPage(loaded.activePageIndex)
                     updateUi()
                     Toast.makeText(activity, "Resumed document with ${session.pageCount} pages", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(activity, "Saved document could not be restored", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1065,6 +1087,11 @@ class DocumentScannerController(
 
     private fun renderCurrentPage(onComplete: (() -> Unit)? = null) {
         val page = session.currentPage ?: return
+        renderPage(page, onComplete)
+    }
+
+    private fun renderPage(page: ScannedPage, onComplete: (() -> Unit)? = null) {
+        if (session.pages.none { it === page }) return
         val origBmp = page.getOriginalBitmap(activity) ?: return
         val targetVersion = ++page.editVersion
         val pageId = page.id
@@ -1190,7 +1217,7 @@ class DocumentScannerController(
 
             job.await().fold(
                 onOk = { result ->
-                    if (page.editVersion == targetVersion) {
+                    if (session.pages.any { it === page } && page.editVersion == targetVersion) {
                         if (result != null) {
                             page.corners = result.first
                             if (page.mode == DocumentScanner.DocumentMode.AUTO) {
@@ -1200,25 +1227,20 @@ class DocumentScannerController(
                                     DocumentScanner.DocumentMode.GRAYSCALE
                                 }
                             }
-                        } else {
-                            page.corners = null
+                        } else if (session.currentPage?.id == pageId) {
+                            Toast.makeText(activity, "No reliable automatic crop detected; existing crop retained", Toast.LENGTH_SHORT).show()
                         }
-                        if (session.currentPage?.id == pageId) {
-                            renderCurrentPage()
-                        } else {
-                            scope.launch(Dispatchers.IO) {
-                                page.render(activity)
-                                withContext(Dispatchers.Main) {
-                                    updateUi()
-                                }
-                            }
-                        }
+                        renderPage(page)
+                        persistSession()
                     }
                 },
                 onErr = { err ->
                     android.util.Log.w("VeilFrame.DocScanner", "Auto-crop failed for page ${page.id} [${err.code}]: ${err.message}")
-                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
-                        renderCurrentPage()
+                    if (session.pages.any { it === page } && page.editVersion == targetVersion) {
+                        if (session.currentPage?.id == pageId) {
+                            Toast.makeText(activity, "Automatic crop failed; previous crop retained", Toast.LENGTH_LONG).show()
+                        }
+                        renderPage(page)
                     }
                 }
             )
@@ -1330,10 +1352,13 @@ class DocumentScannerController(
 
 
     private fun persistSession() {
+        if (session.isEmpty) return
+        val snapshot = session.captureSaveSnapshot()
+        val generation = sessionGeneration
         scope.launch(Dispatchers.IO) {
-            val saved = session.saveToDisk(activity)
+            val saved = session.saveToDisk(activity, snapshot)
             if (!saved) withContext(Dispatchers.Main) {
-                Toast.makeText(activity, "Document changes could not be saved for recovery. Keep this session open or export your document.", Toast.LENGTH_LONG).show()
+                if (generation == sessionGeneration) Toast.makeText(activity, "Document changes could not be saved for recovery. Keep this session open or export your document.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1856,9 +1881,19 @@ class DocumentScannerController(
         get() = false
 
     override fun discardAndReleaseAllResources() {
+        ++sessionGeneration
+        importJob?.cancel()
+        restoreJob?.cancel()
         cancelProcessing()
+        // Existing autosaved documents remain recoverable; a fresh session must not
+        // overwrite the last saved document with an empty manifest.
         session.replaceAllPages(emptyList())
+        session.id = java.util.UUID.randomUUID().toString()
+        session.title = "Scanned Document"
+        session.createdAt = System.currentTimeMillis()
+        closeCameraViewfinder()
         binding.docQuadOverlayView.clear()
+        updateUi()
     }
 
     fun cancelProcessing() {
