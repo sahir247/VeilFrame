@@ -32,6 +32,16 @@ class SpreadsheetGeometryTest {
         }
     }
 
+    @Test fun mergeIndexMapsEveryCoveredCellToExactlyOneGeometry() {
+        val ranges = listOf(OpenXmlDocumentParser.parseMergeRange("A1:B2"),
+            OpenXmlDocumentParser.parseMergeRange("C2:D4"))
+        val index = SpreadsheetMergeIndex(4, 4, ranges)
+        for (r in 0 until 4) for (c in 0 until 4) {
+            assertEquals(ranges.indexOfFirst { it.contains(r, c) }, index.at(r, c))
+        }
+        assertEquals(-1, SpreadsheetMergeIndex(1, 1, emptyList()).at(0, 0))
+    }
+
     @Test fun repeatedSharedStringReferencesCountExpandedTextNotUniqueStrings() {
         val text = "a".repeat(100_000)
         val rows = List(81) { listOf(text) }

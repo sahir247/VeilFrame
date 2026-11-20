@@ -56,3 +56,30 @@ internal object SpreadsheetGeometry {
         return Extent(height, width, textChars)
     }
 }
+
+/** One compact index for each sheet render; O(1) lookup per cell. */
+internal class SpreadsheetMergeIndex(
+    private val rowCount: Int, private val colCount: Int,
+    private val ranges: List<OpenXmlDocumentParser.CellRangeAddress>
+) {
+    init {
+        require(rowCount >= 0 && colCount >= 0 &&
+            rowCount.toLong() * colCount <= SpreadsheetGeometry.MAX_GRID_CELLS)
+    }
+    private val ids = if (ranges.isEmpty()) IntArray(0) else IntArray(rowCount * colCount)
+    init {
+        for ((index, range) in ranges.withIndex()) {
+            require(range.firstRow in 0..range.lastRow && range.lastRow < rowCount &&
+                range.firstCol in 0..range.lastCol && range.lastCol < colCount)
+            for (row in range.firstRow..range.lastRow) {
+                val start = row * colCount + range.firstCol
+                val end = row * colCount + range.lastCol + 1
+                java.util.Arrays.fill(ids, start, end, index + 1)
+            }
+        }
+    }
+    fun at(row: Int, col: Int): Int {
+        require(row in 0 until rowCount && col in 0 until colCount)
+        return if (ids.isEmpty()) -1 else ids[row * colCount + col] - 1
+    }
+}

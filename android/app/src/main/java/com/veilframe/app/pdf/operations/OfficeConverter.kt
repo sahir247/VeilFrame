@@ -958,6 +958,8 @@ class OfficeConverter {
                 repeatFrozenColumnsInTiling = repeatFrozenColumnsInTiling
             )
 
+            val renderContext = currentCoroutineContext()
+            val checkpoint: () -> Unit = { renderContext.ensureActive() }
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
@@ -976,7 +978,8 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontBold = fontBold,
                             limits = limits,
-                            isExtended = false
+                            isExtended = false,
+                            checkpoint = checkpoint
                         )
                     }
                     ExportStrategy.EXTENDED_SIZE -> {
@@ -986,7 +989,8 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontBold = fontBold,
                             limits = limits,
-                            isExtended = true
+                            isExtended = true,
+                            checkpoint = checkpoint
                         )
                     }
                     ExportStrategy.TILED -> {
@@ -995,7 +999,8 @@ class OfficeConverter {
                             plan = plan,
                             fontNormal = fontNormal,
                             fontBold = fontBold,
-                            limits = limits
+                            limits = limits,
+                            checkpoint = checkpoint
                         )
                     }
                 }
@@ -1014,17 +1019,25 @@ class OfficeConverter {
         fontNormal: PDType1Font,
         fontBold: PDType1Font,
         limits: LayoutLimits,
-        isExtended: Boolean
+        isExtended: Boolean,
+        checkpoint: () -> Unit
     ) {
         val layout = plan.sheetLayout
+        val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
+            layout.mergedGeometries.map { it.range })
+        fun addPage(page: PDPage) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            pdf.addPage(page)
+        }
         val pageBounds = PDRectangle(plan.pageWidth, plan.pageHeight)
         var currentPage = PDPage(pageBounds)
         if (isExtended && plan.userUnit > 1.0f) {
             currentPage.setUserUnit(plan.userUnit)
         }
-        pdf.addPage(currentPage)
+        addPage(currentPage)
         var contentStream: PDPageContentStream? = PDPageContentStream(pdf, currentPage)
-
+        try {
         if (isExtended && plan.userUnit > 1.0f) {
             contentStream?.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
         }
@@ -1042,6 +1055,7 @@ class OfficeConverter {
         var yPosition = naturalHeight - limits.margin - 20f
 
         for (rIdx in 0 until layout.rowCount) {
+            checkpoint()
             val rowCellLines = layout.rowWrappedLines[rIdx]
             val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
             val pageUsableHeight = (naturalHeight - (2 * limits.margin) - 20f).coerceAtLeast(30f)
@@ -1054,7 +1068,7 @@ class OfficeConverter {
                     if (isExtended && plan.userUnit > 1.0f) {
                         currentPage.setUserUnit(plan.userUnit)
                     }
-                    pdf.addPage(currentPage)
+                    addPage(currentPage)
                     contentStream = PDPageContentStream(pdf, currentPage)
                     if (isExtended && plan.userUnit > 1.0f) {
                         contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
@@ -1068,7 +1082,7 @@ class OfficeConverter {
                     if (isExtended && plan.userUnit > 1.0f) {
                         currentPage.setUserUnit(plan.userUnit)
                     }
-                    pdf.addPage(currentPage)
+                    addPage(currentPage)
                     contentStream = PDPageContentStream(pdf, currentPage)
                     if (isExtended && plan.userUnit > 1.0f) {
                         contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
@@ -1087,9 +1101,7 @@ class OfficeConverter {
                 val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
 
                 for (colIndex in 0 until layout.colCount) {
-                    val merged = layout.mergedGeometries.firstOrNull {
-                        it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol
-                    }
+                    val merged = layout.mergedGeometries.getOrNull(mergeIndex.at(rIdx, colIndex))
                     if (merged != null) {
                         // Merged cell: draw once across the full merged column span
                         if (colIndex == merged.firstCol) {
@@ -1174,7 +1186,7 @@ class OfficeConverter {
                     if (isExtended && plan.userUnit > 1.0f) {
                         currentPage.setUserUnit(plan.userUnit)
                     }
-                    pdf.addPage(currentPage)
+                    addPage(currentPage)
                     contentStream = PDPageContentStream(pdf, currentPage)
                     if (isExtended && plan.userUnit > 1.0f) {
                         contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
@@ -1184,7 +1196,9 @@ class OfficeConverter {
             }
         }
 
-        contentStream?.close()
+        } finally {
+            contentStream?.close()
+        }
     }
 
     private fun renderTiledSheet(
@@ -1192,16 +1206,21 @@ class OfficeConverter {
         plan: ExportPlan,
         fontNormal: PDType1Font,
         fontBold: PDType1Font,
-        limits: LayoutLimits
+        limits: LayoutLimits,
+        checkpoint: () -> Unit
     ) {
         val layout = plan.sheetLayout
+        val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
+            layout.mergedGeometries.map { it.range })
         val margin = limits.margin
 
         for (tile in plan.tiles) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             val pageBounds = PDRectangle(tile.tilePageWidth, tile.tilePageHeight)
             val page = PDPage(pageBounds)
             pdf.addPage(page)
-            val contentStream = PDPageContentStream(pdf, page)
+            PDPageContentStream(pdf, page).use { contentStream ->
 
             val pageW = tile.tilePageWidth
             val pageH = tile.tilePageHeight
@@ -1288,13 +1307,14 @@ class OfficeConverter {
 
             // 6. Draw unmerged cells
             for (rIdx in rowsOnTile) {
+                checkpoint()
                 val cellTop = rowTopMap[rIdx]!!
                 val cellH = rowHeightMap[rIdx]!!
                 val rowLines = layout.rowWrappedLines[rIdx]
 
                 for (colIndex in colsToDraw) {
                     // Skip cells that belong to any merged region
-                    if (layout.mergedGeometries.any { it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol }) {
+                    if (mergeIndex.at(rIdx, colIndex) >= 0) {
                         continue
                     }
 
@@ -1330,6 +1350,8 @@ class OfficeConverter {
 
             // 7. Draw merged cell geometries that intersect this tile
             for (geom in layout.mergedGeometries) {
+                checkpoint()
+                if (geom.lastRow < tile.rowGroup.startRow || geom.firstRow > tile.rowGroup.endRow) continue
                 val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
                 val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
                 if (visCols.isEmpty() || visRows.isEmpty()) continue
@@ -1374,6 +1396,15 @@ class OfficeConverter {
                 // Text rendering: only on anchor slice to prevent duplicate text across panels
                 val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
                 if (isAnchor && geom.wrappedLines.isNotEmpty()) {
+                    // Wrapping across the entire merge is invalid on a narrower
+                    // anchor tile. Rewrap inside its actual visible rectangle.
+                    val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
+                        fontNormal, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
+                    val requiredHeight = 4f + limits.fontSizeCell +
+                        (anchorLines.size - 1).coerceAtLeast(0) * limits.lineHeight
+                    require(requiredHeight <= sliceHeight - 1f) {
+                        "Merged cell text does not fit its anchor tile; increase tile dimensions"
+                    }
                     contentStream.saveGraphicsState()
                     contentStream.addRect(
                         sliceLeft + 1f,
@@ -1384,7 +1415,7 @@ class OfficeConverter {
                     contentStream.clip()
 
                     var textY = sliceTop - 4f - limits.fontSizeCell
-                    for (lineText in geom.wrappedLines) {
+                    for (lineText in anchorLines) {
                         contentStream.beginText()
                         contentStream.setFont(fontNormal, limits.fontSizeCell)
                         contentStream.newLineAtOffset(sliceLeft + 4f, textY)
@@ -1396,7 +1427,7 @@ class OfficeConverter {
                 }
             }
 
-            contentStream.close()
+            }
         }
     }
 
