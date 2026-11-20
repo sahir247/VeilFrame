@@ -12,6 +12,7 @@ internal object StreamingRgbaPng {
     fun write(output: OutputStream, width: Int, height: Int,
               checkpoint: () -> Unit = {}, readRow: (Int, IntArray) -> Unit) {
         require(width in 1..32768 && height in 1..32768)
+        checkpoint()
         val data = DataOutputStream(output)
         data.write(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10))
         val header = java.io.ByteArrayOutputStream(13)
@@ -20,30 +21,56 @@ internal object StreamingRgbaPng {
             it.writeByte(8); it.writeByte(6); it.writeByte(0); it.writeByte(0); it.writeByte(0)
         }
         chunk(data, "IHDR", header.toByteArray(), 13)
+        // Android Bitmap.getPixels exposes straight sRGB values. Declare that
+        // encoding rather than inheriting unspecified source ICC metadata.
+        chunk(data, "sRGB", byteArrayOf(0), 1)
         val idat = IdatSink(data)
         val deflater = Deflater(Deflater.DEFAULT_COMPRESSION)
         try {
             val compressed = DeflaterOutputStream(idat, deflater, 32 * 1024)
             val pixels = IntArray(width)
+            var previous = ByteArray(width * 4)
+            var raw = ByteArray(width * 4)
             val filtered = ByteArray(1 + width * 4)
-            filtered[0] = 1 // PNG Sub filter, one 4-byte previous pixel.
             for (y in 0 until height) {
                 checkpoint()
                 readRow(y, pixels)
-                var previous = 0
-                var at = 1
+                var at = 0
                 for (pixel in pixels) {
                     val a = pixel ushr 24
                     val rgba = if (a == 0) 0 else (pixel shl 8) or a
-                    for (shift in SHIFTS) {
-                        filtered[at++] = ((rgba ushr shift and 255) - (previous ushr shift and 255)).toByte()
+                    for (shift in SHIFTS) raw[at++] = (rgba ushr shift).toByte()
+                }
+                // Choose None, Sub or Up using signed residual magnitude.
+                // Up avoids repeatedly encoding identical photographic rows.
+                var none = 0L
+                var sub = 0L
+                var up = 0L
+                for (i in raw.indices) {
+                    val value = raw[i].toInt()
+                    none += kotlin.math.abs(value)
+                    sub += kotlin.math.abs((value - if (i >= 4) raw[i - 4].toInt() else 0).toByte().toInt())
+                    up += kotlin.math.abs((value - previous[i].toInt()).toByte().toInt())
+                }
+                val type = if (none <= sub && none <= up) 0 else if (sub <= up) 1 else 2
+                filtered[0] = type.toByte()
+                for (i in raw.indices) {
+                    val predictor = when (type) {
+                        1 -> if (i >= 4) raw[i - 4].toInt() else 0
+                        2 -> previous[i].toInt()
+                        else -> 0
                     }
-                    previous = rgba
+                    filtered[i + 1] = (raw[i].toInt() - predictor).toByte()
                 }
                 compressed.write(filtered)
+                val swap = previous
+                previous = raw
+                raw = swap
             }
+            checkpoint()
             compressed.finish()
             idat.finish()
+            checkpoint()
         } finally {
             deflater.end()
         }

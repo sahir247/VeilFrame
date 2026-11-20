@@ -18,10 +18,47 @@ class StreamingRgbaPngTest {
             expected.copyInto(row, 0, y * width, (y + 1) * width)
             if (y == 0) row[0] = 0x00ABCDEF
         }
-        val image = ImageIO.read(output.toByteArray().inputStream())
+        val encoded = output.toByteArray()
+        StreamingPngVerifier.verify(encoded.inputStream(), width, height)
+        val image = ImageIO.read(encoded.inputStream())
         assertEquals(width, image.width)
         assertEquals(height, image.height)
         assertArrayEquals(expected, image.getRGB(0, 0, width, height, null, 0, width))
+    }
+
+    @Test fun verifierRejectsTruncationCorruptCrcTrailingDataAndWrongGeometry() {
+        val out = ByteArrayOutputStream()
+        StreamingRgbaPng.write(out, 5, 3) { y, row -> row.fill(0xFF123456.toInt() + y) }
+        val png = out.toByteArray()
+        StreamingPngVerifier.verify(png.inputStream(), 5, 3)
+        val corrupt = png.copyOf().apply { this[45] = (this[45].toInt() xor 1).toByte() }
+        for (bytes in listOf(png.copyOf(png.size - 1), corrupt, png + byteArrayOf(0))) {
+            assertThrows(java.io.IOException::class.java) { StreamingPngVerifier.verify(bytes.inputStream(), 5, 3) }
+        }
+        assertThrows(java.io.IOException::class.java) { StreamingPngVerifier.verify(png.inputStream(), 3, 5) }
+    }
+
+    @Test fun degenerateGeometryAndCancellation() {
+        for ((w, h) in listOf(1 to 1, 1 to 100, 32768 to 1, 13 to 17)) {
+            val out = ByteArrayOutputStream()
+            StreamingRgbaPng.write(out, w, h) { y, row ->
+                for (x in row.indices) row[x] = if ((x + y) % 2 == 0) 0x80123456.toInt() else 0xFFABCDEF.toInt()
+            }
+            val bytes = out.toByteArray()
+            StreamingPngVerifier.verify(bytes.inputStream(), w, h)
+            val image = ImageIO.read(bytes.inputStream())
+            assertEquals(w, image.width)
+            assertEquals(h, image.height)
+            for (y in 0 until h) for (x in 0 until w) {
+                assertEquals(if ((x + y) % 2 == 0) 0x80123456.toInt() else 0xFFABCDEF.toInt(), image.getRGB(x, y))
+            }
+        }
+        var checks = 0
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            StreamingRgbaPng.write(ByteArrayOutputStream(), 5, 3, { if (++checks == 3) throw kotlinx.coroutines.CancellationException("stop") }) { _, row ->
+                row.fill(-1)
+            }
+        }
     }
 
     @Test fun originalAlphaIsMultipliedOnlyOnceAndMaskUsesHalfPixelInterpolation() {

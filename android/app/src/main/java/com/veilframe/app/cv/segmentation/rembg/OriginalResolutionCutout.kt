@@ -110,11 +110,10 @@ internal object OriginalResolutionCutout {
                     }
                 }
                 checkpoint()
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(stage.absolutePath, bounds)
-                check(bounds.outWidth == width && bounds.outHeight == height &&
-                    bounds.outMimeType == "image/png" && stage.length() > 0) {
-                    "Original-resolution PNG header validation failed"
+                // Validate actual bytes before publishing: dimensions alone do not
+                // verify IDAT CRCs, zlib completion or complete decoded scanlines.
+                stage.inputStream().buffered().use { input ->
+                    StreamingPngVerifier.verify(input, width, height, checkpoint)
                 }
             } finally { decoder.recycle() }
             checkpoint()
