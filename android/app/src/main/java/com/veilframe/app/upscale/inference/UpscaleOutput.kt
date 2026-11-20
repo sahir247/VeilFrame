@@ -32,6 +32,17 @@ sealed class UpscaleOutput {
         override val height: Int,
     ) : UpscaleOutput()
 
+    /** Only for unpublished output; a controller takes ownership after delivery. */
+    internal fun discardUnclaimed() {
+        when (this) {
+            is InMemory -> if (!bitmap.isRecycled) bitmap.recycle()
+            is Streamed -> {
+                preview?.let { if (!it.isRecycled) it.recycle() }
+                file.delete()
+            }
+        }
+    }
+
     abstract val width: Int
     abstract val height: Int
 

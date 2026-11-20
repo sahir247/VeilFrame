@@ -101,7 +101,9 @@ class UpscaleInferenceEngine(
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: InferenceProgressListener? = null
-    ): Result<UpscaleOutput> = withContext(Dispatchers.Default) {
+    ): Result<UpscaleOutput> = withOwnedResult(
+        Dispatchers.Default, { result: Result<UpscaleOutput> -> result.getOrNull()?.discardUnclaimed() }
+    ) {
         val t0 = System.currentTimeMillis()
         val srcW = source.width
         val srcH = source.height
@@ -205,12 +207,19 @@ class UpscaleInferenceEngine(
                 }
             }
 
+            try {
+                ensureActive()
+            } catch (failure: Throwable) {
+                resultOutput.discardUnclaimed()
+                throw failure
+            }
             val currentBackend = when (model.type) {
-                ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
+                ModelType.AI_NCNN -> "NCNN"
                 ModelType.ALGORITHMIC -> "ALGORITHMIC"
             }
 
-            com.veilframe.app.cv.core.CvTelemetry.record(
+            // Telemetry must not prevent delivery of a valid owned output.
+            runCatching { com.veilframe.app.cv.core.CvTelemetry.record(
                 linkedMapOf(
                     "ts" to System.currentTimeMillis(), "job" to "upscale",
                     "model" to model.id, "scale" to targetScale,
@@ -220,14 +229,14 @@ class UpscaleInferenceEngine(
                     "ms" to (System.currentTimeMillis() - t0), "outcome" to "ok",
                     "streamed" to (resultOutput is UpscaleOutput.Streamed)
                 )
-            )
+            ) }
             Result.success(resultOutput)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             Log.e(TAG, "Upscale failed: ${e.message}", e)
             val currentBackend = when (model.type) {
-                ModelType.AI_NCNN -> if (NcnnNative.getGpuCount() > 0) "NCNN_VULKAN" else "NCNN_CPU"
+                ModelType.AI_NCNN -> "NCNN"
                 ModelType.ALGORITHMIC -> "ALGORITHMIC"
             }
             com.veilframe.app.cv.core.CvTelemetry.record(

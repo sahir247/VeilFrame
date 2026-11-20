@@ -585,3 +585,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### Consolidated source remediation checkpoint
 
 - Baseline `953f3fd` passed both CI workflows (44766966134 and 44766966148). Six subsequent implementation commits address A08/A15/A17/A21/A26/A28/A29, with Android CI still pending at this checkpoint. Added an actual PDF stream regression for one shared border, gridlines off, and stroke after fill. Original finding classifications are unchanged; code-level improvements do not constitute physical-device, privacy-effectiveness or full Office fidelity verification. No release/signed-device gate bypasses.
+
+### A21/A26/A29 — Upscale output ownership across dispatcher handoff
+
+- Retain generated file/bitmap ownership across cancellable withContext return boundaries at native and high-level inference entry points. Dispose undelivered results once, recycle native preview and remove a published-but-unclaimed file on failure/cancellation. Propagate preview cancellation; protect successful output from optional telemetry failures and avoid falsely labelling CPU fallback as Vulkan solely from GPU availability. Postprocessor now validates expected channels and checks cancellation during inflate. Two coroutine regressions cover delivery and prompt cancellation. No inference quality or device benchmark claims; CI pending.

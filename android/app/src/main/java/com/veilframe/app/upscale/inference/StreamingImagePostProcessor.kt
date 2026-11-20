@@ -113,7 +113,7 @@ internal object StreamingImagePostProcessor {
             }
             sink.close()
             checkpoint()
-            NcnnUpscaleEngine.validatePngFile(temp, w, h)
+            NcnnUpscaleEngine.validatePngFile(temp, w, h, if (source.hasAlpha) 4 else 3, checkpoint)
             checkpoint()
             NcnnUpscaleEngine.publishFileAtomically(temp, final)
             preview = MediaDecoder.decodeSampledFile(final)

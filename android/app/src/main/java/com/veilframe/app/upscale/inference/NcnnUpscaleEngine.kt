@@ -330,7 +330,9 @@ class NcnnUpscaleEngine(
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: UpscaleInferenceEngine.InferenceProgressListener? = null
-    ): UpscaleOutput = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withOwnedResult(
+        Dispatchers.Default, UpscaleOutput::discardUnclaimed
+    ) {
         // 1. Model type check
         require(model.type == ModelType.AI_NCNN) {
             "NcnnUpscaleEngine only processes AI_NCNN models, received ${model.type} for ${model.name}."
@@ -418,6 +420,8 @@ class NcnnUpscaleEngine(
         val colorType = if (channels == 3) StreamingPngWriter.ColorType.RGB else StreamingPngWriter.ColorType.RGBA
         var writer: StreamingPngWriter? = null
         var isPublished = false
+        var preview: Bitmap? = null
+        var completed = false
 
         // Outer lifecycle guard: guarantees writer abortion and temporary file deletion on any error or cancellation (P0.4)
         try {
@@ -670,15 +674,22 @@ class NcnnUpscaleEngine(
             publishFileAtomically(tempFile, finalFile)
             isPublished = true
 
-            val preview = try {
+            preview = try {
                 MediaDecoder.decodeSampledFile(finalFile)
-            } catch (t: Throwable) {
-                Log.w(TAG, "Sampled preview generation failed for ${finalFile.name}: ${t.message}")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Sampled preview generation failed for ${finalFile.name}: ${failure.message}")
                 null
             }
-
+            if (!coroutineContext.isActive) throw UpscaleCancellationException("Upscaling cancelled before result delivery")
             UpscaleOutput.Streamed(file = finalFile, preview = preview, width = outW, height = outH)
+                .also { completed = true }
         } finally {
+            if (!completed) {
+                preview?.let { if (!it.isRecycled) it.recycle() }
+                if (isPublished) finalFile.delete()
+            }
             if (!isPublished) {
                 try {
                     writer?.abort()
