@@ -9,7 +9,6 @@ import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.TensorBuffer
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.core.LiteRtEnvironment
-import com.veilframe.app.cv.core.LiteRtModelStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
@@ -38,6 +37,7 @@ object ColorOsMattingPlugin {
 
     @Volatile
     private var compiledModel: CompiledModel? = null
+    private var modelSnapshot: RembgModelRepository.VerifiedSnapshot? = null
     private var inputBuffers: List<TensorBuffer> = emptyList()
     private var outputBuffers: List<TensorBuffer> = emptyList()
 
@@ -78,89 +78,93 @@ object ColorOsMattingPlugin {
         val appContext = context.applicationContext
         val repository = RembgModelRepository(appContext)
         val expected = RembgModel.COLOROS_LIFT_SHIFT
-        val modelFile = repository.verifiedModelFile(expected, checkpoint)
         val environment = LiteRtEnvironment.get(appContext)
         val gpuAvailable = runCatching {
             environment.getAvailableAccelerators().contains(Accelerator.GPU)
         }.getOrDefault(false)
         val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
 
-        // Size alone must not authorize a downloaded or staged native model.
-        val selectedFile = modelFile ?: run {
-            checkpoint()
-            val staged = try {
-                LiteRtModelStorage.stageBundled(appContext, MODEL_ASSET_PATH, "coloros-liftshift")
-            } catch (failure: java.io.IOException) {
-                throw IllegalStateException("Lift & Shift model is missing or failed checksum validation; delete and download it again", failure)
-            }
-            check(repository.matchesPinnedArtifact(staged, expected.sha256, expected.minBytes,
-                20L * 1024 * 1024, checkpoint)) { "Bundled Lift & Shift model failed checksum validation" }
-            staged
-        }
-        val modelPath = selectedFile.absolutePath
-        fun create(options: CompiledModel.Options): CompiledModel =
-            CompiledModel.create(modelPath, options, environment)
+        // Keep the validated exact bytes private and alive for any lazy/mapped
+        // accesses until the compiled model and its tensor buffers are closed.
+        val snapshot = repository.openVerifiedSnapshot(expected, checkpoint, MODEL_ASSET_PATH)
+        var adopted = false
+        try {
+            val modelPath = snapshot.weights.absolutePath
+            fun create(options: CompiledModel.Options): CompiledModel =
+                CompiledModel.create(modelPath, options, environment)
 
-        data class ReadyModel(
-            val model: CompiledModel,
-            val inputs: List<TensorBuffer>,
-            val outputs: List<TensorBuffer>,
-            val gpu: Boolean
-        )
+            data class ReadyModel(
+                val model: CompiledModel,
+                val inputs: List<TensorBuffer>,
+                val outputs: List<TensorBuffer>,
+                val gpu: Boolean
+            )
 
-        fun createAndWarm(options: CompiledModel.Options, gpu: Boolean): ReadyModel {
-            var model: CompiledModel? = null
-            var inputs: List<TensorBuffer> = emptyList()
-            var outputs: List<TensorBuffer> = emptyList()
-            try {
-                model = create(options)
-                inputs = model.createInputBuffers()
-                outputs = model.createOutputBuffers()
-                check(inputs.isNotEmpty() && outputs.isNotEmpty()) {
-                    "ColorOS matting model must expose input and output tensors"
+            fun createAndWarm(options: CompiledModel.Options, gpu: Boolean): ReadyModel {
+                var model: CompiledModel? = null
+                var inputs: List<TensorBuffer> = emptyList()
+                var outputs: List<TensorBuffer> = emptyList()
+                try {
+                    model = create(options)
+                    inputs = model.createInputBuffers()
+                    outputs = model.createOutputBuffers()
+                    check(inputs.isNotEmpty() && outputs.isNotEmpty()) {
+                        "ColorOS matting model must expose input and output tensors"
+                    }
+                    inputValues.fill(0f)
+                    inputs[0].writeFloat(inputValues)
+                    model.run(inputs, outputs)
+                    val warmOutput = outputs[0].readFloat() // Wait for GPU completion.
+                    check(warmOutput.size == OUTPUT_FLOAT_COUNT && warmOutput.all { it.isFinite() }) {
+                        "Invalid warm-up alpha output"
+                    }
+                    checkpoint()
+                    return ReadyModel(model, inputs, outputs, gpu)
+                } catch (error: Throwable) {
+                    outputs.forEach { runCatching { it.close() } }
+                    inputs.forEach { runCatching { it.close() } }
+                    runCatching { model?.close() }
+                    throw error
                 }
-                inputValues.fill(0f)
-                inputs[0].writeFloat(inputValues)
-                model.run(inputs, outputs)
-                outputs[0].readFloat() // Wait for GPU completion and pay shader compilation up front.
-                return ReadyModel(model, inputs, outputs, gpu)
-            } catch (error: Throwable) {
-                outputs.forEach { runCatching { it.close() } }
-                inputs.forEach { runCatching { it.close() } }
-                runCatching { model?.close() }
-                throw error
             }
-        }
 
-        val ready = if (gpuAvailable) {
-            try {
-                val gpuOptions = CompiledModel.Options(Accelerator.GPU, Accelerator.CPU).apply {
-                    cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+            val ready = if (gpuAvailable) {
+                try {
+                    val gpuOptions = CompiledModel.Options(Accelerator.GPU, Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(gpuOptions, gpu = true)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (gpuError: Exception) {
+                    checkpoint()
+                    Log.w(TAG, "LiteRT GPU setup failed; falling back to CPU", gpuError)
+                    val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(cpuOptions, gpu = false)
                 }
-                createAndWarm(gpuOptions, gpu = true)
-            } catch (gpuError: Throwable) {
-                Log.w(TAG, "LiteRT GPU setup failed; falling back to CPU", gpuError)
+            } else {
                 val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
                     cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
                 }
                 createAndWarm(cpuOptions, gpu = false)
             }
-        } else {
-            val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
-                cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
-            }
-            createAndWarm(cpuOptions, gpu = false)
-        }
 
-        compiledModel = ready.model
-        inputBuffers = ready.inputs
-        outputBuffers = ready.outputs
-        isGpuAccelerated = ready.gpu
-        Log.i(
-            TAG,
-            "ColorOS Lift & Shift CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
-        )
-        return ready.model
+            compiledModel = ready.model
+            inputBuffers = ready.inputs
+            outputBuffers = ready.outputs
+            isGpuAccelerated = ready.gpu
+            modelSnapshot = snapshot
+            adopted = true
+            Log.i(
+                TAG,
+                "ColorOS Lift & Shift CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
+            )
+            return ready.model
+        } finally {
+            if (!adopted) snapshot.close()
+        }
     }
 
     private fun closeLocked() {
@@ -170,6 +174,8 @@ object ColorOsMattingPlugin {
         inputBuffers = emptyList()
         runCatching { compiledModel?.close() }
         compiledModel = null
+        modelSnapshot?.close()
+        modelSnapshot = null
         isGpuAccelerated = false
     }
 

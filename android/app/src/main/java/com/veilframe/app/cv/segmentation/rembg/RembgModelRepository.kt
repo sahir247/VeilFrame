@@ -57,23 +57,31 @@ class RembgModelRepository(
      * A concurrent download/delete may disrupt the copy, but cannot replace a
      * verified snapshot between digest validation and native open.
      */
+    internal class VerifiedSnapshot internal constructor(
+        private val directory: File, val weights: File, val graph: File?
+    ) : java.io.Closeable {
+        override fun close() { directory.deleteRecursively() }
+    }
+
     internal fun <T> withVerifiedSnapshot(model: RembgModel, checkpoint: () -> Unit = {},
-                                          load: (File, File?) -> T): T {
+                                          load: (File, File?) -> T): T =
+        openVerifiedSnapshot(model, checkpoint).use { load(it.weights, it.graph) }
+
+    internal fun openVerifiedSnapshot(model: RembgModel, checkpoint: () -> Unit = {},
+                                      bundledFallback: String? = null): VerifiedSnapshot {
         require(!model.isBundled)
         val candidates = listOf(getModelFile(model)) +
             if (model == RembgModel.COLOROS_LIFT_SHIFT)
                 listOf(File(context.filesDir, "models/lift_shift/image_matting_mobile.tflite"))
             else emptyList()
-        val source = candidates.firstOrNull { it.isFile }
-            ?: throw java.io.IOException("Model ${model.displayName} is unavailable")
         val maxBinBytes = (model.estimatedSizeBytes * 1.25).toLong().coerceAtLeast(20L * 1024 * 1024)
         val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "matting_verified_").toFile()
         try {
-            fun stage(input: File, name: String, expected: String, min: Long, max: Long): File {
+            fun stage(open: () -> java.io.InputStream, name: String, expected: String, min: Long, max: Long): File {
                 val target = File(dir, name)
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
                 var size = 0L
-                input.inputStream().use { src ->
+                open().use { src ->
                     target.outputStream().buffered().use { out ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
@@ -93,11 +101,33 @@ class RembgModelRepository(
                 checkpoint()
                 return target
             }
-            val bin = stage(source, "weights.bin", model.sha256, model.minBytes, maxBinBytes)
-            val param = if (model.paramFileName.isNotEmpty()) stage(getParamFile(model), "graph.param",
+            val weightsName = if (model == RembgModel.COLOROS_LIFT_SHIFT) "model.tflite" else "weights.bin"
+            var bin: File? = null
+            var lastFailure: java.io.IOException? = null
+            for (source in candidates) {
+                if (!source.isFile) continue
+                try {
+                    bin = stage({ source.inputStream() }, weightsName, model.sha256, model.minBytes, maxBinBytes)
+                    break
+                } catch (failure: java.io.IOException) {
+                    lastFailure = failure
+                    File(dir, weightsName).delete()
+                }
+            }
+            if (bin == null && bundledFallback != null) {
+                try {
+                    bin = stage({ context.assets.open(bundledFallback) }, weightsName,
+                        model.sha256, model.minBytes, maxBinBytes)
+                } catch (failure: java.io.IOException) { lastFailure = failure }
+            }
+            val weights = bin ?: throw java.io.IOException("Model ${model.displayName} unavailable or failed checksum validation", lastFailure)
+            val param = if (model.paramFileName.isNotEmpty()) stage({ getParamFile(model).inputStream() }, "graph.param",
                 model.paramSha256, 500L, 10L * 1024 * 1024) else null
-            return load(bin, param)
-        } finally { dir.deleteRecursively() }
+            return VerifiedSnapshot(dir, weights, param)
+        } catch (failure: Throwable) {
+            dir.deleteRecursively()
+            throw failure
+        }
     }
 
     internal fun matchesPinnedArtifact(file: File, expected: String, minBytes: Long, maxBytes: Long,
