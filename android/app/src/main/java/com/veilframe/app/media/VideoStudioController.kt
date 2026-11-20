@@ -2649,7 +2649,7 @@ class VideoStudioController(
                     MaterialAlertDialogBuilder(activity)
                         .setTitle("Scan coverage")
                         .setMessage(if (mode == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
-                            "Sequentially decodes every frame of an admitted clip. Up to 1 GiB of private temporary storage and 1,800 frames; longer clips may need splitting. Detection can still miss targets; audio is not scanned."
+                            "Sequentially streams every decoded frame without a full-video raster spool. Up to 216,000 frames and a bounded region budget; crowded or longer clips may need splitting. Detection can still miss targets; audio is not scanned."
                             else "Samples frames rather than decoding every frame. Brief targets and detector failures can still be missed; audio is not scanned.")
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Scan") { _, _ ->
@@ -2701,7 +2701,8 @@ class VideoStudioController(
                             if (!cancelled() && scanProgressDialog.isShowing) {
                                 val pct = if (total > 0) ((sampled.toFloat() / total) * 100).toInt().coerceIn(0, 100) else 0
                                 val unit = if (density == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME) "frame" else "sample"
-                                scanProgressDialog.updateProgress(pct, "Scanning $unit $sampled of $total ($pct%)")
+                                if (total > 0) scanProgressDialog.updateProgress(pct, "Scanning $unit $sampled of $total ($pct%)")
+                                else scanProgressDialog.updateProgress(0, "Scanned $sampled frames (total unknown until decode completes)")
                             }
                         }
                     }

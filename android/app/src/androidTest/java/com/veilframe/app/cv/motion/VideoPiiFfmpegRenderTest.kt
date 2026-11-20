@@ -25,7 +25,7 @@ import kotlin.math.pow
 class VideoPiiFfmpegRenderTest {
 
     @Test
-    fun sequentialDecoderPreservesEveryVariableRateFrameAndReleasesSpool() {
+    fun sequentialDecoderPreservesEveryVariableRateFrameWithoutSpool() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_seq_test").toFile()
         val source = File(dir, "vfr.mp4")
@@ -35,7 +35,7 @@ class VideoPiiFfmpegRenderTest {
                 "select='not(mod(n,3))+eq(n,1)'", "-vsync", "0", "-an", "-c:v", "mpeg4", source.absolutePath))
             assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
             val seen = mutableListOf<Long>()
-            val count = SequentialVideoFrameDecoder.decode(source, dir, 320, 240, { false }) {
+            val count = SequentialVideoFrameDecoder.decode(context, source, 320, 240, { false }) {
                     bitmap, pts, _, _, _ ->
                 assertTrue(bitmap.width == 320 && bitmap.height == 240)
                 seen.add(pts)

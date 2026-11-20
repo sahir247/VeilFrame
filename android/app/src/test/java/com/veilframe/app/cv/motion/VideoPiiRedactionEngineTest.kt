@@ -25,18 +25,46 @@ import org.robolectric.RobolectricTestRunner
 class VideoPiiRedactionEngineTest {
 
     @Test
-    fun sequentialTimestampsRejectMissingDuplicateAndMismatchedGeometry() {
-        fun line(index: Int, pts: Long, size: String = "320x240") =
-            "[Parsed_showinfo_1 @ 0x123] n: $index pts: $pts pts_time:0 pos:0 fmt:yuv420p sar:1/1 s:$size"
-        val a = line(0, 0)
-        val b = line(1, 123_456)
-        assertEquals(listOf(0L, 123_456L), SequentialVideoFrameDecoder.parseFrameTimestamps("$a\n$b", 2, 320, 240))
-        for (broken in listOf(a, a + "\n" + line(2, 10), a + "\n" + line(1, 0),
-            a + "\n" + line(1, 10, "240x320"))) {
-            org.junit.Assert.assertThrows(java.io.IOException::class.java) {
-                SequentialVideoFrameDecoder.parseFrameTimestamps(broken, 2, 320, 240)
-            }
+    fun sequentialPacketMetadataChecksTimebaseGeometryOrderAndPayload() {
+        val bytes = ByteArray(8 * 8 * 3) { it.toByte() }
+        fun valid() = FramePacketContract(8, 8).apply {
+            header("#tb 0: 1/1000000")
+            header("#media_type 0: video")
+            header("#codec_id 0: rawvideo")
+            header("#dimensions 0: 8x8")
         }
+        val checksum = String.format(java.util.Locale.ROOT, "%08x", FramePacketContract.checksum(bytes))
+        val contract = valid()
+        assertEquals(0L, contract.packet("0, 0, 0, 100000, 192, 0x$checksum", bytes))
+        assertEquals(123456L, contract.packet("0, 123456, 123456, 100000, 192, 0x$checksum", bytes))
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            contract.packet("0, 123456, 123456, 100000, 192, 0x$checksum", bytes)
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            valid().packet("0, 0, 0, 100000, 192, 0x00000000", bytes)
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).header("#dimensions 0: 9x8")
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).header("#tb 0: 1/30")
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).packet("0, 0, 0, 100000, 192, 0x$checksum", bytes)
+        }
+        assertEquals(0x00040003L, FramePacketContract.checksum(byteArrayOf(1, 2)))
+    }
+
+    @Test
+    fun stationaryEveryFrameRegionsAreCoalescedWithoutDroppingCoverage() {
+        val regions = mutableListOf<TimedPiiRegion>()
+        repeat(20_000) { i ->
+            VideoPiiRedactionEngine.appendCoverageRegion(regions,
+                TimedPiiRegion(i * 0.04, (i + 1) * 0.04, RectF(10f, 10f, 40f, 40f), PiiClass.FACE, "face"))
+        }
+        assertEquals(1, regions.size)
+        assertEquals(800.0, regions.single().endSec, 0.000001)
+        assertEquals(0.0, regions.single().startSec, 0.000001)
     }
 
     @Test
@@ -51,9 +79,7 @@ class VideoPiiRedactionEngineTest {
     }
 
     @Test
-    fun sequentialBudgetReservesSentinelAndRejectsSamplingFallback() {
-        assertEquals(0, SequentialVideoFrameDecoder.frameLimit(1000, 128L * 1024 * 1024))
-        assertEquals(2, SequentialVideoFrameDecoder.frameLimit(1000, 128L * 1024 * 1024 + 3000))
+    fun sequentialModeRejectsSamplingFallback() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             VideoPiiRedactionEngine.sampleCountForSpan(1000, VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
         }

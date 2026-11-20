@@ -279,7 +279,7 @@ object VideoPiiRedactionEngine {
         val counts = linkedMapOf<PiiClass, Int>()
         val failed = linkedMapOf<String, String>()
         val succeeded = linkedSetOf<String>()
-        val decoded = SequentialVideoFrameDecoder.decode(source, context.cacheDir, frameW, frameH, isCancelled) {
+        val decoded = SequentialVideoFrameDecoder.decode(context, source, frameW, frameH, isCancelled) {
                 bitmap, timestamp, next, index, total ->
             val summary = PiiMultiModalDetector.detectAllSummary(
                 context = context, ncnnEngine = piiEngine, bitmap = bitmap,
@@ -289,11 +289,15 @@ object VideoPiiRedactionEngine {
             failed.putAll(summary.failedEngines)
             succeeded.addAll(summary.successfulEngines)
             val detections = summary.detections
-            require(detections.size <= MAX_OBSERVATIONS_PER_FRAME &&
-                detections.size <= MAX_OBSERVATIONS - rawRegions.size) {
-                "Every-frame observation budget exceeded; split the video into shorter clips"
+            require(detections.size <= MAX_OBSERVATIONS_PER_FRAME) {
+                "Too many targets in one frame; no partial masks applied"
             }
-            rawRegions += frameCoverageRegions(timestamp, next, sourceDurationMs, frameW, frameH, detections)
+            for (region in frameCoverageRegions(timestamp, next, sourceDurationMs, frameW, frameH, detections)) {
+                appendCoverageRegion(rawRegions, region)
+                require(rawRegions.size <= MAX_OBSERVATIONS) {
+                    "Every-frame region budget exceeded; split the video into shorter clips"
+                }
+            }
             for (detection in detections) counts[detection.piiClass] = (counts[detection.piiClass] ?: 0) + 1
             onProgress?.invoke(index, total)
         }
@@ -302,6 +306,22 @@ object VideoPiiRedactionEngine {
             detectedCounts = counts, trackCount = regions.size, sampledFrames = decoded,
             attemptedFrames = decoded, failedEngines = failed, successfulEngines = succeeded,
             isScanDegraded = failed.isNotEmpty(), isEveryFrameScan = true)
+    }
+
+    // Merge only by containment-preserving union. Long stationary observations
+    // no longer consume one retained object per frame.
+    internal fun appendCoverageRegion(regions: MutableList<TimedPiiRegion>, region: TimedPiiRegion) {
+        val match = (regions.lastIndex downTo maxOf(0, regions.size - 256)).firstOrNull { index ->
+            val prior = regions[index]
+            prior.piiClass == region.piiClass && prior.label == region.label &&
+                region.startSec <= prior.endSec + 0.000001 &&
+                PiiNcnnEngine.calculateIoU(prior.rect, region.rect) >= 0.68f
+        }
+        if (match == null) regions.add(region)
+        else {
+            val prior = regions[match]
+            regions[match] = prior.copy(endSec = max(prior.endSec, region.endSec), rect = unionRect(prior.rect, region.rect))
+        }
     }
 
     internal fun frameCoverageRegions(
