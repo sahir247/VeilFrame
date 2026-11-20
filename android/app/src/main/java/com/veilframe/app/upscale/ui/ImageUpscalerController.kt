@@ -99,7 +99,29 @@ class ImageUpscalerController(
     private var inferenceJob: Job? = null
     private var downloadJob: Job? = null
     private var currentLoadJob: Job? = null
-    private var imageLoadGeneration: Long = 0L
+    @Volatile private var imageLoadGeneration: Long = 0L
+    private var released = false
+
+    /** Detach immediately, but don't close/recycle until the last inference
+     * worker has actually exited, not merely received a cancellation request. */
+    private fun retireSource() {
+        val access = sourceAccess
+        val bitmap = sourceBitmap
+        val preview = previewBitmap
+        sourceAccess = null
+        sourceBitmap = null
+        previewBitmap = null
+        sourceW = 0
+        sourceH = 0
+        val worker = inferenceJob
+        val dispose = {
+            runCatching { access?.close() }
+            if (bitmap != null && !bitmap.isRecycled) bitmap.recycle()
+            if (preview != null && preview !== bitmap && !preview.isRecycled) preview.recycle()
+        }
+        if (worker != null && !worker.isCompleted) worker.invokeOnCompletion { dispose() }
+        else dispose()
+    }
     private var suppressScaleListener: Boolean = false
     private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
     private var isCancelling: Boolean = false
@@ -251,6 +273,8 @@ class ImageUpscalerController(
         }
         currentLoadJob?.cancel()
         val generation = ++imageLoadGeneration
+        upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
+        retireSource()
 
         selectedUri = uri
         resultOutput = null
@@ -267,6 +291,9 @@ class ImageUpscalerController(
         updateUIState()
 
         currentLoadJob = scope.launch(Dispatchers.IO) {
+            var pendingPreview: Bitmap? = null
+            var pendingBitmap: Bitmap? = null
+            var pendingAccess: SourceAccess? = null
             try {
                 val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 activity.contentResolver.openInputStream(uri)?.use { s ->
@@ -297,6 +324,7 @@ class ImageUpscalerController(
                 // pipeline streams tiles from the Uri (UriRegionSource) and the
                 // 192 MB-class source bitmap never exists.
                 val preview = decodeSampledPreview(uri, 2048)
+                pendingPreview = preview
                 if (preview == null || generation != imageLoadGeneration || !isActive) {
                     if (preview == null) {
                         withContext(Dispatchers.Main) {
@@ -321,6 +349,7 @@ class ImageUpscalerController(
                         null
                     }
                 }
+                pendingBitmap = fullBitmap
                 if (generation != imageLoadGeneration || !isActive) {
                     return@launch
                 }
@@ -331,18 +360,19 @@ class ImageUpscalerController(
                     UriRegionSource(activity, uri, origW, origH)
                 }
 
-                // Safely close prior sourceAccess if present
-                val oldAccess = sourceAccess
-                sourceAccess = access
-                oldAccess?.close()
-
-                sourceBitmap = fullBitmap
-                previewBitmap = preview
-                sourceW = origW
-                sourceH = origH
-
+                pendingAccess = access
+                val sizeBytes = getUriFileSize(uri)
                 withContext(Dispatchers.Main) {
-                    if (generation != imageLoadGeneration) return@withContext
+                    if (generation != imageLoadGeneration || released) return@withContext
+                    // Publish the complete source atomically on Main.
+                    sourceAccess = access
+                    sourceBitmap = fullBitmap
+                    previewBitmap = preview
+                    sourceW = origW
+                    sourceH = origH
+                    pendingAccess = null
+                    pendingBitmap = null
+                    pendingPreview = null
 
                     upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
                     upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
@@ -351,7 +381,6 @@ class ImageUpscalerController(
                     upscalerBinding.tvUpscalerBadge.text = "ORIGINAL"
                     upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_blue))
 
-                    val sizeBytes = getUriFileSize(uri)
                     val sizeFormatted = String.format(Locale.US, "%.1f MB", sizeBytes / (1024.0 * 1024.0))
                     val filename = uri.lastPathSegment ?: "image"
                     val streamingNote = if (fullBitmap == null) " • streamed" else ""
@@ -373,17 +402,20 @@ class ImageUpscalerController(
                         onLog("[UPSCALER] Error loading image: ${e.message}")
                     }
                 }
+            } finally {
+                pendingAccess?.close()
+                pendingBitmap?.let { if (!it.isRecycled) it.recycle() }
+                pendingPreview?.let { if (!it.isRecycled) it.recycle() }
             }
         }
     }
 
     private fun resetToEmptySelectionState() {
+        ++imageLoadGeneration
+        currentLoadJob?.cancel()
         selectedUri = null
-        val oldAccess = sourceAccess
-        sourceAccess = null
-        oldAccess?.close()
-        sourceBitmap = null
-        previewBitmap = null
+        upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
+        retireSource()
         resultOutput = null
         val oldResult = resultFile
         resultFile = null
@@ -902,12 +934,16 @@ class ImageUpscalerController(
     }
 
     private fun executeUpscaling(src: SourceAccess, model: UpscaleModel, scale: Int) {
+        if (released || src !== sourceAccess || inferenceJob?.isCompleted == false) return
+        val generation = imageLoadGeneration
+        fun ownsUi() = !released && generation == imageLoadGeneration && !activity.isDestroyed
         upscalerBinding.layoutUpscalerProgress.visibility = View.VISIBLE
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
         upscalerBinding.progressUpscaler.isIndeterminate = true
         upscalerBinding.tvUpscalerProgressStatus.text = "Preparing ${model.name} pipeline..."
 
         val job = scope.launch {
+            var unclaimed: UpscaleOutput? = null
             try {
                 onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
 
@@ -935,6 +971,7 @@ class ImageUpscalerController(
                     }
                     Triple(gate, p, note)
                 }
+                if (!ownsUi()) return@launch
                 if (prep.first != null) {
                     upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
                     showRefusalDialog(prep.first!!, scale > 2)
@@ -958,6 +995,7 @@ class ImageUpscalerController(
                     listener = object : UpscaleInferenceEngine.InferenceProgressListener {
                         override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
                             scope.launch(Dispatchers.Main) {
+                                if (!ownsUi() || isCancelling) return@launch
                                 upscalerBinding.progressUpscaler.isIndeterminate = false
                                 com.veilframe.app.ui.motion.ProcessingMotionController.updateProgress(
                                     upscalerBinding.progressUpscaler,
@@ -969,6 +1007,7 @@ class ImageUpscalerController(
 
                         override fun onStatus(message: String) {
                             scope.launch(Dispatchers.Main) {
+                                if (!ownsUi() || isCancelling) return@launch
                                 upscalerBinding.tvUpscalerProgressStatus.text = message
                                 onLog("[UPSCALER] $message")
                             }
@@ -976,6 +1015,7 @@ class ImageUpscalerController(
 
                         override fun onStage(stage: String, currentTile: Int, totalTiles: Int) {
                             scope.launch(Dispatchers.Main) {
+                                if (!ownsUi() || isCancelling) return@launch
                                 if (totalTiles > 1) {
                                     upscalerBinding.tvUpscalerProgressStatus.text = "$stage: Tile $currentTile of $totalTiles"
                                 }
@@ -984,15 +1024,18 @@ class ImageUpscalerController(
                     }
                 )
 
+                unclaimed = result.getOrNull()
                 val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
 
                 withContext(Dispatchers.Main) {
+                    if (!ownsUi() || isCancelling) return@withContext
                     result.fold(
                         onSuccess = { output ->
                             (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
                                 safelyDeleteResultFile(prev.file)
                             }
                             resultOutput = output
+                            unclaimed = null
                             resultFile = (output as? UpscaleOutput.Streamed)?.file
                             cachedShareOutput = null
                             cachedShareFile = null
@@ -1077,15 +1120,18 @@ class ImageUpscalerController(
             } catch (e: Exception) {
                 Log.e(TAG, "Unhandled exception in upscale job: ${e.message}", e)
             } finally {
+                unclaimed?.discardUnclaimed()
                 withContext(NonCancellable + Dispatchers.Main) {
                     com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
                     if (resultOutput == null) {
                         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
                     }
-                    upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
                     isCancelling = false
                     inferenceJob = null
-                    updateUIState()
+                    if (!released && !activity.isDestroyed) {
+                        upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+                        updateUIState()
+                    }
                 }
             }
         }
@@ -1136,10 +1182,7 @@ class ImageUpscalerController(
 
     override fun discardAndReleaseAllResources() {
         cancelProcessing()
-        sourceBitmap?.recycle()
-        sourceBitmap = null
-        previewBitmap?.recycle()
-        previewBitmap = null
+        upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
         when (val out = resultOutput) {
             is UpscaleOutput.InMemory -> out.bitmap.recycle()
             is UpscaleOutput.Streamed -> {
@@ -1637,11 +1680,13 @@ class ImageUpscalerController(
     }
 
     fun release() {
+        released = true
+        ++imageLoadGeneration
         currentLoadJob?.cancel()
         inferenceJob?.cancel()
         downloadJob?.cancel()
+        retireSource()
         scope.cancel()
-        sourceAccess?.close()
         com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
         safelyDeleteResultFile(resultFile)

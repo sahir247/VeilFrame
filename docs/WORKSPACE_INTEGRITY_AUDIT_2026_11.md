@@ -593,3 +593,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21/A28/A29 — Upscaler transactional gallery export
 
 - Reject missing MediaStore row/stream, failed bitmap PNG compression, short or growing source copy and unsuccessful pending-row publication. Roll back allocated pending rows on exceptions and cancellation; an external provider can still reject rollback. Copy streamed PNG in bounded 64 KiB chunks with cancellation and exact source length checks; legacy file path stages before atomic move. Unique output name and captured scale. Gate completion/error UI on currently owned output and live activity. Two transaction tests added. Physical provider testing and broader share/export resource leasing remain pending.
+
+### A21/A26/A29 — Upscaler source import and worker lifetime ownership
+
+- Retire detached source access/bitmap/preview only after the actual inference coroutine completes, not at cancellation request. Source load now publishes all state on Main after generation check, recycles unadopted decoded bitmaps and closes unadopted source access on cancellation/errors; clear/release invalidate pending loads. Gate queued inference progress and result adoption against current source generation and cancellation; dispose unclaimed outputs in controller finally and skip destroyed binding updates. Do not admit overlapping inference jobs. No full controller/export lease decomposition; concurrent saved/shared artifact lifetime remains a separate acceptance item. CI and device lifecycle tests pending.
