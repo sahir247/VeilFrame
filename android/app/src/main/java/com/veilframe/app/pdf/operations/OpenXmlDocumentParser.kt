@@ -673,7 +673,18 @@ object OpenXmlDocumentParser {
             val pattern = one(it, "patternFill")
             if (pattern?.getAttribute("patternType") == "solid") rgb(one(pattern, "fgColor")) else null
         }.ifEmpty { listOf(null) }
-        data class Xf(val number: Int = 0, val font: Int = 0, val fill: Int = 0, val align: String = "left")
+        val borders = collection("borders", "border").map { border ->
+            fun side(name: String): XlsxBorderLine? {
+                val element = one(border, name) ?: return null
+                val kind = element.getAttribute("style")
+                if (kind.isEmpty() || kind == "none") return null
+                require(kind in XlsxBorderLine.supported) { "Unsupported orthogonal border style" }
+                return XlsxBorderLine(kind, rgb(one(element, "color")) ?: 0)
+            }
+            XlsxCellBorders(side("left"), side("right"), side("top"), side("bottom"))
+        }.ifEmpty { listOf(XlsxCellBorders()) }
+        data class Xf(val number: Int = 0, val font: Int = 0, val fill: Int = 0,
+                      val align: String = "left", val border: Int = 0)
         fun resolve(xf: Element, base: Xf): Xf {
             fun selected(attribute: String, apply: String, inherited: Int): Int =
                 when (xf.getAttribute(apply)) {
@@ -689,8 +700,11 @@ object OpenXmlDocumentParser {
             }
             val result = Xf(selected("numFmtId", "applyNumberFormat", base.number),
                 selected("fontId", "applyFont", base.font),
-                selected("fillId", "applyFill", base.fill), align)
-            require(result.font in fonts.indices && result.fill in fills.indices) { "Invalid cell font/fill reference" }
+                selected("fillId", "applyFill", base.fill), align,
+                selected("borderId", "applyBorder", base.border))
+            require(result.font in fonts.indices && result.fill in fills.indices && result.border in borders.indices) {
+                "Invalid cell font/fill/border reference"
+            }
             return result
         }
         val parents = collection("cellStyleXfs", "xf").map { resolve(it, Xf()) }
@@ -701,7 +715,7 @@ object OpenXmlDocumentParser {
             resolve(xf, parent)
         }.ifEmpty { listOf(Xf()) }
         val visuals = cells.map {
-            fonts[it.font].copy(fillRgb = fills[it.fill], horizontal = when (it.align) {
+            fonts[it.font].copy(fillRgb = fills[it.fill], borders = borders[it.border], horizontal = when (it.align) {
                 "center", "right", "left" -> it.align
                 else -> "left"
             })
@@ -810,13 +824,20 @@ object OpenXmlDocumentParser {
         }
         val rowHeights = mutableMapOf<Int, Float>()
         val styledRows = mutableMapOf<Int, IntArray>()
+        // Prefer the first saved worksheet view, not the device's display setting.
+        val firstView = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }.firstOrNull()
+        val showGridLines = when (firstView?.getAttribute("showGridLines").orEmpty()) {
+            "", "1", "true" -> true
+            "0", "false" -> false
+            else -> throw IOException("Invalid worksheet gridline flag")
+        }
 
         var frozenCols = 0
         var frozenRows = 0
         var cachedFormulaCount = 0
         fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
             XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights),
-            XlsxCellStyles(styleTable.visuals, styledRows))
+            XlsxCellStyles(styleTable.visuals, styledRows, showGridLines))
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {

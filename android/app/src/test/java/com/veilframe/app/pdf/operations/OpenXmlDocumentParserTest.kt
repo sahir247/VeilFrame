@@ -224,6 +224,23 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun parsesBorderStylesAndGridlineVisibility() {
+        val workbook = """<workbook><sheets><sheet name="Borders" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><borders><border/><border><left style="double"><color rgb="FF123456"/></left><bottom style="dashed"><color indexed="2"/></bottom></border></borders><cellStyleXfs><xf borderId="1"/></cellStyleXfs><cellXfs><xf/><xf xfId="0" borderId="0" applyBorder="0"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetViews><sheetView showGridLines="0"/></sheetViews><sheetData><row r="1"><c r="A1" s="1"><v>1</v></c></row></sheetData></worksheet>"""
+        val input = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+            assertTrue(!parsed.styles.showGridLines)
+            val lines = parsed.styles.at(0, 0).borders
+            assertEquals(XlsxBorderLine("double", 0x123456), lines.left)
+            assertEquals(XlsxBorderLine("dashed", 0xFF0000), lines.bottom)
+            assertEquals(null, lines.top)
+        } finally { input.delete() }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

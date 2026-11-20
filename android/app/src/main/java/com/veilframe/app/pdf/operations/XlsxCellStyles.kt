@@ -9,7 +9,8 @@ data class XlsxCellStyle(
     val italic: Boolean = false,
     val textRgb: Int? = null,
     val fillRgb: Int? = null,
-    val horizontal: String = "left"
+    val horizontal: String = "left",
+    val borders: XlsxCellBorders = XlsxCellBorders()
 ) {
     internal fun font(base: PDFont): PDFont = when {
         bold && italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE
@@ -22,7 +23,8 @@ data class XlsxCellStyle(
 /** Only explicitly styled rows allocate a packed cell-style index array. */
 data class XlsxCellStyles(
     val definitions: List<XlsxCellStyle> = listOf(XlsxCellStyle()),
-    val styledRows: Map<Int, IntArray> = emptyMap()
+    val styledRows: Map<Int, IntArray> = emptyMap(),
+    val showGridLines: Boolean = true
 ) {
     fun at(row: Int, column: Int): XlsxCellStyle {
         val index = styledRows[row]?.getOrNull(column) ?: 0
