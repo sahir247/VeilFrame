@@ -182,6 +182,24 @@ class StreamingPngWriterTest {
     }
 
     @Test
+    fun invalidRowOffsetsFailBeforeConsumingAnyRow() {
+        val file = tempFolder.newFile("row_offsets.png")
+        StreamingPngWriter(file, 2, 1).use { writer ->
+            for (offset in listOf(-1, Int.MIN_VALUE, Int.MAX_VALUE, 2)) {
+                org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                    writer.writeRow(IntArray(2), offset)
+                }
+                org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                    writer.writeRow(ByteArray(8), offset)
+                }
+            }
+            assertEquals(0f, writer.progress(), 0f)
+            writer.writeRow(intArrayOf(0xFF123456.toInt(), 0xFF654321.toInt()))
+        }
+        assertEquals(0xFF123456.toInt(), decodePng(file).getPixel(0, 0))
+    }
+
+    @Test
     fun testByteBufferUnderflowCheck() {
         val file = tempFolder.newFile("test_bb_underflow.png")
         val writer = StreamingPngWriter(file, 4, 2, colorType = StreamingPngWriter.ColorType.RGB)

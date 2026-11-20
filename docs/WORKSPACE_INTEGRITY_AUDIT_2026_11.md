@@ -565,3 +565,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21/A29 — Own bundle dialogs and teardown callbacks
 
 - Bundle selector returns its owned dialog, dismissed on replacement, cancellation and destruction; generation invalidated on activity release without updating destroyed views. Direct sublist paging avoids allocating skipped suffixes. Activity owns one review dialog, dismissing it before replacement and on destruction; existing dismissal cleanup cancels page jobs and reclaims unhanded review snapshots. No broad controller rewrite. Android lifecycle tests remain pending.
+
+### A26 — Streaming upscale validation cost and cancellation
+
+- Replace per-decoded-byte modulus checks with direct scanline-filter offset traversal. All zlib bytes, exact dimensions, scanline lengths, CRCs and EOF remain checked; reject empty IDAT and enforce the expected RGB/RGBA channel count for native inference output. Add cancellation checkpoints inside bounded inflate iterations and chunk reads. Validate array row offsets before consumption, including negative and extreme values. Added two regression tests for wide rows crossing inflater buffers, channel mismatch, cancellation/retry and bad offsets. This reduces validation bookkeeping, not neural inference FLOPs; no device speed or tile-seam claim.

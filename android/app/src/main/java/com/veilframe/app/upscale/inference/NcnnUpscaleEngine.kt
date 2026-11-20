@@ -64,7 +64,10 @@ class NcnnUpscaleEngine(
          * 5. IEND verification: terminates with an intact IEND chunk and zero trailing garbage.
          * 6. Validates without loading uncompressed full-size pixel arrays into RAM.
          */
-        internal fun validatePngFile(file: File, expectedW: Int, expectedH: Int) {
+        internal fun validatePngFile(file: File, expectedW: Int, expectedH: Int,
+                                     expectedChannels: Int? = null, checkpoint: () -> Unit = {}) {
+            require(expectedChannels == null || expectedChannels == 3 || expectedChannels == 4)
+            checkpoint()
             if (!file.isFile || expectedW <= 0 || expectedH <= 0 || file.length() < 57L) {
                 throw ImageValidationException(
                     "Output PNG is missing, truncated, or has invalid expected dimensions (${expectedW}x${expectedH})"
@@ -81,6 +84,7 @@ class NcnnUpscaleEngine(
             val decodedBuffer = ByteArray(8192)
             val fileLength = file.length()
             var decodedBytes = 0L
+            var nextFilterOffset = 0L
             var scanlineLength = 0L
             var expectedDecodedBytes = 0L
             var idatPayloadBytes = 0L
@@ -102,15 +106,18 @@ class NcnnUpscaleEngine(
 
             fun acceptDecoded(count: Int) {
                 if (count <= 0) return
+                val start = decodedBytes
                 decodedBytes = Math.addExact(decodedBytes, count.toLong())
                 if (decodedBytes > expectedDecodedBytes) {
                     throw ImageValidationException("PNG zlib stream expands beyond the expected pixel data size")
                 }
-                for (i in 0 until count) {
-                    val rowOffset = (decodedBytes - count + i) % scanlineLength
-                    if (rowOffset == 0L && decodedBuffer[i].toInt() != 0) {
+                // Only the filter bytes have row semantics. Inspect exactly
+                // those offsets (including boundaries between inflater chunks).
+                while (nextFilterOffset < decodedBytes) {
+                    if (decodedBuffer[(nextFilterOffset - start).toInt()].toInt() != 0) {
                         throw ImageValidationException("Unsupported PNG scanline filter; expected filter type 0")
                     }
+                    nextFilterOffset += scanlineLength
                 }
             }
 
@@ -121,6 +128,7 @@ class NcnnUpscaleEngine(
                 }
                 inflater.setInput(compressedBuffer, 0, bytesRead)
                 while (true) {
+                    checkpoint()
                     val produced = try {
                         inflater.inflate(decodedBuffer)
                     } catch (e: java.util.zip.DataFormatException) {
@@ -152,6 +160,7 @@ class NcnnUpscaleEngine(
                     var consumed = 8L
 
                     while (!hasIend) {
+                        checkpoint()
                         if (consumed + 12L > fileLength) {
                             throw ImageValidationException("Truncated PNG: missing complete chunk header or CRC")
                         }
@@ -192,6 +201,9 @@ class NcnnUpscaleEngine(
                                     6 -> 4
                                     else -> throw ImageValidationException("Only RGB/RGBA PNG output is supported")
                                 }
+                                if (expectedChannels != null && channels != expectedChannels) {
+                                    throw ImageValidationException("PNG channel count mismatch")
+                                }
                                 if (ihdr[10].toInt() != 0 || ihdr[11].toInt() != 0 || ihdr[12].toInt() != 0) {
                                     throw ImageValidationException("Unsupported PNG compression, filter, or interlace method")
                                 }
@@ -200,7 +212,7 @@ class NcnnUpscaleEngine(
                                 hasIhdr = true
                             }
                             "IDAT" -> {
-                                if (!hasIhdr || idatClosed || inflater.finished()) {
+                                if (!hasIhdr || idatClosed || inflater.finished() || length == 0) {
                                     throw ImageValidationException("PNG IDAT chunks must be contiguous and follow IHDR")
                                 }
                                 hasIdat = true
@@ -648,7 +660,10 @@ class NcnnUpscaleEngine(
             if (!coroutineContext.isActive) {
                 throw UpscaleCancellationException("Upscaling cancelled before output validation")
             }
-            validatePngFile(tempFile, outW, outH)
+            val verificationContext = coroutineContext
+            validatePngFile(tempFile, outW, outH, channels) {
+                if (!verificationContext.isActive) throw UpscaleCancellationException("Upscaling cancelled during output verification")
+            }
             if (!coroutineContext.isActive) {
                 throw UpscaleCancellationException("Upscaling cancelled before output publication")
             }

@@ -89,7 +89,7 @@ class StreamingPngWriter(
     fun writeRow(pixels: IntArray, offset: Int = 0) {
         check(state == State.OPEN) { "writer is in state $state, cannot write row" }
         check(rowsWritten < height) { "all $height rows already written" }
-        check(pixels.size - offset >= width) { "row buffer too small: need $width from offset $offset, but size is ${pixels.size}" }
+        check(offset >= 0 && offset <= pixels.size && pixels.size - offset >= width) { "row buffer too small: need $width from offset $offset, but size is ${pixels.size}" }
         rowBuf[0] = 0 // filter: None
         var b = 1
         if (colorType == ColorType.RGBA) {
@@ -139,7 +139,7 @@ class StreamingPngWriter(
         check(state == State.OPEN) { "writer is in state $state, cannot write row" }
         check(rowsWritten < height) { "all $height rows already written" }
         val rowBytes = width * colorType.channels
-        check(rawRow.size - offset >= rowBytes) {
+        check(offset >= 0 && offset <= rawRow.size && rawRow.size - offset >= rowBytes) {
             "rawRow size (${rawRow.size - offset}) less than required row bytes ($rowBytes)"
         }
         rowBuf[0] = 0 // filter: None
