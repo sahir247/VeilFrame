@@ -201,6 +201,25 @@ class RefineBrushCanvasViewTest {
     }
 
     @Test
+    fun replayRetainsEditsOlderThanBitmapUndoHistory() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        val cutout = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        try {
+            view.setBitmaps(source, cutout)
+            repeat(10) {
+                view.applyStrokeDirect(it.toFloat(), 10f, it.toFloat(), 10f)
+            }
+            assertEquals(10, view.replaySnapshot()!!.size)
+            var undone = 0
+            while (view.canUndo()) { view.undo(); undone++ }
+            assertTrue(undone in 1..5)
+            assertEquals(10 - undone, view.replaySnapshot()!!.size)
+            assertTrue(view.hasEdits)
+        } finally { view.cleanup(); source.recycle(); cutout.recycle() }
+    }
+
+    @Test
     fun historyCapacityRejectsUnboundedFullResolutionCopies() {
         val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
         assertTrue(view.historyCapacity(50, 50) >= 2)

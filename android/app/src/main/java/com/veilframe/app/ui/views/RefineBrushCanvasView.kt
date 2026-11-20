@@ -643,7 +643,16 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     fun canUndo(): Boolean = undoStack.size > 1
     fun canRedo(): Boolean = redoStack.isNotEmpty()
 
+    private fun finishBrushBeforeHistoryChange() {
+        if (strokeChanged) saveUndoState()
+        isDrawing = false
+        hasPendingDot = false
+        strokePath.reset()
+        showCursor = false
+    }
+
     fun undo() {
+        finishBrushBeforeHistoryChange()
         if (!canUndo()) return
         val current = undoStack.removeAt(undoStack.lastIndex)
         redoStack.add(current)
@@ -661,6 +670,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     }
 
     fun redo() {
+        finishBrushBeforeHistoryChange()
         if (!canRedo()) return
         val next = redoStack.removeAt(redoStack.lastIndex)
         undoStack.add(next)
