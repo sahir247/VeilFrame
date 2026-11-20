@@ -6,8 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
-import com.tom_roush.pdfbox.cos.COSObject
-import com.tom_roush.pdfbox.cos.COSObjectKey
+import com.tom_roush.pdfbox.cos.COSStream
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -25,7 +24,10 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
+import java.util.IdentityHashMap
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -98,6 +100,9 @@ internal fun inspectCompressionSource(document: PDDocument): Int {
         "Digitally signed or rights-enabled PDF cannot be safely rewritten. Preserve the original."
     }
     require(document.currentAccessPermission.canModify()) { "PDF does not permit modification" }
+    // The workspace does not accept an owner password or promise preservation of
+    // encryption settings; never turn a protected source into an ordinary PDF.
+    require(!document.isEncrypted) { "Encrypted PDF cannot be safely compressed in this workspace" }
     return document.numberOfPages
 }
 
@@ -110,6 +115,65 @@ internal fun isPlainRgbCompressionImage(dictionary: COSDictionary): Boolean {
     return dictionary.getDictionaryObject(COSName.getPDFName("ColorSpace")) == COSName.getPDFName("DeviceRGB") &&
         dictionary.getInt(COSName.getPDFName("BitsPerComponent")) == 8 &&
         dictionary.keySet().all { it.name in allowed }
+}
+
+/**
+ * A structural optimizer is allowed to change eligible image resources, not page
+ * drawing commands, boxes, rotation, or annotation identity/geometry. Compare
+ * decoded command bytes rather than compressed streams (their filters may differ).
+ * This is a conservative structural guard, not a visual equivalence proof.
+ */
+internal fun requireCompressionStructure(
+    source: PDDocument,
+    candidate: PDDocument,
+    checkpoint: () -> Unit = {}
+) {
+    check(source.numberOfPages == candidate.numberOfPages) { "Compressed PDF page count changed" }
+    check(source.isEncrypted == candidate.isEncrypted) { "PDF encryption state changed" }
+
+    fun box(rect: PDRectangle?): List<Float>? = rect?.let {
+        listOf(it.lowerLeftX, it.lowerLeftY, it.upperRightX, it.upperRightY)
+    }
+    fun geometry(page: PDPage) = listOf(
+        box(page.mediaBox), box(page.cropBox), box(page.bleedBox), box(page.trimBox), box(page.artBox)
+    )
+    fun annotations(page: PDPage) = page.annotations.map {
+        Triple(it.cosObject.getNameAsString(COSName.SUBTYPE), box(it.rectangle), it.cosObject.getString(COSName.getPDFName("NM")))
+    }
+    fun digest(page: PDPage): ByteArray {
+        val sha = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(64 * 1024)
+        page.contents?.use { input ->
+            while (true) {
+                checkpoint()
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count > 0) sha.update(buffer, 0, count)
+            }
+        }
+        return sha.digest()
+    }
+
+    for (i in 0 until source.numberOfPages) {
+        checkpoint()
+        val before = source.getPage(i)
+        val after = candidate.getPage(i)
+        check(before.rotation == after.rotation && before.userUnit == after.userUnit &&
+            geometry(before) == geometry(after)) { "Compression altered page ${i + 1} geometry" }
+        check(annotations(before) == annotations(after)) { "Compression altered page ${i + 1} annotations" }
+        check(digest(before).contentEquals(digest(after))) { "Compression altered page ${i + 1} drawing commands" }
+    }
+}
+
+private suspend fun copyCompressionStream(input: InputStream, output: OutputStream) {
+    val buffer = ByteArray(64 * 1024)
+    while (true) {
+        currentCoroutineContext().ensureActive()
+        val count = input.read(buffer)
+        if (count < 0) break
+        if (count > 0) output.write(buffer, 0, count)
+    }
+    currentCoroutineContext().ensureActive()
 }
 
 /** Compress eligible opaque RGB images without rasterizing pages or rewriting signed documents. */
@@ -183,6 +247,7 @@ class PdfCompressor {
         var tempFile: File? = null
         var operationDir: File? = null
         try {
+            require(targetSizeBytes > 0) { "Target size must be positive" }
             ensureActive()
             onProgress(0.05f)
 
@@ -191,16 +256,16 @@ class PdfCompressor {
             tempFile = File(cacheDir, "source.pdf")
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
+                    copyCompressionStream(input, output)
                 }
             } ?: return@withContext Result.failure(IllegalStateException("Cannot open input file"))
 
             val originalSize = tempFile.length()
             val originalPages = sourcePageCount(tempFile)
             if (originalSize <= targetSizeBytes) {
-                onProgress(1.0f)
-                tempFile.inputStream().use { it.copyTo(outputStream) }
+                tempFile.inputStream().use { copyCompressionStream(it, outputStream) }
                 outputStream.flush()
+                onProgress(1.0f)
                 return@withContext Result.success(
                     CompressionResult(
                         originalSize = originalSize,
@@ -275,11 +340,12 @@ class PdfCompressor {
             if (bestFile != null) {
                 val pages = requirePageCount(bestFile, originalPages)
                 val isTargetReached = bestSize <= targetSizeBytes
-                onProgress(1.0f)
+                ensureActive()
 
                 return@withContext if (isTargetReached) {
-                    bestFile.inputStream().use { it.copyTo(outputStream) }
+                    bestFile.inputStream().use { copyCompressionStream(it, outputStream) }
                     outputStream.flush()
+                    onProgress(1.0f)
                     Result.success(
                         CompressionResult(
                             originalSize = originalSize,
@@ -303,7 +369,7 @@ class PdfCompressor {
                     }
                     Result.failure(
                         TargetSizeNotReachedException(
-                            message = "Could not reach target size. Smallest possible size is ${bestSize} bytes.",
+                            message = "Could not reach target size. Smallest size among tested settings is ${bestSize} bytes.",
                             smallestAchievableSize = bestSize,
                             fallbackFile = fallback,
                             originalSize = originalSize,
@@ -349,7 +415,7 @@ class PdfCompressor {
             // Copy URI content to temp file
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
+                    copyCompressionStream(input, output)
                 }
             } ?: return@withContext Result.failure(
                 IllegalStateException("Cannot open input file")
@@ -360,9 +426,9 @@ class PdfCompressor {
 
             // Skip for very small files
             if (originalSize < 10 * 1024) {
-                onProgress(1.0f)
-                tempFile.inputStream().use { it.copyTo(outputStream) }
+                tempFile.inputStream().use { copyCompressionStream(it, outputStream) }
                 outputStream.flush()
+                onProgress(1.0f)
                 return@withContext Result.success(CompressionResult(
                     originalSize = originalSize, compressedSize = originalSize,
                     compressionRatio = 1f, timeTakenMs = System.currentTimeMillis() - startTime,
@@ -395,7 +461,7 @@ class PdfCompressor {
             val finalFile = resultFile ?: tempFile
             val pagesProcessed = requirePageCount(finalFile, originalPages)
             ensureActive()
-            finalFile.inputStream().use { it.copyTo(outputStream) }
+            finalFile.inputStream().use { copyCompressionStream(it, outputStream) }
             outputStream.flush()
 
             onProgress(1.0f)
@@ -456,7 +522,9 @@ class PdfCompressor {
             // Compression must not silently remove document metadata or private application data.
             
             var imagesOptimized = 0
-            val optimizedImages = mutableMapOf<COSObjectKey, PDImageXObject>()
+            // Cache by actual original stream identity, not a name in the parent
+            // resource dictionary (names are local to the XObject subdictionary).
+            val optimizedImages = IdentityHashMap<COSStream, PDImageXObject>()
             
             // Process each page
             for (pageIndex in 0 until totalPages) {
@@ -471,8 +539,18 @@ class PdfCompressor {
                 onProgress(pageProgress)
             }
             
+            // Do not rewrite a document if no eligible image was reduced.
+            if (imagesOptimized == 0) {
+                outputFile.delete()
+                return null
+            }
             document.save(outputFile)
-            requirePageCount(outputFile, totalPages)
+            val cc = currentCoroutineContext()
+            PDDocument.load(inputFile, MemoryUsageSetting.setupTempFileOnly()).use { original ->
+                PDDocument.load(outputFile, MemoryUsageSetting.setupTempFileOnly()).use { candidate ->
+                    requireCompressionStructure(original, candidate) { cc.ensureActive() }
+                }
+            }
             outputFile
             
         } catch (e: CancellationException) {
@@ -494,7 +572,7 @@ class PdfCompressor {
         document: PDDocument,
         resources: PDResources,
         profile: CompressionProfile,
-        optimizedCache: MutableMap<COSObjectKey, PDImageXObject>
+        optimizedCache: MutableMap<COSStream, PDImageXObject>
     ): Int {
         var optimizedCount = 0
         
@@ -504,33 +582,16 @@ class PdfCompressor {
             for (name in xObjectNames) {
                 currentCoroutineContext().ensureActive()
                 try {
-                    // Check if it's an indirect object (reference) to enable deduplication
-                    val item = resources.cosObject.getItem(name)
-                    var cacheKey: COSObjectKey? = null
-
-                    if (item is COSObject) {
-                        cacheKey = COSObjectKey(item.objectNumber, item.generationNumber)
-                        val cached = optimizedCache[cacheKey]
-                        if (cached != null) {
-                            resources.put(name, cached)
-                            // Count as optimized since we replaced it with an optimized version
-                            optimizedCount++
-                            continue
-                        }
-                    }
-
                     val xObject = resources.getXObject(name)
-                    
                     if (xObject is PDImageXObject) {
-                        val optimized = optimizeImage(document, xObject, profile)
+                        val original = xObject.cosObject
+                        val cached = optimizedCache[original]
+                        val optimized = cached ?: optimizeImage(document, xObject, profile)
                         if (optimized != null) {
                             resources.put(name, optimized)
+                            optimizedCache[original] = optimized
                             optimizedCount++
-
-                            if (cacheKey != null) {
-                                optimizedCache[cacheKey] = optimized
-                            }
-                         }
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -789,6 +850,7 @@ class PdfCompressor {
         var operationDir: File? = null
 
         try {
+            require(targetBytes > 0) { "Target size must be positive" }
             ensureActive()
             onProgress(0.05f)
 
@@ -799,7 +861,7 @@ class PdfCompressor {
             // Copy URI content to temp file
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
+                    copyCompressionStream(input, output)
                 }
             } ?: return@withContext Result.failure(
                 IllegalStateException("Cannot open input file")
@@ -808,11 +870,11 @@ class PdfCompressor {
             val originalSize = tempFile.length()
             val originalPages = sourcePageCount(tempFile)
 
-            // Skip for very small files
-            if (originalSize < 10 * 1024 || originalSize <= targetBytes) {
-                onProgress(1.0f)
-                tempFile.inputStream().use { it.copyTo(outputStream) }
+            // A small file above target must still be eligible for optimization.
+            if (originalSize <= targetBytes) {
+                tempFile.inputStream().use { copyCompressionStream(it, outputStream) }
                 outputStream.flush()
+                onProgress(1.0f)
                 val baseResult = CompressionResult(
                     originalSize = originalSize,
                     compressedSize = originalSize,
@@ -864,7 +926,7 @@ class PdfCompressor {
             val finalFile = resultFile ?: tempFile
             val pagesProcessed = requirePageCount(finalFile, originalPages)
             ensureActive()
-            finalFile.inputStream().use { it.copyTo(outputStream) }
+            finalFile.inputStream().use { copyCompressionStream(it, outputStream) }
             outputStream.flush()
 
             onProgress(1.0f)

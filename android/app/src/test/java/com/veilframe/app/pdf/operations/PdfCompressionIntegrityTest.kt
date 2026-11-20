@@ -4,6 +4,9 @@ import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,6 +43,35 @@ class PdfCompressionIntegrityTest {
             doc.addPage(PDPage())
             doc.documentCatalog.cosObject.setItem(COSName.getPDFName("Perms"), COSDictionary())
             inspectCompressionSource(doc)
+        }
+    }
+
+    @Test
+    fun structuralRewriteRejectsChangedCommandsAndGeometry() {
+        PDDocument().use { original ->
+            val page = PDPage(PDRectangle(300f, 420f))
+            original.addPage(page)
+            PDPageContentStream(original, page).use { stream ->
+                stream.addRect(10f, 20f, 30f, 40f)
+                stream.fill()
+            }
+            val bytes = ByteArrayOutputStream().also { original.save(it) }.toByteArray()
+            PDDocument.load(bytes).use { candidate ->
+                requireCompressionStructure(original, candidate)
+                candidate.getPage(0).rotation = 90
+                org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                    requireCompressionStructure(original, candidate)
+                }
+                candidate.getPage(0).rotation = 0
+                PDPageContentStream(candidate, candidate.getPage(0),
+                    PDPageContentStream.AppendMode.APPEND, true).use { stream ->
+                    stream.addRect(1f, 1f, 2f, 2f)
+                    stream.fill()
+                }
+                org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                    requireCompressionStructure(original, candidate)
+                }
+            }
         }
     }
 
