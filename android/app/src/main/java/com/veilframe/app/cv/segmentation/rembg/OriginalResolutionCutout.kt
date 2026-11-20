@@ -52,7 +52,7 @@ internal object OriginalResolutionCutout {
     @Suppress("DEPRECATION")
     fun export(source: RembgImageSource.Staged, info: RembgSourceInfo, matte: RembgAlphaMatte,
                destination: File, trim: Boolean = false, backdrop: CutoutBackdrop = CutoutBackdrop.TRANSPARENT,
-               checkpoint: () -> Unit = {}) {
+               strokes: List<CutoutStroke> = emptyList(), checkpoint: () -> Unit = {}) {
         require(supports(info)) { "Original-resolution PNG is limited to admitted JPEG/PNG sources" }
         require(source.file.canonicalFile != destination.canonicalFile)
         val parent = requireNotNull(destination.absoluteFile.parentFile)
@@ -67,6 +67,7 @@ internal object OriginalResolutionCutout {
             checkpoint()
             val decoder = BitmapRegionDecoder.newInstance(source.file.absolutePath, false)
                 ?: throw IOException("Source codec does not support region decoding")
+            var brushReplay: OriginalBrushReplay? = null
             try {
                 val geometry = ExifRasterGeometry(decoder.width, decoder.height, RembgImageUtils.readOrientation(source))
                 check(geometry.width == info.width && geometry.height == info.height) { "Source geometry changed" }
@@ -75,6 +76,9 @@ internal object OriginalResolutionCutout {
                 val bandHeight = (STRIP_PIXELS / width).coerceAtLeast(1)
                 val tilePixels = IntArray(width * minOf(bandHeight, height))
                 val sampler = matte.sampler(width, height)
+                if (strokes.isNotEmpty()) {
+                    brushReplay = OriginalBrushReplay(width, height, minOf(bandHeight, height), sampler, strokes)
+                }
                 var tile = Rect()
                 var bandStart = -1
                 var bandEnd = 0
@@ -109,7 +113,8 @@ internal object OriginalResolutionCutout {
                         row[x] = tilePixels[index]
                         index += step
                     }
-                    sampler.apply(row, y)
+                    val replay = brushReplay
+                    if (replay == null) sampler.apply(row, y) else replay.apply(row, y, checkpoint)
                 }
                 // The final multiplied alpha determines the exact visible bounds.
                 // In particular, the source might already be transparent.
@@ -133,7 +138,10 @@ internal object OriginalResolutionCutout {
                 stage.inputStream().buffered().use { input ->
                     StreamingPngVerifier.verify(input, crop.width, crop.height, checkpoint)
                 }
-            } finally { decoder.recycle() }
+            } finally {
+                brushReplay?.close()
+                decoder.recycle()
+            }
             checkpoint()
             Files.move(stage.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally { stage.delete() }

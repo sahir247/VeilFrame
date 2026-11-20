@@ -40,7 +40,11 @@ class RembgAlphaMatte private constructor(val width: Int, val height: Int, priva
                 fx[x] = (sx - x0[x]).toFloat()
             }
         }
-        fun apply(row: IntArray, y: Int) {
+        fun apply(row: IntArray, y: Int) = sampleRow(row, y, false)
+
+        internal fun fillMaskRow(row: IntArray, y: Int) = sampleRow(row, y, true)
+
+        private fun sampleRow(row: IntArray, y: Int, maskOnly: Boolean) {
             require(row.size == targetWidth && y in 0 until targetHeight)
             val sy = ((y + 0.5) * height / targetHeight - 0.5).coerceIn(0.0, (height - 1).toDouble())
             val y0 = sy.toInt()
@@ -55,9 +59,13 @@ class RembgAlphaMatte private constructor(val width: Int, val height: Int, priva
                 val b = (alpha[lower + left].toInt() and 255) * (1f - weight) +
                     (alpha[lower + right].toInt() and 255) * weight
                 val mask = (a * (1f - fy) + b * fy + 0.5f).toInt().coerceIn(0, 255)
-                val pixel = row[x]
-                val outAlpha = ((pixel ushr 24) * mask + 127) / 255
-                row[x] = if (outAlpha == 0) 0 else (pixel and 0x00FFFFFF) or (outAlpha shl 24)
+                if (maskOnly) {
+                    row[x] = if (mask == 0) 0 else (mask shl 24) or 0x00FFFFFF
+                } else {
+                    val pixel = row[x]
+                    val outAlpha = ((pixel ushr 24) * mask + 127) / 255
+                    row[x] = if (outAlpha == 0) 0 else (pixel and 0x00FFFFFF) or (outAlpha shl 24)
+                }
             }
         }
     }

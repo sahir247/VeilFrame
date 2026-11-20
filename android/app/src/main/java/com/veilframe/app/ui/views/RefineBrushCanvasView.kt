@@ -1,6 +1,8 @@
 package com.veilframe.app.ui.views
 
 import android.animation.ValueAnimator
+import com.veilframe.app.cv.segmentation.rembg.BrushReplayJournal
+import com.veilframe.app.cv.segmentation.rembg.CutoutStroke
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -156,6 +158,8 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     private var committedEdits = 0
     private var droppedEdits = 0
     private var strokeChanged = false
+    private val replayJournal = BrushReplayJournal()
+    internal fun replaySnapshot(): List<CutoutStroke>? = replayJournal.snapshot()
     val hasEdits: Boolean get() = committedEdits > 0 || strokeChanged
 
     // At most 64 MiB of owned brush working/history/result allocations, with
@@ -494,6 +498,9 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         val canvas = workingCanvas ?: return
         if (!listOf(x1, y1, x2, y2).all { it.isFinite() }) return
         strokeChanged = true
+        val bitmap = workingCutoutBitmap ?: return
+        replayJournal.append(CutoutStroke(bitmap.width, bitmap.height, x1, y1, x2, y2,
+            brushRadiusPx, brushMode == BrushMode.RESTORE))
 
         if (x1 == x2 && y1 == y2) {
             // Draw circle dot at single tap
@@ -628,6 +635,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         }
         undoStack.add(checkNotNull(current.copy(Bitmap.Config.ARGB_8888, false)))
         committedEdits++
+        replayJournal.commit()
         strokeChanged = false
         notifyHistoryChanged()
     }
@@ -640,6 +648,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         val current = undoStack.removeAt(undoStack.lastIndex)
         redoStack.add(current)
         committedEdits = maxOf(droppedEdits, committedEdits - 1)
+        replayJournal.undo()
 
         val previous = undoStack.last()
         workingCutoutBitmap?.recycle()
@@ -656,6 +665,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         val next = redoStack.removeAt(redoStack.lastIndex)
         undoStack.add(next)
         committedEdits++
+        replayJournal.redo()
 
         workingCutoutBitmap?.recycle()
         val restored = next.copy(Bitmap.Config.ARGB_8888, true)
@@ -693,6 +703,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         hudHandler.removeCallbacks(hideHudRunnable)
         committedEdits = 0
         droppedEdits = 0
+        replayJournal.clear()
         strokeChanged = false
         isDrawing = false
         hasPendingDot = false

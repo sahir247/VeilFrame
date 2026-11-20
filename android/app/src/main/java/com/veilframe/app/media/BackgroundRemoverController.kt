@@ -27,6 +27,8 @@ import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
 import com.veilframe.app.cv.segmentation.rembg.RembgImageSource
 import com.veilframe.app.cv.segmentation.rembg.RembgResult
 import com.veilframe.app.cv.segmentation.rembg.RembgAlphaMatte
+import com.veilframe.app.cv.segmentation.rembg.BrushReplayJournal
+import com.veilframe.app.cv.segmentation.rembg.CutoutStroke
 import com.veilframe.app.cv.segmentation.rembg.RembgSourceInfo
 import com.veilframe.app.cv.segmentation.rembg.OriginalResolutionCutout
 import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog
@@ -96,6 +98,7 @@ class BackgroundRemoverController(
     private var removalGeneration = 0L
     private var originalMatte: RembgAlphaMatte? = null
     private var originalInfo: RembgSourceInfo? = null
+    private var originalStrokes: List<CutoutStroke> = emptyList()
     private var originalExportJob: Job? = null
 
     private fun invalidateOriginalExport() {
@@ -103,6 +106,7 @@ class BackgroundRemoverController(
         originalExportJob = null
         originalMatte = null
         originalInfo = null
+        originalStrokes = emptyList()
     }
 
     private fun releaseSourceImage() {
@@ -1106,8 +1110,17 @@ class BackgroundRemoverController(
             if (edited != null) {
                 val prevRaw = rawCutoutBitmap
                 val prevRes = resultBitmap
-                // The original neural matte no longer represents manual brush edits.
-                invalidateOriginalExport()
+                val edits = binding.refineBrushCanvas.replaySnapshot()
+                originalExportJob?.cancel()
+                originalExportJob = null
+                if (originalMatte != null) {
+                    if (edits != null && edits.size <= BrushReplayJournal.MAX_SEGMENTS - originalStrokes.size) {
+                        originalStrokes = originalStrokes + edits
+                    } else {
+                        invalidateOriginalExport()
+                        Toast.makeText(activity, "Brush replay limit reached; regular-resolution export remains available.", Toast.LENGTH_LONG).show()
+                    }
+                }
                 rawCutoutBitmap = edited
                 resultBitmap = if (binding.switchTrimTransparent.isChecked) {
                     com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(edited)
@@ -1290,6 +1303,7 @@ class BackgroundRemoverController(
         val matte = originalMatte ?: return
         val info = originalInfo ?: return
         val generation = sourceGeneration
+        val strokes = originalStrokes
         val trim = binding.switchTrimTransparent.isChecked
         val backdrop = when (binding.splitViewBgCompare.backgroundMode) {
             BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
@@ -1305,11 +1319,13 @@ class BackgroundRemoverController(
             else "Full image dimensions are preserved."
         MaterialAlertDialogBuilder(activity)
             .setTitle("Original-resolution PNG")
-            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte. $dimensionsLabel $backgroundLabel")
+            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte" +
+                (if (strokes.isNotEmpty()) " and recorded brush edits (edges rendered at original resolution)." else ".") +
+                " $dimensionsLabel $backgroundLabel")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Export") { _, _ ->
-                if (source === sourceImage && matte === originalMatte && generation == sourceGeneration) {
-                    exportOriginalResolution(source, info, matte, generation, trim, backdrop)
+                if (source === sourceImage && matte === originalMatte && strokes === originalStrokes && generation == sourceGeneration) {
+                    exportOriginalResolution(source, info, matte, generation, trim, backdrop, strokes)
                 }
             }.show()
     }
@@ -1317,7 +1333,8 @@ class BackgroundRemoverController(
     private fun exportOriginalResolution(
         source: RembgImageSource.Staged, info: RembgSourceInfo,
         matte: RembgAlphaMatte, generation: Long, trim: Boolean,
-        backdrop: com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop
+        backdrop: com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop,
+        strokes: List<CutoutStroke>
     ) {
         if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
         val release = sourceLeases.acquire(source)
@@ -1336,10 +1353,11 @@ class BackgroundRemoverController(
                         val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
                         val out = File.createTempFile("cutout_original_", ".png", dir)
                         destination = out
-                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim, backdrop = backdrop) { cc.ensureActive() }
+                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim, backdrop = backdrop,
+                            strokes = strokes) { cc.ensureActive() }
                     }
                     if (generation != sourceGeneration || source !== sourceImage ||
-                        matte !== originalMatte || activity.isFinishing || activity.isDestroyed) return@launch
+                        matte !== originalMatte || strokes !== originalStrokes || activity.isFinishing || activity.isDestroyed) return@launch
                     progress.dismiss()
                     handedOff = onExportPngRequest(checkNotNull(destination), true)
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {

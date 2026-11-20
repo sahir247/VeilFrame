@@ -158,6 +158,7 @@ class RefineBrushCanvasViewTest {
         assertEquals(0, Color.alpha(view.getRefinedBitmap()!!.getPixel(15, 15)))
         assertTrue(view.canUndo())
         assertFalse(view.canRedo())
+        assertEquals(1, view.replaySnapshot()!!.size)
 
         // Undo -> should revert to green with alpha = 255
         view.undo()
@@ -165,9 +166,11 @@ class RefineBrushCanvasViewTest {
         assertEquals(Color.GREEN, view.getRefinedBitmap()!!.getPixel(15, 15))
         assertFalse(view.canUndo())
         assertTrue(view.canRedo())
+        assertTrue(view.replaySnapshot()!!.isEmpty())
 
         // Redo -> should re-erase center
         view.redo()
+        assertEquals(1, view.replaySnapshot()!!.size)
         assertEquals(0, Color.alpha(view.getRefinedBitmap()!!.getPixel(15, 15)))
         assertTrue(view.canUndo())
         assertFalse(view.canRedo())
