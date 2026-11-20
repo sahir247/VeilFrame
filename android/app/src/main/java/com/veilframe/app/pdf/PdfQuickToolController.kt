@@ -11,7 +11,6 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.os.Build
-import java.io.FileInputStream
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -53,6 +52,7 @@ import com.veilframe.app.pdf.operations.MergeItem
 import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.OfficeConverter
+import com.veilframe.app.pdf.operations.OfficeSourceFormat
 import com.veilframe.app.pdf.operations.PageRange
 import com.veilframe.app.pdf.operations.PdfCompressor
 import com.veilframe.app.pdf.operations.PdfFormFiller
@@ -124,6 +124,13 @@ class PdfQuickToolController(
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
     private var pendingSaveGeneration: Long? = null
+    private var officePreviewBitmap: Bitmap? = null
+
+    private fun clearOfficePreview() {
+        binding.ivDocVisualPreview.setImageDrawable(null)
+        officePreviewBitmap?.recycle()
+        officePreviewBitmap = null
+    }
 
     /** The document picker is not a save: only a completed SAF copy may mark the output saved. */
     fun onSaveResult(success: Boolean) {
@@ -211,7 +218,7 @@ class PdfQuickToolController(
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.panelParamDocPreview.visibility = View.GONE
         binding.cardDocVisualPreview.visibility = View.GONE
-        binding.ivDocVisualPreview.setImageDrawable(null)
+        clearOfficePreview()
         binding.pbDocVisualLoading.visibility = View.GONE
         binding.tvDocPreviewSummary.text = ""
         binding.tvDocPreviewContent.text = ""
@@ -865,13 +872,13 @@ class PdfQuickToolController(
             binding.tvQuickToolDocName.text = primaryDocName
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
+                isSourceReady = false
+                binding.btnQuickToolExecute.isEnabled = false
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
                 binding.pbDocVisualLoading.visibility = View.VISIBLE
-                binding.ivDocVisualPreview.setImageDrawable(null)
+                clearOfficePreview()
                 inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
@@ -934,177 +941,147 @@ class PdfQuickToolController(
     private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
         val selectedName = primaryDocName
         launchTransient {
-            val lower = selectedName.lowercase()
-            var summary = "Office Document"
-            var previewText = ""
-            var metaText = "Ready to convert"
             var previewBitmap: Bitmap? = null
-
+            var adopted = false
+            var previewFile: File? = null
             try {
-                when {
-                    lower.endsWith(".docx") || lower.endsWith(".doc") -> {
-                        metaText = "Word Document (${lower.substringAfterLast('.')})"
-                        val paragraphs = mutableListOf<String>()
-                        var tablesCount = 0
-
-                        val tempDoc = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.docx")
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempDoc.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            if (tempDoc.exists() && tempDoc.length() > 0) {
-                                try {
-                                    FileInputStream(tempDoc).use { stream ->
-                                        val doc = XWPFDocument(stream)
-                                        for (p in doc.paragraphs) {
-                                            val t = p.text?.trim()
-                                            if (!t.isNullOrBlank()) {
-                                                paragraphs.add(t)
-                                            }
-                                        }
-                                        tablesCount = doc.tables.size
-                                    }
-                                } catch (t: Throwable) {
-                                    Log.w(TAG, "POI DOCX preview extraction failed: ${t.message}; using zip extractor", t)
-                                    val text = officeConverter.extractDocxTextViaZip(tempDoc)
-                                    if (text.isNotBlank()) {
-                                        paragraphs.addAll(text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() })
-                                    }
-                                }
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "Failed to copy DOCX for preview: ${t.message}", t)
-                        } finally {
-                            tempDoc.delete()
+                val format = OfficeSourceFormat.fromName(selectedName)
+                val source = File.createTempFile("office_preview_", format.suffix, activity.cacheDir)
+                previewFile = source
+                val input = activity.contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("Cannot open selected document")
+                input.use { stream ->
+                    source.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytes = 0L
+                        while (true) {
+                            ensureActive()
+                            val n = stream.read(buffer)
+                            if (n < 0) break
+                            bytes += n
+                            if (bytes > 128L * 1024 * 1024) throw java.io.IOException("Document exceeds 128 MiB preview limit")
+                            output.write(buffer, 0, n)
                         }
-
-                        if (paragraphs.isNotEmpty()) {
-                            summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
-                            previewText = paragraphs.take(15).joinToString("\n\n")
-                        } else {
-                            summary = "Word Document ($selectedName)"
-                            previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("DOCX", selectedName, paragraphs, tablesCount, null, null)
                     }
-                    lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
-                        metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
-                        val sheetGrid = mutableListOf<List<String>>()
+                }
+                ensureActive()
+                require(source.length() > 0) { "Selected document is empty" }
+                val paragraphs = mutableListOf<String>()
+                val grid = mutableListOf<List<String>>()
+                val slides = mutableListOf<String>()
+                var tables = 0
+                var summary = format.label
+                val previewText = when (format) {
+                    OfficeSourceFormat.DOCX -> {
                         try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val tempFile = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.xlsx")
-                                val wb = try {
-                                    tempFile.outputStream().use { output -> stream.copyTo(output) }
-                                    OpenXmlDocumentParser.parseXlsx(tempFile)
-                                } finally {
-                                    tempFile.delete()
-                                }
-                                val sheetCount = wb.sheets.size
-                                val sheetNames = wb.sheets.joinToString(", ") { it.name }
-                                summary = "Excel Workbook • $sheetCount sheet(s) ($sheetNames)"
-                                val firstSheet = wb.sheets.firstOrNull()
-                                val previewSb = StringBuilder()
-                                if (firstSheet != null) {
-                                    previewSb.append("Sheet: ${firstSheet.name}\n")
-                                    val rowCount = minOf(firstSheet.rows.size, 15)
-                                    for (r in 0 until rowCount) {
-                                        val row = firstSheet.rows[r]
-                                        val cells = row.take(6).filter { it.isNotBlank() }
-                                        if (cells.isNotEmpty()) {
-                                            sheetGrid.add(cells)
-                                            previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
-                                        }
+                            source.inputStream().use { stream ->
+                                XWPFDocument(stream).use { doc ->
+                                    tables = doc.tables.size
+                                    summary = "Word • ${doc.paragraphs.size} paragraphs, $tables tables"
+                                    for (paragraph in doc.paragraphs.asSequence().take(40)) {
+                                        ensureActive()
+                                        paragraph.text?.trim()?.take(800)?.takeIf { it.isNotBlank() }?.let { paragraphs.add(it) }
                                     }
                                 }
-                                previewText = previewSb.toString().trim()
                             }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "XLSX preview failed: ${t.message}", t)
-                            summary = "Excel Spreadsheet ($selectedName)"
-                            previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (unsupported: LinkageError) {
+                            // Android may lack POI desktop rendering classes. The fallback
+                            // parser is also used by the converter, not a binary text decoder.
+                            val doc = OpenXmlDocumentParser.parseDocx(source)
+                            require(doc.nodes.isNotEmpty()) { "Cannot inspect Word document" }
+                            tables = doc.tables.size
+                            summary = "Word • extracted content (fallback parser)"
+                            paragraphs.addAll(doc.paragraphs.take(40).map { it.fullText.take(800) })
                         }
-                        previewBitmap = renderOfficePreviewBitmap("XLSX", selectedName, emptyList(), 1, sheetGrid, null)
+                        paragraphs.take(15).joinToString("\n\n")
                     }
-                    lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
-                        metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
-                        val slideTexts = mutableListOf<String>()
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val ppt = XMLSlideShow(stream)
-                                val slideCount = ppt.slides.size
-                                summary = "PowerPoint Presentation • $slideCount slide(s)"
-                                val previewSb = StringBuilder()
+                    OfficeSourceFormat.XLSX -> {
+                        val workbook = OpenXmlDocumentParser.parseXlsx(source)
+                        require(workbook.sheets.isNotEmpty()) { "Workbook has no sheets" }
+                        val sheet = workbook.sheets.first()
+                        summary = "Excel • ${workbook.sheets.size} sheets; first sheet: ${sheet.name.take(120)}"
+                        for (row in sheet.rows.take(15)) {
+                            ensureActive()
+                            // Retain empty cells; filtering them shifts later columns.
+                            grid.add(row.take(6).map { it.take(120) })
+                        }
+                        grid.joinToString("\n") { it.joinToString(" | ", "[ ", " ]") }
+                    }
+                    OfficeSourceFormat.PPTX -> {
+                        source.inputStream().use { stream ->
+                            XMLSlideShow(stream).use { ppt ->
+                                require(ppt.slides.isNotEmpty()) { "Presentation has no slides" }
+                                summary = "PowerPoint • ${ppt.slides.size} slides"
                                 for ((idx, slide) in ppt.slides.take(4).withIndex()) {
-                                    previewSb.append("Slide ${idx + 1}:\n")
-                                    for (shape in slide.shapes) {
-                                        if (shape is XSLFTextShape && shape.text.isNotBlank()) {
-                                            val t = shape.text.trim().replace("\n", " ")
-                                            slideTexts.add(t)
-                                            previewSb.append("  • ").append(t).append("\n")
-                                        }
+                                    ensureActive()
+                                    slides.add("Slide ${idx + 1}")
+                                    for (shape in slide.shapes.asSequence().filterIsInstance<XSLFTextShape>().take(12)) {
+                                        ensureActive()
+                                        shape.text.trim().replace('\n', ' ').take(300).takeIf { it.isNotBlank() }?.let { slides.add(it) }
                                     }
-                                    previewSb.append("\n")
                                 }
-                                previewText = previewSb.toString().trim()
+                                slides.joinToString("\n")
                             }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
-                            summary = "PowerPoint Presentation ($selectedName)"
-                            previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("PPTX", selectedName, emptyList(), 0, null, slideTexts)
                     }
-                    lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
-                        metaText = "Text Document (${lower.substringAfterLast('.')})"
-                        val lines = mutableListOf<String>()
-                        activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                            var count = 0
-                            reader.forEachLine { line ->
-                                count++
-                                if (lines.size < 40 && line.isNotBlank()) {
-                                    lines.add(line)
-                                }
-                            }
-                            summary = "Text Document • $count lines"
-                            previewText = lines.take(20).joinToString("\n")
+                    OfficeSourceFormat.TEXT -> {
+                        // Bounded sample, not readLine() over an arbitrarily long line.
+                        val decoder = Charsets.UTF_8.newDecoder()
+                            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                        java.io.InputStreamReader(source.inputStream(), decoder).use { reader ->
+                            val chars = CharArray(8192)
+                            val size = reader.read(chars)
+                            if (size <= 0) throw java.io.IOException("Empty text document")
+                            val sample = String(chars, 0, size)
+                            require(!sample.contains('\u0000')) { "Not a plain text document" }
+                            paragraphs.addAll(sample.lines().take(40).map { it.take(800) })
+                            summary = "Plain text • first characters"
+                            paragraphs.take(20).joinToString("\n")
                         }
-                        previewBitmap = renderOfficePreviewBitmap("TXT", selectedName, lines, 0, null, null)
-                    }
-                    else -> {
-                        metaText = "Office Document"
-                        summary = "Document Selected • $selectedName"
-                        previewText = "Document loaded and ready for conversion to PDF."
-                        previewBitmap = renderOfficePreviewBitmap("DOC", selectedName, listOf("Office document loaded", selectedName), 0, null, null)
                     }
                 }
-            } catch (t: Throwable) {
-                Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
-                summary = "Document Selected"
-                previewText = "Ready to convert: $selectedName"
-            }
-
-            if (previewText.isBlank()) {
-                previewText = "Preview not available for this document structure. Ready to convert."
-            }
-
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    previewBitmap?.recycle()
-                    return@withContext
-                }
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
-                binding.tvQuickToolDocMeta.text = metaText
-                binding.panelParamDocPreview.visibility = View.VISIBLE
-                binding.tvDocPreviewSummary.text = summary
-                binding.tvDocPreviewContent.text = previewText
-                if (previewBitmap != null) {
+                ensureActive()
+                previewBitmap = renderOfficePreviewBitmap(
+                    format.name, selectedName.take(120), paragraphs, tables,
+                    if (format == OfficeSourceFormat.XLSX) grid else null,
+                    if (format == OfficeSourceFormat.PPTX) slides else null
+                )
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                    isSourceReady = true
+                    binding.btnQuickToolExecute.isEnabled = true
+                    binding.tvQuickToolDocMeta.text = "${format.label} • content inspected"
+                    binding.panelParamDocPreview.visibility = View.VISIBLE
+                    binding.tvDocPreviewSummary.text = "$summary — content sample, not PDF layout"
+                    binding.tvDocPreviewContent.text = previewText.ifBlank { "No text in this sample; conversion may contain graphical content." }
+                    clearOfficePreview()
+                    officePreviewBitmap = previewBitmap
                     binding.ivDocVisualPreview.setImageBitmap(previewBitmap)
-                    binding.cardDocVisualPreview.visibility = View.VISIBLE
-                } else {
-                    binding.cardDocVisualPreview.visibility = View.GONE
+                    binding.cardDocVisualPreview.visibility = if (previewBitmap != null) View.VISIBLE else View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
+                    adopted = true
                 }
-                binding.pbDocVisualLoading.visibility = View.GONE
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Office source inspection failed", failure)
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                    isSourceReady = false
+                    binding.btnQuickToolExecute.isEnabled = false
+                    binding.tvQuickToolDocMeta.text = "Document inspection failed"
+                    binding.tvDocPreviewSummary.text = "Cannot convert this selection"
+                    binding.tvDocPreviewContent.text = failure.message ?: "Unreadable or unsupported document."
+                    clearOfficePreview()
+                    binding.cardDocVisualPreview.visibility = View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
+                }
+            } finally {
+                if (!adopted) previewBitmap?.recycle()
+                previewFile?.delete()
             }
         }
     }
@@ -1325,7 +1302,7 @@ class PdfQuickToolController(
                 color = Color.parseColor("#9CA3AF")
                 textSize = 16f
             }
-            val footerText = "— Page 1 —"
+            val footerText = "— Schematic content sample —"
             val footerWidth = footerPaint.measureText(footerText)
             canvas.drawText(footerText, (width - footerWidth) / 2f, height - marginY / 2f, footerPaint)
 
@@ -2496,30 +2473,31 @@ class PdfQuickToolController(
                     }
                     QuickMode.DOC_TO_PDF -> {
                         val uri = operationUris.first()
-                        val lowerName = operationFileName.lowercase()
-                        val ext = when {
-                            lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") -> ".xlsx"
-                            lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt") -> ".pptx"
-                            lowerName.endsWith(".txt") || lowerName.endsWith(".rtf") || lowerName.endsWith(".log") -> ".txt"
-                            else -> ".docx"
-                        }
-
-                        val tempInput = File(activity.cacheDir, "temp_doc_${System.currentTimeMillis()}$ext")
-                        val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
+                        val format = OfficeSourceFormat.fromName(operationFileName)
+                        val tempInput = File.createTempFile("office_input_", format.suffix, activity.cacheDir)
+                        val tempPdf = File(activity.cacheDir, "office_output_${java.util.UUID.randomUUID()}.pdf")
                         var conversionError: String? = null
                         var success = false
                         var handedOff = false
                         try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempInput.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            when (ext) {
-                                ".xlsx" -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
-                                ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
-                                ".txt" -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                else -> {
-                                    officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
+                            val source = activity.contentResolver.openInputStream(uri)
+                                ?: throw java.io.IOException("Cannot open selected document")
+                            source.use { input ->
+                                tempInput.outputStream().use { output ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    while (true) {
+                                        ensureActive()
+                                        val n = input.read(buffer)
+                                        if (n < 0) break
+                                        output.write(buffer, 0, n)
+                                    }
                                 }
+                            }
+                            when (format) {
+                                OfficeSourceFormat.XLSX -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
+                                OfficeSourceFormat.PPTX -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
+                                OfficeSourceFormat.TEXT -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                OfficeSourceFormat.DOCX -> officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
                             }
                             success = tempPdf.exists() && tempPdf.length() > 0
                             if (success) {
@@ -3003,14 +2981,9 @@ class PdfQuickToolController(
 
         val DOC_MIME_TYPES = arrayOf(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-powerpoint",
-            "text/plain",
-            "application/rtf",
-            "text/rtf"
+            "text/plain"
         )
 
         /**
