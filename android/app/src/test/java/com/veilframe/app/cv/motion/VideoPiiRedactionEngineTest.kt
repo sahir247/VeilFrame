@@ -25,6 +25,16 @@ import org.robolectric.RobolectricTestRunner
 class VideoPiiRedactionEngineTest {
 
     @Test
+    fun scanGeometryAndSamplingAreBounded() {
+        assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, 90))
+        assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, -90))
+        assertEquals(1920 to 1080, VideoPiiRedactionEngine.displayDimensions(1920, 1080, 180))
+        assertEquals(1, VideoPiiRedactionEngine.sampleCountForSpan(1))
+        assertEquals(6, VideoPiiRedactionEngine.sampleCountForSpan(500))
+        assertEquals(120, VideoPiiRedactionEngine.sampleCountForSpan(Long.MAX_VALUE))
+    }
+
+    @Test
     fun testAnyFrameOrDetectorFailureMakesScanIncomplete() {
         assertTrue(
             VideoPiiRedactionEngine.isScanIncomplete(

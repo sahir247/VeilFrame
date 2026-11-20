@@ -88,16 +88,20 @@ object VideoPiiRedactionEngine {
         isCancelled: () -> Boolean = { false },
         onProgress: ((sampled: Int, total: Int) -> Unit)? = null
     ): VideoPiiScanResult {
-        val safeEndMs = trimEndMs.coerceAtLeast(trimStartMs + 500L)
-        val spanMs = (safeEndMs - trimStartMs).coerceAtLeast(500L)
-        val sampleCount = ((spanMs / TARGET_SAMPLE_STEP_MS).toInt() + 1)
-            .coerceIn(MIN_SAMPLE_FRAMES, MAX_SAMPLE_FRAMES)
-        val stepMs = spanMs.toDouble() / (sampleCount - 1).coerceAtLeast(1).toDouble()
+        require(trimStartMs >= 0 && trimEndMs > trimStartMs) { "Invalid video scan interval" }
+        val spanMs = trimEndMs - trimStartMs
+        val sampleCount = sampleCountForSpan(spanMs)
+        // The end is exclusive: requesting the container duration can decode no frame.
+        val stepMs = (spanMs - 1).toDouble() / (sampleCount - 1).coerceAtLeast(1).toDouble()
         val durationSec = spanMs / 1000.0
         val relativeOffsetSec = trimStartMs / 1000.0
 
-        var frameW = fallbackWidth.coerceAtLeast(2)
-        var frameH = fallbackHeight.coerceAtLeast(2)
+        val encodedW = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            ?: fallbackWidth
+        val encodedH = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            ?: fallbackHeight
+        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        val (frameW, frameH) = displayDimensions(encodedW, encodedH, rotation)
         val observationsByFrame = mutableListOf<Pair<Double, List<PiiDetection>>>()
         val counts = linkedMapOf<PiiClass, Int>()
         var sampledCount = 0
@@ -107,7 +111,7 @@ object VideoPiiRedactionEngine {
 
         for (i in 0 until sampleCount) {
             if (isCancelled()) break
-            val timestampMs = (trimStartMs + (i * stepMs)).toLong().coerceIn(trimStartMs, safeEndMs)
+            val timestampMs = (trimStartMs + (i * stepMs).toLong()).coerceIn(trimStartMs, trimEndMs - 1)
             // Request a bounded frame from the decoder itself. Previously every
             // sampled 4K/8K frame was decoded at full resolution and *then*
             // downscaled, causing repeated large native/Java bitmap allocations.
@@ -146,9 +150,10 @@ object VideoPiiRedactionEngine {
 
             var analysisBmp: Bitmap? = null
             try {
-                if (!scaledCompatible) {
-                    frameW = rawBmp.width.coerceAtLeast(2)
-                    frameH = rawBmp.height.coerceAtLeast(2)
+                // Never switch coordinate systems midway through a scan. If the decoder
+                // disagrees with the expected display geometry, no filter can safely be built.
+                if (!VideoThumbnailPolicy.matchesSourceAspect(frameW, frameH, rawBmp.width, rawBmp.height)) {
+                    throw IllegalStateException("Video decoder display geometry does not match the redaction frame")
                 }
                 // For scaled frames frameW/H remain the original dimensions, so
                 // PiiMultiModalDetector maps observations to full video coordinates.
@@ -234,6 +239,20 @@ object VideoPiiRedactionEngine {
      * or cancellation stopped the requested pass. This is intentionally conservative:
      * partial negative results must never be treated as a clean scan.
      */
+    internal fun displayDimensions(width: Int, height: Int, rotation: Int): Pair<Int, Int> {
+        require(width >= 2 && height >= 2) { "Invalid video dimensions" }
+        val normalized = ((rotation % 360) + 360) % 360
+        require(normalized in listOf(0, 90, 180, 270)) { "Unsupported video rotation: $rotation" }
+        return if (normalized == 90 || normalized == 270) height to width else width to height
+    }
+
+    internal fun sampleCountForSpan(spanMs: Long): Int {
+        require(spanMs > 0)
+        val requested = 1L + (spanMs - 1L) / TARGET_SAMPLE_STEP_MS + 1L
+        return requested.coerceIn(MIN_SAMPLE_FRAMES.toLong(), MAX_SAMPLE_FRAMES.toLong())
+            .coerceAtMost(spanMs).toInt()
+    }
+
     internal fun isScanIncomplete(
         attemptedFrames: Int,
         sampledFrames: Int,

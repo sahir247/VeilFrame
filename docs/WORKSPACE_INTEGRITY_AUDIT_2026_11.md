@@ -35,7 +35,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A16 | P1 | PARTIAL | AI bundle heuristic secrets detection incomplete | `tools/AiBundleEngine.kt:49-54` | Expand patterns and clearly disclose limitations; pre-export review. |
 | A17 | P1 | PARTIAL | AI bundle JSON key escaping, omissions, budget and memory | `tools/AiBundleEngine.kt:89-159,185-211` | Use serialization, deterministic selection, bounded streaming and omissions report. |
 | A18 | P2 | PATCHED | Motion Lab failed gallery write leaves MediaStore row | `media/MotionLabController.kt:766-803` | Delete pending entry on failed copy/publish. |
-| A19 | P1 | OPEN | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
+| A19 | P1 | PARTIAL | Video PII capped sampling, rotated geometry and incomplete coverage | `cv/motion/VideoPiiRedactionEngine.kt:71-76,140-222` | Preserve incomplete result warning; test geometry; exhaustive mode and review. |
 | A20 | P1 | PATCHED | Provenance embedded-key validity does not prove signer trust | `media/ProvenanceController.kt:165-166` | Label signature validity vs trusted identity. |
 | A21 | P1 | OPEN | Workspace resource lifecycle dispersed; retained inflated views | `workspace/WorkspaceHost.kt` | Trace navigation/controller ownership; cancel resources without breaking sessions. |
 | A22 | P2 | OPEN | PRNU external attribution resistance not established | `cv/prnu/PrnuSanitizerEngine.kt` | Retain honest diagnostic wording; benchmark independently. |
@@ -175,3 +175,8 @@ CI run 44620999275 / Android job 135902300549 executed 1,368 tests with one fail
 ### A16 follow-up: defensive file exclusions and explicit transfer review
 
 Mask-enabled bundle generation now excludes known credential containers by case-insensitive filename, even if their contents do not match a secret regex, including single-file input. Omissions remain visible. All four workspace save/share buttons use a bounded on-device preview and explicit confirmation before handing the bundle to Android storage/share. Large previews explicitly show only the first 12,000 characters; unreadable bundles cannot be transferred through these controls. Added filename regression coverage. Full per-file review/edit workflow, broader detector validation, and device UX testing remain open; no claim of complete secret detection.
+
+### A19 — Align standalone video mask timeline and prevent false clean state
+
+- Traced actual reachable caller in VideoStudioController and standalone FFmpeg renderer: trim-relative scan times were baked into the full untrimmed input. Scan the exact full source duration now, with an exclusive final timestamp, overflow-safe sample count and immutable display geometry derived from encoded dimensions/rotation. Abort if decoded frame aspect disagrees rather than mixing coordinates.
+- Negative scans never clear prior masks, stale dialog/apply callbacks cannot modify another item, baked masks are not advertised as clearable, cancellation dismisses its own progress dialog. All detected classes are initially selected; review guidance explicitly warns about sampling gaps, weaker blur/pixelation and unchanged audio. Added sampling and display-geometry regression tests. Still PARTIAL: exhaustive frame decoding, actual orientation parity (including 180-degree/video display matrices), temporal render fixtures and Android CI/device validation remain open.
