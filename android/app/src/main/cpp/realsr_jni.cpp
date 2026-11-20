@@ -520,6 +520,7 @@ JNIEXPORT void JNICALL
 Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* env, jclass clazz) {
     try {
         bool release_gpu = false;
+        std::unordered_map<jlong, std::shared_ptr<NativeInstance>> retired;
         {
             std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
             g_lifecycle_cv.wait(lock, [] {
@@ -531,18 +532,18 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeGlobalDestroy(JNIEnv* 
                 for (const auto& entry : g_instance_registry) {
                     entry.second->cancelled.store(true);
                 }
-                g_instance_registry.clear();
+                retired.swap(g_instance_registry);
             }
-
-            // Prevent new operations first, then wait for every operation lease.
-            // This includes calls whose handle was removed by nativeDestroyInstance
-            // but whose shared instance pointer is still being used by inference.
             g_runtime_state = RuntimeState::STOPPING;
-            g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
             release_gpu = g_runtime_gpu_acquired;
             g_runtime_gpu_acquired = false;
         }
-
+        // Do not release GPU tensors while holding the global registry lock.
+        retired.clear();
+        {
+            std::unique_lock<std::mutex> lock(g_lifecycle_mutex);
+            g_lifecycle_cv.wait(lock, [] { return g_active_operations == 0; });
+        }
         release_cached_global_refs(env);
         if (release_gpu) veilframe::release_gpu_instance();
 
@@ -792,7 +793,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeLoadModel(
             ret = -23;
         }
 
-        return ret;
+        return lease.instance->cancelled.load() ? -10 : ret;
     } catch (const std::bad_alloc&) {
         LOGE("nativeLoadModel out of memory");
         return -11;
@@ -817,6 +818,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
         return -3;
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
+    if (lease.instance->cancelled.load()) return -10;
 
     if (!inputDirectBuffer || !valid_image_dimensions(width, height, channels) ||
         !valid_output_dimensions(width, height, lease.instance->engine->scale)) {
@@ -860,7 +862,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStreaming(
             &udata
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
-        if (udata.cancelled) return -10;
+        if (udata.cancelled || lease.instance->cancelled.load()) return -10;
         if (udata.callback_failed) return -13; // Consumer/storage failure; never trigger GPU fallback.
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;
@@ -889,6 +891,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
         return -3;
     }
     std::lock_guard<std::mutex> instance_guard(lease.instance->call_mutex);
+    if (lease.instance->cancelled.load()) return -10;
 
     if (!valid_image_dimensions(width, height, channels) ||
         !valid_strip_output_dimensions(width, height, lease.instance->engine->scale) ||
@@ -925,7 +928,7 @@ Java_com_veilframe_app_upscale_inference_NcnnNative_nativeProcessStripStreaming(
             &udata
         );
         if (udata.has_exception || env->ExceptionCheck()) return -12; // JNI delivers any pending Java exception to the caller.
-        if (udata.cancelled) return -10;
+        if (udata.cancelled || lease.instance->cancelled.load()) return -10;
         if (udata.callback_failed) return -13; // Consumer/storage failure; never trigger GPU fallback.
         if (ret == -100 || ret == -101 || ret == -102) return -11; // NCNN failed to allocate an output/device tensor.
         if (ret != 0) return lease.instance->engine->has_gpu() ? -2 : -4;

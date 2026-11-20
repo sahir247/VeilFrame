@@ -95,8 +95,9 @@ object NcnnNative {
     }
 
     /**
-     * Request immediate cancellation of an active native inference on [handle].
-     * Thread-safe and safe to call from any thread or coroutine.
+     * Cancel the entire native job represented by [handle]. The flag remains set
+     * until destruction; a new job must use a new handle. Thread-safe; an in-flight
+     * kernel can only stop at a native callback or phase boundary.
      */
     fun cancel(handle: Long) {
         if (handle != 0L && isAvailable) {

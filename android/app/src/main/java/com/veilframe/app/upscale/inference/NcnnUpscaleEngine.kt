@@ -454,7 +454,12 @@ class NcnnUpscaleEngine(
                             )
                         }
 
-                        val cancelHook = coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { cause ->
+                        // A normal completion handler runs only after the blocking native
+                        // body exits. Use the cancelling transition to signal promptly.
+                        @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
+                        val cancelHook = coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion(
+                            onCancelling = true, invokeImmediately = true
+                        ) { cause ->
                             if (cause is kotlinx.coroutines.CancellationException) {
                                 NcnnNative.cancel(handle)
                             }
@@ -469,6 +474,9 @@ class NcnnUpscaleEngine(
                                 tilesize = plan.tileSize,
                                 prepadding = plan.prepadding
                                 )
+                            }
+                            if (!coroutineContext.isActive || loadRet == NcnnNative.STATUS_CANCELLED) {
+                                throw UpscaleCancellationException("NCNN model loading cancelled")
                             }
                             when (loadRet) {
                                 0 -> Unit
