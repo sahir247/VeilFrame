@@ -40,10 +40,10 @@ class CelBackgroundRemover(
         onProgress(RembgProgress(10, "Loading ${model.displayName}…"))
         ensureActive()
 
-        val modelType = if (model == RembgModel.U2NETP) {
-            NcnnMattingNative.MODEL_TYPE_U2NETP
-        } else {
-            NcnnMattingNative.MODEL_TYPE_MODNET
+        val modelType = when (model) {
+            RembgModel.U2NETP -> NcnnMattingNative.MODEL_TYPE_U2NETP
+            RembgModel.MODNET -> NcnnMattingNative.MODEL_TYPE_MODNET
+            RembgModel.COLOROS_LIFT_SHIFT -> throw IllegalArgumentException("Lift & Shift uses the LiteRT matting engine, not NCNN")
         }
 
         val isLoaded = NcnnMattingNative.isModelLoaded(modelType)
@@ -58,10 +58,10 @@ class CelBackgroundRemover(
                     true
                 )
             } else {
-                if (!repository.isModelReady(model)) {
-                    throw IllegalStateException("Model ${model.displayName} is not downloaded or incomplete. Download it in Model Manager first.")
-                }
-                val binFile = repository.getModelFile(model)
+                val loadContext = kotlin.coroutines.coroutineContext
+                val binFile = withContext(Dispatchers.IO) {
+                    repository.verifiedModelFile(model) { loadContext.ensureActive() }
+                } ?: throw IllegalStateException("Model ${model.displayName} is missing or failed checksum validation. Delete and download it again in Model Manager.")
                 val paramFile = repository.getParamFile(model)
                 NcnnMattingNative.nativeInit(
                     null,
