@@ -2115,7 +2115,7 @@ class PdfQuickToolController(
         }
     }
 
-    private fun executeActiveOperation(rasterConfirmed: Boolean = false) {
+    private fun executeActiveOperation(rasterConfirmed: Boolean = false, xlsxPrintLayout: Boolean? = null) {
         if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
             Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
             return
@@ -2130,6 +2130,23 @@ class PdfQuickToolController(
         }
 
         if (isExecuting) return
+        if (activeMode == QuickMode.DOC_TO_PDF && OfficeSourceFormat.fromName(primaryDocName) == OfficeSourceFormat.XLSX && xlsxPrintLayout == null) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Spreadsheet PDF layout")
+                .setMessage("Full worksheet preserves wide columns and all stored cells. Saved print layout uses the workbook print area, paper, margins and scaling where supported; cells outside the saved print area are omitted. Excel-specific headers, hidden cells, titles, charts and other features may differ.")
+                .setPositiveButton("Full worksheet") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = false)
+                }
+                .setNeutralButton("Saved print layout") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = true)
+                }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
         val rasterSelected = activeMode == QuickMode.COMPRESS && binding.chipCompressFullRender.isChecked
         if (rasterSelected && !rasterConfirmed) {
             val generation = selectionGeneration
@@ -2513,7 +2530,7 @@ class PdfQuickToolController(
                                 }
                             }
                             when (format) {
-                                OfficeSourceFormat.XLSX -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
+                                OfficeSourceFormat.XLSX -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity, savedPrintLayout = xlsxPrintLayout == true)
                                 OfficeSourceFormat.PPTX -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
                                 OfficeSourceFormat.TEXT -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
                                 OfficeSourceFormat.DOCX -> officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)

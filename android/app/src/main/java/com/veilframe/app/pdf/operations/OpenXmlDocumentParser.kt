@@ -423,7 +423,8 @@ object OpenXmlDocumentParser {
         val styles: XlsxCellStyles = XlsxCellStyles(),
         val unsupportedConditionalRules: Int = 0,
         val charts: List<XlsxCachedChart> = emptyList(),
-        val unsupportedDrawings: Int = 0
+        val unsupportedDrawings: Int = 0,
+        val printSettings: XlsxSavedPrintSettings = XlsxSavedPrintSettings()
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -553,7 +554,8 @@ object OpenXmlDocumentParser {
             if (sstEntry != null) {
                 parseSharedStrings(budget.read(zip, sstEntry), sharedStrings)
             }
-            for (part in parts) {
+            val definedNames = workbook.documentElement.childElements("definedNames").flatMap { it.childElements("definedName") }
+            for ((sheetIndex, part) in parts.withIndex()) {
                 val sheetRows = mutableListOf<List<String>>()
                 val sheetSparseRows = mutableListOf<XlsxRow>()
                 val sheetMergedRegions = mutableListOf<CellRangeAddress>()
@@ -570,12 +572,18 @@ object OpenXmlDocumentParser {
                 }
                 val (charts, unsupportedDrawings) = readWorksheetCharts(zip, budget, part.path, metadata.drawingIds)
                 require(sheets.sumOf { it.charts.size } + charts.size <= 64) { "Workbook chart count exceeds budget" }
+                val localNames = definedNames.filter { it.getAttribute("localSheetId").toIntOrNull() == sheetIndex }
+                val printAreas = localNames.filter { it.getAttribute("name") == "_xlnm.Print_Area" }
+                val printTitles = localNames.any { it.getAttribute("name") == "_xlnm.Print_Titles" }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
                     cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions,
                     styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules,
-                    charts = charts, unsupportedDrawings = unsupportedDrawings
+                    charts = charts, unsupportedDrawings = unsupportedDrawings,
+                    printSettings = metadata.printSettings.copy(area = printAreas.singleOrNull()?.textContent,
+                        unsupportedFeatures = metadata.printSettings.unsupportedFeatures || printTitles,
+                        ambiguousArea = printAreas.size > 1)
                 ))
             }
         }
@@ -920,8 +928,36 @@ object OpenXmlDocumentParser {
 
     private data class WorksheetMetadata(
         val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions,
-        val styles: XlsxCellStyles, val unsupportedConditionalRules: Int, val drawingIds: List<String>
+        val styles: XlsxCellStyles, val unsupportedConditionalRules: Int, val drawingIds: List<String>,
+        val printSettings: XlsxSavedPrintSettings
     )
+
+    private fun parsePrintSettings(root: Element): XlsxSavedPrintSettings {
+        fun attrs(element: Element?): Map<String, String> {
+            if (element == null) return emptyMap()
+            return (0 until element.attributes.length).associate {
+                val node = element.attributes.item(it)
+                node.nodeName.substringAfterLast(':') to node.nodeValue
+            }
+        }
+        fun one(name: String) = root.childElements(name).singleOrNull()
+        val setup = attrs(one("pageSetup"))
+        val props = attrs(one("sheetPr")?.childElements("pageSetUpPr")?.singleOrNull())
+        val options = attrs(one("printOptions"))
+        fun breaks(name: String) = one(name)?.childElements("brk").orEmpty()
+            .filter { it.getAttribute("man") in setOf("1", "true") }.map { it.getAttribute("id") }
+        val headers = one("headerFooter")?.textContent?.isNotBlank() == true
+        val hidden = root.childElements("cols").flatMap { it.childElements("col") }.any {
+            it.getAttribute("hidden") in setOf("1", "true")
+        } || one("sheetData")?.childElements("row").orEmpty().any { it.getAttribute("hidden") in setOf("1", "true") }
+        return XlsxSavedPrintSettings(setup = setup, margins = attrs(one("pageMargins")),
+            fitToPage = props["fitToPage"] in setOf("1", "true"), gridLines = options["gridLines"] in setOf("1", "true"),
+            centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
+            centerVertical = options["verticalCentered"] in setOf("1", "true"),
+            rowBreaks = breaks("rowBreaks"), colBreaks = breaks("colBreaks"),
+            unsupportedFeatures = headers || hidden || options["headings"] in setOf("1", "true") ||
+                setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
+    }
 
     private fun parseConditionalFormatting(root: Element, differential: List<XlsxConditionalFormatting.Delta?>):
         List<XlsxConditionalFormatting.Rule> {
@@ -1028,7 +1064,7 @@ object OpenXmlDocumentParser {
         fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
             XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights),
             XlsxCellStyles(visuals, styledRows, showGridLines), conditional.count { it.delta == null },
-            root.childElements("drawing").map { relationshipId(it) })
+            root.childElements("drawing").map { relationshipId(it) }, parsePrintSettings(root))
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {

@@ -1635,4 +1635,23 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)^\s*f\s*$""").containsMatchIn(operators))
         }
     }
+    @Test
+    fun savedPrintLayoutRespectsPaperMarginsAreaAndBreaksWithoutChangingDefault() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Print!&#36;A&#36;1:&#36;B&#36;2</definedName></definedNames></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>FIRST</t></is></c><c r="C1" t="inlineStr"><is><t>OUTSIDE</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>SECOND</t></is></c></row></sheetData><pageMargins left="1" right="1" top="1" bottom="1"/><pageSetup paperSize="9" orientation="landscape" scale="100"/><rowBreaks><brk id="1" man="1"/></rowBreaks></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val print = File(tempFolder.root, "print.pdf")
+        val full = File(tempFolder.root, "full.pdf")
+        val converter = OfficeConverter()
+        converter.convertXlsxToPdf(input, print, context, savedPrintLayout = true)
+        converter.convertXlsxToPdf(input, full, context)
+        PDDocument.load(print).use { pdf ->
+            assertEquals(2, pdf.numberOfPages)
+            assertEquals(841.89f, pdf.getPage(0).mediaBox.width, 0.1f)
+            assertEquals(595.28f, pdf.getPage(0).mediaBox.height, 0.1f)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("FIRST") && text.contains("SECOND") && !text.contains("OUTSIDE"))
+        }
+        PDDocument.load(full).use { pdf -> assertTrue(PDFTextStripper().getText(pdf).contains("OUTSIDE")) }
+    }
 }

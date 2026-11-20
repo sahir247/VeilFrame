@@ -930,7 +930,8 @@ class OfficeConverter {
      * - Level 3 (Lossless 2D Tiling): Row-major two-dimensional panel tiling with continuation banners and optional frozen columns.
      * Uses OpenXmlDocumentParser to execute offline on Android ART with zero Apache POI crashes.
      */
-    suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
+    suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context,
+        savedPrintLayout: Boolean = false) = withContext(Dispatchers.IO) {
         PDFBoxResourceLoader.init(context)
 
         val workbookData = OpenXmlDocumentParser.parseXlsx(xlsxFile)
@@ -945,6 +946,7 @@ class OfficeConverter {
 
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
+            if (savedPrintLayout) pdf.documentInformation.subject = "Approximate saved Excel print layout; charts reconstructed separately; unsupported print features may differ."
             val limits = LayoutLimits(
                 minPageWidth = 842f,
                 minPageHeight = 595f,
@@ -972,7 +974,9 @@ class OfficeConverter {
                     if (sheet.unsupportedDrawings > 0) add("some drawing objects unsupported")
                 }
                 val displayedSheet = if (notes.isEmpty()) sheet else sheet.copy(name = sheet.name + " [" + notes.joinToString("; ") + "]")
-                if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
+                if (savedPrintLayout && (maxCol > 0 || sheet.mergedRegions.isNotEmpty() || sheet.printSettings.area != null)) {
+                    renderSavedPrintSheet(pdf, sheet, sheetIdx, fontNormal, limits, checkpoint)
+                } else if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
                 val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits)
                 require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
                     "Workbook exceeds PDF page budget"
@@ -1029,6 +1033,71 @@ class OfficeConverter {
             publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun renderSavedPrintSheet(pdf: PDDocument, sheet: OpenXmlDocumentParser.XlsxSheetData, index: Int,
+        font: PDType1Font, limits: LayoutLimits, checkpoint: () -> Unit) {
+        val settings = sheet.printSettings
+        val area = XlsxSavedPrintLayout.area(sheet.name, settings, sheet.rows, sheet.mergedRegions)
+        val requiredRows = maxOf(sheet.rows.size, area.lastRow + 1)
+        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, area.lastCol + 1)
+        require(requiredRows.toLong() * requiredCols <= SpreadsheetGeometry.MAX_GRID_CELLS) { "Print area exceeds layout budget" }
+        val rows = List(requiredRows) { r ->
+            val existing = sheet.rows.getOrNull(r).orEmpty()
+            if (r == requiredRows - 1 && existing.size < requiredCols)
+                existing + List(requiredCols - existing.size) { "" } else existing
+        }
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
+            styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits)
+        val plan = XlsxSavedPrintLayout.plan(layout, area, settings)
+        val merges = SpreadsheetMergeIndex(layout.rowCount, layout.colCount, layout.mergedRegions)
+        for (tile in plan.tiles) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val rowRange = tile.first
+            val colRange = tile.second
+            val tableW = colRange.sumOf { layout.colWidths[it].toDouble() }.toFloat()
+            val tableH = rowRange.sumOf { layout.rowHeights[it].toDouble() }.toFloat()
+            val left = plan.left + if (settings.centerHorizontal) (plan.contentWidth - tableW * plan.scale) / 2f else 0f
+            val top = plan.height - plan.top - if (settings.centerVertical) (plan.contentHeight - tableH * plan.scale) / 2f else 0f
+            val page = PDPage(PDRectangle(plan.width, plan.height))
+            pdf.addPage(page)
+            PDPageContentStream(pdf, page).use { stream ->
+                stream.saveGraphicsState()
+                try {
+                    stream.transform(Matrix(plan.scale, 0f, 0f, plan.scale, left, top))
+                    fun x(c: Int) = layout.colX[c] - layout.colX[colRange.first]
+                    fun y(r: Int) = -(layout.rowY[r] - layout.rowY[rowRange.first])
+                    for (r in rowRange) {
+                        checkpoint()
+                        for (c in colRange) {
+                            if (merges.at(r,c) >= 0) continue
+                            drawCellChunk(stream, x(c), y(r), layout.colWidths[c], layout.rowHeights[r],
+                                layout.rowWrappedLines[r][c], font, limits.fontSizeCell, limits.lineHeight, layout.cellStyles.at(r,c))
+                        }
+                    }
+                    for (geom in layout.mergedGeometries) {
+                        if (geom.lastRow < rowRange.first || geom.firstRow > rowRange.last ||
+                            geom.lastCol < colRange.first || geom.firstCol > colRange.last) continue
+                        require(geom.firstRow in rowRange && geom.lastRow in rowRange &&
+                            geom.firstCol in colRange && geom.lastCol in colRange) {
+                            "Saved print boundary cuts through a merged cell; use content-preserving export"
+                        }
+                        drawCellChunk(stream, x(geom.firstCol), y(geom.firstRow), geom.totalWidth, geom.totalHeight,
+                            geom.wrappedLines, font, limits.fontSizeCell, limits.lineHeight,
+                            layout.cellStyles.at(geom.firstRow,geom.firstCol))
+                    }
+                    renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange.toList(), { y(it) },
+                        { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
+                } finally { stream.restoreGraphicsState() }
+                if (plan.bottom >= 12f) {
+                    stream.beginText(); stream.setFont(font, 8f); stream.newLineAtOffset(plan.left, 5f)
+                    val note = if (settings.unsupportedFeatures || sheet.unsupportedConditionalRules > 0 ||
+                        sheet.unsupportedDrawings > 0 || sheet.charts.isNotEmpty()) " - some features reconstructed or omitted" else ""
+                    safeShowText(stream, "Approximate saved print layout" + note, font); stream.endText()
+                }
+            }
         }
     }
 
