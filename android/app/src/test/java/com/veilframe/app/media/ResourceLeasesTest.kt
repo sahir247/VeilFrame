@@ -27,4 +27,30 @@ class ResourceLeasesTest {
         registry.retire(resource)
         assertEquals(1, freed)
     }
+    @Test fun retiredOutputSurvivesDelayedConcurrentReaders() {
+        val disposed = java.util.concurrent.atomic.AtomicInteger()
+        val registry = ResourceLeases<Any> { disposed.incrementAndGet() }
+        val output = Any()
+        val save = registry.acquire(output)
+        val share = registry.acquire(output)
+        val releaseReader = java.util.concurrent.CountDownLatch(1)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val reader = executor.submit {
+                check(releaseReader.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                save()
+            }
+            registry.retire(output)
+            share()
+            assertEquals(0, disposed.get())
+            releaseReader.countDown()
+            reader.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(1, disposed.get())
+            save()
+            assertEquals(1, disposed.get())
+        } finally {
+            releaseReader.countDown()
+            executor.shutdownNow()
+        }
+    }
 }

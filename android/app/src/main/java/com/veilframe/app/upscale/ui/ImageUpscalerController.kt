@@ -27,6 +27,7 @@ import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.media.ModelDownloadBackgroundService
+import com.veilframe.app.media.ResourceLeases
 import com.veilframe.app.upscale.download.ModelDownloadManager
 import com.veilframe.app.upscale.inference.BitmapSource
 import com.veilframe.app.upscale.inference.SourceAccess
@@ -67,6 +68,10 @@ class ImageUpscalerController(
 
         /** Hard output cap (~200 MP) — beyond this even band-streaming is refused. */
         private const val OUTPUT_PIXEL_CAP = 200_000_000L
+        // Only prune pre-session artifacts, once per process. Active artifacts may
+        // remain open for arbitrarily long exports or a long-lived workspace.
+        private val cachePruneStarted = java.util.concurrent.atomic.AtomicBoolean()
+        private val staleBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000
     }
 
     val repository: UpscaleModelRepository = UpscaleModelRepository(activity)
@@ -92,7 +97,7 @@ class ImageUpscalerController(
 
     /** F2: result may live in RAM (InMemory) or as a streamed PNG file (Streamed). */
     private var resultOutput: UpscaleOutput? = null
-    private var resultFile: File? = null
+    private val outputLeases = ResourceLeases<UpscaleOutput> { it.discardUnclaimed() }
     private var activePreset: UpscalePreset = UpscalePresetRegistry.PHOTO
     private var targetScale: Int = UpscalePresetRegistry.PHOTO.defaultScale
     private var explicitModel: UpscaleModel? = null
@@ -123,25 +128,16 @@ class ImageUpscalerController(
         else dispose()
     }
     private var suppressScaleListener: Boolean = false
-    private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
     private var isCancelling: Boolean = false
     private var isSharing: Boolean = false
-    private var cachedShareOutput: UpscaleOutput? = null
-    private var cachedShareFile: File? = null
 
     var onImportCustomModelRequested: (() -> Unit)? = null
     var inferenceParams: UpscaleInferenceParams = UpscaleInferenceParams()
 
-    private fun safelyDeleteResultFile(file: File?) {
-        if (file == null) return
-        scope.launch(Dispatchers.IO) {
-            var retries = 0
-            while (activeExportCount.get() > 0 && retries < 50) {
-                delay(100)
-                retries++
-            }
-            runCatching { file.delete() }
-        }
+    private fun retireResult() {
+        val previous = resultOutput ?: return
+        resultOutput = null
+        outputLeases.retire(previous)
     }
 
     fun init() {
@@ -149,8 +145,8 @@ class ImageUpscalerController(
         com.veilframe.app.runtime.ThermalGovernor.register(activity)
 
         // Audit fix (UP5): prune stale streamed outputs and shared exports across all three cache dirs
-        scope.launch(Dispatchers.IO) {
-            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        if (cachePruneStarted.compareAndSet(false, true)) scope.launch(Dispatchers.IO) {
+            val cutoff = staleBefore
             listOf("upscale_outputs", "upscale_streaming", "shared_upscaled").forEach { dirName ->
                 runCatching {
                     val dir = File(activity.cacheDir, dirName)
@@ -277,12 +273,7 @@ class ImageUpscalerController(
         retireSource()
 
         selectedUri = uri
-        resultOutput = null
-        val oldResultFile = resultFile
-        resultFile = null
-        safelyDeleteResultFile(oldResultFile)
-        cachedShareOutput = null
-        cachedShareFile = null
+        retireResult()
 
         // Visually reset results and indicate loading immediately
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
@@ -416,12 +407,7 @@ class ImageUpscalerController(
         selectedUri = null
         upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
         retireSource()
-        resultOutput = null
-        val oldResult = resultFile
-        resultFile = null
-        safelyDeleteResultFile(oldResult)
-        cachedShareOutput = null
-        cachedShareFile = null
+        retireResult()
 
         upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
         upscalerBinding.layoutUpscalerWorkspace.visibility = View.GONE
@@ -1031,15 +1017,12 @@ class ImageUpscalerController(
                     if (!ownsUi() || isCancelling) return@withContext
                     result.fold(
                         onSuccess = { output ->
-                            (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
-                                safelyDeleteResultFile(prev.file)
-                            }
+                            val display = displayBitmapFor(output)
+                            upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
+                            retireResult()
                             resultOutput = output
                             unclaimed = null
-                            resultFile = (output as? UpscaleOutput.Streamed)?.file
-                            cachedShareOutput = null
-                            cachedShareFile = null
-                            upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
+                            upscalerBinding.imgUpscalerPreview.setImageBitmap(display)
                             val resolvedModel = getResolvedModel()
                             val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
                             val badgeText = if (resolvedModel.type != com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && scalePlan.requiresRefinement) {
@@ -1088,7 +1071,7 @@ class ImageUpscalerController(
                             com.veilframe.app.upscale.UpscaleForegroundService.notifyComplete(
                                 activity,
                                 "${model.name} (${output.width}×${output.height})",
-                                resultFile?.absolutePath
+                                (output as? UpscaleOutput.Streamed)?.file?.absolutePath
                             )
                             Toast.makeText(
                                 activity,
@@ -1183,15 +1166,6 @@ class ImageUpscalerController(
     override fun discardAndReleaseAllResources() {
         cancelProcessing()
         upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
-        when (val out = resultOutput) {
-            is UpscaleOutput.InMemory -> out.bitmap.recycle()
-            is UpscaleOutput.Streamed -> {
-                out.preview?.recycle()
-                out.file.delete()
-            }
-            null -> {}
-        }
-        resultOutput = null
         resetToEmptySelectionState()
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
     }
@@ -1506,7 +1480,7 @@ class ImageUpscalerController(
     private fun saveUpscaledImage() {
         val output = resultOutput ?: return
         val scale = targetScale
-        activeExportCount.incrementAndGet()
+        val releaseOutput = outputLeases.acquire(output)
         scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             try {
                 val cc = currentCoroutineContext()
@@ -1551,7 +1525,7 @@ class ImageUpscalerController(
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
+                    if (released || activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
                     upscalerBinding.tvUpscalerResultDetails.text = "Saved to Pictures/VeilFrame ($filename)"
                     Toast.makeText(activity, "Saved to Pictures/VeilFrame: $filename", Toast.LENGTH_LONG).show()
                     onLog("[UPSCALER] Saved upscaled image: $filename")
@@ -1561,12 +1535,12 @@ class ImageUpscalerController(
             } catch (failure: Exception) {
                 Log.e(TAG, "Error saving upscaled image", failure)
                 withContext(Dispatchers.Main) {
-                    if (activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
+                    if (released || activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
                     upscalerBinding.tvUpscalerResultDetails.text = "Save error: ${failure.message}. Tap Save to retry."
                     Toast.makeText(activity, "Save error: ${failure.message}", Toast.LENGTH_SHORT).show()
                 }
             } finally {
-                activeExportCount.decrementAndGet()
+                releaseOutput()
             }
         }
     }
@@ -1620,35 +1594,40 @@ class ImageUpscalerController(
         os.flush()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun shareUpscaledImage() {
         val output = resultOutput ?: return
-        if (isSharing) return
+        if (released || isSharing) return
+        val releaseOutput = outputLeases.acquire(output)
         isSharing = true
         upscalerBinding.btnUpscalerShare.isEnabled = false
         upscalerBinding.btnUpscalerShare.alpha = 0.6f
-        activeExportCount.incrementAndGet()
 
-        scope.launch(Dispatchers.IO) {
+        // A chooser grant may be consumed after this workspace is discarded.
+        // Never expose the editor-owned streamed file directly.
+        scope.launch(start = CoroutineStart.ATOMIC) {
+            var staging: File? = null
+            var published: File? = null
+            var handedOff = false
             try {
-                val shareFile = if (output is UpscaleOutput.Streamed && output.file.isFile) {
-                    output.file
-                } else if (cachedShareOutput === output && cachedShareFile?.isFile == true) {
-                    cachedShareFile!!
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, "Preparing image for sharing…", Toast.LENGTH_SHORT).show()
-                    }
+                ensureActive()
+                Toast.makeText(activity, "Preparing image for sharing…", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.IO) {
+                    val cc = currentCoroutineContext()
                     val cacheDir = File(activity.cacheDir, "shared_upscaled")
-                    cacheDir.mkdirs()
-                    val tempFile = File(cacheDir, "upscaled_${System.currentTimeMillis()}.png")
-                    FileOutputStream(tempFile).use { fos ->
-                        writeOutput(output, fos)
-                    }
-                    cachedShareOutput = output
-                    cachedShareFile = tempFile
-                    tempFile
+                    check(cacheDir.isDirectory || cacheDir.mkdirs()) { "Share cache unavailable" }
+                    val temp = File.createTempFile("upscaled_", ".part", cacheDir)
+                    staging = temp
+                    val destination = File(cacheDir, temp.name.removeSuffix(".part") + ".png")
+                    FileOutputStream(temp).use { writeOutput(output, it) { cc.ensureActive() } }
+                    cc.ensureActive()
+                    java.nio.file.Files.move(temp.toPath(), destination.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                    published = destination
                 }
-
+                ensureActive()
+                if (released || activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@launch
+                val shareFile = checkNotNull(published)
                 val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", shareFile)
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
@@ -1656,24 +1635,29 @@ class ImageUpscalerController(
                     clipData = android.content.ClipData.newUri(activity.contentResolver, "Share Upscaled Image", uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-
-                withContext(Dispatchers.Main) {
-                    activity.startActivity(Intent.createChooser(intent, "Share Upscaled Image").apply {
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    })
-                    onLog("[UPSCALER] Triggered share intent for upscaled image.")
-                }
+                activity.startActivity(Intent.createChooser(intent, "Share Upscaled Image").apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+                handedOff = true
+                onLog("[UPSCALER] Triggered share intent for upscaled image.")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Error sharing image: ${e.message}", e)
-                withContext(Dispatchers.Main) {
+                if (!released && !activity.isDestroyed && !activity.isFinishing && resultOutput === output) {
                     Toast.makeText(activity, "Share error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             } finally {
-                activeExportCount.decrementAndGet()
-                withContext(Dispatchers.Main) {
+                try {
+                    staging?.delete()
+                    if (!handedOff) published?.delete()
+                } finally {
+                    releaseOutput()
                     isSharing = false
-                    upscalerBinding.btnUpscalerShare.isEnabled = true
-                    upscalerBinding.btnUpscalerShare.alpha = 1.0f
+                    if (!released && !activity.isDestroyed && !activity.isFinishing) {
+                        upscalerBinding.btnUpscalerShare.isEnabled = true
+                        upscalerBinding.btnUpscalerShare.alpha = 1.0f
+                    }
                 }
             }
         }
@@ -1685,14 +1669,12 @@ class ImageUpscalerController(
         currentLoadJob?.cancel()
         inferenceJob?.cancel()
         downloadJob?.cancel()
+        upscalerBinding.imgUpscalerPreview.setImageDrawable(null)
         retireSource()
+        retireResult()
         scope.cancel()
         com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
         com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
-        safelyDeleteResultFile(resultFile)
-        resultFile = null
-        cachedShareFile = null
-        cachedShareOutput = null
         com.veilframe.app.runtime.ThermalGovernor.unregister()
     }
 }
