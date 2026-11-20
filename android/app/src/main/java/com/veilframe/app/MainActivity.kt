@@ -355,7 +355,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        workspaceHost.onDestroy()
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
             docScannerController.release()
@@ -390,6 +389,9 @@ class MainActivity : AppCompatActivity() {
         if (::pdfSuiteCoordinator.isInitialized) {
             pdfSuiteCoordinator.discardAllResources()
         }
+        if (::qrStudioController.isInitialized) qrStudioController.discardAndReleaseAllResources()
+        if (::provenanceController.isInitialized) provenanceController.reset()
+        workspaceHost.onDestroy()
     }
 
     private fun initSubControllers() {
@@ -1712,6 +1714,7 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> if (::backgroundRemoverController.isInitialized) backgroundRemoverController else null
             com.veilframe.app.navigation.ScreenState.MOTION_LAB -> if (::motionLabController.isInitialized) motionLabController else null
             com.veilframe.app.navigation.ScreenState.QR_STUDIO -> if (::qrStudioController.isInitialized) qrStudioController else null
+            com.veilframe.app.navigation.ScreenState.PROVENANCE -> if (::provenanceController.isInitialized) provenanceController else null
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_ENTRY,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_CAMERA,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_PAGES,

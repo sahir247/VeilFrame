@@ -159,6 +159,23 @@ class WorkspaceHostTest {
     }
 
     @Test
+    fun `visibility follows logical destination while preserving outgoing animation`() {
+        val first = host.activate(SecondaryWorkspace.MOTION_LAB)
+        first.visibility = View.VISIBLE
+        val second = host.activate(SecondaryWorkspace.PROVENANCE)
+        second.visibility = View.VISIBLE
+        host.hideInactive(second, first)
+        assertEquals(SecondaryWorkspace.PROVENANCE, host.activeWorkspace)
+        assertEquals(View.VISIBLE, first.visibility)
+        host.hideInactive(second)
+        assertEquals(View.GONE, first.visibility)
+        assertEquals(View.VISIBLE, second.visibility)
+        host.hideInactive(null)
+        assertNull(host.activeWorkspace)
+        assertEquals(View.GONE, second.visibility)
+    }
+
+    @Test
     fun `cached window insets are propagated upon lazy inflation`() {
         host.updateInsets(
             statusBarTop = 64,
