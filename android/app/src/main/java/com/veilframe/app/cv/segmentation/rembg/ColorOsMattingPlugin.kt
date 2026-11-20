@@ -346,7 +346,7 @@ object ColorOsMattingPlugin {
                 RembgAlphaMatte.fromAlpha(TENSOR_WIDTH, TENSOR_HEIGHT, cleanMaskBytes)
             } else null
             cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask) { cc.ensureActive() }
-            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution transparent PNG is available in More options.")
+            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution PNG/JPEG is available in More options.")
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
 

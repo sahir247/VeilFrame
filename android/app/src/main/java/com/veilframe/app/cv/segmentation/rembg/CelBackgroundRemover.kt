@@ -123,7 +123,7 @@ class CelBackgroundRemover(
                 RembgAlphaMatte.fromBitmap(maskBitmap, checkpoint)
             } else null
             cutoutBitmap = applyFullResolutionColors(colors, maskBitmap, checkpoint)
-            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution transparent PNG is available in More options.")
+            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution PNG/JPEG is available in More options.")
             if (colors !== sourceBitmap) colors.recycle()
             compositeSource = null
             maskBitmap.recycle()

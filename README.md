@@ -378,3 +378,5 @@ mypy veilframe
 
 * **License:** [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
 * **Security Policy:** See [SECURITY.md](SECURITY.md) for vulnerability disclosure procedures and threat model documentation.
+
+**JPEG codec attribution:** This software is based in part on the work of the Independent JPEG Group. The original-resolution JPEG encoder uses the classic libjpeg API from [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/tree/7b4993786d856cbccabfc0ed2f923ba000e326cc), built from its pinned upstream source.

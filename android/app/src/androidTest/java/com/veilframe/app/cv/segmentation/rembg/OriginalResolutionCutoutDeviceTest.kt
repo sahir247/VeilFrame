@@ -14,6 +14,35 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class OriginalResolutionCutoutDeviceTest {
+    @Test fun originalJpegUsesTheSameCropAndBackdropPipeline() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_jpeg").toFile()
+        val input = Bitmap.createBitmap(128, 96, Bitmap.Config.ARGB_8888)
+        try {
+            input.eraseColor(Color.TRANSPARENT)
+            for (y in 16 until 80) for (x in 16 until 112) {
+                input.setPixel(x, y, Color.argb(128, 255, 0, 0))
+            }
+            val source = File(dir, "source.png")
+            source.outputStream().use { assertTrue(input.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            val out = File(dir, "cutout.jpg")
+            OriginalResolutionCutout.export(RembgImageSource.Staged(source),
+                RembgSourceInfo(128, 96, "image/png", source.length()),
+                RembgAlphaMatte.fromAlpha(1, 1, byteArrayOf(255.toByte())), out,
+                trim = true, backdrop = CutoutBackdrop.WHITE, jpeg = true)
+            val decoded = checkNotNull(BitmapFactory.decodeFile(out.absolutePath))
+            try {
+                assertEquals(96, decoded.width)
+                assertEquals(64, decoded.height)
+                val pixel = decoded.getPixel(40, 30)
+                assertEquals(255, Color.alpha(pixel))
+                assertTrue(kotlin.math.abs(Color.red(pixel) - 255) <= 4)
+                assertTrue(kotlin.math.abs(Color.green(pixel) - 127) <= 4)
+                assertTrue(kotlin.math.abs(Color.blue(pixel) - 127) <= 4)
+            } finally { decoded.recycle() }
+        } finally { input.recycle(); dir.deleteRecursively() }
+    }
+
     @Test fun trimUsesOriginalSourceAlphaAcrossStripBoundaries() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_trim").toFile()
