@@ -14,6 +14,8 @@ import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
 
@@ -44,6 +46,30 @@ class OfficeConverter {
     var maxPdfPageWidthOverride: Float? = null
     var forceExportStrategy: ExportStrategy? = null
     var repeatFrozenColumnsInTiling: Boolean = false
+
+    /** Stage, reopen and verify page count before atomically replacing the caller's destination. */
+    internal suspend fun publishOfficePdf(pdf: PDDocument, destination: File) {
+        val expected = pdf.numberOfPages
+        require(expected > 0) { "Conversion produced no pages" }
+        val parent = destination.absoluteFile.parentFile ?: error("No destination directory")
+        check(parent.isDirectory || parent.mkdirs()) { "Cannot create destination directory" }
+        val staged = File.createTempFile("office_export_", ".pdf", parent)
+        try {
+            currentCoroutineContext().ensureActive()
+            pdf.save(staged)
+            PDDocument.load(staged).use { reopened ->
+                check(reopened.numberOfPages == expected) { "Serialized Office PDF page count changed" }
+            }
+            currentCoroutineContext().ensureActive()
+            java.nio.file.Files.move(
+                staged.toPath(), destination.absoluteFile.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        } finally {
+            staged.delete()
+        }
+    }
 
     private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
     private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
@@ -138,21 +164,16 @@ class OfficeConverter {
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (primary: Exception) {
-            // Do not accept a stale/partial PDF left by the failed renderer.
-            if (pdfFile.exists() && !pdfFile.delete()) {
-                throw java.io.IOException("Cannot replace partial DOCX conversion", primary)
-            }
+            // Each renderer publishes only its verified staged PDF. Keep any prior destination intact.
             android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed; trying POI", primary)
             try {
                 convertDocxToPdfInternal(docxFile, pdfFile, context)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (secondary: Exception) {
-                pdfFile.delete()
                 secondary.addSuppressed(primary)
                 throw java.io.IOException("DOCX conversion failed; text-only export would lose formatting.", secondary)
             } catch (unsupported: LinkageError) {
-                pdfFile.delete()
                 unsupported.addSuppressed(primary)
                 throw java.io.IOException("DOCX fallback renderer unavailable; no faithful PDF was produced.", unsupported)
             }
@@ -172,6 +193,7 @@ class OfficeConverter {
 
         val pdf = PDDocument()
         var contentStream: PDPageContentStream? = null
+        try {
 
         val pageBounds = PDRectangle.A4
         val margin = 50f
@@ -188,6 +210,7 @@ class OfficeConverter {
 
         try {
             for (node in doc.nodes) {
+                currentCoroutineContext().ensureActive()
                 when (node) {
                     is OpenXmlDocumentParser.DocxNode.ParagraphNode -> {
                         val p = node.paragraph
@@ -311,13 +334,13 @@ class OfficeConverter {
                 }
             }
         } finally {
-            try { contentStream?.close() } catch (_: Exception) {}
+            contentStream?.close()
         }
 
-        FileOutputStream(pdfFile).use { out ->
-            pdf.save(out)
+        publishOfficePdf(pdf, pdfFile)
+        } finally {
+            pdf.close()
         }
-        try { pdf.close() } catch (_: Exception) {}
     }
 
     private suspend fun convertDocxToPdfInternal(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
@@ -874,9 +897,7 @@ class OfficeConverter {
             contentStream?.close()
             contentStream = null
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
-            }
+            publishOfficePdf(pdf, pdfFile)
 
         } finally {
             try {
@@ -938,6 +959,7 @@ class OfficeConverter {
             )
 
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
+                currentCoroutineContext().ensureActive()
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0) continue // Empty sheet
 
@@ -976,9 +998,7 @@ class OfficeConverter {
                 }
             }
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
-            }
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (_: Exception) {}
         }
@@ -1648,12 +1668,22 @@ class OfficeConverter {
      * Renders a PowerPoint PPTX file to high-resolution bitmaps with full layout, image, and typography fidelity.
      * Returns a list of Bitmaps, one per slide.
      */
-    suspend fun renderPptxToBitmaps(pptxFile: File, targetWidth: Int = 1920): List<Bitmap> = withContext(Dispatchers.IO) {
+    suspend fun renderPptxToBitmaps(pptxFile: File, targetWidth: Int = 1920): List<Bitmap> =
+        renderPptxSlides(pptxFile, targetWidth, null)
+
+    // The conversion path consumes each owned bitmap synchronously and never retains a slide-sized batch.
+    private suspend fun renderPptxSlides(
+        pptxFile: File,
+        targetWidth: Int,
+        consume: ((Bitmap) -> Unit)?
+    ): List<Bitmap> = withContext(Dispatchers.IO) {
         var pptxStream: FileInputStream? = null
         var ppt: XMLSlideShow? = null
         val bitmaps = mutableListOf<Bitmap>()
+        var pending: Bitmap? = null
 
         try {
+            require(targetWidth in 1..4096) { "Invalid slide raster width" }
             pptxStream = FileInputStream(pptxFile)
             ppt = XMLSlideShow(pptxStream)
 
@@ -1662,7 +1692,18 @@ class OfficeConverter {
             val slideHeightEmu = slideDimEmu.second
 
             // Calculate target height maintaining exact aspect ratio
-            val targetHeight = if (slideWidthEmu > 0) (targetWidth * slideHeightEmu / slideWidthEmu).toInt() else (targetWidth * 9 / 16)
+            val targetHeightLong = if (slideWidthEmu > 0 && slideHeightEmu > 0)
+                targetWidth.toDouble() * slideHeightEmu / slideWidthEmu else targetWidth * 9.0 / 16
+            require(targetHeightLong.isFinite() && targetHeightLong in 1.0..8192.0) { "Slide dimensions exceed raster limits" }
+            val targetHeight = targetHeightLong.toInt()
+            val pixels = targetWidth.toLong() * targetHeight
+            require(pixels <= 16_777_216L) { "Slide raster exceeds pixel budget" }
+            require(ppt.slides.isNotEmpty()) { "Presentation contains no slides" }
+            if (consume == null) {
+                require(ppt.slides.size.toLong() * pixels <= 32_000_000L) {
+                    "Slide batch exceeds bitmap memory budget; export PDF instead"
+                }
+            }
             val slideWidthPt = if (slideWidthEmu > 0) (slideWidthEmu / 12700f) else 720f
             val fontScale = targetWidth.toFloat() / slideWidthPt
 
@@ -1688,8 +1729,9 @@ class OfficeConverter {
             }
 
             for ((slideIndex, slide) in ppt.slides.withIndex()) {
+                currentCoroutineContext().ensureActive()
                 val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-                if (bitmap.isRecycled) continue
+                pending = bitmap
                 val canvas = android.graphics.Canvas(bitmap) // isRecycled checked above
                 canvas.drawColor(android.graphics.Color.WHITE)
 
@@ -1848,10 +1890,19 @@ class OfficeConverter {
                         }
                     }
                 }
-                bitmaps.add(bitmap)
+                currentCoroutineContext().ensureActive()
+                if (consume == null) {
+                    bitmaps.add(bitmap)
+                } else {
+                    consume(bitmap)
+                    bitmap.recycle()
+                }
+                pending = null
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (failure: Throwable) {
+            pending?.takeUnless { it.isRecycled }?.recycle()
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            throw failure
         } finally {
             try { ppt?.close() } catch (e: Exception) {}
             try { pptxStream?.close() } catch (e: Exception) {}
@@ -1868,9 +1919,8 @@ class OfficeConverter {
         var pdf: PDDocument? = null
         try {
             pdf = PDDocument()
-            val bitmaps = renderPptxToBitmaps(pptxFile, targetWidth = 1920)
-
-            for (bitmap in bitmaps) {
+            val document = pdf
+            renderPptxSlides(pptxFile, targetWidth = 1920) { bitmap ->
                 // Calculate page bounds matching the slide aspect ratio
                 val aspect = if (bitmap.height > 0) bitmap.width.toFloat() / bitmap.height.toFloat() else (16f / 9f)
                 val pageWidth = 842f // A4 landscape width points
@@ -1878,18 +1928,15 @@ class OfficeConverter {
                 val pageBounds = PDRectangle(pageWidth, pageHeight)
 
                 val page = PDPage(pageBounds)
-                pdf.addPage(page)
+                document.addPage(page)
 
-                PDPageContentStream(pdf, page).use { contentStream ->
-                    val pdImage = LosslessFactory.createFromImage(pdf, bitmap)
+                PDPageContentStream(document, page).use { contentStream ->
+                    val pdImage = LosslessFactory.createFromImage(document, bitmap)
                     contentStream.drawImage(pdImage, 0f, 0f, pageWidth, pageHeight)
                 }
-                bitmap.recycle()
             }
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
-            }
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (e: Exception) { e.printStackTrace() }
         }
@@ -2737,7 +2784,7 @@ class OfficeConverter {
 
             contentStream?.close()
             contentStream = null
-            pdf.save(pdfFile)
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { contentStream?.close() } catch (_: Exception) {}
             try { pdf?.close() } catch (_: Exception) {}

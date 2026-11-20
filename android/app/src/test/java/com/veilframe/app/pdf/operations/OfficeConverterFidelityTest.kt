@@ -53,6 +53,28 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun emptyPdfCannotOverwriteExistingDestination() = runBlocking {
+        val destination = File(tempFolder.root, "existing.pdf")
+        destination.writeText("previous artifact")
+        PDDocument().use { doc ->
+            val failure = runCatching { OfficeConverter().publishOfficePdf(doc, destination) }
+            assertTrue(failure.isFailure)
+        }
+        assertEquals("previous artifact", destination.readText())
+        assertTrue(tempFolder.root.listFiles()!!.none { it.name.startsWith("office_export_") })
+    }
+
+    @Test
+    fun malformedPresentationFailsInsteadOfReturningPartialSlides() = runBlocking {
+        val input = createZip(mapOf("not-a-presentation" to "invalid"))
+        val destination = File(tempFolder.root, "existing_presentation.pdf")
+        destination.writeText("previous artifact")
+        val failure = runCatching { OfficeConverter().convertPptxToPdf(input, destination, "default", context) }
+        assertTrue(failure.isFailure)
+        assertEquals("previous artifact", destination.readText())
+    }
+
+    @Test
     fun testDocxBoldnessPreservedInPdfConversion() = runBlocking {
         val documentXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
