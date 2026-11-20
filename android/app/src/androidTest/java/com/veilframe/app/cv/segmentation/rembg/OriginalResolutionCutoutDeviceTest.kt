@@ -14,6 +14,28 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class OriginalResolutionCutoutDeviceTest {
+    @Test fun lowAlphaStraightRgbDoesNotRoundThroughPremultiplication() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_straight").toFile()
+        try {
+            val source = File(dir, "source.png")
+            val colors = intArrayOf(0x017B39CB, 0x027B39CB, 0x117B39CB, 0x807B39CB.toInt())
+            // Construct straight-RGBA PNG directly, not from a premultiplied bitmap.
+            source.outputStream().use { output ->
+                StreamingRgbaPng.write(output, 4, 2) { _, row -> colors.copyInto(row) }
+            }
+            val destination = File(dir, "result.png")
+            OriginalResolutionCutout.export(RembgImageSource.Staged(source),
+                RembgSourceInfo(4, 2, "image/png", source.length()),
+                RembgAlphaMatte.fromAlpha(1, 1, byteArrayOf(255.toByte())), destination)
+            val decoded = checkNotNull(BitmapFactory.decodeFile(destination.absolutePath,
+                BitmapFactory.Options().apply { inPremultiplied = false; inScaled = false }))
+            try {
+                for (x in colors.indices) assertEquals(colors[x], decoded.getPixel(x, 0))
+            } finally { decoded.recycle() }
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun originalJpegUsesTheSameCropAndBackdropPipeline() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "rembg_jpeg").toFile()

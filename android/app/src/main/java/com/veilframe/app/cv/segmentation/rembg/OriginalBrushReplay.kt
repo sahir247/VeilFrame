@@ -25,7 +25,7 @@ internal class OriginalBrushReplay(
         require(strokes.size <= BrushReplayJournal.MAX_SEGMENTS)
         require(width.toLong() * bandHeight <= 512L * 1024)
     }
-    private val commands = strokes.toList()
+    private val bandIndex = com.veilframe.app.media.refine.BrushBandIndex(strokes, width, height)
     private val pixels = IntArray(width * bandHeight)
     private val maskRow = IntArray(width)
     private val mask = Bitmap.createBitmap(width, bandHeight, Bitmap.Config.ARGB_8888)
@@ -53,16 +53,13 @@ internal class OriginalBrushReplay(
             val clip = canvas.save()
             try {
                 canvas.clipRect(0, 0, width, rows)
-                for (stroke in commands) {
+                for (prepared in bandIndex.intersecting(y, rows)) {
                     checkpoint()
-                    val scaleY = height.toFloat() / stroke.height
-                    val top = (minOf(stroke.y1, stroke.y2) - stroke.radius) * scaleY
-                    val bottom = (maxOf(stroke.y1, stroke.y2) + stroke.radius) * scaleY
-                    if (bottom < y - 1f || top > y + rows + 1f) continue
+                    val stroke = prepared.stroke
                     val saved = canvas.save()
                     try {
                         canvas.translate(0f, -y.toFloat())
-                        canvas.scale(width.toFloat() / stroke.width, scaleY)
+                        canvas.scale(prepared.scaleX, prepared.scaleY)
                         paint.xfermode = if (stroke.restore) restore else erase
                         if (stroke.x1 == stroke.x2 && stroke.y1 == stroke.y2) {
                             paint.style = Paint.Style.FILL

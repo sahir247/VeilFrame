@@ -90,6 +90,10 @@ internal object OriginalResolutionCutout {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                     inSampleSize = 1
                     inScaled = false
+                    // Region output is read as straight pixels only, never drawn on Canvas.
+                    // Avoid rounding RGB through premultiplication at low source alpha.
+                    inPremultiplied = false
+                    inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
                 }
                 fun readCompositeRow(y: Int, row: IntArray) {
                     check(row.size == width && y in 0 until height)
@@ -102,6 +106,9 @@ internal object OriginalResolutionCutout {
                         try {
                             check(decoded.width == tile.width() && decoded.height == tile.height()) {
                                 "Source decoder returned a different region size"
+                            }
+                            if (decoded.hasAlpha() && decoded.isPremultiplied) {
+                                throw IOException("Source decoder did not preserve straight alpha")
                             }
                             decoded.getPixels(tilePixels, 0, tile.width(), 0, 0, tile.width(), tile.height())
                         } finally { decoded.recycle() }
