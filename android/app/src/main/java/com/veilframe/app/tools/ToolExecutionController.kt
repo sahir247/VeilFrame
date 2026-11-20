@@ -73,7 +73,9 @@ class ToolExecutionController(
         sessionManager.updatePrimaryActionDock(state)
     }
 
-    fun executeSelectedMode() {
+    fun executeSelectedMode() = executeSelectedModeInternal(null)
+
+    private fun executeSelectedModeInternal(excludedPaths: Set<String>?) {
         val state = sessionManager.currentState
         if (state.jobState in listOf(JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING)) {
             cancelExecution()
@@ -97,6 +99,11 @@ class ToolExecutionController(
             return
         }
 
+        if (sessionManager.currentToolMode == ToolMode.AI_BUNDLE && state.isFolderSelected && excludedPaths == null) {
+            showBundleExclusions(state, uri)
+            return
+        }
+
         binding.btnExecute.text = "Cancel processing"
         binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
         binding.btnExportResult.isEnabled = false
@@ -111,7 +118,7 @@ class ToolExecutionController(
             when (sessionManager.currentToolMode) {
                 ToolMode.AI_BUNDLE -> {
                     try {
-                        runAiBundle(uri)
+                        runAiBundle(uri, excludedPaths.orEmpty())
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (failure: Exception) {
@@ -131,7 +138,49 @@ class ToolExecutionController(
         }
     }
 
-    private suspend fun runAiBundle(uri: Uri) {
+    private fun showBundleExclusions(state: ToolSessionState, uri: Uri) {
+        val container = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            val padding = (20 * resources.displayMetrics.density).toInt()
+            setPadding(padding, 0, padding, 0)
+        }
+        container.addView(android.widget.TextView(activity).apply {
+            text = "Optional: exclude individual files before their contents are read. Enter exact, case-sensitive paths relative to the selected folder, one per line (not wildcards). Unmatched paths block generation. Excluded names can still appear in the omission report."
+        })
+        val input = android.widget.EditText(activity).apply {
+            hint = "src/private.kt\nconfig/local.json"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+            minLines = 4
+            maxLines = 8
+            filters = arrayOf(android.text.InputFilter.LengthFilter(128 * 1024))
+        }
+        container.addView(input)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+            .setTitle("Exclude files from AI bundle")
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Generate", null)
+            .create()
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            if (activity.isFinishing || activity.isDestroyed || sessionManager.currentToolMode != ToolMode.AI_BUNDLE ||
+                sessionManager.currentState !== state || state.selectedUri != uri || !state.isFolderSelected) {
+                dialog.dismiss()
+                return@setOnClickListener
+            }
+            val exclusions = try {
+                AiBundleEngine.parseExcludedPaths(input.text.toString())
+            } catch (failure: IllegalArgumentException) {
+                input.error = failure.message
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            executeSelectedModeInternal(exclusions)
+        }
+    }
+
+    private suspend fun runAiBundle(uri: Uri, excludedPaths: Set<String>) {
         val state = sessionManager.currentState
         val tokenIndex = sessionManager.getSelectedOptionIndex()
         val tokenBudget = when (tokenIndex) {
@@ -170,7 +219,8 @@ class ToolExecutionController(
             maskSecrets = binding.switchOption1.isChecked,
             excludeTests = binding.switchOption2.isChecked,
             compressManifests = binding.switchOption3.isChecked,
-            maxDepth = maxDepth
+            maxDepth = maxDepth,
+            excludedRelativePaths = excludedPaths
         )
 
         val bundleResult = withContext(Dispatchers.IO) {

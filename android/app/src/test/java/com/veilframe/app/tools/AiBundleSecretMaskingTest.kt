@@ -112,6 +112,32 @@ class AiBundleSecretMaskingTest {
     }
 
     @Test
+    fun explicitExclusionsMatchEveryAliasAndNeverSilentlyIgnoreTypos() {
+        val paths = AiBundleEngine.parseExcludedPaths("src/private.kt\nconfig/local.json\n")
+        val exclusions = AiBundleEngine.FileExclusions(paths)
+        assertFalse(exclusions.excludes("src/Private.kt"))
+        assertFalse(exclusions.excludes("other/private.kt"))
+        assertTrue(exclusions.excludes("src/private.kt"))
+        assertTrue(exclusions.excludes("src/private.kt"))
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) { exclusions.requireAllMatched() }
+        assertTrue(exclusions.excludes("config/local.json"))
+        exclusions.requireAllMatched()
+    }
+
+    @Test
+    fun explicitExclusionsRejectTraversalAndPreserveFilenameSpaces() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            AiBundleEngine.parseExcludedPaths("../private.kt")
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            AiBundleEngine.FileExclusions(setOf("/private.kt"))
+        }
+        val paths = AiBundleEngine.parseExcludedPaths("src/a file.kt\n src.kt ")
+        assertTrue("src/a file.kt" in paths)
+        assertTrue(" src.kt " in paths)
+    }
+
+    @Test
     fun preservesOrdinarySourceText() {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)

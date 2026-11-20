@@ -34,7 +34,8 @@ object AiBundleEngine {
         val maskSecrets: Boolean = true,
         val excludeTests: Boolean = false,
         val compressManifests: Boolean = false,
-        val maxDepth: Int? = null
+        val maxDepth: Int? = null,
+        val excludedRelativePaths: Set<String> = emptySet()
     )
 
     data class BundleResult(
@@ -146,6 +147,7 @@ object AiBundleEngine {
         // Reserve space for headers/omissions. The final serialized UTF-8 byte count
         // is checked as well, including the report, before publication.
         val contentBudget = budget - minOf(budget / 8, 256 * 1024L)
+        val exclusions = FileExclusions(config.excludedRelativePaths)
         val parent = requireNotNull(outputFile.absoluteFile.parentFile)
         check(parent.isDirectory || parent.mkdirs()) { "Cannot create bundle output directory" }
         val scratch = Files.createTempDirectory(context.cacheDir.toPath(), "bundle_").toFile()
@@ -182,6 +184,7 @@ object AiBundleEngine {
                         val name = path.substringAfterLast('/')
                         if (path.length > MAX_PATH_CHARS) { omit(path, "path length limit"); return }
                         if (!isSafeBundlePath(path)) { omit(path, "unsafe relative path"); return }
+                        if (exclusions.excludes(path)) { omit(path, "explicit user exclusion"); return }
                         val exportedPath = safePath(path)
                         if (exportedPath in includedPaths) { omit(path, "duplicate exported path"); return }
                         if (config.maskSecrets && isSensitiveFileName(name)) {
@@ -234,6 +237,8 @@ object AiBundleEngine {
                             val relative = if (path.isEmpty()) name else "$path/$name"
                             if (child.isFile) files++
                             if (!isSafeBundlePath(name) || name.contains('/')) { omit(relative, "unsafe entry name"); continue }
+                            // Match every alias of an explicitly excluded path before any content read.
+                            if (child.isFile && exclusions.excludes(relative)) { omit(relative, "explicit user exclusion"); continue }
                             if (name.startsWith(".") && name != ".env.example") { omit(relative, "hidden entry"); continue }
                             if (child.isDirectory) {
                                 when {
@@ -250,6 +255,7 @@ object AiBundleEngine {
                     else { files = 1; include(requireNotNull(single), rootName, -1) }
                 }
             }
+            exclusions.requireAllMatched()
             require(included > 0) { "No readable files fit this format, filters and estimated content budget" }
             val tokens = chars / 4 + if (chars % 4 == 0L) 0 else 1
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
@@ -326,6 +332,39 @@ object AiBundleEngine {
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT)
             .decode(ByteBuffer.wrap(bytes)).toString()
+    }
+
+    private const val MAX_EXPLICIT_EXCLUSIONS = 2000
+
+    internal fun parseExcludedPaths(input: String): Set<String> {
+        require(input.length <= 128 * 1024) { "Exclusion list is too long" }
+        // Do not trim nonblank filenames: spaces can be part of a SAF display name.
+        val paths = input.lineSequence().filter { it.isNotBlank() }.toCollection(linkedSetOf())
+        FileExclusions(paths) // shared validation for direct callers and UI
+        return paths
+    }
+
+    internal class FileExclusions(paths: Set<String>) {
+        private val requested = paths.toSet()
+        private val matched = HashSet<String>()
+        init {
+            require(requested.size <= MAX_EXPLICIT_EXCLUSIONS) { "Too many explicit file exclusions" }
+            require(requested.all { it.length <= MAX_PATH_CHARS && isSafeBundlePath(it) }) {
+                "Use exact relative file paths, one per line; absolute paths and traversal are not allowed"
+            }
+        }
+        fun excludes(path: String): Boolean {
+            if (path !in requested) return false
+            matched.add(path)
+            return true
+        }
+        fun requireAllMatched() {
+            val remaining = requested - matched
+            if (remaining.isNotEmpty()) {
+                // Do not echo names which may themselves contain credentials.
+                throw IOException("${remaining.size} requested exclusion(s) did not match an inspected file. Check case, relative paths and folder depth; no bundle was published.")
+            }
+        }
     }
 
     internal fun isSafeBundlePath(path: String): Boolean =
