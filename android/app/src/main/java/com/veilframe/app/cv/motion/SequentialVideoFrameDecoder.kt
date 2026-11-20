@@ -42,7 +42,8 @@ internal object SequentialVideoFrameDecoder {
                 val n = try { Os.read(fd, buffer, offset, length) }
                 catch (e: ErrnoException) {
                     if (e.errno == OsConstants.EINTR) continue
-                    if (e.errno != OsConstants.EAGAIN && e.errno != OsConstants.EWOULDBLOCK) throw IOException("Frame pipe read failed", e)
+                    // Linux/Android EWOULDBLOCK aliases EAGAIN; only EAGAIN is exposed by Android SDK.
+                    if (e.errno != OsConstants.EAGAIN) throw IOException("Frame pipe read failed", e)
                     0
                 }
                 if (n > 0) return n

@@ -530,3 +530,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Indexed merged-cell rendering and cancellable PDF page ownership
 
 - Replace a linear scan of all merged ranges for every cell with a compact row-major merge index (at most 8 MB, omitted for unmerged sheets). Natural and tiled renderers check cancellation per row/tile and enforce page budgets before each page allocation; close content streams even on failures. Tiled anchor text is rewrapped to the actual visible slice and rejected if it cannot fit vertically rather than clipping the remainder. This does not implement flow across panels; oversized merged values may require wider tile geometry. Added index parity regression. No Android CI or rendered acceptance verified yet.
+
+### A19 — Android SDK compilation correction
+
+- CI run 44760845651 failed at compileDebugKotlin because Android OsConstants does not expose EWOULDBLOCK. Linux/Android aliases it to EAGAIN, so use the public SDK EAGAIN constant alone. No change to the nonblocking FIFO protocol, error handling or CI settings. New Android build validation pending.
