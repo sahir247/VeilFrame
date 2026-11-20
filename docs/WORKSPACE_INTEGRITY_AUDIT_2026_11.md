@@ -589,3 +589,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A21/A26/A29 — Upscale output ownership across dispatcher handoff
 
 - Retain generated file/bitmap ownership across cancellable withContext return boundaries at native and high-level inference entry points. Dispose undelivered results once, recycle native preview and remove a published-but-unclaimed file on failure/cancellation. Propagate preview cancellation; protect successful output from optional telemetry failures and avoid falsely labelling CPU fallback as Vulkan solely from GPU availability. Postprocessor now validates expected channels and checks cancellation during inflate. Two coroutine regressions cover delivery and prompt cancellation. No inference quality or device benchmark claims; CI pending.
+
+### A21/A28/A29 — Upscaler transactional gallery export
+
+- Reject missing MediaStore row/stream, failed bitmap PNG compression, short or growing source copy and unsuccessful pending-row publication. Roll back allocated pending rows on exceptions and cancellation; an external provider can still reject rollback. Copy streamed PNG in bounded 64 KiB chunks with cancellation and exact source length checks; legacy file path stages before atomic move. Unique output name and captured scale. Gate completion/error UI on currently owned output and live activity. Two transaction tests added. Physical provider testing and broader share/export resource leasing remain pending.

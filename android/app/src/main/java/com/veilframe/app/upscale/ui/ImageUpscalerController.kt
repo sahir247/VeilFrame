@@ -1459,65 +1459,68 @@ class ImageUpscalerController(
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun saveUpscaledImage() {
         val output = resultOutput ?: return
+        val scale = targetScale
         activeExportCount.incrementAndGet()
-        scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             try {
+                val cc = currentCoroutineContext()
+                val checkpoint: () -> Unit = { cc.ensureActive() }
+                checkpoint()
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val filename = "VeilFrame_Upscaled_${targetScale}x_$timestamp.png"
-
-                var savedUri: Uri? = null
-
+                val filename = "VeilFrame_Upscaled_${scale}x_$timestamp_${java.util.UUID.randomUUID()}.png"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val resolver = activity.contentResolver
                     val values = ContentValues().apply {
                         put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                         put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                         put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/VeilFrame")
                         put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
-
-                    val resolver = activity.contentResolver
                     val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    savedUri = resolver.insert(collection, values)
-
-                    if (savedUri != null) {
-                        resolver.openOutputStream(savedUri)?.use { os ->
-                            writeOutput(output, os)
+                    val savedUri = resolver.insert(collection, values)
+                        ?: throw java.io.IOException("MediaStore could not create destination")
+                    com.veilframe.app.upscale.inference.PendingPublication.run(
+                        rollback = { resolver.delete(savedUri, null, null) },
+                        write = {
+                            val stream = resolver.openOutputStream(savedUri, "w")
+                                ?: throw java.io.IOException("MediaStore destination unavailable")
+                            stream.use { writeOutput(output, it, checkpoint) }
+                            checkpoint()
+                        },
+                        publish = {
+                            val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                            resolver.update(savedUri, ready, null, null) == 1
                         }
-                        values.clear()
-                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                        resolver.update(savedUri, values, null, null)
-                    }
+                    )
                 } else {
                     val picturesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VeilFrame")
-                    picturesDir.mkdirs()
+                    check(picturesDir.isDirectory || picturesDir.mkdirs())
                     val outFile = File(picturesDir, filename)
-                    FileOutputStream(outFile).use { fos ->
-                        writeOutput(output, fos)
-                    }
-                    savedUri = try {
-                        FileProvider.getUriForFile(activity, "${activity.packageName}.provider", outFile)
-                    } catch (_: Exception) {
-                        Uri.fromFile(outFile)
-                    }
+                    val staged = File.createTempFile("upscale_", ".part", picturesDir)
+                    try {
+                        FileOutputStream(staged).use { writeOutput(output, it, checkpoint) }
+                        checkpoint()
+                        java.nio.file.Files.move(staged.toPath(), outFile.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                    } finally { staged.delete() }
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (savedUri != null) {
-                        upscalerBinding.tvUpscalerResultDetails.text = "Saved to Pictures/VeilFrame ($filename)"
-                        Toast.makeText(activity, "Saved to Pictures/VeilFrame: $filename", Toast.LENGTH_LONG).show()
-                        onLog("[UPSCALER] Saved upscaled image: $filename")
-                    } else {
-                        upscalerBinding.tvUpscalerResultDetails.text = "Failed to save upscaled image. Tap Save to retry."
-                        Toast.makeText(activity, "Failed to save upscaled image", Toast.LENGTH_SHORT).show()
-                    }
+                    if (activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
+                    upscalerBinding.tvUpscalerResultDetails.text = "Saved to Pictures/VeilFrame ($filename)"
+                    Toast.makeText(activity, "Saved to Pictures/VeilFrame: $filename", Toast.LENGTH_LONG).show()
+                    onLog("[UPSCALER] Saved upscaled image: $filename")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error saving upscaled image: ${e.message}", e)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.e(TAG, "Error saving upscaled image", failure)
                 withContext(Dispatchers.Main) {
-                    upscalerBinding.tvUpscalerResultDetails.text = "Save error: ${e.message}. Tap Save to retry."
-                    Toast.makeText(activity, "Save error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (activity.isDestroyed || activity.isFinishing || resultOutput !== output) return@withContext
+                    upscalerBinding.tvUpscalerResultDetails.text = "Save error: ${failure.message}. Tap Save to retry."
+                    Toast.makeText(activity, "Save error: ${failure.message}", Toast.LENGTH_SHORT).show()
                 }
             } finally {
                 activeExportCount.decrementAndGet()
@@ -1544,11 +1547,34 @@ class ImageUpscalerController(
     }
 
     /** Writes the output as PNG: in-memory compress, or a byte copy of the streamed file. */
-    private fun writeOutput(output: UpscaleOutput, os: java.io.OutputStream) {
+    private fun writeOutput(output: UpscaleOutput, os: java.io.OutputStream, checkpoint: () -> Unit = {}) {
+        checkpoint()
         when (output) {
-            is UpscaleOutput.InMemory -> output.bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
-            is UpscaleOutput.Streamed -> output.file.inputStream().use { it.copyTo(os) }
+            is UpscaleOutput.InMemory -> {
+                if (!output.bitmap.compress(Bitmap.CompressFormat.PNG, 100, os))
+                    throw java.io.IOException("PNG encoder failed")
+            }
+            is UpscaleOutput.Streamed -> {
+                val expected = output.file.length()
+                if (expected <= 0) throw java.io.IOException("Missing upscale output")
+                var copied = 0L
+                output.file.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        checkpoint()
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        if (n == 0 || n.toLong() > expected - copied)
+                            throw java.io.IOException("Upscale output changed during copy")
+                        os.write(buffer, 0, n)
+                        copied += n
+                    }
+                }
+                if (copied != expected) throw java.io.IOException("Incomplete upscale output copy")
+            }
         }
+        checkpoint()
+        os.flush()
     }
 
     private fun shareUpscaledImage() {
