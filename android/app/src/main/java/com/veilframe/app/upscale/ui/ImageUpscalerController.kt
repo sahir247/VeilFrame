@@ -1487,7 +1487,7 @@ class ImageUpscalerController(
                 val checkpoint: () -> Unit = { cc.ensureActive() }
                 checkpoint()
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val filename = "VeilFrame_Upscaled_${scale}x_$timestamp_${java.util.UUID.randomUUID()}.png"
+                val filename = "VeilFrame_Upscaled_${scale}x_${timestamp}_${java.util.UUID.randomUUID()}.png"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val resolver = activity.contentResolver
                     val values = ContentValues().apply {
