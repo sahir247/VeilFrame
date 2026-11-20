@@ -51,7 +51,7 @@ internal object OriginalResolutionCutout {
 
     @Suppress("DEPRECATION")
     fun export(source: RembgImageSource.Staged, info: RembgSourceInfo, matte: RembgAlphaMatte,
-               destination: File, checkpoint: () -> Unit = {}) {
+               destination: File, trim: Boolean = false, checkpoint: () -> Unit = {}) {
         require(supports(info)) { "Original-resolution PNG is limited to admitted JPEG/PNG sources" }
         require(source.file.canonicalFile != destination.canonicalFile)
         val parent = requireNotNull(destination.absoluteFile.parentFile)
@@ -75,45 +75,61 @@ internal object OriginalResolutionCutout {
                 val tilePixels = IntArray(width * minOf(bandHeight, height))
                 val sampler = matte.sampler(width, height)
                 var tile = Rect()
+                var bandStart = -1
                 var bandEnd = 0
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                     inSampleSize = 1
                     inScaled = false
                 }
+                fun readCompositeRow(y: Int, row: IntArray) {
+                    check(row.size == width && y in 0 until height)
+                    if (y < bandStart || y >= bandEnd) {
+                        checkpoint()
+                        val rows = minOf(bandHeight, height - y)
+                        tile = geometry.strip(y, rows)
+                        val decoded = decoder.decodeRegion(tile, options)
+                            ?: throw IOException("Source region could not be decoded")
+                        try {
+                            check(decoded.width == tile.width() && decoded.height == tile.height()) {
+                                "Source decoder returned a different region size"
+                            }
+                            decoded.getPixels(tilePixels, 0, tile.width(), 0, 0, tile.width(), tile.height())
+                        } finally { decoded.recycle() }
+                        bandStart = y
+                        bandEnd = y + rows
+                    }
+                    val stride = tile.width()
+                    var index = (geometry.rawY(0, y) - tile.top) * stride + geometry.rawX(0, y) - tile.left
+                    val step = if (width == 1) 0 else
+                        (geometry.rawY(1, y) - geometry.rawY(0, y)) * stride +
+                            geometry.rawX(1, y) - geometry.rawX(0, y)
+                    for (x in 0 until width) {
+                        row[x] = tilePixels[index]
+                        index += step
+                    }
+                    sampler.apply(row, y)
+                }
+                // The final multiplied alpha determines the exact visible bounds.
+                // In particular, the source might already be transparent.
+                val crop = if (trim) CutoutBounds.find(width, height, checkpoint, ::readCompositeRow)
+                    else CutoutBounds(0, 0, width, height)
+                val fullRow = if (crop.left != 0 || crop.width != width) IntArray(width) else null
                 stage.outputStream().buffered().use { output ->
-                    StreamingRgbaPng.write(output, width, height, checkpoint) { y, row ->
-                        if (y >= bandEnd) {
-                            checkpoint()
-                            val rows = minOf(bandHeight, height - y)
-                            tile = geometry.strip(y, rows)
-                            val decoded = decoder.decodeRegion(tile, options)
-                                ?: throw IOException("Source region could not be decoded")
-                            try {
-                                check(decoded.width == tile.width() && decoded.height == tile.height()) {
-                                    "Source decoder returned a different region size"
-                                }
-                                decoded.getPixels(tilePixels, 0, tile.width(), 0, 0, tile.width(), tile.height())
-                            } finally { decoded.recycle() }
-                            bandEnd = y + rows
+                    StreamingRgbaPng.write(output, crop.width, crop.height, checkpoint) { y, row ->
+                        val srcY = crop.top + y
+                        if (fullRow == null) readCompositeRow(srcY, row)
+                        else {
+                            readCompositeRow(srcY, fullRow)
+                            fullRow.copyInto(row, 0, crop.left, crop.left + crop.width)
                         }
-                        val stride = tile.width()
-                        var index = (geometry.rawY(0, y) - tile.top) * stride + geometry.rawX(0, y) - tile.left
-                        val step = if (width == 1) 0 else
-                            (geometry.rawY(1, y) - geometry.rawY(0, y)) * stride +
-                                geometry.rawX(1, y) - geometry.rawX(0, y)
-                        for (x in 0 until width) {
-                            row[x] = tilePixels[index]
-                            index += step
-                        }
-                        sampler.apply(row, y)
                     }
                 }
                 checkpoint()
                 // Validate actual bytes before publishing: dimensions alone do not
                 // verify IDAT CRCs, zlib completion or complete decoded scanlines.
                 stage.inputStream().buffered().use { input ->
-                    StreamingPngVerifier.verify(input, width, height, checkpoint)
+                    StreamingPngVerifier.verify(input, crop.width, crop.height, checkpoint)
                 }
             } finally { decoder.recycle() }
             checkpoint()

@@ -1284,27 +1284,31 @@ class BackgroundRemoverController(
         val matte = originalMatte ?: return
         val info = originalInfo ?: return
         val generation = sourceGeneration
+        val trim = binding.switchTrimTransparent.isChecked
         MaterialAlertDialogBuilder(activity)
             .setTitle("Original-resolution transparent PNG")
-            .setMessage("Export ${info.width}×${info.height} original colors with the neural matte. This is an untrimmed transparent PNG; preview trim and background-color settings do not apply. Manual refinement requires the regular export path.")
+            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte. " +
+                if (trim) "Transparent borders will be cropped at original pixel resolution. Background-color settings do not apply."
+                else "The full image dimensions will be preserved. Background-color settings do not apply.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Export") { _, _ ->
                 if (source === sourceImage && matte === originalMatte && generation == sourceGeneration) {
-                    exportOriginalResolution(source, info, matte, generation)
+                    exportOriginalResolution(source, info, matte, generation, trim)
                 }
             }.show()
     }
 
     private fun exportOriginalResolution(
         source: RembgImageSource.Staged, info: RembgSourceInfo,
-        matte: RembgAlphaMatte, generation: Long
+        matte: RembgAlphaMatte, generation: Long, trim: Boolean
     ) {
         if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
         val release = sourceLeases.acquire(source)
         val progress = M3ExpressiveProgressDialog(activity)
         try {
             progress.show(title = "Original-resolution export",
-                initialStatus = "Decoding original pixels in strips and encoding transparent PNG…",
+                initialStatus = if (trim) "Finding original-pixel alpha bounds and encoding PNG…"
+                    else "Decoding original pixels in strips and encoding transparent PNG…",
                 isIndeterminate = true, cancelable = true, onCancel = { originalExportJob?.cancel() })
             originalExportJob = scope.launch(Dispatchers.Main) {
                 var destination: File? = null
@@ -1315,7 +1319,7 @@ class BackgroundRemoverController(
                         val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
                         val out = File.createTempFile("cutout_original_", ".png", dir)
                         destination = out
-                        OriginalResolutionCutout.export(source, info, matte, out) { cc.ensureActive() }
+                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim) { cc.ensureActive() }
                     }
                     if (generation != sourceGeneration || source !== sourceImage ||
                         matte !== originalMatte || activity.isFinishing || activity.isDestroyed) return@launch
