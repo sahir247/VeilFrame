@@ -155,6 +155,29 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun parsesSavedRowAndColumnDimensionsAndRejectsAmbiguousRanges() {
+        val workbook = """<workbook><sheets><sheet name="Geometry" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetFormatPr defaultColWidth="12" defaultRowHeight="24"/><cols><col min="2" max="3" width="40"/></cols><sheetData><row r="1" ht="60"><c r="C1"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row></sheetData></worksheet>"""
+        fun parse(xml: String): OpenXmlDocumentParser.XlsxSheetData {
+            val file = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to xml))
+            try { return OpenXmlDocumentParser.parseXlsx(file).sheets.single() }
+            finally { file.delete() }
+        }
+        val dimensions = parse(sheet).dimensions
+        assertEquals(63f, dimensions.columnMinPt(0), 0.01f)
+        assertEquals(210f, dimensions.columnMinPt(1), 0.01f)
+        assertEquals(210f, dimensions.columnMinPt(2), 0.01f)
+        assertEquals(60f, dimensions.rowMinPt(0), 0.01f)
+        assertEquals(24f, dimensions.rowMinPt(1), 0.01f)
+        for (bad in listOf(sheet.replace("width=\"40\"", "width=\"NaN\""),
+            sheet.replace("</cols>", "<col min=\"3\" max=\"4\" width=\"10\"/></cols>"),
+            sheet.replace("ht=\"60\"", "ht=\"500\""),
+            sheet.replace("r=\"2\"><c r=\"A2\"", "r=\"1\"><c r=\"A1\""))) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { parse(bad) }
+        }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

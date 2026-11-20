@@ -1102,7 +1102,8 @@ class OfficeConverter {
                     val remainingLines = totalLines - startLine
                     val maxFittingLines = ((availableHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
                     val linesInChunk = minOf(remainingLines, maxFittingLines)
-                    val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
+                    val chunkHeight = if (startLine == 0 && linesInChunk == totalLines) totalRowHeight
+                        else maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
 
                     for (colIndex in 0 until layout.colCount) {
                         val merged = layout.mergedGeometries.getOrNull(mergeIndex.at(rIdx, colIndex))

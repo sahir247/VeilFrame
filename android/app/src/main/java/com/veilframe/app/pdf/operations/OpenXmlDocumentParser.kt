@@ -418,7 +418,8 @@ object OpenXmlDocumentParser {
         val mergedRegions: List<CellRangeAddress> = emptyList(),
         val frozenColumns: Int = 0,
         val frozenRows: Int = 0,
-        val cachedFormulaCount: Int = 0
+        val cachedFormulaCount: Int = 0,
+        val dimensions: XlsxDimensions = XlsxDimensions()
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -544,7 +545,7 @@ object OpenXmlDocumentParser {
                 val sheetRows = mutableListOf<List<String>>()
                 val sheetSparseRows = mutableListOf<XlsxRow>()
                 val sheetMergedRegions = mutableListOf<CellRangeAddress>()
-                val (frozenCols, frozenRows, cachedFormulaCount) = parseWorksheet(
+                val metadata = parseWorksheet(
                     budget.read(zip, requireNotNull(zip.getEntry(part.path))),
                     sharedStrings, formatter, sheetRows, sheetSparseRows, sheetMergedRegions
                 )
@@ -557,8 +558,8 @@ object OpenXmlDocumentParser {
                 }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
-                    mergedRegions = sheetMergedRegions, frozenColumns = frozenCols, frozenRows = frozenRows,
-                    cachedFormulaCount = cachedFormulaCount
+                    mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
+                    cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions
                 ))
             }
         }
@@ -655,6 +656,19 @@ object OpenXmlDocumentParser {
         return CellRangeAddress(firstRow, lastRow, firstCol, lastCol)
     }
 
+    private data class WorksheetMetadata(
+        val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions
+    )
+
+    private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
+        if (!element.hasAttribute(name)) return null
+        val value = element.getAttribute(name).toFloatOrNull()
+        require(value != null && value.isFinite() && value in 0f..maximum) {
+            "Invalid worksheet dimension: $name"
+        }
+        return value
+    }
+
     private fun parseWorksheet(
         xml: String,
         sharedStrings: List<String>,
@@ -662,16 +676,39 @@ object OpenXmlDocumentParser {
         outRows: MutableList<List<String>>,
         outSparseRows: MutableList<XlsxRow>? = null,
         outMergedRegions: MutableList<CellRangeAddress>? = null
-    ): Triple<Int, Int, Int> {
+    ): WorksheetMetadata {
         val doc = parseXml(xml)
         require(doc.documentElement.localName() == "worksheet") { "Invalid worksheet XML root" }
         val root = doc.documentElement
         val sheetData = root.childElements("sheetData").singleOrNull()
             ?: throw IOException("Worksheet data missing or ambiguous")
 
+        val sheetFormats = root.childElements("sheetFormatPr")
+        require(sheetFormats.size <= 1) { "Ambiguous worksheet default dimensions" }
+        val defaultWidth = sheetFormats.singleOrNull()?.let { optionalDimension(it, "defaultColWidth", 255f) }
+        val defaultHeight = sheetFormats.singleOrNull()?.let { optionalDimension(it, "defaultRowHeight", 409.5f) }
+        val columnWidths = mutableMapOf<Int, Float>()
+        val declaredColumns = java.util.BitSet(MAX_XLSX_COLUMNS)
+        for (col in root.childElements("cols").flatMap { it.childElements("col") }) {
+            val first = col.getAttribute("min").toIntOrNull()
+            val last = col.getAttribute("max").toIntOrNull()
+            require(first != null && last != null && first in 1..MAX_XLSX_COLUMNS && last in first..MAX_XLSX_COLUMNS) {
+                "Invalid worksheet column range"
+            }
+            val already = declaredColumns.nextSetBit(first - 1)
+            require(already < 0 || already >= last) { "Overlapping worksheet column declarations" }
+            declaredColumns.set(first - 1, last)
+            optionalDimension(col, "width", 255f)?.let { width ->
+                for (index in first - 1 until last) columnWidths[index] = width
+            }
+        }
+        val rowHeights = mutableMapOf<Int, Float>()
+
         var frozenCols = 0
         var frozenRows = 0
         var cachedFormulaCount = 0
+        fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
+            XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights))
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {
@@ -711,6 +748,8 @@ object OpenXmlDocumentParser {
             require(targetRow in 1..MAX_XLSX_ROWS) { "Worksheet row exceeds XLSX bounds" }
             autoRowIndex = maxOf(autoRowIndex, targetRow + 1)
 
+            require(targetRow !in rowMap) { "Duplicate worksheet row reference" }
+            optionalDimension(rowElem, "ht", 409.5f)?.let { rowHeights[targetRow - 1] = it }
             val existingCells = rowMap.getOrPut(targetRow) { mutableListOf() }
 
             var child = rowElem.firstChild
@@ -779,7 +818,7 @@ object OpenXmlDocumentParser {
             }
         }
 
-        if (rowMap.isEmpty()) return Triple(frozenCols, frozenRows, cachedFormulaCount)
+        if (rowMap.isEmpty()) return metadata()
 
         var prevRow = 0
         for ((rowIdx, cells) in rowMap) {
@@ -803,6 +842,6 @@ object OpenXmlDocumentParser {
         while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() }) {
             outRows.removeAt(outRows.size - 1)
         }
-        return Triple(frozenCols, frozenRows, cachedFormulaCount)
+        return metadata()
     }
 }

@@ -201,7 +201,11 @@ object SpreadsheetLayoutEngine {
                 }
             }
             // Strict ceiling: individual column width cannot exceed maximum tile table width budget
-            minOf(maxAllowedColWidth, (maxW + 16f).coerceAtLeast(45f))
+            val declared = sheet.dimensions.columnMinPt(c)
+            require(declared <= maxAllowedColWidth) {
+                "Declared column width exceeds available tile width; use wider export settings"
+            }
+            minOf(maxAllowedColWidth, maxOf(declared, maxW + 16f, 45f))
         }
 
         val colX = FloatArray(maxCol)
@@ -225,7 +229,8 @@ object SpreadsheetLayoutEngine {
 
         val rowHeights = FloatArray(rows.size) { rIdx ->
             val maxLinesInRow = rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
-            maxOf(20f, maxLinesInRow * limits.lineHeight + limits.paddingVertical)
+            maxOf(20f, sheet.dimensions.rowMinPt(rIdx),
+                maxLinesInRow * limits.lineHeight + limits.paddingVertical)
         }
 
         val rowY = FloatArray(rows.size)
@@ -416,16 +421,17 @@ object SpreadsheetLayoutEngine {
         while (colIdx < maxCol) {
             val activeCols = mutableListOf<Int>()
             var groupWidth = 0f
-            val baseAvail = if (colIdx > 0 && repeatFrozen) {
-                (availWidth - frozenWidth).coerceAtLeast(45f)
-            } else {
-                availWidth
-            }
+            // Repeat only complete identifying columns, never duplicate a
+            // frozen column that is already part of the active group.
+            val repeated = if (repeatFrozen && colIdx >= frozenCols.size &&
+                frozenWidth + layout.colWidths[colIdx] <= availWidth) frozenCols else emptyList()
+            val repeatedWidth = if (repeated.isEmpty()) 0f else frozenWidth
+            val baseAvail = availWidth - repeatedWidth
 
             while (colIdx < maxCol) {
                 val nextW = layout.colWidths[colIdx]
-                // If this is the first column in the panel, take it even if it exceeds baseAvail
-                if (activeCols.isEmpty() || groupWidth + nextW <= baseAvail) {
+                require(nextW <= availWidth + 0.01f) { "Column exceeds tile width" }
+                if (groupWidth + nextW <= baseAvail + 0.01f) {
                     activeCols.add(colIdx)
                     groupWidth += nextW
                     colIdx++
@@ -434,11 +440,8 @@ object SpreadsheetLayoutEngine {
                 }
             }
 
-            val groupTotalTableWidth = if (repeatFrozen && activeCols.first() > 0) {
-                frozenWidth + groupWidth
-            } else {
-                groupWidth
-            }
+            check(activeCols.isNotEmpty()) { "Column partition made no progress" }
+            val groupTotalTableWidth = repeatedWidth + groupWidth
 
             val maxAllowedWidth = minOf(effectiveMaxTileW, limits.maxStandardCoord)
             val tileWidth = minOf(maxAllowedWidth, maxOf(limits.minPageWidth, groupTotalTableWidth + (2 * limits.margin)))
@@ -449,7 +452,7 @@ object SpreadsheetLayoutEngine {
                     totalGroups = 0, // Assigned after loop
                     startCol = activeCols.first(),
                     endCol = activeCols.last(),
-                    frozenCols = if (repeatFrozen && activeCols.first() > 0) frozenCols else emptyList(),
+                    frozenCols = repeated,
                     activeCols = activeCols,
                     groupTableWidth = groupTotalTableWidth,
                     tileWidth = tileWidth,
@@ -479,11 +482,15 @@ object SpreadsheetLayoutEngine {
         var currentChunkStartLine = 0
 
         while (rIdx < rowCount) {
-            val totalLinesInRow = layout.rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
+            val totalLinesInRow = maxOf(1, layout.rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1)
             val totalRowH = layout.rowHeights[rIdx]
 
             if (totalRowH > availHeight) {
-                // Oversized row: split into vertical chunks across panels
+                val contentHeight = maxOf(20f, totalLinesInRow * limits.lineHeight + limits.paddingVertical)
+                require(totalRowH <= contentHeight + 0.01f) {
+                    "Declared row height exceeds available tile height; use taller export settings"
+                }
+                // Oversized text row: split into vertical chunks across panels
                 val maxFittingLines = ((availHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
                 val linesInChunk = minOf(totalLinesInRow - currentChunkStartLine, maxFittingLines)
                 val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)

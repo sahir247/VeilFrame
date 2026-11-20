@@ -1464,6 +1464,31 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun savedDimensionsAreMinimumsAndFrozenPanelsNeverOverflowOrDuplicateWithinPanel() {
+        val sheet = OpenXmlDocumentParser.XlsxSheetData(
+            name = "Sized",
+            rows = listOf(listOf("a", "b", "c", "d"), listOf("a", "b", "c", "d")),
+            frozenColumns = 2,
+            dimensions = XlsxDimensions(defaultColumnWidth = 30f, defaultRowHeightPt = 48f,
+                rowHeightsPt = mapOf(0 to 80f))
+        )
+        val limits = LayoutLimits(maxTileWidthOverride = 400f)
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet, 0, com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, limits)
+        assertTrue(layout.colWidths.all { it >= 157.5f })
+        assertEquals(80f, layout.rowHeights[0], 0.01f)
+        assertEquals(48f, layout.rowHeights[1], 0.01f)
+        val groups = SpreadsheetLayoutEngine.partitionColumns(layout, limits, 340f)
+        assertEquals(listOf(0, 1, 2, 3), groups.flatMap { it.activeCols })
+        for (group in groups) {
+            assertTrue(group.groupTableWidth <= 340.01f)
+            assertTrue(group.frozenCols.intersect(group.activeCols.toSet()).isEmpty())
+        }
+        val wider = SpreadsheetLayoutEngine.partitionColumns(layout, limits.copy(maxTileWidthOverride = 600f), 540f)
+        assertTrue(wider.last().frozenCols.isNotEmpty())
+        assertTrue(wider.last().groupTableWidth <= 540.01f)
+    }
+
+    @Test
     fun testSparseWorksheetWithHighCoordinatesAndMergedExtendingBeyondData() = runBlocking {
         // Sparse sheet with high coordinates (Row 150, Col 50) and merge extending beyond data
         val rows = mutableListOf<List<String>>()
