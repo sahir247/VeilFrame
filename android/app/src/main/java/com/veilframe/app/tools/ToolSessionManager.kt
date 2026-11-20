@@ -284,8 +284,8 @@ class ToolSessionManager(
                 configureOptions(
                     paramHeader = "AI BUNDLE CONFIGURATION",
                     primaryLabel = "Token Budget",
-                    primaryDesc = "Target context window limit for LLM prompt ingestion",
-                    primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
+                    primaryDesc = "Exact o200k_base artifact tokens (2 MiB cap); other models and chat overhead differ. Byte-only: 32 MiB.",
+                    primaryChips = listOf("32K", "64K", "128K", "200K", "32 MiB"),
                     primaryDefaultIndex = 1,
                     formatLabel = "Bundle Format",
                     formatDesc = "Output archive extension and structured packaging",

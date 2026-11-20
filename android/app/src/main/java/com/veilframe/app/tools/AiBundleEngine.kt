@@ -25,7 +25,7 @@ import java.util.regex.Pattern
  * Traverses Android SAF DocumentFile trees directly without disk materialization,
  * applies smart ignore rules (skipping build artifacts, binary blobs, and test suites),
  * heuristically masks recognized credential patterns and packages project context
- * formatted for LLM prompts within an estimated token budget.
+ * formatted for LLM prompts with an exact o200k_base artifact budget or a byte cap.
  */
 object AiBundleEngine {
 
@@ -45,7 +45,8 @@ object AiBundleEngine {
         val includedFiles: Int,
         val totalTokens: Long,
         val outputPath: String,
-        val omittedEntries: Int = 0
+        val omittedEntries: Int = 0,
+        val tokenEncoding: String? = null
     )
 
     private val IGNORED_DIRECTORIES = setOf(
@@ -235,11 +236,13 @@ object AiBundleEngine {
         }
         val format = config.outputFormat.lowercase(Locale.US)
         require(format in setOf("json", "md", "aibundle")) { "Unsupported bundle format" }
-        val budget = if (config.tokenBudget <= 0) MAX_BUNDLE_BYTES
-            else minOf(MAX_BUNDLE_BYTES, config.tokenBudget.coerceAtMost(Long.MAX_VALUE / 4) * 4)
-        // Reserve space for headers/omissions. The final serialized UTF-8 byte count
-        // is checked as well, including the report, before publication.
+        val exact = config.tokenBudget > 0
+        val budget = if (exact) BundleTokenizer.MAX_TOKENIZED_BYTES else MAX_BUNDLE_BYTES
+        // Independent byte and token admission budgets. Section token counts
+        // guide packing; they are not additive across arbitrary BPE boundaries.
         val contentBudget = budget - minOf(budget / 8, 256 * 1024L)
+        val sectionTokenBudget = config.tokenBudget - minOf(config.tokenBudget / 8, 8192L)
+        var sectionTokens = 0L
         val exclusions = FileExclusions(config.excludedRelativePaths)
         val parent = requireNotNull(outputFile.absoluteFile.parentFile)
         check(parent.isDirectory || parent.mkdirs()) { "Cannot create bundle output directory" }
@@ -267,7 +270,7 @@ object AiBundleEngine {
                                 "{\"path\":${JSONObject.quote(shownPath)},\"reason\":${JSONObject.quote(reason)}}"
                         } else "${JSONObject.quote(shownPath)} — $reason\n"
                         omissionBytes += line.toByteArray(Charsets.UTF_8).size
-                        if (omissionBytes > MAX_BUNDLE_BYTES) throw IOException("Omission report exceeds bundle limit")
+                        if (omissionBytes > budget) throw IOException("Omission report exceeds bundle byte limit")
                         skipped.write(line)
                         omitted++
                     }
@@ -310,7 +313,13 @@ object AiBundleEngine {
                         val section = buildFileSection(exportedPath, content, format, included + 1)
                         val separator = if (format == "json" && included > 0) ",\n" else ""
                         val len = section.toByteArray(Charsets.UTF_8).size.toLong() + separator.length
-                        if (len > contentBudget - chars) { omit(path, "estimated content budget"); return }
+                        if (len > contentBudget - chars) { omit(path, "content byte budget"); return }
+                        val candidateTokens = if (exact) BundleTokenizer.count(separator + section) else 0L
+                        currentCoroutineContext().ensureActive()
+                        if (exact && candidateTokens > sectionTokenBudget - sectionTokens) {
+                            omit(path, "o200k_base section budget"); return
+                        }
+                        sectionTokens += candidateTokens
                         writer.write(separator)
                         writer.write(section)
                         chars += len
@@ -362,8 +371,10 @@ object AiBundleEngine {
                 }
             }
             exclusions.requireAllMatched()
-            require(included > 0) { "No readable files fit this format, filters and estimated content budget" }
-            val tokens = chars / 4 + if (chars % 4 == 0L) 0 else 1
+            require(included > 0) { "No readable files fit this format, filters and content budget" }
+            val tokens = if (exact) sectionTokens else chars / 4 + if (chars % 4 == 0L) 0 else 1
+            val tokenScope = if (exact) "Independent o200k_base file-section counts; exact complete artifact checked before publication"
+                else "File-section estimate (UTF-8 bytes / 4); 32 MiB byte cap only"
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
             val safeName = JSONObject.quote(exportedRoot)
             val security = if (config.maskSecrets) "Heuristic masking enabled; review for missed secrets before sharing."
@@ -384,21 +395,21 @@ object AiBundleEngine {
                 }
                 when (format) {
                     "json" -> {
-                        out.write("{\"project\":$safeName,\"generated\":${JSONObject.quote(timestamp)},\"included_files\":$included,\"evaluated_files\":$files,\"estimated_tokens\":$tokens,\"condensed_files\":$condensed,\"budget_scope\":\"UTF-8 bytes / 4; whole bundle checked before publication\",\"security\":${JSONObject.quote(security)},\"files\":{\n")
+                        out.write("{\"project\":$safeName,\"generated\":${JSONObject.quote(timestamp)},\"included_files\":$included,\"evaluated_files\":$files,\"estimated_tokens\":$tokens,\"condensed_files\":$condensed,\"budget_scope\":${JSONObject.quote(tokenScope)},\"security\":${JSONObject.quote(security)},\"files\":{\n")
                         appendFile(body)
                         out.write("\n},\"omissions\":[\n")
                         appendFile(omissions)
                         out.write("\n]}\n")
                     }
                     "aibundle" -> {
-                        out.write("@VEILFRAME_BUNDLE\nversion=1\nproject=${exportedRoot.replace('\n', ' ').replace('\r', ' ')}\ntimestamp=$timestamp\ntotal_tokens=$tokens\nincluded_files=$included\nexcluded_files=${files - included}\nmax_depth=${config.maxDepth ?: "unlimited"}\n\n@SUMMARY\nEvaluated files: $files\nCondensed manifests: $condensed\nBudget: UTF-8 bytes / 4; complete bundle checked\n\n@FILES\n")
+                        out.write("@VEILFRAME_BUNDLE\nversion=1\nproject=${exportedRoot.replace('\n', ' ').replace('\r', ' ')}\ntimestamp=$timestamp\ntotal_tokens=$tokens\nincluded_files=$included\nexcluded_files=${files - included}\nmax_depth=${config.maxDepth ?: "unlimited"}\n\n@SUMMARY\nEvaluated files: $files\nCondensed manifests: $condensed\nBudget: $tokenScope\n\n@FILES\n")
                         appendFile(body)
                         out.write("\n@OMISSIONS\n")
                         appendFile(omissions)
                         out.write("\n@SECURITY\n$security\n\n@END\n")
                     }
                     else -> {
-                        out.write("# VeilFrame AI Context Bundle: $safeName\n\nGenerated: $timestamp\nIncluded: $included / $files evaluated files\nEstimated file-section tokens: ~$tokens (not exact); whole bundle budget checked\nCondensed manifests: $condensed\n$security\n\n")
+                        out.write("# VeilFrame AI Context Bundle: $safeName\n\nGenerated: $timestamp\nIncluded: $included / $files evaluated files\nFile-section tokens: $tokens ($tokenScope)\nCondensed manifests: $condensed\n$security\n\n")
                         appendFile(body)
                         out.write("\n## Omitted entries\n\n")
                         appendFile(omissions)
@@ -408,11 +419,15 @@ object AiBundleEngine {
             currentCoroutineContext().ensureActive()
             val finalBytes = temp.length()
             if (finalBytes > budget) {
-                throw IOException("Complete bundle, including the omission report, exceeds the estimated budget. Increase the budget or narrow the selection.")
+                throw IOException("Complete bundle, including omission report, exceeds the byte cap. Narrow the selection or use byte-capped mode.")
             }
+            val cc = currentCoroutineContext()
+            val wholeTokens = if (exact) BundleTokenizer.verify(temp, config.tokenBudget) { cc.ensureActive() }
+                else finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
+            cc.ensureActive()
             Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            val wholeEstimate = finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
-            return BundleResult(files, included, wholeEstimate, outputFile.absolutePath, omitted)
+            return BundleResult(files, included, wholeTokens, outputFile.absolutePath, omitted,
+                if (exact) BundleTokenizer.NAME else null)
         } finally {
             staged?.delete()
             scratch.deleteRecursively()

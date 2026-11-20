@@ -209,7 +209,7 @@ class ToolExecutionController(
             1 -> 64_000L
             2 -> 128_000L
             3 -> 200_000L
-            4 -> 0L // Unlimited
+            4 -> 0L // Byte cap only
             else -> 64_000L
         }
 
@@ -221,7 +221,7 @@ class ToolExecutionController(
         }
 
         sessionManager.updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
-        onLog("[AI] Packaging context directly from target: $sourceName (Budget: ${if (tokenBudget == 0L) "32 MiB byte cap" else "~$tokenBudget estimated tokens"})...")
+        onLog("[AI] Packaging context directly from target: $sourceName (Budget: ${if (tokenBudget == 0L) "32 MiB byte cap" else "$tokenBudget o200k_base tokens (2 MiB byte cap)"})...")
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(activity.cacheDir, "AIBundle_${timeStamp}_${java.util.UUID.randomUUID()}.$formatKey")
@@ -281,7 +281,10 @@ class ToolExecutionController(
             binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
 
             onLog("[OK] Package generated: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
-            onLog("[AI] Tokens: ~${bundleResult.totalTokens} | Included files: ${bundleResult.includedFiles} | Format: $formatKey")
+            val tokenLabel = bundleResult.tokenEncoding?.let { "${bundleResult.totalTokens} $it tokens" }
+                ?: "~${bundleResult.totalTokens} estimated tokens (byte-cap mode)"
+            binding.tvResultDetails.text = binding.tvResultDetails.text.toString() + " • " + tokenLabel
+            onLog("[AI] $tokenLabel | Included files: ${bundleResult.includedFiles} | Format: $formatKey")
             onLog(if (bundleConfig.maskSecrets) "[PRIVACY] Heuristic masking applied; review for missed credentials before sharing." else "[PRIVACY] Secret masking disabled; review all content before sharing.")
             onLog("[EXPORT] Output ready for saving or sharing.")
             binding.btnExecute.isEnabled = true
