@@ -125,6 +125,15 @@ object QrExporter {
         }
     }
 
+    private suspend fun validateEncodedAnimation(context: Context, file: File, matrix: QrMatrix,
+                                                   design: QrDesign, content: String): QrError? {
+        val report = AnimatedArtifactVerifier.verify(context, file, matrix, design, content)
+        return if (report.isAllFramesScanReady) null else QrError.Validation.ScanabilityFailed(
+            report.failureReasons.firstOrNull() ?: "Encoded animation failed strict verification",
+            report.failureReasons
+        )
+    }
+
     private fun timestampName(ext: String): String {
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         return "VeilFrame_QR_$ts.$ext"
@@ -1210,7 +1219,12 @@ object QrExporter {
                     return QrOutputResult.Failure(gifResult.error)
                 }
                 val gifBytes = (gifResult as QrOutputResult.Success).value
-                saveGifTyped(context, gifBytes)
+                val artifact = File.createTempFile("qr_verify_gif_", ".gif", context.cacheDir)
+                try {
+                    artifact.writeBytes(gifBytes)
+                    val error = validateEncodedAnimation(context, artifact, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveGifTyped(context, gifBytes)
+                } finally { artifact.delete() }
             }
             is QrOutputFormat.Apng -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)
@@ -1231,7 +1245,8 @@ object QrExporter {
                     if (apngResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(apngResult.error)
                     }
-                    saveApngTyped(context, tempFile)
+                    val error = validateEncodedAnimation(context, tempFile, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveApngTyped(context, tempFile)
                 } finally {
                     tempFile.delete()
                 }
@@ -1255,7 +1270,8 @@ object QrExporter {
                     if (vidResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(vidResult.error)
                     }
-                    saveVideoTyped(context, tempFile)
+                    val error = validateEncodedAnimation(context, tempFile, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveVideoTyped(context, tempFile)
                 } finally {
                     tempFile.delete()
                 }
