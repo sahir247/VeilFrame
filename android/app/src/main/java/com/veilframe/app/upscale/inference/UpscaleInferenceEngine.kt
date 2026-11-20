@@ -7,8 +7,6 @@ import com.veilframe.app.upscale.model.ModelCapability
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRepository
-import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -26,7 +24,6 @@ class UpscaleInferenceEngine(
 
     companion object {
         private const val TAG = "VeilFrame.UpscaleEngine"
-        private val verifiedShaCache = ConcurrentHashMap<String, String>()
 
         /**
          * Threshold (16 Megapixels) above which algorithmic scaling switches to the
@@ -109,10 +106,18 @@ class UpscaleInferenceEngine(
         val srcW = source.width
         val srcH = source.height
 
-        // Validate execution plan: scales, dimensions, and capability constraints
-        validateExecutionPlan(srcW, srcH, model, targetScale)
-
         try {
+            // Validate before native allocation and return a typed failure.
+            validateExecutionPlan(srcW, srcH, model, targetScale)
+            require(srcW > 0 && srcH > 0)
+            val plannedW = srcW.toLong() * targetScale
+            val plannedH = srcH.toLong() * targetScale
+            if (plannedW > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                plannedH > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                plannedW * plannedH > UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS) {
+                throw ResourceLimitExceededException("Output dimensions exceed safe device limits")
+            }
+            val detail = if (params.detailEnhancement) params.detailStrength else 0f
             ensureActive()
             listener?.onStatus("Preparing processing pipeline...")
             listener?.onStage("Preparing", 0, 1)
@@ -129,41 +134,22 @@ class UpscaleInferenceEngine(
                         listener = listener
                     )
 
-                    val unenhanced = if (!scalePlan.requiresRefinement) {
-                        aiPassOutput
-                    } else {
-                        // Streamed refinement pass from the NCNN intermediate output
-                        val refineScale = scalePlan.refinementScale
-                        val finalW = srcW * targetScale
-                        val finalH = srcH * targetScale
-                        if (finalW > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
-                            finalH > UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
-                            finalW.toLong() * finalH.toLong() > UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS
-                        ) {
-                            (aiPassOutput as? UpscaleOutput.Streamed)?.file?.delete()
-                            throw ResourceLimitExceededException(
-                                "Hybrid ${targetScale}× output (${finalW}x${finalH}) exceeds safe device pixel bounds."
-                            )
-                        }
-                        listener?.onStatus("Applying ${refineScale}× Lanczos refinement...")
-                        listener?.onStage("Refinement", 0, 1)
-                        refineStreamedOutput(aiPassOutput, refineScale, finalW, finalH)
-                    }
-
-                    if (params.detailEnhancement && params.detailStrength > 0f) {
-                        when (unenhanced) {
-                            is UpscaleOutput.InMemory -> {
-                                val enhanced = AdaptiveDetailEnhancer.enhance(unenhanced.bitmap, params.detailStrength)
-                                UpscaleOutput.InMemory(enhanced)
+                    if (scalePlan.requiresRefinement || detail > .01f) {
+                        val streamed = aiPassOutput as? UpscaleOutput.Streamed
+                            ?: throw UpscaleMemoryException("Expected streamed native inference output")
+                        try {
+                            listener?.onStatus("Finishing full-resolution output…")
+                            UriRegionSource(context, android.net.Uri.fromFile(streamed.file), streamed.width, streamed.height).use { region ->
+                                StreamingImagePostProcessor.write(
+                                    context, region, scalePlan.refinementScale,
+                                    "lanczos", detail, listener
+                                )
                             }
-                            is UpscaleOutput.Streamed -> {
-                                val enhancedPreview = unenhanced.preview?.let { AdaptiveDetailEnhancer.enhance(it, params.detailStrength) }
-                                unenhanced.copy(preview = enhancedPreview)
-                            }
+                        } finally {
+                            streamed.preview?.recycle()
+                            streamed.file.delete()
                         }
-                    } else {
-                        unenhanced
-                    }
+                    } else aiPassOutput
                 }
                 ModelType.ALGORITHMIC -> {
                     val targetW = srcW * targetScale
@@ -181,7 +167,7 @@ class UpscaleInferenceEngine(
 
                     if (totalPixels > STREAMING_PIXEL_THRESHOLD) {
                         // Progressive disk-backed tile pipeline: eliminates RAM-induced OOM on >16MP images & 8x upscaling
-                        upscaleAlgorithmicStreamed(source, model, targetScale, targetW, targetH, params, listener)
+                        StreamingImagePostProcessor.write(context, source, targetScale, model.id, detail, listener)
                     } else {
                         listener?.onStatus("Applying ${model.name}...")
                         listener?.onProgress(0, 1, 0)
@@ -196,14 +182,20 @@ class UpscaleInferenceEngine(
                                 "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
                                 else -> AlgorithmicUpscaler.scaleLanczos(fullSource, targetW, targetH, checkpoint)
                             }
-                            val enhanced = if (params.detailEnhancement && params.detailStrength > 0f) {
-                                AdaptiveDetailEnhancer.enhance(res, params.detailStrength)
-                            } else {
-                                res
+                            var handedOff = false
+                            var output = res
+                            try {
+                                res.setHasAlpha(source.hasAlpha)
+                                if (detail > .01f) output = AdaptiveDetailEnhancer.enhanceScanlines(res, detail, checkpoint)
+                                checkpoint()
+                                listener?.onProgress(1, 1, 100)
+                                listener?.onStage("Complete", 1, 1)
+                                handedOff = true
+                                UpscaleOutput.InMemory(output)
+                            } finally {
+                                if (output !== res) res.recycle()
+                                if (!handedOff) output.recycle()
                             }
-                            listener?.onProgress(1, 1, 100)
-                            listener?.onStage("Complete", 1, 1)
-                            UpscaleOutput.InMemory(enhanced)
                         } finally {
                             if (ownsFullSource && !fullSource.isRecycled) {
                                 fullSource.recycle()
@@ -253,136 +245,4 @@ class UpscaleInferenceEngine(
         }
     }
 
-    /**
-     * Streams a secondary horizontal-band Lanczos/Bicubic refinement pass over a
-     * streamed NCNN output PNG without holding the full output bitmap in memory.
-     */
-    private suspend fun refineStreamedOutput(
-        aiPassOutput: UpscaleOutput,
-        refineScale: Int,
-        finalW: Int,
-        finalH: Int
-    ): UpscaleOutput = withContext(Dispatchers.Default) {
-        val streamed = aiPassOutput as? UpscaleOutput.Streamed
-            ?: throw UpscaleMemoryException("Expected streamed NCNN output for hybrid refinement")
-        val uri = android.net.Uri.fromFile(streamed.file)
-        val regionSource = UriRegionSource(context, uri, streamed.width, streamed.height)
-        val outDir = File(context.cacheDir, "upscale_streaming").apply { mkdirs() }
-        val tempFile = File(outDir, "ncnn_hybrid_${java.util.UUID.randomUUID()}.part")
-        val finalFile = File(outDir, "ncnn_hybrid_${java.util.UUID.randomUUID()}.png")
-        val bandSrcH = 128
-        val rowPixels = IntArray(finalW)
-        var writer: StreamingPngWriter? = null
-        try {
-            writer = StreamingPngWriter(tempFile, finalW, finalH, StreamingPngWriter.ColorType.RGBA)
-            var y0 = 0
-            while (y0 < streamed.height) {
-                ensureActive()
-                val h = minOf(bandSrcH, streamed.height - y0)
-                val stripBmp = regionSource.region(0, y0, streamed.width, h)
-                val scaledStrip = try {
-                    AlgorithmicUpscaler.scaleLanczos(stripBmp, finalW, h * refineScale)
-                } finally {
-                    stripBmp.recycle()
-                }
-                try {
-                    for (r in 0 until scaledStrip.height) {
-                        scaledStrip.getPixels(rowPixels, 0, finalW, 0, r, finalW, 1)
-                        writer.writeRow(rowPixels)
-                    }
-                } finally {
-                    scaledStrip.recycle()
-                }
-                y0 += h
-            }
-            writer.close()
-            NcnnUpscaleEngine.validatePngFile(tempFile, finalW, finalH)
-            NcnnUpscaleEngine.publishFileAtomically(tempFile, finalFile)
-            val preview = com.veilframe.app.media.MediaDecoder.decodeSampledFile(finalFile)
-            UpscaleOutput.Streamed(finalFile, preview, finalW, finalH)
-        } catch (t: Throwable) {
-            runCatching { writer?.abort() }
-            runCatching { tempFile.delete() }
-            throw t
-        } finally {
-            regionSource.close()
-            runCatching { streamed.file.delete() }
-        }
-    }
-
-    /**
-     * Progressive disk-backed tile pipeline via [StreamingPngWriter].
-     * Eliminates RAM-induced OOM on >16MP images and high-scale (e.g. 8x) upscaling
-     * by processing bounded horizontal strips and streaming output scanlines directly to disk.
-     */
-    private suspend fun upscaleAlgorithmicStreamed(
-        source: SourceAccess,
-        model: UpscaleModel,
-        targetScale: Int,
-        targetW: Int,
-        targetH: Int,
-        params: UpscaleInferenceParams,
-        listener: InferenceProgressListener?
-    ): UpscaleOutput = withContext(Dispatchers.Default) {
-        val outDir = File(context.cacheDir, "upscale_streaming").apply { mkdirs() }
-        val jobId = java.util.UUID.randomUUID().toString()
-        val tempFile = File(outDir, "algorithmic_${jobId}.part")
-        val finalFile = File(outDir, "algorithmic_${jobId}.png")
-        val bandSrcH = 128
-        val rowPixels = IntArray(targetW)
-        var writer: StreamingPngWriter? = null
-        try {
-            listener?.onStatus("Streaming ${model.name} to disk (${targetW}x${targetH})...")
-            listener?.onStage("Disk-Backed Rescaling", 0, 1)
-            writer = StreamingPngWriter(tempFile, targetW, targetH, StreamingPngWriter.ColorType.RGBA)
-            var y0 = 0
-            val totalBands = (source.height + bandSrcH - 1) / bandSrcH
-            var bandIdx = 0
-            while (y0 < source.height) {
-                ensureActive()
-                val h = minOf(bandSrcH, source.height - y0)
-                val stripBmp = source.region(0, y0, source.width, h)
-                val scaledStrip = try {
-                    val cc = coroutineContext
-                    val checkpoint: () -> Unit = { cc.ensureActive() }
-                    when (model.id) {
-                        "nearest" -> AlgorithmicUpscaler.scaleNearest(stripBmp, targetW, h * targetScale, checkpoint)
-                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(stripBmp, targetW, h * targetScale)
-                        else -> AlgorithmicUpscaler.scaleLanczos(stripBmp, targetW, h * targetScale, checkpoint)
-                    }
-                } finally {
-                    stripBmp.recycle()
-                }
-                try {
-                    for (r in 0 until scaledStrip.height) {
-                        scaledStrip.getPixels(rowPixels, 0, targetW, 0, r, targetW, 1)
-                        writer.writeRow(rowPixels)
-                    }
-                } finally {
-                    scaledStrip.recycle()
-                }
-                y0 += h
-                bandIdx++
-                val pct = ((bandIdx.toFloat() / totalBands.toFloat()) * 100f).toInt().coerceIn(0, 99)
-                listener?.onProgress(bandIdx, totalBands, pct)
-                listener?.onStage("Disk-Backed Rescaling", bandIdx, totalBands)
-            }
-            writer.close()
-            NcnnUpscaleEngine.validatePngFile(tempFile, targetW, targetH)
-            NcnnUpscaleEngine.publishFileAtomically(tempFile, finalFile)
-            val preview = com.veilframe.app.media.MediaDecoder.decodeSampledFile(finalFile)
-            val enhancedPreview = if (params.detailEnhancement && params.detailStrength > 0f) {
-                preview?.let { AdaptiveDetailEnhancer.enhance(it, params.detailStrength) } ?: preview
-            } else {
-                preview
-            }
-            listener?.onProgress(totalBands, totalBands, 100)
-            listener?.onStage("Complete", totalBands, totalBands)
-            UpscaleOutput.Streamed(finalFile, enhancedPreview, targetW, targetH)
-        } catch (t: Throwable) {
-            runCatching { writer?.abort() }
-            runCatching { tempFile.delete() }
-            throw t
-        }
-    }
 }

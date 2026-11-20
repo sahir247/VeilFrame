@@ -1,153 +1,99 @@
 package com.veilframe.app.upscale.inference
 
 import android.graphics.Bitmap
-import android.util.Log
-import com.veilframe.app.cv.core.CvRuntime
-import org.opencv.android.Utils
-import org.opencv.core.Core
-import org.opencv.core.CvType
-import org.opencv.core.Mat
-import org.opencv.core.Scalar
-import org.opencv.core.Size
-import org.opencv.imgproc.Imgproc
+import kotlin.math.abs
 
 /**
- * AdaptiveDetailEnhancer — Edge-preserving high-frequency texture and detail restoration
- * using in-tree OpenCV 4.14.0 SDK.
- *
- * Recovers micro-textures (foliage, hair strands, fabric weave, masonry, typography) after
- * super-resolution inference without amplifying flat-field background noise or introducing halos.
- * Operates strictly on the luminance (Y) channel in YCrCb color space to preserve chromatic fidelity.
+ * Local 3x3 high-frequency enhancement. The output is synthesized micro-contrast,
+ * not recovered source detail. Alpha is preserved. A bounded deterministic CPU
+ * implementation remains available if native acceleration cannot be used.
  */
 object AdaptiveDetailEnhancer {
-
-    private const val TAG = "AdaptiveDetailEnhancer"
-
-    /**
-     * Applies adaptive luminance micro-contrast enhancement to [sourceBitmap].
-     *
-     * @param sourceBitmap The input image bitmap (ARGB_8888).
-     * @param strength Boost intensity in [0.0f..1.0f]. 0.0f = bypass, 0.35f = balanced cinematic enhancement.
-     * @return A new enhanced [Bitmap], or [sourceBitmap] if enhancement is bypassed or unavailable.
-     */
-    fun enhance(sourceBitmap: Bitmap, strength: Float = 0.35f): Bitmap {
-        if (strength <= 0.01f) {
-            return sourceBitmap
-        }
-
-        // 1. First priority: Native ARM NEON SIMD in libveilframe_ncnn.so (16KB page-aligned, C++ OpenMP)
-        if (NcnnNative.isAvailable) {
-            val copy = if (sourceBitmap.isMutable) sourceBitmap else sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
-            if (NcnnNative.adaptiveDetailEnhance(copy, strength)) {
-                return copy
+    fun enhance(
+        sourceBitmap: Bitmap,
+        strength: Float = 0.35f,
+        checkpoint: (() -> Unit)? = null
+    ): Bitmap {
+        require(strength.isFinite() && strength in 0f..1f)
+        if (strength <= 0.01f) return sourceBitmap
+        checkpoint?.invoke()
+        // Native pixels may be premultiplied. Use the straight-color scanline path
+        // for alpha-bearing images, not a gain that can violate RGB <= alpha.
+        if (!sourceBitmap.hasAlpha() && sourceBitmap.width >= 4 &&
+            sourceBitmap.height >= 4 && NcnnNative.isAvailable) {
+            val candidate = sourceBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                ?: throw IllegalStateException("Could not allocate detail enhancement bitmap")
+            var delivered = false
+            try {
+                if (NcnnNative.adaptiveDetailEnhance(candidate, strength)) {
+                    checkpoint?.invoke()
+                    delivered = true
+                    return candidate
+                }
+            } finally {
+                if (!delivered) candidate.recycle()
             }
         }
+        return enhanceScanlines(sourceBitmap, strength, checkpoint)
+    }
 
-        // 2. Second priority: In-tree OpenCV fallback
-        if (!CvRuntime.initialize()) {
-            return sourceBitmap
-        }
-
-        val w = sourceBitmap.width
-        val h = sourceBitmap.height
-        if (w <= 0 || h <= 0) return sourceBitmap
-
-        val srcMat = Mat()
-        val ycrcbMat = Mat()
-        val rgbMat = Mat()
-        val blurY = Mat()
-        val highFreq = Mat()
-        val gradX = Mat()
-        val gradY = Mat()
-        val absGradX = Mat()
-        val absGradY = Mat()
-        val gradMag = Mat()
-        val weightMask = Mat()
-        val highFreqFloat = Mat()
-        val detailBoost = Mat()
-        val yFloat = Mat()
-        val enhancedYFloat = Mat()
-        val enhancedY = Mat()
-        val channels = mutableListOf<Mat>()
-
-        return try {
-            Utils.bitmapToMat(sourceBitmap, srcMat)
-
-            // Convert to YCrCb for perceptual luminance separation
-            Imgproc.cvtColor(srcMat, rgbMat, Imgproc.COLOR_RGBA2RGB)
-            Imgproc.cvtColor(rgbMat, ycrcbMat, Imgproc.COLOR_RGB2YCrCb)
-
-            Core.split(ycrcbMat, channels)
-            val yMat = channels[0]
-
-            // 1. High-frequency micro-contrast: H = Y - GaussianBlur(Y, 3x3)
-            Imgproc.GaussianBlur(yMat, blurY, Size(3.0, 3.0), 1.0)
-            Core.subtract(yMat, blurY, highFreq)
-
-            // 2. Compute edge/gradient magnitude mask:
-            // Flat regions (sky, skin, plain walls) -> gradient ~ 0, suppression applied.
-            // Textured regions (fabric, text, edges, hair) -> gradient > 0, enhancement applied.
-            Imgproc.Sobel(yMat, gradX, CvType.CV_16S, 1, 0, 3)
-            Imgproc.Sobel(yMat, gradY, CvType.CV_16S, 0, 1, 3)
-            Core.convertScaleAbs(gradX, absGradX)
-            Core.convertScaleAbs(gradY, absGradY)
-            Core.addWeighted(absGradX, 0.5, absGradY, 0.5, 0.0, gradMag)
-
-            // Normalize gradient magnitude to [0.0, 1.0] weight mask
-            gradMag.convertTo(weightMask, CvType.CV_32F, 1.0 / 128.0)
-            Core.min(weightMask, Scalar(1.0), weightMask)
-
-            // 3. Modulate high frequencies by the texture weight mask and desired strength
-            highFreq.convertTo(highFreqFloat, CvType.CV_32F)
-            Core.multiply(highFreqFloat, weightMask, detailBoost, strength.toDouble())
-
-            yMat.convertTo(yFloat, CvType.CV_32F)
-            Core.add(yFloat, detailBoost, enhancedYFloat)
-            enhancedYFloat.convertTo(enhancedY, CvType.CV_8U)
-
-            channels[0] = enhancedY
-            Core.merge(channels, ycrcbMat)
-
-            // Reconstruct RGB and copy back to RGBA
-            Imgproc.cvtColor(ycrcbMat, rgbMat, Imgproc.COLOR_YCrCb2RGB)
-
-            // If source had transparency, preserve original alpha channel
-            if (sourceBitmap.hasAlpha()) {
-                val alphaMat = Mat()
-                Core.extractChannel(srcMat, alphaMat, 3)
-                val rgbChannels = mutableListOf<Mat>()
-                Core.split(rgbMat, rgbChannels)
-                rgbChannels.add(alphaMat)
-                Core.merge(rgbChannels, srcMat)
-                for (ch in rgbChannels) ch.release()
-            } else {
-                Imgproc.cvtColor(rgbMat, srcMat, Imgproc.COLOR_RGB2RGBA)
+    internal fun enhanceScanlines(source: Bitmap, strength: Float, checkpoint: (() -> Unit)? = null): Bitmap {
+        val w = source.width
+        val h = source.height
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val pixels = Array(3) { IntArray(w) }
+        val lum = Array(3) { FloatArray(w) }
+        val blur = Array(3) { FloatArray(w) }
+        val tags = IntArray(3) { -1 }
+        val out = IntArray(w)
+        fun load(y: Int): Int {
+            val slot = y % 3
+            if (tags[slot] == y) return slot
+            source.getPixels(pixels[slot], 0, w, 0, y, w, 1)
+            for (x in 0 until w) {
+                val p = pixels[slot][x]
+                lum[slot][x] = .299f * (p ushr 16 and 255) +
+                    .587f * (p ushr 8 and 255) + .114f * (p and 255)
             }
-
-            val resultBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(srcMat, resultBitmap)
-            resultBitmap
-        } catch (t: Throwable) {
-            Log.w(TAG, "AdaptiveDetailEnhancer bypassed: ${t.message}")
-            sourceBitmap
-        } finally {
-            srcMat.release()
-            ycrcbMat.release()
-            rgbMat.release()
-            blurY.release()
-            highFreq.release()
-            gradX.release()
-            gradY.release()
-            absGradX.release()
-            absGradY.release()
-            gradMag.release()
-            weightMask.release()
-            highFreqFloat.release()
-            detailBoost.release()
-            yFloat.release()
-            enhancedYFloat.release()
-            enhancedY.release()
-            for (ch in channels) ch.release()
+            for (x in 0 until w) {
+                blur[slot][x] = .25f * lum[slot][maxOf(0, x - 1)] +
+                    .5f * lum[slot][x] + .25f * lum[slot][minOf(w - 1, x + 1)]
+            }
+            tags[slot] = y
+            return slot
+        }
+        try {
+            result.setHasAlpha(source.hasAlpha())
+            for (y in 0 until h) {
+                checkpoint?.invoke()
+                val prev = load(maxOf(0, y - 1))
+                val curr = load(y)
+                val next = load(minOf(h - 1, y + 1))
+                for (x in 0 until w) {
+                    val p = pixels[curr][x]
+                    val alpha = p ushr 24
+                    if (alpha == 0) { out[x] = 0; continue }
+                    val left = maxOf(0, x - 1)
+                    val right = minOf(w - 1, x + 1)
+                    val value = lum[curr][x]
+                    val smooth = .25f * blur[prev][x] + .5f * blur[curr][x] + .25f * blur[next][x]
+                    val gx = lum[prev][right] + 2f * lum[curr][right] + lum[next][right] -
+                        (lum[prev][left] + 2f * lum[curr][left] + lum[next][left])
+                    val gy = lum[next][left] + 2f * lum[next][x] + lum[next][right] -
+                        (lum[prev][left] + 2f * lum[prev][x] + lum[prev][right])
+                    val weight = ((abs(gx) + abs(gy)) / 128f).coerceIn(0f, 1f)
+                    val enhanced = (value + strength * weight * (value - smooth)).coerceIn(0f, 255f)
+                    val gain = (enhanced + .001f) / (value + .001f)
+                    fun channel(c: Int) = (c * gain + .5f).toInt().coerceIn(0, 255)
+                    out[x] = (alpha shl 24) or (channel(p ushr 16 and 255) shl 16) or
+                        (channel(p ushr 8 and 255) shl 8) or channel(p and 255)
+                }
+                result.setPixels(out, 0, w, 0, y, w, 1)
+            }
+            return result
+        } catch (failure: Throwable) {
+            result.recycle()
+            throw failure
         }
     }
 }

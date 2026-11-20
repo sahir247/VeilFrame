@@ -42,7 +42,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 | A23 | P2 | PARTIAL | Stabilization real-world tracking quality and limitations | `cv/motion/VideoStabilizerEngine.kt` | Benchmark difficult footage and confidence behavior. |
 | A24 | P2 | PARTIAL | Native matting activation/model contract uncertain | `cpp/matting_jni.cpp:292-316` | Inspect actual model graph before changing sigmoid; CPU/GPU parity. |
 | A25 | P2 | PARTIAL | Native mutex cancellation latency, model and GPU lifecycle | `cpp/{matting,pii_ncnn,rife,realsr,veilnet}_jni.cpp; vulkan_gpu_lifecycle.h` | Stress device concurrency and measure native cancellation. |
-| A26 | P2 | OPEN | Upscaler tile seams, model fidelity and generated detail | `upscale/inference/` | Measure dimensions, boundaries, memory and preview/export consistency. |
+| A26 | P2 | PARTIAL | Upscaler tile seams, model fidelity and generated detail | `upscale/inference/` | Measure dimensions, boundaries, memory and preview/export consistency. |
 | A27 | P2 | OPEN | QR exported-style real-device scanability | `qr/` | Retain frozen matrix parity; roundtrip device scans and exports. |
 | A28 | P2 | OPEN | Office/PDF broader semantic fidelity and workspace coverage | `pdf/operations/; media/; tools/` | Trace all reachable callers; fixtures for charts/formulas/fonts/fields/page geometry. |
 | A29 | P2 | OPEN | Oversized multi-purpose controllers and ownership complexity | `media/; pdf/; navigation/` | Refactor by clear ownership boundaries after regression coverage. |
@@ -224,3 +224,8 @@ Mask-enabled bundle generation now excludes known credential containers by case-
 ### A19/A25 — Preserve partial observations and signal native cancellation immediately
 
 - Extended the intervening native ownership commit without reverting it. RealSR global teardown drops retired instances outside the registry mutex, checks cancellation immediately after mutex admission and at model-load/output boundaries, and the Kotlin job signals on cancellation transition rather than eventual completion. Added ARM64 instrumentation for cancel-before-load and cancel-before-stream behavior. Multi-modal PII now retains successful NCNN observations even if the other NCNN detector fails, while marking the scan incomplete; strict list callers still reject partial results. Device timing, same-engine lock latency and native validation remain pending.
+
+### A26/A29 — Full-resolution streamed upscaler finishing and kernel halos
+
+- Found that every streamed neural output and large algorithmic output applied detail enhancement to preview pixels only. Exports now go through a shared bounded full-resolution PNG finishing stage, with exact disjoint core rows and real neighboring source halos for Lanczos and local contrast. Preview is decoded from the final verified artifact. Hybrid refinement uses the same stage; intermediate outputs and failure/cancellation staging files are reclaimed. Conservative band/disk admission precedes output creation.
+- Extracted the duplicated band pipelines into StreamingImagePostProcessor; added a deterministic alpha-preserving scanline detail kernel, avoiding silent no-op and signed high-pass truncation in the former OpenCV fallback. Streamed and in-memory production paths use that same kernel. Added odd-size band coverage and whole-image-versus-band pixel/alpha regression tests. This does not establish neural tile seams or real-photo fidelity. PARTIAL pending ARM64 benchmarks, performance measurements and actual pixel parity across native resampling implementations.
