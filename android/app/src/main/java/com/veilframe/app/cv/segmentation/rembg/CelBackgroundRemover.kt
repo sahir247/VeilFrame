@@ -2,7 +2,6 @@ package com.veilframe.app.cv.segmentation.rembg
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -27,9 +26,18 @@ class CelBackgroundRemover(
         tightenEdges: Boolean = false,
         featherEdges: Boolean = false,
         onProgress: suspend (RembgProgress) -> Unit = {},
+    ): RembgResult = removeBackground(RembgImageSource.Bytes(imageBytes), model, trim, tightenEdges, featherEdges, onProgress)
+
+    internal suspend fun removeBackground(
+        imageSource: RembgImageSource,
+        model: RembgModel,
+        trim: Boolean = false,
+        tightenEdges: Boolean = false,
+        featherEdges: Boolean = false,
+        onProgress: suspend (RembgProgress) -> Unit = {},
     ): RembgResult = withContext(Dispatchers.Default) {
         ensureActive()
-        val sourceInfo = analyzeSource(imageBytes)
+        val sourceInfo = analyzeSource(imageSource)
         val warnings = sourceInfo.warnings.toMutableList()
         val pixels = sourceInfo.width.toLong() * sourceInfo.height
 
@@ -81,7 +89,7 @@ class CelBackgroundRemover(
         onProgress(RembgProgress(30, "Decoding image…"))
         ensureActive()
         val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
-            imageBytes,
+            imageSource,
             maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
             inMutable = true
         )
@@ -107,7 +115,7 @@ class CelBackgroundRemover(
             onProgress(RembgProgress(80, "Building cutout…"))
             ensureActive()
 
-            val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
+            val colors = RembgImageUtils.decodeCompositeSource(imageSource, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
             cutoutBitmap = applyFullResolutionColors(colors, maskBitmap, checkpoint)
             if (colors !== sourceBitmap) colors.recycle()
@@ -171,24 +179,18 @@ class CelBackgroundRemover(
         }
     }
 
-    fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {
-        val (width, height) = RembgImageUtils.orientedDimensions(imageBytes)
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
+    fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo = analyzeSource(RembgImageSource.Bytes(imageBytes))
+
+    private fun analyzeSource(source: RembgImageSource): RembgSourceInfo {
+        val info = RembgImageUtils.sourceInfo(source)
         val warnings = mutableListOf<String>()
-        if (imageBytes.size < LOW_RES_FILE_SIZE_BYTES) {
+        if (source.size < LOW_RES_FILE_SIZE_BYTES) {
             warnings += "Low resolution image — quality depends on original clarity."
         }
-        if (width < LOW_RES_DIMENSION_PX || height < LOW_RES_DIMENSION_PX) {
-            warnings += "Image dimensions (${width}×${height}) are below ${LOW_RES_DIMENSION_PX}px."
+        if (info.width < LOW_RES_DIMENSION_PX || info.height < LOW_RES_DIMENSION_PX) {
+            warnings += "Image dimensions (${info.width}×${info.height}) are below ${LOW_RES_DIMENSION_PX}px."
         }
-        return RembgSourceInfo(
-            width = width,
-            height = height,
-            format = options.outMimeType ?: "unknown",
-            fileSize = imageBytes.size.toLong(),
-            warnings = warnings,
-        )
+        return info.copy(warnings = warnings)
     }
 
     companion object {

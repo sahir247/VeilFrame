@@ -177,10 +177,17 @@ object ColorOsMattingPlugin {
         imageBytes: ByteArray,
         trim: Boolean = false,
         onProgress: suspend (RembgProgress) -> Unit = {}
+    ): RembgResult = process(context, RembgImageSource.Bytes(imageBytes), trim, onProgress)
+
+    internal suspend fun process(
+        context: Context,
+        imageSource: RembgImageSource,
+        trim: Boolean = false,
+        onProgress: suspend (RembgProgress) -> Unit = {}
     ): RembgResult = withContext(Dispatchers.Default) {
         ensureActive()
         CvRuntime.requireAvailable()
-        val sourceInfo = analyzeSource(imageBytes)
+        val sourceInfo = RembgImageUtils.sourceInfo(imageSource)
         val warnings = sourceInfo.warnings.toMutableList()
 
         onProgress(RembgProgress(15, "Initializing Neural Matting Engine…"))
@@ -189,7 +196,7 @@ object ColorOsMattingPlugin {
         ensureActive()
 
         val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
-            imageBytes,
+            imageSource,
             maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
             inMutable = true
         )
@@ -322,7 +329,7 @@ object ColorOsMattingPlugin {
                 }
                 mask.setPixels(maskRow, 0, TENSOR_WIDTH, 0, y, TENSOR_WIDTH, 1)
             }
-            val colors = RembgImageUtils.decodeCompositeSource(imageBytes, sourceBitmap, sourceInfo, warnings)
+            val colors = RembgImageUtils.decodeCompositeSource(imageSource, sourceBitmap, sourceInfo, warnings)
             compositeSource = colors
             val cc = kotlin.coroutines.coroutineContext
             cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask) { cc.ensureActive() }
@@ -367,14 +374,4 @@ object ColorOsMattingPlugin {
         return "image/jpeg"
     }
 
-    private fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {
-        val (width, height) = RembgImageUtils.orientedDimensions(imageBytes)
-        return RembgSourceInfo(
-            width = width,
-            height = height,
-            format = detectMimeFormat(imageBytes),
-            fileSize = imageBytes.size.toLong(),
-            warnings = emptyList()
-        )
-    }
 }

@@ -24,6 +24,11 @@ import com.veilframe.app.cv.segmentation.rembg.RembgProgress
 import com.veilframe.app.cv.segmentation.rembg.RembgSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
+import com.veilframe.app.cv.segmentation.rembg.RembgImageSource
+import com.veilframe.app.cv.segmentation.rembg.RembgResult
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import java.util.concurrent.atomic.AtomicReference
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
 import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
 import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
@@ -80,7 +85,14 @@ class BackgroundRemoverController(
         sourceLoadJob?.cancel()
         sourceLoadJob = null
     }
-    private var sourceBytes: ByteArray? = null
+    private var sourceImage: RembgImageSource.Staged? = null
+    private val sourceLeases = ResourceLeases<RembgImageSource.Staged> { it.file.delete() }
+    private var removalGeneration = 0L
+
+    private fun releaseSourceImage() {
+        sourceImage?.let(sourceLeases::retire)
+        sourceImage = null
+    }
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
     private var rawCutoutBitmap: Bitmap? = null
@@ -174,7 +186,7 @@ class BackgroundRemoverController(
                 currentMode = when (checkedId) {
                     binding.btnModeSelectLiftAndShift.id -> {
                         currentModel = RembgModel.COLOROS_LIFT_SHIFT
-                        if (sourceBytes == null && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
+                        if (sourceImage == null && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
                             showRequiredModelDownloadDialog(
                                 title = "Download ColorOS Lift & Shift?",
                                 message = "ColorOS Lift & Shift (8.4 MB) provides Snapdragon 8 Gen 5 hardware-accelerated subject separation.\n\nWould you like to download Lift & Shift now, or proceed with the bundled engine?",
@@ -204,7 +216,7 @@ class BackgroundRemoverController(
                     }
                 }
                 updateActiveModelBadge()
-                if (sourceBytes != null) {
+                if (sourceImage != null) {
                     executeRemoval()
                 }
             }
@@ -340,7 +352,7 @@ class BackgroundRemoverController(
             sourceBitmap?.recycle()
             sourceBitmap = null
             releaseCutoutBitmaps()
-            sourceBytes = null
+            releaseSourceImage()
             currentSourceUri = null
         } catch (ignored: Throwable) {}
     }
@@ -354,23 +366,24 @@ class BackgroundRemoverController(
         val generation = sourceGeneration
         sourceLoadJob = scope.launch(Dispatchers.Main) {
             var pendingBitmap: Bitmap? = null
+            var pendingSource: RembgImageSource.Staged? = null
             try {
-                val bytes = withContext(Dispatchers.IO) {
-                    activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw java.io.IOException("Could not open selected image")
-                }
-                if (bytes.isEmpty()) throw java.io.IOException("Selected image is empty")
-                // Keep ownership outside withContext: prompt cancellation after decoding
-                // must still recycle the bitmap even if dispatch back to Main is skipped.
+                // Stage first: no unbounded compressed ByteArray lives on the Java heap.
                 withContext(Dispatchers.IO) {
+                    val cc = kotlin.coroutines.coroutineContext
+                    activity.contentResolver.openInputStream(uri)?.use { input ->
+                        pendingSource = RembgImageSource.stage(input, activity.cacheDir) { cc.ensureActive() }
+                    } ?: throw java.io.IOException("Could not open selected image")
                     pendingBitmap = RembgImageUtils.decodeOrientedBitmap(
-                        bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX
+                        checkNotNull(pendingSource), maxDimension = RembgImageUtils.MAX_DISPLAY_PX
                     )
                 }
                 if (generation != sourceGeneration) return@launch
                 val decoded = checkNotNull(pendingBitmap)
                 val oldSrc = sourceBitmap
-                sourceBytes = bytes
+                releaseSourceImage()
+                sourceImage = checkNotNull(pendingSource)
+                pendingSource = null
                 sourceBitmap = decoded
                 currentSourceUri = uri
                 pendingBitmap = null // ownership transferred to the accepted source
@@ -389,13 +402,14 @@ class BackgroundRemoverController(
                 }
             } finally {
                 pendingBitmap?.recycle()
+                pendingSource?.file?.delete()
             }
         }
     }
 
     private fun executeRemoval() {
         if (sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
-        val bytes = sourceBytes ?: return
+        val source = sourceImage ?: return
 
         if (currentMode == RembgMode.LIFT_AND_SHIFT && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
             showRequiredModelDownloadDialog(
@@ -408,7 +422,7 @@ class BackgroundRemoverController(
                     currentModel = RembgModel.U2NETP
                     binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
                     updateActiveModelBadge()
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
@@ -425,7 +439,7 @@ class BackgroundRemoverController(
                     currentModel = RembgModel.U2NETP
                     binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
                     updateActiveModelBadge()
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
@@ -438,13 +452,13 @@ class BackgroundRemoverController(
                 targetModel = RembgModel.MODNET,
                 originView = binding.btnBgExecuteRemoval,
                 onProceedWithBundled = {
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
         }
 
-        runRemovalPipeline(bytes)
+        runRemovalPipeline(source)
     }
 
     private fun showRequiredModelDownloadDialog(
@@ -464,6 +478,8 @@ class BackgroundRemoverController(
         dialogBinding.tvModelReqMessage.text = message
         dialogBinding.btnModelReqDownload.text = "Download & Process"
         dialogBinding.btnModelReqUseLanczos.text = "Use Bundled U²-Net-P"
+        val intendedSource = sourceImage
+        val intendedGeneration = sourceGeneration
 
         dialogBinding.btnModelReqClose.setOnClickListener {
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -505,13 +521,15 @@ class BackgroundRemoverController(
                 if (modelId != targetModel.id) return
                 ModelDownloadBackgroundService.removeListener(this)
                 activity.runOnUiThread {
+                    val stillIntended = dialog.isShowing && intendedSource != null &&
+                        intendedSource === sourceImage && intendedGeneration == sourceGeneration
                     if (dialog.isShowing) {
                         MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
                     }
                     updateActiveModelBadge()
-                    Toast.makeText(activity, "${targetModel.displayName} ready! Starting removal…", Toast.LENGTH_SHORT).show()
-                    sourceBytes?.let { bytes ->
-                        runRemovalPipeline(bytes)
+                    if (stillIntended) {
+                        Toast.makeText(activity, "${targetModel.displayName} ready! Starting removal…", Toast.LENGTH_SHORT).show()
+                        runRemovalPipeline(checkNotNull(intendedSource))
                     }
                 }
             }
@@ -566,10 +584,14 @@ class BackgroundRemoverController(
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
-    private fun runRemovalPipeline(bytes: ByteArray) {
+    private fun runRemovalPipeline(source: RembgImageSource.Staged) {
         // Dialog/download callbacks must not process an obsolete source.
-        if (bytes !== sourceBytes || sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
-        val effectiveModel = when (currentMode) {
+        if (source !== sourceImage || sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
+        val mode = currentMode
+        val generation = ++removalGeneration
+        fun ownsResult(): Boolean = generation == removalGeneration && source === sourceImage &&
+            !activity.isFinishing && !activity.isDestroyed
+        val effectiveModel = when (mode) {
             RembgMode.LIFT_AND_SHIFT -> RembgModel.COLOROS_LIFT_SHIFT
             RembgMode.U2NETP -> RembgModel.U2NETP
             RembgMode.MODNET -> RembgModel.MODNET
@@ -592,99 +614,103 @@ class BackgroundRemoverController(
             else -> "Loading ${effectiveModel.displayName}…"
         }
 
-        val trim = binding.switchTrimTransparent.isChecked
-        val tighten = false
-        val feather = false
-
         // Governed execution: INTERACTIVE lane + memory admission check via CvRuntime.
         val srcBmp = sourceBitmap
         val w = srcBmp?.width ?: 1024
         val h = srcBmp?.height ?: 1024
         val estimate = CvRuntime.estimateBytes(w, h, 4)
 
-        processingJob = scope.launch {
-            val job = CvRuntime.engine.submit(
-                name = "background-removal",
-                priority = CvPriority.INTERACTIVE,
-                memoryEstimate = estimate,
-                timeoutMs = 60_000L,
-            ) { ctx ->
-                // Cooperative cancellation check
-                ctx.ensureActive()
-
-                if (currentMode == RembgMode.LIFT_AND_SHIFT) {
-                    ColorOsMattingPlugin.process(
-                        context = activity,
-                        imageBytes = bytes,
-                        trim = false,
-                        onProgress = { progress ->
+        val releaseSource = sourceLeases.acquire(source)
+        try {
+            processingJob = scope.launch {
+                val pending = AtomicReference<RembgResult?>(null)
+                var worker: com.veilframe.app.cv.core.CvJob<RembgResult>? = null
+                try {
+                    val job = CvRuntime.engine.submit(
+                        name = "background-removal",
+                        priority = CvPriority.INTERACTIVE,
+                        memoryEstimate = estimate,
+                        timeoutMs = 60_000L,
+                    ) { ctx ->
+                        ctx.ensureActive()
+                        val progress: suspend (RembgProgress) -> Unit = { update ->
                             ctx.ensureActive()
-                            ctx.reportProgress(progress.percent / 100f)
+                            ctx.reportProgress(update.percent / 100f)
                             withContext(Dispatchers.Main) {
-                                binding.progressBgInference.progress = progress.percent
-                                binding.tvBgProgressPercent.text = "${progress.percent}%"
-                                binding.tvBgProgressMessage.text = progress.message
+                                if (!ownsResult()) throw kotlinx.coroutines.CancellationException("Obsolete removal")
+                                binding.progressBgInference.progress = update.percent
+                                binding.tvBgProgressPercent.text = "${update.percent}%"
+                                binding.tvBgProgressMessage.text = update.message
                             }
                         }
-                    )
-                } else {
-                    remover.removeBackground(
-                        imageBytes = bytes,
-                        model = effectiveModel,
-                        trim = false,
-                        tightenEdges = tighten,
-                        featherEdges = feather,
-                        onProgress = { progress ->
-                            ctx.ensureActive()
-                            ctx.reportProgress(progress.percent / 100f)
-                            withContext(Dispatchers.Main) {
-                                binding.progressBgInference.progress = progress.percent
-                                binding.tvBgProgressPercent.text = "${progress.percent}%"
-                                binding.tvBgProgressMessage.text = progress.message
-                            }
-                        }
-                    )
-                }
-            }
-
-            val outcome = job.await()
-            withContext(Dispatchers.Main) {
-                binding.cardBgProcessingOverlay.visibility = View.GONE
-                outcome.fold(
-                    onOk = { result ->
-                        val prevRaw = rawCutoutBitmap
-                        val prevRes = resultBitmap
-                        rawCutoutBitmap = result.cutoutBitmap
-                        resultBitmap = if (binding.switchTrimTransparent.isChecked) {
-                            com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(result.cutoutBitmap)
+                        val result = if (mode == RembgMode.LIFT_AND_SHIFT) {
+                            ColorOsMattingPlugin.process(activity, source, trim = false, onProgress = progress)
                         } else {
-                            result.cutoutBitmap
+                            remover.removeBackground(source, effectiveModel, trim = false, onProgress = progress)
                         }
-                        if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
-                            prevRaw?.let(cutoutLeases::retire)
-                        }
-                        if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
-                            prevRes?.let(cutoutLeases::retire)
-                        }
-                        lastFailure = null
-                        updateUi()
-
-                        if (result.warnings.isNotEmpty()) {
-                            Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onErr = { err ->
-                        Log.e(TAG, "Background removal failed: [${err.code}] ${err.message}")
-                        lastFailure = err.message
-                        Toast.makeText(
-                            activity,
-                            "Removal failed: ${err.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        // Retain ownership even if the worker's deferred is cancelled
+                        // after native inference returns but before the UI can receive it.
+                        pending.set(result)
+                        result
+                    }
+                    worker = job
+                    val outcome = job.await()
+                    withContext(Dispatchers.Main) {
+                        if (!ownsResult()) return@withContext
+                        binding.cardBgProcessingOverlay.visibility = View.GONE
+                        outcome.fold(
+                            onOk = { result ->
+                                val newRaw = result.cutoutBitmap
+                                val newResult = if (binding.switchTrimTransparent.isChecked) {
+                                    com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(newRaw)
+                                } else newRaw
+                                val prevRaw = rawCutoutBitmap
+                                val prevRes = resultBitmap
+                                rawCutoutBitmap = newRaw
+                                resultBitmap = newResult
+                                pending.compareAndSet(result, null)
+                                if (prevRaw !== newRaw && prevRaw !== newResult) prevRaw?.let(cutoutLeases::retire)
+                                if (prevRes !== newResult && prevRes !== newRaw && prevRes !== prevRaw) prevRes?.let(cutoutLeases::retire)
+                                lastFailure = null
+                                updateUi()
+                                if (result.warnings.isNotEmpty()) {
+                                    Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onErr = { err ->
+                                lastFailure = err.message
+                                Log.e(TAG, "Background removal failed: [${err.code}] ${err.message}")
+                                Toast.makeText(activity, "Removal failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                updateUi()
+                            }
+                        )
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    worker?.cancel("Background removal cancelled")
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (ownsResult()) {
+                        lastFailure = failure.message
+                        binding.cardBgProcessingOverlay.visibility = View.GONE
+                        Toast.makeText(activity, "Removal failed: ${failure.message}", Toast.LENGTH_LONG).show()
                         updateUi()
                     }
-                )
-            }
+                } finally {
+                    // The governed dispatcher owns a separate coroutine scope. UI cancellation
+                    // alone is not worker cancellation. Join it before retiring any resources.
+                    withContext(NonCancellable) {
+                        worker?.let {
+                            if (it.isActive) it.cancel("Removal owner left")
+                            it.joinWorker()
+                        }
+                        pending.getAndSet(null)?.cutoutBitmap?.takeUnless { it.isRecycled }?.recycle()
+                    }
+                }
+            }.also { it.invokeOnCompletion { releaseSource() } }
+        } catch (failure: Throwable) {
+            releaseSource()
+            binding.cardBgProcessingOverlay.visibility = View.GONE
+            throw failure
         }
     }
 
@@ -1545,12 +1571,13 @@ class BackgroundRemoverController(
         sourceBitmap?.recycle()
         sourceBitmap = null
         releaseCutoutBitmaps()
-        sourceBytes = null
+        releaseSourceImage()
         currentSourceUri = null
         updateUi()
     }
 
     fun cancelProcessing() {
+        removalGeneration++
         processingJob?.cancel()
         processingJob = null
         binding.cardBgProcessingOverlay.visibility = View.GONE
