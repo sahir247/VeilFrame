@@ -133,6 +133,36 @@ object OpenXmlDocumentParser {
 
     private fun Node.localName(): String = nodeName.substringAfterLast(':')
 
+    private fun Node.childElements(name: String): List<Element> = buildList {
+        var child = firstChild
+        while (child != null) {
+            if (child.nodeType == Node.ELEMENT_NODE && child.localName() == name) add(child as Element)
+            child = child.nextSibling
+        }
+    }
+
+    private fun Element.localAttribute(name: String): String {
+        val matches = (0 until attributes.length).map { attributes.item(it) }
+            .filter { it.localName() == name && !it.nodeName.startsWith("xmlns") }
+        require(matches.size <= 1) { "Ambiguous OpenXML attribute: $name" }
+        return matches.singleOrNull()?.nodeValue.orEmpty()
+    }
+
+    // Only direct display text and rich-text runs are visible cell text.
+    // Phonetic guides (rPh) and extension metadata must not enter cell values.
+    private fun spreadsheetRichText(element: Element): String = buildString {
+        var child = element.firstChild
+        while (child != null) {
+            if (child.nodeType == Node.ELEMENT_NODE) {
+                when (child.localName()) {
+                    "t" -> append(child.textContent.orEmpty())
+                    "r" -> child.childElements("t").forEach { append(it.textContent.orEmpty()) }
+                }
+            }
+            child = child.nextSibling
+        }
+    }
+
     fun parseDocx(file: File): DocxDocument {
         val nodes = mutableListOf<DocxNode>()
         ZipFile(file).use { zip ->
@@ -145,11 +175,8 @@ object OpenXmlDocumentParser {
     private fun parseDocxStream(xml: String, outNodes: MutableList<DocxNode>) {
         val doc = parseXml(xml)
         require(doc.documentElement.localName() == "document") { "Invalid Word document XML root" }
-        val bodyElements = doc.getElementsByTagName("w:body").let {
-            if (it.length > 0) it else doc.getElementsByTagName("body")
-        }
-        require(bodyElements.length == 1) { "Word document body missing or ambiguous" }
-        val body = bodyElements.item(0) as Element
+        val body = doc.documentElement.childElements("body").singleOrNull()
+            ?: throw IOException("Word document body missing or ambiguous")
 
         var child = body.firstChild
         while (child != null) {
@@ -182,6 +209,25 @@ object OpenXmlDocumentParser {
         var isBullet = false
         val runs = mutableListOf<DocxRun>()
 
+        // Word hyperlinks, inserted text and content controls contain visible runs
+        // in nested containers. Ignore deleted text and metadata rather than
+        // dropping all nested runs or importing hidden revision text.
+        fun appendVisibleRuns(element: Element, depth: Int) {
+            require(depth <= 64) { "Word inline nesting limit exceeded" }
+            when (element.localName()) {
+                "r" -> parseRun(element, isHeading, headingLevel)?.let {
+                    if (it.text.isNotEmpty()) runs.add(it)
+                }
+                "hyperlink", "smartTag", "ins", "moveTo", "fldSimple", "customXml", "sdtContent", "sdt" -> {
+                    var nested = element.firstChild
+                    while (nested != null) {
+                        if (nested.nodeType == Node.ELEMENT_NODE) appendVisibleRuns(nested as Element, depth + 1)
+                        nested = nested.nextSibling
+                    }
+                }
+            }
+        }
+
         var child = pElem.firstChild
         while (child != null) {
             if (child.nodeType == Node.ELEMENT_NODE) {
@@ -194,9 +240,7 @@ object OpenXmlDocumentParser {
                                 val pPrElem = pPrChild as Element
                                 when (pPrElem.localName()) {
                                     "pStyle" -> {
-                                        val styleVal = (pPrElem.getAttribute("w:val").ifEmpty {
-                                            pPrElem.getAttribute("val")
-                                        }).lowercase()
+                                        val styleVal = (pPrElem.localAttribute("val")).lowercase()
                                         if (styleVal.contains("heading 1") || styleVal.contains("heading1") || styleVal.contains("title")) {
                                             isHeading = true
                                             headingLevel = 1
@@ -215,16 +259,14 @@ object OpenXmlDocumentParser {
                                         }
                                     }
                                     "jc" -> {
-                                        val jcVal = (pPrElem.getAttribute("w:val").ifEmpty {
-                                            pPrElem.getAttribute("val")
-                                        }).lowercase()
+                                        val jcVal = (pPrElem.localAttribute("val")).lowercase()
                                         if (jcVal in listOf("center", "right", "both")) {
                                             alignment = jcVal
                                         }
                                     }
                                     "spacing" -> {
-                                        val before = pPrElem.getAttribute("w:before").ifEmpty { pPrElem.getAttribute("before") }
-                                        val after = pPrElem.getAttribute("w:after").ifEmpty { pPrElem.getAttribute("after") }
+                                        val before = pPrElem.localAttribute("before")
+                                        val after = pPrElem.localAttribute("after")
                                         before.toFloatOrNull()?.let { spaceBeforePt = (it / 20f).coerceIn(0f, 40f) }
                                         after.toFloatOrNull()?.let { spaceAfterPt = (it / 20f).coerceIn(0f, 40f) }
                                     }
@@ -236,12 +278,7 @@ object OpenXmlDocumentParser {
                             pPrChild = pPrChild.nextSibling
                         }
                     }
-                    "r" -> {
-                        val run = parseRun(elem, isHeading, headingLevel)
-                        if (run != null && run.text.isNotEmpty()) {
-                            runs.add(run)
-                        }
-                    }
+                    else -> appendVisibleRuns(elem, 0)
                 }
             }
             child = child.nextSibling
@@ -282,15 +319,15 @@ object OpenXmlDocumentParser {
                                 val rPrElem = rPrChild as Element
                                 when (rPrElem.localName()) {
                                     "b" -> {
-                                        val v = rPrElem.getAttribute("w:val").ifEmpty { rPrElem.getAttribute("val") }
+                                        val v = rPrElem.localAttribute("val")
                                         isBold = v.isEmpty() || v == "1" || v.equals("true", ignoreCase = true)
                                     }
                                     "i" -> {
-                                        val v = rPrElem.getAttribute("w:val").ifEmpty { rPrElem.getAttribute("val") }
+                                        val v = rPrElem.localAttribute("val")
                                         isItalic = v.isEmpty() || v == "1" || v.equals("true", ignoreCase = true)
                                     }
                                     "sz" -> {
-                                        val v = rPrElem.getAttribute("w:val").ifEmpty { rPrElem.getAttribute("val") }
+                                        val v = rPrElem.localAttribute("val")
                                         v.toFloatOrNull()?.let {
                                             if (!parentHeading) fontSizePt = (it / 2f).coerceIn(8f, 32f)
                                         }
@@ -303,9 +340,10 @@ object OpenXmlDocumentParser {
                     "t" -> {
                         sb.append(elem.textContent ?: "")
                     }
-                    "br" -> {
-                        sb.append("\n")
-                    }
+                    "br", "cr" -> sb.append("\n")
+                    "tab" -> sb.append("\t")
+                    "noBreakHyphen" -> sb.append('\u2011')
+                    "softHyphen" -> sb.append('\u00AD')
                 }
             }
             child = child.nextSibling
@@ -504,16 +542,9 @@ object OpenXmlDocumentParser {
 
     private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
         val doc = parseXml(xml)
-        require(doc.documentElement.nodeName == "sst") { "Unsupported shared strings XML root" }
-        val siList = doc.getElementsByTagName("si")
-        for (i in 0 until siList.length) {
-            val si = siList.item(i) as Element
-            val tList = si.getElementsByTagName("t")
-            val sb = StringBuilder()
-            for (j in 0 until tList.length) {
-                sb.append(tList.item(j).textContent ?: "")
-            }
-            outStrings.add(sb.toString())
+        require(doc.documentElement.localName() == "sst") { "Unsupported shared strings XML root" }
+        for (item in doc.documentElement.childElements("si")) {
+            outStrings.add(spreadsheetRichText(item))
         }
     }
 
@@ -551,15 +582,15 @@ object OpenXmlDocumentParser {
     ): Pair<Int, Int> {
         val doc = parseXml(xml)
         require(doc.documentElement.localName() == "worksheet") { "Invalid worksheet XML root" }
-        // This parser uses unprefixed worksheet element names. Refuse unsupported
-        // prefixed XML rather than silently returning an empty worksheet.
-        require(doc.documentElement.nodeName == "worksheet") { "Unsupported prefixed worksheet XML" }
+        val root = doc.documentElement
+        val sheetData = root.childElements("sheetData").singleOrNull()
+            ?: throw IOException("Worksheet data missing or ambiguous")
 
         var frozenCols = 0
         var frozenRows = 0
-        val paneNodes = doc.getElementsByTagName("pane")
-        for (p in 0 until paneNodes.length) {
-            val pElem = paneNodes.item(p) as? Element ?: continue
+        val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
+            .flatMap { it.childElements("pane") }
+        for (pElem in panes) {
             val state = pElem.getAttribute("state")
             if (state.isEmpty() || state.equals("frozen", ignoreCase = true) || state.equals("frozenSplit", ignoreCase = true)) {
                 val xSplit = pElem.getAttribute("xSplit").toFloatOrNull()?.toInt() ?: 0
@@ -571,9 +602,8 @@ object OpenXmlDocumentParser {
 
         // Parse merged cell ranges if present
         if (outMergedRegions != null) {
-            val mergeNodes = doc.getElementsByTagName("mergeCell")
-            for (m in 0 until mergeNodes.length) {
-                val mElem = mergeNodes.item(m) as? Element ?: continue
+            val mergeNodes = root.childElements("mergeCells").flatMap { it.childElements("mergeCell") }
+            for (mElem in mergeNodes) {
                 val ref = mElem.getAttribute("ref")
                 if (ref.contains(":")) {
                     val parts = ref.split(":")
@@ -597,14 +627,13 @@ object OpenXmlDocumentParser {
             }
         }
 
-        val rowList = doc.getElementsByTagName("row")
+        val rowList = sheetData.childElements("row")
         val rowMap = java.util.TreeMap<Int, MutableList<String>>()
         var autoRowIndex = 1
         var expandedCells = 0L
         val occupied = mutableMapOf<Int, MutableSet<Int>>()
 
-        for (i in 0 until rowList.length) {
-            val rowElem = rowList.item(i) as Element
+        for (rowElem in rowList) {
             val explicitRowAttr = rowElem.getAttribute("r")
             val explicitRowNumber = explicitRowAttr.toIntOrNull()
             val targetRow = if (explicitRowAttr.isEmpty()) autoRowIndex
@@ -621,17 +650,18 @@ object OpenXmlDocumentParser {
                     val cellType = cElem.getAttribute("t")
                     val cellRef = cElem.getAttribute("r")
                     var cellVal = ""
-                    val vList = cElem.getElementsByTagName("v")
-                    if (vList.length > 0) {
-                        cellVal = vList.item(0).textContent?.trim() ?: ""
+                    val values = cElem.childElements("v")
+                    val inline = cElem.childElements("is")
+                    require(values.size <= 1 && inline.size <= 1 && (values.isEmpty() || inline.isEmpty())) {
+                        "Ambiguous cell value at $cellRef"
+                    }
+                    if (values.isNotEmpty()) {
+                        cellVal = values.single().textContent?.trim().orEmpty()
                     } else {
-                        if (cElem.getElementsByTagName("f").length > 0) {
+                        if (cElem.childElements("f").isNotEmpty()) {
                             throw java.io.IOException("Formula at $cellRef has no cached result; recalculate and save the workbook first")
                         }
-                        val tList = cElem.getElementsByTagName("t")
-                        cellVal = buildString {
-                            for (t in 0 until tList.length) append(tList.item(t).textContent.orEmpty())
-                        }
+                        cellVal = inline.singleOrNull()?.let { spreadsheetRichText(it) }.orEmpty()
                     }
 
                     if (cellType == "s") {

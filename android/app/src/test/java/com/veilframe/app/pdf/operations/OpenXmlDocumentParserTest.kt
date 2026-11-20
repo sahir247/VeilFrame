@@ -53,6 +53,28 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun readsPrefixedWorksheetAndDoesNotAddPhoneticGuidesToValues() {
+        val file = createZipFile(mapOf(
+            "xl/workbook.xml" to """<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheets><x:sheet name="Data" sheetId="1"/></x:sheets></x:workbook>""",
+            "xl/sharedStrings.xml" to """<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:si><x:r><x:t>First </x:t></x:r><x:r><x:t>Second</x:t></x:r><x:rPh sb="0" eb="5"><x:t>Guide</x:t></x:rPh></x:si></x:sst>""",
+            "xl/worksheets/sheet1.xml" to """<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1" t="inlineStr"><x:is><x:r><x:t>Visible</x:t></x:r><x:rPh sb="0" eb="1"><x:t>Not visible</x:t></x:rPh></x:is></x:c></x:row></x:sheetData></x:worksheet>"""
+        ))
+        try {
+            assertEquals(listOf("First Second", "Visible"), OpenXmlDocumentParser.parseXlsx(file).sheets.single().rows.single())
+        } finally { file.delete() }
+    }
+
+    @Test
+    fun preservesVisibleWordLinkAndRevisionTextWithAlternatePrefix() {
+        val file = createZipFile(mapOf("word/document.xml" to
+            """<q:document xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><q:body><q:p><q:r><q:t>Before </q:t></q:r><q:hyperlink><q:r><q:t>link</q:t></q:r></q:hyperlink><q:del><q:r><q:delText>deleted</q:delText></q:r></q:del><q:ins><q:r><q:tab/><q:t>added</q:t><q:br/><q:t>after</q:t></q:r></q:ins></q:p></q:body></q:document>"""
+        ))
+        try {
+            assertEquals("Before link\tadded\nafter", OpenXmlDocumentParser.parseDocx(file).paragraphs.single().fullText)
+        } finally { file.delete() }
+    }
+
+    @Test
     fun workbookRelationshipsControlSheetOrderAndNonContiguousPartNames() {
         val workbook = """<workbook><sheets>
             <sheet name="First" sheetId="8" r:id="rId9"/>
