@@ -439,7 +439,7 @@ class NcnnUpscaleEngine(
             // Restrict threads to 2 on emulator/CPU to prevent OpenMP per-thread workspaces from exceeding 1024MB LMK limit
             val numThreads = if (isEmulator || preferredGpuid < 0) 2 else Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
             val backendAttempts = if (preferredGpuid >= 0) listOf(preferredGpuid, -1) else listOf(-1)
-            var inferenceSucceeded = false
+            var successfulBackend: String? = null
             var lastGpuFailure: DeviceInferenceException? = null
 
             for ((attemptIndex, attemptGpuid) in backendAttempts.withIndex()) {
@@ -642,7 +642,7 @@ class NcnnUpscaleEngine(
                             NcnnNative.destroyInstance(handle)
                         }
                     }
-                    inferenceSucceeded = true
+                    successfulBackend = if (attemptGpuid >= 0) "Vulkan" else "CPU"
                     break
                 } catch (e: DeviceInferenceException) {
                     val mayRetryOnCpu = attemptGpuid >= 0 &&
@@ -655,7 +655,7 @@ class NcnnUpscaleEngine(
                 }
             }
 
-            if (!inferenceSucceeded) {
+            if (successfulBackend == null) {
                 throw lastGpuFailure ?: DeviceInferenceException(-4, "NCNN inference did not complete on any backend", "CPU")
             }
 
@@ -683,7 +683,8 @@ class NcnnUpscaleEngine(
                 null
             }
             if (!coroutineContext.isActive) throw UpscaleCancellationException("Upscaling cancelled before result delivery")
-            UpscaleOutput.Streamed(file = finalFile, preview = preview, width = outW, height = outH)
+            UpscaleOutput.Streamed(file = finalFile, preview = preview, width = outW, height = outH,
+                inferenceBackend = successfulBackend)
                 .also { completed = true }
         } finally {
             if (!completed) {

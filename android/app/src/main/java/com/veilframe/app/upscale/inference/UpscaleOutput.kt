@@ -30,6 +30,8 @@ sealed class UpscaleOutput {
         val preview: Bitmap?,
         override val width: Int,
         override val height: Int,
+        /** Backend of the completed native attempt; null for non-neural outputs. */
+        val inferenceBackend: String? = null,
     ) : UpscaleOutput()
 
     /** Only for unpublished output; a controller takes ownership after delivery. */

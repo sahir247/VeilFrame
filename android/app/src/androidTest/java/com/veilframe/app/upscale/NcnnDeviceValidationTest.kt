@@ -147,7 +147,7 @@ class NcnnDeviceValidationTest {
                 val t1 = System.nanoTime()
                 val pssAfter = Debug.getPss()
                 val elapsedMs = (t1 - t0) / 1_000_000
-                Log.i(TAG, "RealCase ${case.name} [Vulkan]: ${elapsedMs}ms | ${inW}x${inH} -> ${output.width}x${output.height} | PSS delta: ${pssAfter - pssBefore} kB")
+                Log.i(TAG, "RealCase ${case.name} [${checkNotNull(output.inferenceBackend)}]: ${elapsedMs}ms | ${inW}x${inH} -> ${output.width}x${output.height} | PSS delta: ${pssAfter - pssBefore} kB")
 
                 assertEquals("Width mismatch", expectedW, output.width)
                 assertEquals("Height mismatch", expectedH, output.height)
@@ -168,7 +168,7 @@ class NcnnDeviceValidationTest {
                     }
                 }
 
-                val outputArtifact = File(artifactsDir, "real_output_gpu_${case.name}.png")
+                val outputArtifact = File(artifactsDir, "real_output_${checkNotNull(output.inferenceBackend).lowercase(java.util.Locale.ROOT)}_${case.name}.png")
                 output.file.copyTo(outputArtifact, overwrite = true)
                 Log.i(TAG, "Saved real output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
             }
@@ -323,6 +323,7 @@ class NcnnDeviceValidationTest {
             val mpStr = String.format(java.util.Locale.US, "%.2f", totalMegaPixels)
             val tpStr = String.format(java.util.Locale.US, "%.2f", throughputMpS)
             Log.i(TAG, "=== USER WA UPSCALE COMPLETED SUCCESSFULLY ===")
+            Log.i(TAG, "Completed backend: ${checkNotNull(output.inferenceBackend)}")
             Log.i(TAG, "Elapsed time: ${elapsedMs}ms (${elapsedMs / 1000.0}s)")
             Log.i(TAG, "Output resolution: ${output.width}x${output.height} (~$mpStr MP)")
             Log.i(TAG, "Throughput: $tpStr MP/s")
@@ -334,7 +335,7 @@ class NcnnDeviceValidationTest {
             assertTrue("Output file must be non-empty", output.file.length() > 0)
             NcnnUpscaleEngine.validatePngFile(output.file, expectedW, expectedH)
 
-            val outputArtifact = File(artifactsDir, "real_output_gpu_user_wa_clash_5120x3840.png")
+            val outputArtifact = File(artifactsDir, "real_output_${checkNotNull(output.inferenceBackend).lowercase(java.util.Locale.ROOT)}_user_wa_clash_5120x3840.png")
             output.file.copyTo(outputArtifact, overwrite = true)
             Log.i(TAG, "Saved user output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
         }
