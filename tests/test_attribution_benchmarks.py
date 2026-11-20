@@ -130,6 +130,35 @@ class TestAttributionBenchmarks(unittest.TestCase):
         summary = res.attribution_metrics.summary
         self.assertGreaterEqual(summary["before_transformation"]["auc"], 0.85)
 
+    def test_roc_equal_scores_are_one_threshold(self):
+        for higher in (True, False):
+            auc, points = compute_roc_and_auc([5., 5.], [5., 5., 5.], higher)
+            self.assertAlmostEqual(auc, 0.5)
+            self.assertEqual(points, [(0.0, 0.0), (1.0, 1.0)])
+        auc, _ = compute_roc_and_auc([2., 1.], [1., 0.])
+        self.assertAlmostEqual(auc, 0.875)
+
+    def test_prnu_corpus_rejects_missing_and_leaked_probes(self):
+        corpus = generate_synthetic_evaluation_corpus(num_cameras=2, num_frames=3, seed=91)
+        cid = next(iter(corpus))
+        original = corpus[cid].pop("original")
+        self.assertEqual(evaluate_prnu_corpus_benchmark(corpus).status, "unavailable")
+        corpus[cid]["original"] = original
+        corpus[cid]["original"][0] = corpus[cid]["ref"][0].copy()
+        self.assertEqual(evaluate_prnu_corpus_benchmark(corpus).status, "unavailable")
+
+    def test_prnu_before_after_identical_held_out_probes_have_equal_scores(self):
+        corpus = generate_synthetic_evaluation_corpus(num_cameras=3, num_frames=4, seed=9)
+        for clips in corpus.values():
+            clips["trans"] = [frame.copy() for frame in clips["original"]]
+        result = evaluate_prnu_corpus_benchmark(corpus)
+        self.assertEqual(result.status, "success")
+        summary = result.attribution_metrics.summary
+        self.assertEqual(summary["before_transformation"], summary["after_transformation"])
+        values = result.signal_metrics.values
+        self.assertEqual(values["mean_same_pce_before"], values["mean_same_pce_after"])
+        self.assertEqual(values["mean_diff_pce_before"], values["mean_diff_pce_after"])
+
     def test_invariant_unavailable_inputs_return_proper_status(self):
         """Invariant: Missing/empty inputs return 'unavailable' status rather than artificial zeros."""
         res_phash = evaluate_perceptual_hash_benchmark([], [])
