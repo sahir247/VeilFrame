@@ -13,6 +13,20 @@ class BundleTokenizerTest {
         assertTrue(BundleTokenizer.count("বাংলা 日本語 😀") > 0L)
     }
 
+    @Test fun distinctNamedEncodingsAndStableBudgetChoices() {
+        assertEquals(5L, BundleTokenizer.count("お誕生日おめでとう", BundleTokenizer.NAME))
+        assertEquals(9L, BundleTokenizer.count("お誕生日おめでとう", BundleTokenizer.CL100K))
+        assertEquals(64_000L, BundleBudgetOptions.at(1).tokens)
+        assertEquals(0L, BundleBudgetOptions.at(4).tokens)
+        assertEquals(BundleTokenizer.CL100K, BundleBudgetOptions.at(5).encoding)
+        val file = File.createTempFile("bundle_encoding", ".txt")
+        try {
+            file.writeText("お誕生日おめでとう")
+            assertEquals(5L, BundleTokenizer.verify(file, 5, BundleTokenizer.NAME))
+            assertThrows(IOException::class.java) { BundleTokenizer.verify(file, 5, BundleTokenizer.CL100K) }
+        } finally { file.delete() }
+    }
+
     @Test fun wholeArtifactChecksBudgetIncludingMetadataAndEscapes() {
         val file = File.createTempFile("bundle_tokens", ".json")
         try {

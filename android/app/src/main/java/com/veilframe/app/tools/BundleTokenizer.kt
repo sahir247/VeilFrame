@@ -14,14 +14,20 @@ import java.nio.charset.CodingErrorAction
 internal object BundleTokenizer {
     const val NAME = "o200k_base"
     const val MAX_TOKENIZED_BYTES = 2L * 1024 * 1024
-    private val encoding by lazy {
-        Encodings.newLazyEncodingRegistry().getEncoding(EncodingType.O200K_BASE)
+    const val CL100K = "cl100k_base"
+    private val registry by lazy { Encodings.newLazyEncodingRegistry() }
+
+    fun count(text: String, name: String = NAME): Long {
+        val type = when (name) {
+            NAME -> EncodingType.O200K_BASE
+            CL100K -> EncodingType.CL100K_BASE
+            else -> throw IllegalArgumentException("Unsupported bundle encoding: $name")
+        }
+        return registry.getEncoding(type).countTokensOrdinary(text).toLong()
     }
 
-    fun count(text: String): Long = encoding.countTokensOrdinary(text).toLong()
-
     /** A bounded immutable artifact is counted as a single text sequence. */
-    fun verify(file: File, budget: Long, checkpoint: () -> Unit = {}): Long {
+    fun verify(file: File, budget: Long, name: String = NAME, checkpoint: () -> Unit = {}): Long {
         require(budget > 0)
         checkpoint()
         val length = file.length()
@@ -37,9 +43,9 @@ internal object BundleTokenizer {
             .onUnmappableCharacter(CodingErrorAction.REPORT)
             .decode(ByteBuffer.wrap(bytes)).toString()
         checkpoint()
-        val tokens = count(text)
+        val tokens = count(text, name)
         checkpoint()
-        if (tokens > budget) throw IOException("Complete bundle exceeds " + NAME +
+        if (tokens > budget) throw IOException("Complete bundle exceeds " + name +
             " token budget (" + tokens + " > " + budget + "); increase budget or narrow selection")
         return tokens
     }

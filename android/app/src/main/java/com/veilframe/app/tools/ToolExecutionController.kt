@@ -203,15 +203,8 @@ class ToolExecutionController(
         if (!owns()) return
         val folder = state.isFolderSelected
         val sourceName = state.selectedPathDisplay
-        val tokenIndex = sessionManager.getSelectedOptionIndex()
-        val tokenBudget = when (tokenIndex) {
-            0 -> 32_000L
-            1 -> 64_000L
-            2 -> 128_000L
-            3 -> 200_000L
-            4 -> 0L // Byte cap only
-            else -> 64_000L
-        }
+        val budgetChoice = BundleBudgetOptions.at(sessionManager.getSelectedOptionIndex())
+        val tokenBudget = budgetChoice.tokens
 
         val formatIndex = sessionManager.getSelectedFormatIndex()
         val formatKey = when (formatIndex) {
@@ -221,7 +214,7 @@ class ToolExecutionController(
         }
 
         sessionManager.updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
-        onLog("[AI] Packaging context directly from target: $sourceName (Budget: ${if (tokenBudget == 0L) "32 MiB byte cap" else "$tokenBudget o200k_base tokens (2 MiB byte cap)"})...")
+        onLog("[AI] Packaging context directly from target: $sourceName (Budget: ${if (tokenBudget == 0L) "32 MiB byte cap" else "$tokenBudget ${budgetChoice.encoding} tokens (2 MiB byte cap)"})...")
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(activity.cacheDir, "AIBundle_${timeStamp}_${java.util.UUID.randomUUID()}.$formatKey")
@@ -236,7 +229,8 @@ class ToolExecutionController(
             compressManifests = binding.switchOption3.isChecked,
             maxDepth = maxDepth,
             excludedRelativePaths = excludedPaths,
-            expectedInventoryFingerprint = inventoryFingerprint
+            expectedInventoryFingerprint = inventoryFingerprint,
+            tokenEncoding = budgetChoice.encoding
         )
 
         var published = false

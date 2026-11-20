@@ -37,7 +37,8 @@ object AiBundleEngine {
         val compressManifests: Boolean = false,
         val maxDepth: Int? = null,
         val excludedRelativePaths: Set<String> = emptySet(),
-        val expectedInventoryFingerprint: String? = null
+        val expectedInventoryFingerprint: String? = null,
+        val tokenEncoding: String = BundleTokenizer.NAME
     )
 
     data class BundleResult(
@@ -237,6 +238,7 @@ object AiBundleEngine {
         val format = config.outputFormat.lowercase(Locale.US)
         require(format in setOf("json", "md", "aibundle")) { "Unsupported bundle format" }
         val exact = config.tokenBudget > 0
+        require(config.tokenEncoding in setOf(BundleTokenizer.NAME, BundleTokenizer.CL100K))
         val budget = if (exact) BundleTokenizer.MAX_TOKENIZED_BYTES else MAX_BUNDLE_BYTES
         // Independent byte and token admission budgets. Section token counts
         // guide packing; they are not additive across arbitrary BPE boundaries.
@@ -314,10 +316,10 @@ object AiBundleEngine {
                         val separator = if (format == "json" && included > 0) ",\n" else ""
                         val len = section.toByteArray(Charsets.UTF_8).size.toLong() + separator.length
                         if (len > contentBudget - chars) { omit(path, "content byte budget"); return }
-                        val candidateTokens = if (exact) BundleTokenizer.count(separator + section) else 0L
+                        val candidateTokens = if (exact) BundleTokenizer.count(separator + section, config.tokenEncoding) else 0L
                         currentCoroutineContext().ensureActive()
                         if (exact && candidateTokens > sectionTokenBudget - sectionTokens) {
-                            omit(path, "o200k_base section budget"); return
+                            omit(path, "${config.tokenEncoding} section budget"); return
                         }
                         sectionTokens += candidateTokens
                         writer.write(separator)
@@ -373,7 +375,7 @@ object AiBundleEngine {
             exclusions.requireAllMatched()
             require(included > 0) { "No readable files fit this format, filters and content budget" }
             val tokens = if (exact) sectionTokens else chars / 4 + if (chars % 4 == 0L) 0 else 1
-            val tokenScope = if (exact) "Independent o200k_base file-section counts; exact complete artifact checked before publication"
+            val tokenScope = if (exact) "Independent ${config.tokenEncoding} file-section counts; exact complete artifact checked before publication"
                 else "File-section estimate (UTF-8 bytes / 4); 32 MiB byte cap only"
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
             val safeName = JSONObject.quote(exportedRoot)
@@ -422,12 +424,12 @@ object AiBundleEngine {
                 throw IOException("Complete bundle, including omission report, exceeds the byte cap. Narrow the selection or use byte-capped mode.")
             }
             val cc = currentCoroutineContext()
-            val wholeTokens = if (exact) BundleTokenizer.verify(temp, config.tokenBudget) { cc.ensureActive() }
+            val wholeTokens = if (exact) BundleTokenizer.verify(temp, config.tokenBudget, config.tokenEncoding) { cc.ensureActive() }
                 else finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
             cc.ensureActive()
             Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             return BundleResult(files, included, wholeTokens, outputFile.absolutePath, omitted,
-                if (exact) BundleTokenizer.NAME else null)
+                if (exact) config.tokenEncoding else null)
         } finally {
             staged?.delete()
             scratch.deleteRecursively()
