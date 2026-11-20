@@ -1675,4 +1675,18 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bc\s*$""").containsMatchIn(operators))
         }
     }
+    @Test
+    fun disjointPrintAreasPreserveOrderAndExcludeInterveningCells() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Sales, O&apos;Brien" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">'Sales, O''Brien'!&#36;C&#36;1,'Sales, O''Brien'!&#36;A&#36;1</definedName></definedNames></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>ALPHA</t></is></c><c r="B1" t="inlineStr"><is><t>OMITME</t></is></c><c r="C1" t="inlineStr"><is><t>OMEGA</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root, "multiple.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context, savedPrintLayout = true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2, pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.indexOf("OMEGA") in 0 until text.indexOf("ALPHA"))
+            assertTrue(!text.contains("OMITME"))
+        }
+    }
 }

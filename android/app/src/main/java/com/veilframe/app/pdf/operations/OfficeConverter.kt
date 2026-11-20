@@ -1040,9 +1040,9 @@ class OfficeConverter {
     private fun renderSavedPrintSheet(pdf: PDDocument, sheet: OpenXmlDocumentParser.XlsxSheetData, index: Int,
         font: PDType1Font, limits: LayoutLimits, checkpoint: () -> Unit) {
         val settings = sheet.printSettings
-        val area = XlsxSavedPrintLayout.area(sheet.name, settings, sheet.rows, sheet.mergedRegions)
-        val requiredRows = maxOf(sheet.rows.size, area.lastRow + 1)
-        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, area.lastCol + 1)
+        val areas = XlsxSavedPrintLayout.areas(sheet.name, settings, sheet.rows, sheet.mergedRegions)
+        val requiredRows = maxOf(sheet.rows.size, areas.maxOf { it.lastRow } + 1)
+        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, areas.maxOf { it.lastCol } + 1)
         require(requiredRows.toLong() * requiredCols <= SpreadsheetGeometry.MAX_GRID_CELLS) { "Print area exceeds layout budget" }
         val rows = List(requiredRows) { r ->
             val existing = sheet.rows.getOrNull(r).orEmpty()
@@ -1051,9 +1051,12 @@ class OfficeConverter {
         }
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
             styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits)
-        val plan = XlsxSavedPrintLayout.plan(layout, area, settings)
+        val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings) }
+        require(plans.sumOf { it.tiles.size.toLong() } + pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) {
+            "Saved print areas exceed PDF page budget"
+        }
         val merges = SpreadsheetMergeIndex(layout.rowCount, layout.colCount, layout.mergedRegions)
-        for (tile in plan.tiles) {
+        for (plan in plans) for (tile in plan.tiles) {
             checkpoint()
             require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             val rowRange = tile.first

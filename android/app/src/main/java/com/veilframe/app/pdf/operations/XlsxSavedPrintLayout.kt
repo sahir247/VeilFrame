@@ -14,15 +14,45 @@ internal object XlsxSavedPrintLayout {
         val bottom: Float, val contentWidth: Float, val contentHeight: Float, val scale: Float,
         val tiles: List<Pair<IntRange, IntRange>>)
 
-    fun area(name: String, settings: XlsxSavedPrintSettings, rows: List<List<String>>,
-        merges: List<OpenXmlDocumentParser.CellRangeAddress>): OpenXmlDocumentParser.CellRangeAddress {
-        require(!settings.ambiguousArea) { "Multiple saved print areas are unsupported" }
+    fun areas(name: String, settings: XlsxSavedPrintSettings, rows: List<List<String>>,
+        merges: List<OpenXmlDocumentParser.CellRangeAddress>): List<OpenXmlDocumentParser.CellRangeAddress> {
+        require(!settings.ambiguousArea) { "Duplicate saved print-area definitions are ambiguous" }
         val ref = settings.area
         if (ref == null) {
             val extent = SpreadsheetGeometry.inspect(rows, merges)
             require(extent.rows > 0 && extent.columns > 0) { "Empty print area" }
-            return OpenXmlDocumentParser.CellRangeAddress(0, extent.rows - 1, 0, extent.columns - 1)
+            return listOf(OpenXmlDocumentParser.CellRangeAddress(0, extent.rows - 1, 0, extent.columns - 1))
         }
+        require(ref.length <= 16_384) { "Saved print-area definition exceeds budget" }
+        val parts = mutableListOf<String>()
+        var quoted = false
+        var start = 0
+        var i = 0
+        while (i < ref.length) {
+            when (ref[i]) {
+                '\'' -> {
+                    if (quoted && ref.getOrNull(i+1) == '\'') i++ else quoted = !quoted
+                }
+                ',' -> if (!quoted) {
+                    parts.add(ref.substring(start,i).trim()); start = i+1
+                    require(parts.size < 64) { "Too many saved print areas" }
+                }
+            }
+            i++
+        }
+        require(!quoted) { "Malformed quoted print-area sheet name" }
+        parts.add(ref.substring(start).trim())
+        val ranges = parts.map { parseArea(name, it) }
+        for ((index, range) in ranges.withIndex()) for (other in ranges.take(index)) {
+            require(range.lastRow < other.firstRow || other.lastRow < range.firstRow ||
+                range.lastCol < other.firstCol || other.lastCol < range.firstCol) {
+                "Overlapping saved print areas are ambiguous"
+            }
+        }
+        return ranges
+    }
+
+    private fun parseArea(name: String, ref: String): OpenXmlDocumentParser.CellRangeAddress {
         val separator = ref.lastIndexOf('!')
         require(separator > 0) { "Unsupported saved print area" }
         val owner = ref.substring(0, separator).let {
@@ -31,7 +61,7 @@ internal object XlsxSavedPrintLayout {
         require(owner == name) { "Unsupported cross-sheet print area" }
         val range = ref.substring(separator + 1).replace("$","")
         require(range.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}(?::[A-Za-z]{1,3}[1-9][0-9]{0,6})?"))) {
-            "Only one rectangular saved print area is supported"
+            "Saved print areas must be rectangular cell ranges"
         }
         val parts = range.split(':')
         fun coord(value: String): Pair<Int,Int> {
@@ -112,7 +142,7 @@ internal object XlsxSavedPrintLayout {
             val rs = groups(area.firstRow..area.lastRow,layout.rowHeights,h,scale,rb) ?: continue
             val cs = groups(area.firstCol..area.lastCol,layout.colWidths,w,scale,cb) ?: continue
             if ((fitW > 0 && cs.size > fitW) || (fitH > 0 && rs.size > fitH)) continue
-            require(rs.size.toLong()*cs.size <= SpreadsheetGeometry.MAX_PAGES) { "Saved print layout exceeds page budget" }
+            if (rs.size.toLong()*cs.size > SpreadsheetGeometry.MAX_PAGES) continue
             val tiles = when (settings.setup["pageOrder"]) {
                 "overThenDown" -> rs.flatMap { row -> cs.map { col -> row to col } }
                 null, "", "downThenOver" -> cs.flatMap { col -> rs.map { row -> row to col } }

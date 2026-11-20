@@ -651,3 +651,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Numeric color scales
 
 - Two/three-stop conditional scales with literal RGB and min/max/number/percent thresholds now use complete saved numeric range statistics. Deferred raw cells are bounded, evaluate after all input rows, and combine with existing priority/stop rules. Preserve underlying numeric formatting. Arbitrary formula/percentile thresholds, theme colors, data bars and icons remain unsupported; bounded scale admission may reject exceptionally large ranges. Added multi-row three-stop percentage regression. CI pending.
+
+### A28 — Disjoint saved print areas and pagination edge cases
+
+- Support ordered, nonoverlapping unions of up to 64 rectangular local-sheet print areas, including quoted names containing commas and escaped apostrophes. Each area is independently planned; cells in gaps are omitted only in explicit saved-print mode. Reject overlapping or malformed ranges. Check aggregate page budget before drawing; fit-to-page can try smaller scales if a larger attempt exceeds the page budget. Partial manual breaks are disclosed rather than promoted to full-row/full-column breaks. Added multi-area PDF fixture. Excel may use printer-specific scaling across areas; current per-area approximation is not exact. CI pending.

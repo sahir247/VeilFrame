@@ -949,8 +949,19 @@ object OpenXmlDocumentParser {
         val setup = attrs(one("pageSetup"))
         val props = attrs(one("sheetPr")?.childElements("pageSetUpPr")?.singleOrNull())
         val options = attrs(one("printOptions"))
-        fun breaks(name: String) = one(name)?.childElements("brk").orEmpty()
-            .filter { it.getAttribute("man") in setOf("1", "true") }.map { it.getAttribute("id") }
+        var partialBreaks = false
+        fun breaks(name: String, fullExtent: Int): List<String> {
+            val result = mutableListOf<String>()
+            for (brk in one(name)?.childElements("brk").orEmpty().filter { it.getAttribute("man") in setOf("1", "true") }) {
+                val min = brk.getAttribute("min").ifEmpty { "0" }.toIntOrNull()
+                val max = brk.getAttribute("max").ifEmpty { fullExtent.toString() }.toIntOrNull()
+                if (min == 0 && max == fullExtent) result.add(brk.getAttribute("id"))
+                else partialBreaks = true // do not promote a partial break to a whole-sheet break
+            }
+            return result
+        }
+        val rowBreaks = breaks("rowBreaks", 16383)
+        val colBreaks = breaks("colBreaks", 1048575)
         val headers = one("headerFooter")?.textContent?.isNotBlank() == true
         val hidden = root.childElements("cols").flatMap { it.childElements("col") }.any {
             it.getAttribute("hidden") in setOf("1", "true")
@@ -959,8 +970,8 @@ object OpenXmlDocumentParser {
             fitToPage = props["fitToPage"] in setOf("1", "true"), gridLines = options["gridLines"] in setOf("1", "true"),
             centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
             centerVertical = options["verticalCentered"] in setOf("1", "true"),
-            rowBreaks = breaks("rowBreaks"), colBreaks = breaks("colBreaks"),
-            unsupportedFeatures = headers || hidden || options["headings"] in setOf("1", "true") ||
+            rowBreaks = rowBreaks, colBreaks = colBreaks,
+            unsupportedFeatures = partialBreaks || headers || hidden || options["headings"] in setOf("1", "true") ||
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
     }
 
