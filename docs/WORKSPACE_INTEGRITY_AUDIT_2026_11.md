@@ -667,3 +667,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Signed stacked chart rendering
 
 - Recognize standard and 100% stacked bar/column grouping and render cumulative positive/negative vector segments from saved cached values. Normalize before summing to avoid overflow at very large magnitudes; use absolute-magnitude denominators for signed percentage stacks, retain missing points and keep raw values in the cache table. Existing clustered/line/pie paths remain separate. Source chart styling, saved anchors and renderer parity with Excel for mixed-sign 100% stacks are not claimed. Added numeric geometry regression. CI pending.
+
+- Follow-up: use category-local magnitude normalization for percentage stacks, preserving smaller categories beside near-Double.MAX_VALUE categories. Extend chart package/PDF integration fixture to stacked grouping and assert mixed-sign percentages. CI pending.

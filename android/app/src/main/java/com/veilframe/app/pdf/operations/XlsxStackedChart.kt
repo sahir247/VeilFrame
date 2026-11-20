@@ -10,7 +10,11 @@ internal object XlsxStackedChart {
         require(chart.series.all { it.values.size == count })
         val result = List(chart.series.size) { MutableList<Segment?>(count) { null } }
         for (i in 0 until count) {
-            val values = chart.series.map { it.values[i]?.div(maxAbs) }
+            // Percentage stacks have independent category denominators. A tiny
+            // category beside a huge one must not underflow to all zero.
+            val divisor = if (percent) chart.series.mapNotNull { it.values[i] }
+                .maxOfOrNull { kotlin.math.abs(it) }?.takeIf { it > 0.0 } ?: 1.0 else maxAbs
+            val values = chart.series.map { it.values[i]?.div(divisor) }
             // The percent denominator is the sum of absolute magnitudes, so
             // mixed signs are preserved and never cancelled against each other.
             val denominator = if (percent) values.sumOf { kotlin.math.abs(it ?: 0.0) } else 1.0

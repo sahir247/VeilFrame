@@ -1634,6 +1634,17 @@ class OfficeConverterFidelityTest {
             val operators = pdf.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
             assertTrue(Regex("""(?m)^\s*f\s*$""").containsMatchIn(operators))
         }
+        val stackedInput = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRels, "xl/drawings/drawing9.xml" to drawing,
+            "xl/drawings/_rels/drawing9.xml.rels" to drawingRels,
+            "xl/charts/custom.xml" to chart.replace("clustered","stacked")))
+        assertEquals("stacked", OpenXmlDocumentParser.parseXlsx(stackedInput).sheets.single().charts.single().grouping)
+        val stackedPdf = File(tempFolder.root, "stacked-chart.pdf")
+        OfficeConverter().convertXlsxToPdf(stackedInput, stackedPdf, context)
+        PDDocument.load(stackedPdf).use { pdf ->
+            assertEquals(2, pdf.numberOfPages)
+            assertTrue(PDFTextStripper().getText(pdf).contains("[stacked]"))
+        }
     }
     @Test
     fun savedPrintLayoutRespectsPaperMarginsAreaAndBreaksWithoutChangingDefault() = runBlocking {
@@ -1741,5 +1752,7 @@ class OfficeConverterFidelityTest {
         val percent = XlsxStackedChart.segments(chart,Double.MAX_VALUE,true)
         assertEquals(2.0/3.0,percent[1][0]!!.end,0.000001)
         assertEquals(-1.0/3.0,percent[2][0]!!.end,0.000001)
+        assertEquals(-0.4,percent[0][1]!!.end,0.000001)
+        assertEquals(0.6,percent[2][1]!!.end,0.000001)
     }
 }
