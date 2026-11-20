@@ -1464,6 +1464,38 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun explicitCellStylesReachPdfTextAndFillOperators() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Styled" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><fonts><font/><font><b/><i/><color rgb="FF0000FF"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"/></patternFill></fill></fills><cellXfs><xf/><xf fontId="1" fillId="1"><alignment horizontal="right"/></xf></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>LEFT</t></is></c></row><row r="2"><c r="A2" t="inlineStr" s="1"><is><t>RIGHT</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val target = File(tempFolder.root, "appearance.pdf")
+        OfficeConverter().convertXlsxToPdf(input, target, context)
+        PDDocument.load(target).use { pdf ->
+            val positions = mutableListOf<com.tom_roush.pdfbox.text.TextPosition>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(text: com.tom_roush.pdfbox.text.TextPosition) {
+                    positions.add(text)
+                    super.processTextPosition(text)
+                }
+            }
+            val text = stripper.getText(pdf)
+            assertTrue(text.contains("LEFT") && text.contains("RIGHT"))
+            val boldGlyphs = positions.filter { it.font.name.contains("BoldOblique") }
+            assertEquals("RIGHT", boldGlyphs.joinToString("") { it.unicode })
+            val leftGlyphs = positions.filter { it.font.name == "Helvetica" && it.unicode == "L" }
+            assertTrue(leftGlyphs.isNotEmpty())
+            assertTrue(boldGlyphs.minOf { it.xDirAdj } > leftGlyphs.minOf { it.xDirAdj } + 100f)
+            val instructions = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            val colorPattern = Regex("""(?m)(?:^|\s)1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+(?:rg|scn?)\b""")
+            val textColorPattern = Regex("""(?m)(?:^|\s)0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+(?:rg|scn?)\b""")
+            assertTrue("Explicit red fill operator missing", colorPattern.containsMatchIn(instructions))
+            assertTrue("Explicit blue text operator missing", textColorPattern.containsMatchIn(instructions))
+        }
+    }
+
+    @Test
     fun savedDimensionsAreMinimumsAndFrozenPanelsNeverOverflowOrDuplicateWithinPanel() {
         val sheet = OpenXmlDocumentParser.XlsxSheetData(
             name = "Sized",
