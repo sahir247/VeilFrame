@@ -963,15 +963,40 @@ object OpenXmlDocumentParser {
         val rowBreaks = breaks("rowBreaks", 16383)
         val colBreaks = breaks("colBreaks", 1048575)
         val headers = one("headerFooter")?.textContent?.isNotBlank() == true
-        val hidden = root.childElements("cols").flatMap { it.childElements("col") }.any {
-            it.getAttribute("hidden") in setOf("1", "true")
-        } || one("sheetData")?.childElements("row").orEmpty().any { it.getAttribute("hidden") in setOf("1", "true") }
+        fun hiddenFlag(element: Element): Boolean? = when (element.getAttribute("hidden")) {
+            "" -> null
+            "1", "true" -> true
+            "0", "false" -> false
+            else -> throw IOException("Invalid hidden geometry flag")
+        }
+        val hiddenColumns = mutableSetOf<Int>()
+        for (column in root.childElements("cols").flatMap { it.childElements("col") }) {
+            if (hiddenFlag(column) != true) continue
+            val first = column.getAttribute("min").toIntOrNull()
+            val last = column.getAttribute("max").toIntOrNull()
+            require(first != null && last != null && first in 1..MAX_XLSX_COLUMNS && last in first..MAX_XLSX_COLUMNS) {
+                "Invalid hidden column range"
+            }
+            for (c in first-1 until last) hiddenColumns.add(c)
+        }
+        val rowVisibility = mutableMapOf<Int,Boolean>()
+        var auto = 1
+        for (row in one("sheetData")?.childElements("row").orEmpty()) {
+            val index = row.getAttribute("r").ifEmpty { auto.toString() }.toIntOrNull()
+            require(index != null && index in 1..MAX_XLSX_ROWS) { "Invalid hidden row reference" }
+            auto = maxOf(auto,index+1)
+            hiddenFlag(row)?.let { flag ->
+                val prior = rowVisibility.put(index-1, flag)
+                require(prior == null || prior == flag) { "Conflicting hidden row declarations" }
+            }
+        }
+        val hiddenRows = rowVisibility.filterValues { it }.keys.toSet()
         return XlsxSavedPrintSettings(setup = setup, margins = attrs(one("pageMargins")),
             fitToPage = props["fitToPage"] in setOf("1", "true"), gridLines = options["gridLines"] in setOf("1", "true"),
             centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
             centerVertical = options["verticalCentered"] in setOf("1", "true"),
-            rowBreaks = rowBreaks, colBreaks = colBreaks,
-            unsupportedFeatures = partialBreaks || headers || hidden || options["headings"] in setOf("1", "true") ||
+            rowBreaks = rowBreaks, colBreaks = colBreaks, hiddenRows = hiddenRows, hiddenColumns = hiddenColumns,
+            unsupportedFeatures = partialBreaks || headers || options["headings"] in setOf("1", "true") ||
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
     }
 

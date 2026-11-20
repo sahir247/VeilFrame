@@ -1707,4 +1707,24 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(input, normal, context)
         PDDocument.load(normal).use { pdf -> assertEquals(1, Regex("HEADER").findAll(PDFTextStripper().getText(pdf)).count()) }
     }
+    @Test
+    fun savedPrintOmitsHiddenRowsAndColumnsButFullExportPreservesThem() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><cols><col min="2" max="2" hidden="1"/></cols><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>VISIBLEONE</t></is></c><c r="B1" t="inlineStr"><is><t>SECRET_COLUMN</t></is></c></row><row r="2" hidden="true"><c r="A2" t="inlineStr"><is><t>SECRET_ROW</t></is></c></row><row r="3"><c r="C3" t="inlineStr"><is><t>VISIBLETWO</t></is></c></row></sheetData><rowBreaks><brk id="1" man="1"/></rowBreaks></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root, "hidden-print.pdf")
+        OfficeConverter().convertXlsxToPdf(input, output, context, savedPrintLayout = true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2, pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("VISIBLEONE") && text.contains("VISIBLETWO"))
+            assertTrue(!text.contains("SECRET_COLUMN") && !text.contains("SECRET_ROW"))
+        }
+        val normal = File(tempFolder.root, "hidden-full.pdf")
+        OfficeConverter().convertXlsxToPdf(input, normal, context)
+        PDDocument.load(normal).use { pdf ->
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("SECRET_COLUMN") && text.contains("SECRET_ROW"))
+        }
+    }
 }

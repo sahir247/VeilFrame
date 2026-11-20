@@ -7,7 +7,8 @@ data class XlsxSavedPrintSettings(
     val centerHorizontal: Boolean = false, val centerVertical: Boolean = false,
     val rowBreaks: List<String> = emptyList(), val colBreaks: List<String> = emptyList(),
     val area: String? = null, val ambiguousArea: Boolean = false, val unsupportedFeatures: Boolean = false,
-    val titles: String? = null, val ambiguousTitles: Boolean = false
+    val titles: String? = null, val ambiguousTitles: Boolean = false,
+    val hiddenRows: Set<Int> = emptySet(), val hiddenColumns: Set<Int> = emptySet()
 )
 
 internal object XlsxSavedPrintLayout {
@@ -146,8 +147,8 @@ internal object XlsxSavedPrintLayout {
         val rb = if (settings.fitToPage) emptySet() else breaks(settings.rowBreaks,1_048_575)
         val cb = if (settings.fitToPage) emptySet() else breaks(settings.colBreaks,16_383)
         fun groups(range: IntRange, sizes: FloatArray, limit: Float, scale: Float, breaks: Set<Int>,
-            titleRange: IntRange?): List<List<Int>>? {
-            val prefix = titleRange?.toList().orEmpty()
+            titleRange: IntRange?, hidden: Set<Int>): List<List<Int>>? {
+            val prefix = titleRange?.filterNot { it in hidden }.orEmpty()
             require(titleRange == null || (titleRange.first <= range.first && titleRange.last < sizes.size)) {
                 "Print titles inside or after the body are unsupported; use full worksheet export"
             }
@@ -156,17 +157,20 @@ internal object XlsxSavedPrintLayout {
             val result = mutableListOf<List<Int>>()
             var active = mutableListOf<Int>()
             var used = prefixSize
+            var pendingBreak = false
             for (i in range) {
                 if (titleRange != null && i in titleRange) continue
+                if (i in breaks) pendingBreak = true
+                if (i in hidden) continue
                 val size = sizes[i] * scale
                 if (prefixSize + size > limit + 0.01f) return null
-                if (active.isNotEmpty() && (i in breaks || used + size > limit + 0.01f)) {
+                if (active.isNotEmpty() && (pendingBreak || used + size > limit + 0.01f)) {
                     result.add(prefix + active); active = mutableListOf(); used = prefixSize
                     if (result.size >= SpreadsheetGeometry.MAX_PAGES) return null
                 }
-                active.add(i); used += size
+                active.add(i); used += size; pendingBreak = false
             }
-            if (active.isNotEmpty() || result.isEmpty()) result.add(prefix + active)
+            if (active.isNotEmpty() || (result.isEmpty() && prefix.isNotEmpty())) result.add(prefix + active)
             return result
         }
         fun target(key: String): Int {
@@ -186,8 +190,9 @@ internal object XlsxSavedPrintLayout {
         // requested page counts. Manual breaks are ignored in this mode.
         for (percent in requested downTo (if (settings.fitToPage) 10 else requested)) {
             val scale = percent / 100f
-            val rs = groups(area.firstRow..area.lastRow,layout.rowHeights,h,scale,rb,titles.rows) ?: continue
-            val cs = groups(area.firstCol..area.lastCol,layout.colWidths,w,scale,cb,titles.columns) ?: continue
+            val rs = groups(area.firstRow..area.lastRow,layout.rowHeights,h,scale,rb,titles.rows,settings.hiddenRows) ?: continue
+            val cs = groups(area.firstCol..area.lastCol,layout.colWidths,w,scale,cb,titles.columns,settings.hiddenColumns) ?: continue
+            require(rs.isNotEmpty() && cs.isNotEmpty()) { "Saved print area contains no visible cells; use full worksheet export" }
             if ((fitW > 0 && cs.size > fitW) || (fitH > 0 && rs.size > fitH)) continue
             if (rs.size.toLong()*cs.size > SpreadsheetGeometry.MAX_PAGES) continue
             val tiles = when (settings.setup["pageOrder"]) {

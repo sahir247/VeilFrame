@@ -659,3 +659,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Saved print-title repetition
 
 - Resolve local-sheet saved print-title row/column ranges, reserve physical geometry on every printed panel, repeat only once per page. Preserve manual breaks and fit targets after title reservation. Render noncontiguous title/body coordinates with actual visible neighbors for shared borders; reject merges cut by the title/body boundary. Full worksheet export is unaffected. Titles must precede or be a prefix of the selected area; other ranges fail explicitly. Added PDF repetition/no-duplication regression. Printer-exact behavior and hidden geometry remain pending; CI pending.
+
+### A28 — Hidden geometry in explicit print mode
+
+- Parse saved row/column visibility, validate flags and split-row conflicts. Omit hidden coordinates during saved-print pagination (including repeated titles); carry manual breaks across hidden runs to the next visible coordinate. Fully hidden areas fail explicitly, and partially visible merged cells fail rather than dropping or misplacing anchor content. Default full worksheet export preserves hidden values. Added PDF regression for hidden rows/columns, break propagation and full export. Default-hidden sheetFormatPr, filter evaluation and exact printer geometry remain separate. CI pending.
