@@ -106,6 +106,54 @@ class DocumentSessionPersistenceTest {
     }
 
     @Test
+    fun failedLaterPageKeepsCommittedManifestAndReclaimsUnpublishedRenderCaches() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            bmp.eraseColor(Color.WHITE)
+            val page = ScannedPage(originalBitmapCache = bmp, processedBitmapCache = bmp,
+                renderedVersion = 0L, persistedRenderVersion = -1L)
+            session.addPage(page)
+            assertTrue(session.saveToDisk(context))
+            val directory = DocumentSession.getSessionDirectory(context, session.id)
+            val manifest = java.io.File(directory, "manifest.json")
+            val committed = manifest.readText()
+            val priorCaches = directory.listFiles()!!.filter { "_proc_" in it.name || "_thumb_" in it.name }
+                .map { it.name }.toSet()
+            assertEquals(2, priorCaches.size)
+
+            page.editVersion++
+            page.renderedVersion = page.editVersion
+            session.addPage(ScannedPage(renderedVersion = -1L)) // No original source.
+            assertFalse(session.saveToDisk(context))
+            assertEquals(committed, manifest.readText())
+            assertEquals(priorCaches, directory.listFiles()!!.filter { "_proc_" in it.name || "_thumb_" in it.name }
+                .map { it.name }.toSet())
+            assertEquals(1, DocumentSession.loadFromDisk(context, session.id)?.pageCount)
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
+    fun rejectsDuplicatePageIdsBeforeCommittingSession() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = DocumentSession()
+        val bmp = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        try {
+            session.addPage(ScannedPage(id = "same", originalBitmapCache = bmp, renderedVersion = -1L))
+            session.addPage(ScannedPage(id = "same", originalBitmapCache = bmp, renderedVersion = -1L))
+            assertFalse(session.saveToDisk(context))
+            assertFalse(java.io.File(DocumentSession.getSessionDirectory(context, session.id), "manifest.json").exists())
+        } finally {
+            bmp.recycle()
+            DocumentSession.deleteSession(context, session.id)
+        }
+    }
+
+    @Test
     fun capturedSnapshotOwnsItsSessionIdentityAndPageMetadata() {
         val session = DocumentSession()
         val page = ScannedPage(rotationDegrees = 90)
