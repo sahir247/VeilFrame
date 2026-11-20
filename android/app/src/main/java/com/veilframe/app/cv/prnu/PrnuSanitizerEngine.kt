@@ -110,6 +110,68 @@ object PrnuSanitizerEngine {
         targetQuality: Int? = null,
         onMilestone: ((String) -> Unit)? = null
     ): PrnuSanitizationResult {
+        // Never expose unchecked or partially written output, including when the
+        // requested destination already exists or is the input itself.
+        var staged: File? = null
+        try {
+            require(inputFile.isFile && inputFile.length() > 0L) { "Input file does not exist or is empty" }
+            if (mode == DefenseMode.METADATA_ONLY) {
+                onMilestone?.invoke("[PRNU] Validating input before lossless metadata scrub...")
+            }
+            val source = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(inputFile.absolutePath, source)
+            require(source.outWidth > 0 && source.outHeight > 0) { "Input image cannot be decoded" }
+            val parent = outputFile.absoluteFile.parentFile ?: error("Missing output directory")
+            check(parent.isDirectory || parent.mkdirs()) { "Cannot create output directory" }
+            val suffix = outputFile.extension.ifEmpty { "jpg" }.lowercase(java.util.Locale.US)
+            require(suffix in setOf("jpg", "jpeg", "png", "webp")) { "Unsupported image output format" }
+            val expectedMime = when (suffix) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                else -> "image/webp"
+            }
+            if (mode == DefenseMode.METADATA_ONLY) {
+                require(source.outMimeType == expectedMime) {
+                    "Lossless metadata editing cannot change the image container"
+                }
+            }
+            val candidate = File.createTempFile("privacy_stage_", ".$suffix", parent)
+            staged = candidate
+            val result = sanitizeImageFileToStage(context, inputFile, candidate, mode, targetQuality, onMilestone)
+            if (!result.isSuccess) return result.copy(outputFile = null)
+            val reopened = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(candidate.absolutePath, reopened)
+            check(candidate.length() > 0L && reopened.outWidth == source.outWidth &&
+                reopened.outHeight == source.outHeight && reopened.outMimeType == expectedMime) {
+                "Output image format or dimensions could not be verified"
+            }
+            check(!ImageMetadataSanitizer.hasIdentifiableMetadata(candidate)) {
+                "Common identifiable EXIF fields remain or could not be inspected"
+            }
+            java.nio.file.Files.move(
+                candidate.toPath(), outputFile.absoluteFile.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+            return result.copy(outputFile = outputFile)
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.e(TAG, "Privacy output was not published", t)
+            return PrnuSanitizationResult(false, null, false, false, false, 0.0, 0.0,
+                errorMessage = t.message ?: "Image output verification failed")
+        } finally {
+            staged?.delete()
+        }
+    }
+
+    private fun sanitizeImageFileToStage(
+        context: Context,
+        inputFile: File,
+        outputFile: File,
+        mode: DefenseMode,
+        targetQuality: Int?,
+        onMilestone: ((String) -> Unit)?
+    ): PrnuSanitizationResult {
         if (!inputFile.exists() || inputFile.length() == 0L) {
             Log.e(TAG, "Input file does not exist or is empty: ${inputFile.absolutePath}")
             return PrnuSanitizationResult(
@@ -124,11 +186,10 @@ object PrnuSanitizerEngine {
             )
         }
 
-        CvRuntime.initialize()
-
         if (mode == DefenseMode.METADATA_ONLY) {
             onMilestone?.invoke("[PRNU] Executing lossless metadata scrub...")
-            val ok = ImageMetadataSanitizer.stripExifLossless(inputFile, outputFile)
+            val ok = ImageMetadataSanitizer.stripExifLossless(inputFile, outputFile,
+                allowPixelReencode = false, preserveOrientation = true)
             if (ok) onMilestone?.invoke("[PRNU] Lossless metadata scrub completed.")
             return PrnuSanitizationResult(
                 isSuccess = ok,
@@ -141,6 +202,7 @@ object PrnuSanitizerEngine {
             )
         }
 
+        CvRuntime.initialize()
         outputFile.parentFile?.mkdirs()
 
         var srcBmp: Bitmap? = null
@@ -266,10 +328,8 @@ object PrnuSanitizerEngine {
                 fos.flush()
             }
 
-            // Ensure absolute zero metadata
-            if (outputFile.exists() && outputFile.length() > 0L) {
-                ImageMetadataSanitizer.stripExifLossless(outputFile, outputFile)
-            }
+            // Newly encoded artifact is checked by the publication wrapper.
+            // Do not silently re-encode a second time or claim zero metadata.
 
             // Run a residual-decorrelation diagnostic on the actual exported artifact.
             // This is NOT PRNU verification: a single image cannot provide an independent
@@ -277,12 +337,18 @@ object PrnuSanitizerEngine {
             val exportedMat = Mat().also { matsToRelease.add(it) }
             val readOk = try {
                 val decoded = Imgcodecs.imread(outputFile.absolutePath)
-                if (!decoded.empty()) {
-                    decoded.copyTo(exportedMat)
+                try {
+                    if (!decoded.empty()) {
+                        decoded.copyTo(exportedMat)
+                        true
+                    } else false
+                } finally {
                     decoded.release()
-                    true
-                } else false
-            } catch (_: Throwable) { false }
+                }
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                false
+            }
 
             val isExportCreated = outputFile.exists() && outputFile.length() > 0L
 
@@ -290,8 +356,8 @@ object PrnuSanitizerEngine {
                 Log.w(TAG, "Exported image could not be decoded from disk: ${outputFile.absolutePath}")
                 onMilestone?.invoke("[PRNU] Export verification unavailable: artifact could not be decoded from disk.")
                 return PrnuSanitizationResult(
-                    isSuccess = isExportCreated,
-                    outputFile = if (isExportCreated) outputFile else null,
+                    isSuccess = false,
+                    outputFile = null,
                     neuralStageExecuted = neuralStageExecuted,
                     geometricStageExecuted = true,
                     isAuditPassed = false,
@@ -335,6 +401,7 @@ object PrnuSanitizerEngine {
                 errorMessage = null
             )
         } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Error during PRNU sanitization: ${e.message}", e)
             if (outputFile.exists()) outputFile.delete()
             return PrnuSanitizationResult(
