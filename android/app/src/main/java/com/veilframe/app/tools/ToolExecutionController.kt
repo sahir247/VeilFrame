@@ -146,9 +146,9 @@ class ToolExecutionController(
                 ToolMode.VIDEO_CLEANER, ToolMode.IMAGE_CLEANER, ToolMode.FOLDER_SCANNER -> {
                     try {
                         when (mode) {
-                            ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
-                            ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
-                            else -> runFolderScan(uri)
+                            ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri, state) { ownsExecution(generation, mode, owner) }
+                            ToolMode.IMAGE_CLEANER -> runImageSanitization(uri, state) { ownsExecution(generation, mode, owner) }
+                            else -> runFolderScan(uri, state) { ownsExecution(generation, mode, owner) }
                         }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
@@ -308,10 +308,8 @@ class ToolExecutionController(
         }
     }
 
-    private suspend fun runVideoSanitization(uri: Uri) {
-        val state = sessionManager.currentState
-        val owner = ToolTargetOwner(state)
-        val mode = ToolMode.VIDEO_CLEANER
+    private suspend fun runVideoSanitization(uri: Uri, state: ToolSessionState, owns: () -> Boolean) {
+        if (!owns()) return
         val noiseIndex = sessionManager.getSelectedOptionIndex()
         val noiseLevel = when (noiseIndex) {
             0 -> "low"
@@ -330,7 +328,6 @@ class ToolExecutionController(
         val reencodeBitstream = binding.switchOption3.isChecked
 
         val formatIndex = sessionManager.getSelectedFormatIndex()
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backend = AndroidMediaBackend(activity)
 
         if (state.isFolderSelected) {
@@ -445,7 +442,7 @@ class ToolExecutionController(
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                    if (!owns()) return@withContext
                     state.lastGeneratedFile = finalFile
                     state.progressPercent = 100
                     state.progressDetailsText = "100% complete"
@@ -479,6 +476,7 @@ class ToolExecutionController(
             }
 
             val sourceExt = state.selectedPathDisplay.substringAfterLast('.', "mp4").lowercase(Locale.ROOT)
+                .takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "mp4"
             val targetExt = when (formatIndex) {
                 1 -> "mp4"
                 2 -> "mkv"
@@ -486,75 +484,88 @@ class ToolExecutionController(
                 else -> sourceExt.ifEmpty { "mp4" }
             }
 
-            val tempInput = File(activity.cacheDir, "input_video_${System.currentTimeMillis()}.$sourceExt")
-            val successCopy = safStorageManager.copyUriToFile(uri, tempInput)
-            if (!successCopy) {
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Failed to copy input video.")
-                    onLog("[ERR] Failed to copy input video from storage.")
-                    sessionManager.updatePrimaryActionDock(state)
+            var inputArtifact: File? = null
+            var outputArtifact: File? = null
+            var published = false
+            try {
+                val tempInput = withContext(Dispatchers.IO) {
+                    File.createTempFile("input_video_", ".$sourceExt", activity.cacheDir).also { inputArtifact = it }
                 }
-                return
-            }
-
-            val outputFile = File(activity.cacheDir, "Sanitized_$timeStamp.$targetExt")
-
-            withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
-                onLog("[RUN] Applying requested video processing ($noiseLevel) and metadata stripping...")
-            }
-
-            val processed = withContext(Dispatchers.IO) {
-                backend.cleanVideoDetailed(
-                    tempInput.absolutePath,
-                    outputFile.absolutePath,
-                    noiseLevel = noiseLevel,
-                    scrubAudio = scrubAudio,
-                    crf = crf,
-                    stripExif = stripExif,
-                    reencodeBitstream = reencodeBitstream
-                )
-            }
-
-            tempInput.delete()
-
-            if (processed.isSuccess && outputFile.exists() && outputFile.length() > 0) {
-                state.lastGeneratedFile = outputFile
-                state.progressPercent = 100
-                state.progressDetailsText = "100% complete"
-
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.COMPLETE, if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "Metadata-only fallback: ${outputFile.name}" else "Video processed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.progressIndicator.progress = 100
-                    binding.tvProgressDetails.text = "100% complete"
-
-                    binding.cardResultSummary.visibility = View.VISIBLE
-                    binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata-only fallback; temporal noise filter not applied" else "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Video transcoded; camera PRNU removal not independently verified"
-
-                    onLog(if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "[WARN] Metadata-only fallback completed; requested temporal noise filter was not applied." else "[OK] Video transcode completed; camera PRNU removal was not independently verified.")
-                    onLog("[EXPORT] Output ready for saving or sharing.")
-                    sessionManager.updatePrimaryActionDock(state)
-                    binding.btnExportResult.isEnabled = true
-                    binding.btnShareResult.isEnabled = true
+                val successCopy = safStorageManager.copyUriToFile(uri, tempInput)
+                if (!successCopy) {
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        sessionManager.updateJobState(JobState.FAILED, "Failed to copy input video.")
+                        onLog("[ERR] Failed to copy input video from storage.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
                 }
-            } else {
+
+                val outputFile = withContext(Dispatchers.IO) {
+                    File.createTempFile("Sanitized_", ".$targetExt", activity.cacheDir).also { outputArtifact = it }
+                }
+
                 withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Video sanitization failed.")
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.cardResultSummary.visibility = View.GONE
-                    onLog("[ERR] Video engine reported failure.")
-                    sessionManager.updatePrimaryActionDock(state)
+                    sessionManager.updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
+                    onLog("[RUN] Applying requested video processing ($noiseLevel) and metadata stripping...")
+                }
+
+                val processed = withContext(Dispatchers.IO) {
+                    backend.cleanVideoDetailed(
+                        tempInput.absolutePath,
+                        outputFile.absolutePath,
+                        noiseLevel = noiseLevel,
+                        scrubAudio = scrubAudio,
+                        crf = crf,
+                        stripExif = stripExif,
+                        reencodeBitstream = reencodeBitstream
+                    )
+                }
+
+                if (processed.isSuccess && outputFile.exists() && outputFile.length() > 0) {
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        state.lastGeneratedFile = outputFile
+                        state.progressPercent = 100
+                        state.progressDetailsText = "100% complete"
+                        published = true
+                        sessionManager.updateJobState(JobState.COMPLETE, if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "Metadata-only fallback: ${outputFile.name}" else "Video processed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.progressIndicator.progress = 100
+                        binding.tvProgressDetails.text = "100% complete"
+
+                        binding.cardResultSummary.visibility = View.VISIBLE
+                        binding.tvResultTitle.text = outputFile.name
+                        binding.tvResultDetails.text = if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata-only fallback; temporal noise filter not applied" else "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Video transcoded; camera PRNU removal not independently verified"
+
+                        onLog(if (processed.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK) "[WARN] Metadata-only fallback completed; requested temporal noise filter was not applied." else "[OK] Video transcode completed; camera PRNU removal was not independently verified.")
+                        onLog("[EXPORT] Output ready for saving or sharing.")
+                        sessionManager.updatePrimaryActionDock(state)
+                        binding.btnExportResult.isEnabled = true
+                        binding.btnShareResult.isEnabled = true
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        sessionManager.updateJobState(JobState.FAILED, "Video sanitization failed.")
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.cardResultSummary.visibility = View.GONE
+                        onLog("[ERR] Video engine reported failure.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    inputArtifact?.delete()
+                    if (!published) outputArtifact?.delete()
                 }
             }
         }
     }
 
-    private suspend fun runImageSanitization(uri: Uri) {
-        val state = sessionManager.currentState
-        val owner = ToolTargetOwner(state)
-        val mode = ToolMode.IMAGE_CLEANER
+    private suspend fun runImageSanitization(uri: Uri, state: ToolSessionState, owns: () -> Boolean) {
+        if (!owns()) return
         val formatIndex = sessionManager.getSelectedFormatIndex()
         val optionIndex = sessionManager.getSelectedOptionIndex()
         val defenseName = when (optionIndex) {
@@ -568,7 +579,6 @@ class ToolExecutionController(
         val prnuDefense = binding.switchOption2.isChecked
         val cleanReencode = binding.switchOption3.isChecked
         val effectiveDefense = if (!prnuDefense && optionIndex != 3) "metadata" else defenseName
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backend = AndroidMediaBackend(activity)
 
         if (state.isFolderSelected) {
@@ -640,11 +650,12 @@ class ToolExecutionController(
                                 quality = quality,
                                 targetExtension = targetExt,
                                 onMilestone = { milestone ->
-                                    activity.runOnUiThread { onLog(milestone) }
+                                    activity.runOnUiThread { if (owns()) onLog(milestone) }
                                 }
                             )
                             if (!res.isAuditPassed && res.isSuccess) {
                                 activity.runOnUiThread {
+                                    if (!owns()) return@runOnUiThread
                                     val heuristic = if (res.residualHeuristicPassed) {
                                         " Single-image residual heuristic crossed its threshold."
                                     } else {
@@ -712,7 +723,7 @@ class ToolExecutionController(
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (!owner.owns(sessionManager.currentState) || sessionManager.currentToolMode != mode) return@withContext
+                    if (!owns()) return@withContext
                     state.lastGeneratedFile = finalFile
                     state.progressPercent = 100
                     state.progressDetailsText = "100% complete"
@@ -746,6 +757,7 @@ class ToolExecutionController(
             }
 
             val sourceExt = state.selectedPathDisplay.substringAfterLast('.', "jpg").lowercase(Locale.ROOT)
+                .takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "jpg"
             val targetExt = when (formatIndex) {
                 1 -> "jpg"
                 2 -> "png"
@@ -757,98 +769,114 @@ class ToolExecutionController(
                 else -> sourceExt.ifEmpty { "jpg" }
             }
 
-            val tempInput = File(activity.cacheDir, "input_img_${System.currentTimeMillis()}.$sourceExt")
-            val successCopy = safStorageManager.copyUriToFile(uri, tempInput)
-            if (!successCopy) {
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Failed to copy input image.")
-                    onLog("[ERR] Failed to copy input image from storage.")
-                    sessionManager.updatePrimaryActionDock(state)
+            var inputArtifact: File? = null
+            var outputArtifact: File? = null
+            var published = false
+            try {
+                val tempInput = withContext(Dispatchers.IO) {
+                    File.createTempFile("input_img_", ".$sourceExt", activity.cacheDir).also { inputArtifact = it }
                 }
-                return
-            }
+                val successCopy = safStorageManager.copyUriToFile(uri, tempInput)
+                if (!successCopy) {
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        sessionManager.updateJobState(JobState.FAILED, "Failed to copy input image.")
+                        onLog("[ERR] Failed to copy input image from storage.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
+                    return
+                }
 
-            val outputFile = File(activity.cacheDir, "Cleaned_$timeStamp.$targetExt")
+                val outputFile = withContext(Dispatchers.IO) {
+                    File.createTempFile("Cleaned_", ".$targetExt", activity.cacheDir).also { outputArtifact = it }
+                }
 
-            withContext(Dispatchers.Main) {
-                sessionManager.updateJobState(JobState.PROCESSING, "Purifying image forensic traces (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
-                onLog("[RUN] Initiating forensic purification (Defense: ${effectiveDefense.uppercase()})...")
-            }
+                withContext(Dispatchers.Main) {
+                    sessionManager.updateJobState(JobState.PROCESSING, "Purifying image forensic traces (Mode: ${effectiveDefense.uppercase()}, Quality: $quality%)...")
+                    onLog("[RUN] Initiating forensic purification (Defense: ${effectiveDefense.uppercase()})...")
+                }
 
-            val processed = withContext(Dispatchers.IO) {
-                if (effectiveDefense != "metadata") {
-                    val res = backend.cleanImageWithDefenseDetailed(
-                        tempInput.absolutePath,
-                        outputFile.absolutePath,
-                        defenseMode = effectiveDefense,
-                        stripExif = stripExif,
-                        quality = quality,
-                        targetExtension = targetExt,
-                        onMilestone = { milestone ->
-                            activity.runOnUiThread { onLog(milestone) }
-                        }
-                    )
-                    if (!res.isAuditPassed && res.isSuccess) {
-                        activity.runOnUiThread {
-                            if (!res.isConclusive) {
-                                onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
-                            } else {
-                                onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                val processed = withContext(Dispatchers.IO) {
+                    if (effectiveDefense != "metadata") {
+                        val res = backend.cleanImageWithDefenseDetailed(
+                            tempInput.absolutePath,
+                            outputFile.absolutePath,
+                            defenseMode = effectiveDefense,
+                            stripExif = stripExif,
+                            quality = quality,
+                            targetExtension = targetExt,
+                            onMilestone = { milestone ->
+                                activity.runOnUiThread { if (owns()) onLog(milestone) }
+                            }
+                        )
+                        if (!res.isAuditPassed && res.isSuccess) {
+                            activity.runOnUiThread {
+                                if (!owns()) return@runOnUiThread
+                                if (!res.isConclusive) {
+                                    onLog("[AUDIT] Note: Low-energy baseline; empirical sensor audit inconclusive.")
+                                } else {
+                                    onLog("[AUDIT] Note: Output written, but audit verification fell outside threshold (|sPCE|=${res.measuredPce}).")
+                                }
                             }
                         }
+                        res.isSuccess
+                    } else {
+                        backend.cleanImage(
+                            tempInput.absolutePath,
+                            outputFile.absolutePath,
+                            stripExif = stripExif,
+                            quality = quality,
+                            targetExtension = targetExt,
+                            stripThumbnails = true,
+                            sanitizeIcc = true
+                        )
                     }
-                    res.isSuccess
+                }
+
+                if (processed && outputFile.exists() && outputFile.length() > 0) {
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        state.lastGeneratedFile = outputFile
+                        state.progressPercent = 100
+                        state.progressDetailsText = "100% complete"
+                        published = true
+                        sessionManager.updateJobState(JobState.COMPLETE, "Image purified: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.progressIndicator.progress = 100
+                        binding.tvProgressDetails.text = "100% complete"
+
+                        binding.cardResultSummary.visibility = View.VISIBLE
+                        binding.tvResultTitle.text = outputFile.name
+                        binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Image processed; camera PRNU not independently verified"
+
+                        onLog("[OK] Image processing completed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                        onLog("[PRNU] Camera sensor fingerprint removal was not independently verified.")
+                        onLog("[EXPORT] Output ready for saving or sharing.")
+                        sessionManager.updatePrimaryActionDock(state)
+                        binding.btnExportResult.isEnabled = true
+                        binding.btnShareResult.isEnabled = true
+                    }
                 } else {
-                    backend.cleanImage(
-                        tempInput.absolutePath,
-                        outputFile.absolutePath,
-                        stripExif = stripExif,
-                        quality = quality,
-                        targetExtension = targetExt,
-                        stripThumbnails = true,
-                        sanitizeIcc = true
-                    )
+                    withContext(Dispatchers.Main) {
+                        if (!owns()) return@withContext
+                        sessionManager.updateJobState(JobState.FAILED, "Image sanitization failed.")
+                        binding.progressIndicator.isIndeterminate = false
+                        binding.cardResultSummary.visibility = View.GONE
+                        onLog("[ERR] Image cleaner reported failure.")
+                        sessionManager.updatePrimaryActionDock(state)
+                    }
                 }
-            }
-
-            tempInput.delete()
-
-            if (processed && outputFile.exists() && outputFile.length() > 0) {
-                state.lastGeneratedFile = outputFile
-                state.progressPercent = 100
-                state.progressDetailsText = "100% complete"
-
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.COMPLETE, "Image purified: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.progressIndicator.progress = 100
-                    binding.tvProgressDetails.text = "100% complete"
-
-                    binding.cardResultSummary.visibility = View.VISIBLE
-                    binding.tvResultTitle.text = outputFile.name
-                    binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Image processed; camera PRNU not independently verified"
-
-                    onLog("[OK] Image processing completed: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
-                    onLog("[PRNU] Camera sensor fingerprint removal was not independently verified.")
-                    onLog("[EXPORT] Output ready for saving or sharing.")
-                    sessionManager.updatePrimaryActionDock(state)
-                    binding.btnExportResult.isEnabled = true
-                    binding.btnShareResult.isEnabled = true
-                }
-            } else {
-                withContext(Dispatchers.Main) {
-                    sessionManager.updateJobState(JobState.FAILED, "Image sanitization failed.")
-                    binding.progressIndicator.isIndeterminate = false
-                    binding.cardResultSummary.visibility = View.GONE
-                    onLog("[ERR] Image cleaner reported failure.")
-                    sessionManager.updatePrimaryActionDock(state)
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    inputArtifact?.delete()
+                    if (!published) outputArtifact?.delete()
                 }
             }
         }
     }
 
-    private suspend fun runFolderScan(uri: Uri) {
-        val state = sessionManager.currentState
+    private suspend fun runFolderScan(uri: Uri, state: ToolSessionState, owns: () -> Boolean) {
+        if (!owns()) return
         val formatIndex = sessionManager.getSelectedFormatIndex()
         val formatExt = when (formatIndex) {
             0 -> "html"
@@ -876,80 +904,94 @@ class ToolExecutionController(
             onLog("[SCAN] Scanning target directly: ${state.selectedPathDisplay} (Mode: $profileName)...")
         }
 
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = File(activity.cacheDir, "Scan_Report_$timeStamp.$formatExt")
+        var artifact: File? = null
+        var published = false
+        try {
+            val outputFile = withContext(Dispatchers.IO) {
+                File.createTempFile("Scan_Report_", ".$formatExt", activity.cacheDir).also { artifact = it }
+            }
 
-        val scanConfig = FolderScannerEngine.ScanConfig(
-            recursive = recursive,
-            calculateHashes = computeHashes,
-            detectSecrets = detectSecrets
-        )
+            val scanConfig = FolderScannerEngine.ScanConfig(
+                recursive = recursive,
+                calculateHashes = computeHashes,
+                detectSecrets = detectSecrets
+            )
 
-        val scanResult = withContext(Dispatchers.IO) {
-            if (state.isFolderSelected) {
-                val res = FolderScannerEngine.scanSafTree(
-                    context = activity,
-                    treeUri = uri,
-                    config = scanConfig,
-                    onProgress = { currentFile, count ->
-                        activity.runOnUiThread {
-                            binding.tvStatusText.text = "Scanned $count files ($currentFile)..."
+            val scanResult = withContext(Dispatchers.IO) {
+                if (state.isFolderSelected) {
+                    val res = FolderScannerEngine.scanSafTree(
+                        context = activity,
+                        treeUri = uri,
+                        config = scanConfig,
+                        onProgress = { currentFile, count ->
+                            activity.runOnUiThread {
+                                if (owns() && state.jobState == JobState.SCANNING)
+                                    binding.tvStatusText.text = "Scanned $count files ($currentFile)..."
+                            }
                         }
-                    }
-                )
-                FolderScannerEngine.exportReport(res, outputFile, formatExt)
-                res
-            } else {
-                val name = safStorageManager.getDisplayName(uri)
-                val size = activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
-                val record = FolderScannerEngine.ScannedFileRecord(
-                    relativePath = name,
-                    name = name,
-                    sizeBytes = size,
-                    sha256 = null,
-                    detectedSecrets = emptyList()
-                )
-                val res = FolderScannerEngine.ScanResult(
-                    rootDisplayName = name,
-                    timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
-                    totalFiles = 1,
-                    totalBytes = size,
-                    totalSecretsFound = 0,
-                    files = listOf(record)
-                )
-                FolderScannerEngine.exportReport(res, outputFile, formatExt)
-                res
+                    )
+                    FolderScannerEngine.exportReport(res, outputFile, formatExt)
+                    res
+                } else {
+                    val name = safStorageManager.getDisplayName(uri)
+                    val size = activity.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
+                    val record = FolderScannerEngine.ScannedFileRecord(
+                        relativePath = name,
+                        name = name,
+                        sizeBytes = size,
+                        sha256 = null,
+                        detectedSecrets = emptyList()
+                    )
+                    val res = FolderScannerEngine.ScanResult(
+                        rootDisplayName = name,
+                        timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
+                        totalFiles = 1,
+                        totalBytes = size,
+                        totalSecretsFound = 0,
+                        files = listOf(record)
+                    )
+                    FolderScannerEngine.exportReport(res, outputFile, formatExt)
+                    res
+                }
             }
-        }
 
-        val scanSummary = "${scanResult.totalFiles} files analyzed."
-        state.lastGeneratedFile = outputFile
-        state.progressPercent = 100
-        state.progressDetailsText = "100% complete"
-
-        withContext(Dispatchers.Main) {
-            sessionManager.updateJobState(JobState.COMPLETE, "Audit ready: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
-            binding.progressIndicator.isIndeterminate = false
-            binding.progressIndicator.progress = 100
-            binding.tvProgressDetails.text = "100% complete"
-
-            binding.cardResultSummary.visibility = View.VISIBLE
-            binding.tvResultTitle.text = outputFile.name
-            binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $scanSummary"
-            val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
-            binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
-
-            onLog("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
-            if (scanResult.totalSecretsFound > 0) {
-                onLog("[WARN] Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
+            if (scanResult.status == FolderScannerEngine.ScanStatus.FAILED) {
+                throw java.io.IOException(scanResult.statusReason ?: "Folder audit failed")
             }
-            if (scanResult.duplicateGroups.isNotEmpty()) {
-                onLog("[DUP] Found ${scanResult.duplicateGroups.size} duplicate file groups based on SHA-256 hashing.")
+            val partial = scanResult.status == FolderScannerEngine.ScanStatus.PARTIAL
+            val scanSummary = "${scanResult.totalFiles} files analyzed • " + if (partial) "PARTIAL audit" else "Complete audit"
+            withContext(Dispatchers.Main) {
+                if (!owns()) return@withContext
+                state.lastGeneratedFile = outputFile
+                state.progressPercent = 100
+                state.progressDetailsText = if (partial) "Partial audit; see report limitations" else "100% complete"
+                published = true
+                sessionManager.updateJobState(JobState.COMPLETE, "${if (partial) "Partial audit report" else "Audit ready"}: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
+                binding.progressIndicator.isIndeterminate = false
+                binding.progressIndicator.progress = 100
+                binding.tvProgressDetails.text = state.progressDetailsText
+
+                binding.cardResultSummary.visibility = View.VISIBLE
+                binding.tvResultTitle.text = outputFile.name
+                binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $scanSummary"
+                val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
+                binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
+
+                onLog("[${if (partial) "WARN" else "OK"}] Audit report created: ${outputFile.name} ($scanSummary)")
+                if (partial) onLog("[WARN] ${scanResult.statusReason ?: "Some checks could not be completed"}")
+                if (scanResult.totalSecretsFound > 0) {
+                    onLog("[WARN] Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
+                }
+                if (scanResult.duplicateGroups.isNotEmpty()) {
+                    onLog("[DUP] Found ${scanResult.duplicateGroups.size} duplicate file groups based on SHA-256 hashing.")
+                }
+                onLog("[EXPORT] Output ready for saving or sharing.")
+                sessionManager.updatePrimaryActionDock(state)
+                binding.btnExportResult.isEnabled = true
+                binding.btnShareResult.isEnabled = true
             }
-            onLog("[EXPORT] Output ready for saving or sharing.")
-            sessionManager.updatePrimaryActionDock(state)
-            binding.btnExportResult.isEnabled = true
-            binding.btnShareResult.isEnabled = true
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) { if (!published) artifact?.delete() }
         }
     }
 
