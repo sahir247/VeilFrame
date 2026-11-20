@@ -1114,6 +1114,12 @@ class OfficeConverter {
                                 val cellW = (merged.firstCol..merged.lastCol).sumOf { layout.colWidths[it].toDouble() }.toFloat()
                                 val isFirstRow = (rIdx == merged.firstRow && startLine == 0)
                                 val isLastRow = (rIdx == merged.lastRow && startLine + linesInChunk >= totalLines)
+                                val style = layout.cellStyles.at(merged.firstRow, merged.firstCol)
+                                val font = style.font(fontNormal)
+                                // Draw once, before anchor text; later covered rows
+                                // must not paint over text extending across the merge.
+                                if (isFirstRow) fillSpreadsheetCell(contentStream, cellLeft, yPosition,
+                                    cellW, merged.totalHeight, style)
 
                                 contentStream?.setStrokingColor(210, 215, 220)
                                 contentStream?.setLineWidth(0.5f)
@@ -1145,12 +1151,13 @@ class OfficeConverter {
                                     )
                                     contentStream?.clip()
 
+                                    setSpreadsheetTextColor(contentStream, style)
                                     var textY = yPosition - 4f - limits.fontSizeCell
                                     for (lineText in merged.wrappedLines) {
                                         contentStream?.beginText()
-                                        contentStream?.setFont(fontNormal, limits.fontSizeCell)
-                                        contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                                        safeShowText(contentStream, lineText, fontNormal)
+                                        contentStream?.setFont(font, limits.fontSizeCell)
+                                        contentStream?.newLineAtOffset(spreadsheetTextX(lineText, font, limits.fontSizeCell, cellLeft, cellW, style), textY)
+                                        safeShowText(contentStream, lineText, font)
                                         contentStream?.endText()
                                         textY -= limits.lineHeight
                                     }
@@ -1178,7 +1185,8 @@ class OfficeConverter {
                             chunkLines = chunkLines,
                             fontNormal = fontNormal,
                             fontSizeCell = limits.fontSizeCell,
-                            lineHeight = limits.lineHeight
+                            lineHeight = limits.lineHeight,
+                            style = layout.cellStyles.at(rIdx, colIndex)
                         )
                     }
 
@@ -1349,7 +1357,8 @@ class OfficeConverter {
                             chunkLines = chunkLines,
                             fontNormal = fontNormal,
                             fontSizeCell = limits.fontSizeCell,
-                            lineHeight = limits.lineHeight
+                            lineHeight = limits.lineHeight,
+                            style = layout.cellStyles.at(rIdx, colIndex)
                         )
                     }
                 }
@@ -1368,6 +1377,9 @@ class OfficeConverter {
                     val sliceTop = rowTopMap[visRows.first()]!!
                     val sliceBottom = rowBottomMap[visRows.last()]!!
                     val sliceHeight = sliceTop - sliceBottom
+                    val style = layout.cellStyles.at(geom.firstRow, geom.firstCol)
+                    val font = style.font(fontNormal)
+                    fillSpreadsheetCell(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight, style)
 
                     val isLeftTrueEdge = (visCols.first() == geom.firstCol)
                     val isRightTrueEdge = (visCols.last() == geom.lastCol)
@@ -1400,12 +1412,12 @@ class OfficeConverter {
                     }
 
                     // Text rendering: only on anchor slice to prevent duplicate text across panels
-                    val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
+                    val isAnchor = (isLeftTrueEdge && isTopTrueEdge && geom.firstCol in tile.colGroup.activeCols)
                     if (isAnchor && geom.wrappedLines.isNotEmpty()) {
                         // Wrapping across the entire merge is invalid on a narrower
                         // anchor tile. Rewrap inside its actual visible rectangle.
                         val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
-                            fontNormal, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
+                            font, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
                         val requiredHeight = 4f + limits.fontSizeCell +
                             (anchorLines.size - 1).coerceAtLeast(0) * limits.lineHeight
                         require(requiredHeight <= sliceHeight - 1f) {
@@ -1420,12 +1432,13 @@ class OfficeConverter {
                         )
                         contentStream.clip()
 
+                        setSpreadsheetTextColor(contentStream, style)
                         var textY = sliceTop - 4f - limits.fontSizeCell
                         for (lineText in anchorLines) {
                             contentStream.beginText()
-                            contentStream.setFont(fontNormal, limits.fontSizeCell)
-                            contentStream.newLineAtOffset(sliceLeft + 4f, textY)
-                            safeShowText(contentStream, lineText, fontNormal)
+                            contentStream.setFont(font, limits.fontSizeCell)
+                            contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, limits.fontSizeCell, sliceLeft, sliceWidth, style), textY)
+                            safeShowText(contentStream, lineText, font)
                             contentStream.endText()
                             textY -= limits.lineHeight
                         }
@@ -1446,9 +1459,12 @@ class OfficeConverter {
         chunkLines: List<String>,
         fontNormal: PDFont,
         fontSizeCell: Float,
-        lineHeight: Float
+        lineHeight: Float,
+        style: XlsxCellStyle
     ) {
         if (contentStream == null) return
+        val font = style.font(fontNormal)
+        fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
         // 1. Draw Cell border lines
         contentStream.setStrokingColor(210, 215, 220)
@@ -1471,17 +1487,45 @@ class OfficeConverter {
             )
             contentStream.clip()
 
+            setSpreadsheetTextColor(contentStream, style)
             var textY = cellTop - 4f - fontSizeCell
             for (lineText in chunkLines) {
                 contentStream.beginText()
-                contentStream.setFont(fontNormal, fontSizeCell)
-                contentStream.newLineAtOffset(cellLeft + 4f, textY)
-                safeShowText(contentStream, lineText, fontNormal)
+                contentStream.setFont(font, fontSizeCell)
+                contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, fontSizeCell, cellLeft, cellW, style), textY)
+                safeShowText(contentStream, lineText, font)
                 contentStream.endText()
                 textY -= lineHeight
             }
             contentStream.restoreGraphicsState()
         }
+    }
+
+    private fun fillSpreadsheetCell(stream: PDPageContentStream?, left: Float, top: Float,
+                                    width: Float, height: Float, style: XlsxCellStyle) {
+        val rgb = style.fillRgb ?: return
+        if (stream == null) return
+        stream.saveGraphicsState()
+        try {
+            stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+            stream.addRect(left, top - height, width, height)
+            stream.fill()
+        } finally { stream.restoreGraphicsState() }
+    }
+
+    private fun setSpreadsheetTextColor(stream: PDPageContentStream?, style: XlsxCellStyle) {
+        val rgb = style.textRgb ?: 0
+        stream?.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+    }
+
+    private fun spreadsheetTextX(text: String, font: PDFont, size: Float, left: Float,
+                                 width: Float, style: XlsxCellStyle): Float {
+        if (style.horizontal == "left") return left + 4f
+        val textWidth = try { font.getStringWidth(text) / 1000f * size }
+            catch (_: Exception) { return left + 4f }
+        val offset = if (style.horizontal == "center") (width - textWidth) / 2f
+            else width - textWidth - 4f
+        return left + offset.coerceAtLeast(4f)
     }
 
     data class PicCrop(val l: Float = 0f, val t: Float = 0f, val r: Float = 0f, val b: Float = 0f)

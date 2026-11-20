@@ -86,7 +86,8 @@ data class SheetLayout(
     val naturalPageHeight: Float,
     val mergedRegions: List<OpenXmlDocumentParser.CellRangeAddress> = emptyList(),
     val mergedGeometries: List<MergedCellGeometry> = emptyList(),
-    val frozenColumnsCount: Int = 0
+    val frozenColumnsCount: Int = 0,
+    val cellStyles: XlsxCellStyles = XlsxCellStyles()
 )
 
 /**
@@ -186,13 +187,14 @@ object SpreadsheetLayoutEngine {
 
         val colWidths = FloatArray(maxCol) { c ->
             var maxW = 32f
-            for (r in rows) {
+            for ((rowIndex, r) in rows.withIndex()) {
                 val cellVal = r.getOrNull(c) ?: ""
                 if (cellVal.isNotEmpty()) {
+                    val cellFont = sheet.styles.at(rowIndex, c).font(fontNormal)
                     val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
                         val cleanLine = sanitizeForFontMetrics(line)
                         try {
-                            fontNormal.getStringWidth(cleanLine) / 1000f * limits.fontSizeCell
+                            cellFont.getStringWidth(cleanLine) / 1000f * limits.fontSizeCell
                         } catch (_: Exception) {
                             cleanLine.length * 5f
                         }
@@ -220,7 +222,7 @@ object SpreadsheetLayoutEngine {
             Array(maxCol) { c ->
                 val text = row.getOrNull(c) ?: ""
                 if (text.isNotBlank()) {
-                    wrapCellText(text, fontNormal, limits.fontSizeCell, colWidths[c] - 8f)
+                    wrapCellText(text, sheet.styles.at(rIdx, c).font(fontNormal), limits.fontSizeCell, colWidths[c] - 8f)
                 } else {
                     emptyList()
                 }
@@ -256,7 +258,7 @@ object SpreadsheetLayoutEngine {
             val mHeight = (fRow..lRow).sumOf { rowHeights[it].toDouble() }.toFloat()
             val mText = rows.getOrNull(fRow)?.getOrNull(fCol) ?: ""
             val mWrapped = if (mText.isNotBlank()) {
-                wrapCellText(mText, fontNormal, limits.fontSizeCell, (mWidth - 8f).coerceAtLeast(10f))
+                wrapCellText(mText, sheet.styles.at(fRow, fCol).font(fontNormal), limits.fontSizeCell, (mWidth - 8f).coerceAtLeast(10f))
             } else {
                 emptyList()
             }
@@ -298,7 +300,8 @@ object SpreadsheetLayoutEngine {
             naturalPageHeight = naturalPageHeight,
             mergedRegions = sheet.mergedRegions,
             mergedGeometries = mergedGeometries,
-            frozenColumnsCount = frozenCols
+            frozenColumnsCount = frozenCols,
+            cellStyles = sheet.styles
         )
     }
 

@@ -419,7 +419,8 @@ object OpenXmlDocumentParser {
         val frozenColumns: Int = 0,
         val frozenRows: Int = 0,
         val cachedFormulaCount: Int = 0,
-        val dimensions: XlsxDimensions = XlsxDimensions()
+        val dimensions: XlsxDimensions = XlsxDimensions(),
+        val styles: XlsxCellStyles = XlsxCellStyles()
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -529,7 +530,8 @@ object OpenXmlDocumentParser {
             val styleEntry = styleParts.singleOrNull()?.let {
                 zip.getEntry(it.path) ?: throw IOException("Missing workbook styles part")
             } ?: zip.getEntry("xl/styles.xml")
-            val formatter = if (styleEntry == null) XlsxValueFormatter(date1904, listOf(0), emptyMap())
+            val styleTable = if (styleEntry == null) ParsedXlsxStyles(
+                XlsxValueFormatter(date1904, listOf(0), emptyMap()), listOf(XlsxCellStyle()))
                 else parseXlsxStyles(budget.read(zip, styleEntry), date1904)
             val sharedStrings = mutableListOf<String>()
             val sharedParts = relationships?.values?.filter { it.type.endsWith("/sharedStrings") }.orEmpty()
@@ -547,7 +549,7 @@ object OpenXmlDocumentParser {
                 val sheetMergedRegions = mutableListOf<CellRangeAddress>()
                 val metadata = parseWorksheet(
                     budget.read(zip, requireNotNull(zip.getEntry(part.path))),
-                    sharedStrings, formatter, sheetRows, sheetSparseRows, sheetMergedRegions
+                    sharedStrings, styleTable, sheetRows, sheetSparseRows, sheetMergedRegions
                 )
                 val geometry = SpreadsheetGeometry.inspect(sheetRows, sheetMergedRegions)
                 totalGridCells += geometry.cells
@@ -559,14 +561,19 @@ object OpenXmlDocumentParser {
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
-                    cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions
+                    cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions,
+                    styles = metadata.styles
                 ))
             }
         }
         return XlsxWorkbookData(sheets)
     }
 
-    private fun parseXlsxStyles(xml: String, date1904: Boolean): XlsxValueFormatter {
+    private data class ParsedXlsxStyles(
+        val formatter: XlsxValueFormatter, val visuals: List<XlsxCellStyle>
+    )
+
+    private fun parseXlsxStyles(xml: String, date1904: Boolean): ParsedXlsxStyles {
         val root = parseXml(xml).documentElement
         require(root.localName() == "styleSheet") { "Invalid workbook styles root" }
         fun collection(name: String, item: String): List<Element> {
@@ -589,19 +596,64 @@ object OpenXmlDocumentParser {
                 "Invalid or duplicate number format"
             }
         }
-        val parents = collection("cellStyleXfs", "xf").map { id(it.getAttribute("numFmtId").ifEmpty { "0" }) }
-        val cellStyles = collection("cellXfs", "xf").map { xf ->
-            val parentRef = xf.getAttribute("xfId")
-            val inherited = if (parentRef.isEmpty()) 0 else parents.getOrNull(id(parentRef))
-                ?: throw IOException("Invalid parent cell style")
-            val direct = xf.getAttribute("numFmtId")
-            when (xf.getAttribute("applyNumberFormat")) {
-                "0", "false" -> inherited
-                "", "1", "true" -> if (direct.isEmpty()) inherited else id(direct)
-                else -> throw IOException("Invalid applyNumberFormat flag")
-            }
+        fun rgb(element: Element?): Int? {
+            if (element == null || !element.hasAttribute("rgb")) return null
+            // OOXML cell colors store ARGB. Ordinary Excel PDF rendering is opaque.
+            val raw = element.getAttribute("rgb")
+            require(raw.matches(Regex("[0-9A-Fa-f]{8}"))) { "Invalid explicit cell RGB color" }
+            return raw.takeLast(6).toInt(16)
         }
-        return XlsxValueFormatter(date1904, cellStyles.ifEmpty { listOf(0) }, custom)
+        fun one(parent: Element, name: String): Element? {
+            val children = parent.childElements(name)
+            require(children.size <= 1) { "Ambiguous cell style property: $name" }
+            return children.singleOrNull()
+        }
+        fun flag(element: Element?): Boolean = when (element?.getAttribute("val")) {
+            null, "0", "false" -> false
+            "", "1", "true" -> true
+            else -> throw IOException("Invalid cell font Boolean")
+        }
+        val fonts = collection("fonts", "font").map {
+            XlsxCellStyle(bold = flag(one(it, "b")), italic = flag(one(it, "i")), textRgb = rgb(one(it, "color")))
+        }.ifEmpty { listOf(XlsxCellStyle()) }
+        val fills = collection("fills", "fill").map {
+            val pattern = one(it, "patternFill")
+            if (pattern?.getAttribute("patternType") == "solid") rgb(one(pattern, "fgColor")) else null
+        }.ifEmpty { listOf(null) }
+        data class Xf(val number: Int = 0, val font: Int = 0, val fill: Int = 0, val align: String = "left")
+        fun resolve(xf: Element, base: Xf): Xf {
+            fun selected(attribute: String, apply: String, inherited: Int): Int =
+                when (xf.getAttribute(apply)) {
+                    "0", "false" -> inherited
+                    "", "1", "true" -> xf.getAttribute(attribute).takeIf { it.isNotEmpty() }?.let(::id) ?: inherited
+                    else -> throw IOException("Invalid style application flag")
+                }
+            val align = when (xf.getAttribute("applyAlignment")) {
+                "0", "false" -> base.align
+                "", "1", "true" -> one(xf, "alignment")?.getAttribute("horizontal")
+                    ?.takeIf { it.isNotEmpty() } ?: base.align
+                else -> throw IOException("Invalid alignment application flag")
+            }
+            val result = Xf(selected("numFmtId", "applyNumberFormat", base.number),
+                selected("fontId", "applyFont", base.font),
+                selected("fillId", "applyFill", base.fill), align)
+            require(result.font in fonts.indices && result.fill in fills.indices) { "Invalid cell font/fill reference" }
+            return result
+        }
+        val parents = collection("cellStyleXfs", "xf").map { resolve(it, Xf()) }
+        val cells = collection("cellXfs", "xf").map { xf ->
+            val parent = xf.getAttribute("xfId").takeIf { it.isNotEmpty() }?.let {
+                parents.getOrNull(id(it)) ?: throw IOException("Invalid parent cell style")
+            } ?: Xf()
+            resolve(xf, parent)
+        }.ifEmpty { listOf(Xf()) }
+        val visuals = cells.map {
+            fonts[it.font].copy(fillRgb = fills[it.fill], horizontal = when (it.align) {
+                "center", "right", "left" -> it.align
+                else -> "left"
+            })
+        }
+        return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals)
     }
 
     private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
@@ -657,7 +709,8 @@ object OpenXmlDocumentParser {
     }
 
     private data class WorksheetMetadata(
-        val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions
+        val frozenCols: Int, val frozenRows: Int, val cachedFormulaCount: Int, val dimensions: XlsxDimensions,
+        val styles: XlsxCellStyles
     )
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
@@ -672,7 +725,7 @@ object OpenXmlDocumentParser {
     private fun parseWorksheet(
         xml: String,
         sharedStrings: List<String>,
-        formatter: XlsxValueFormatter,
+        styleTable: ParsedXlsxStyles,
         outRows: MutableList<List<String>>,
         outSparseRows: MutableList<XlsxRow>? = null,
         outMergedRegions: MutableList<CellRangeAddress>? = null
@@ -703,12 +756,14 @@ object OpenXmlDocumentParser {
             }
         }
         val rowHeights = mutableMapOf<Int, Float>()
+        val styledRows = mutableMapOf<Int, IntArray>()
 
         var frozenCols = 0
         var frozenRows = 0
         var cachedFormulaCount = 0
         fun metadata() = WorksheetMetadata(frozenCols, frozenRows, cachedFormulaCount,
-            XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights))
+            XlsxDimensions(defaultWidth, defaultHeight, columnWidths, rowHeights),
+            XlsxCellStyles(styleTable.visuals, styledRows))
         val panes = root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
             .flatMap { it.childElements("pane") }
         for (pElem in panes) {
@@ -751,6 +806,7 @@ object OpenXmlDocumentParser {
             require(targetRow !in rowMap) { "Duplicate worksheet row reference" }
             optionalDimension(rowElem, "ht", 409.5f)?.let { rowHeights[targetRow - 1] = it }
             val existingCells = rowMap.getOrPut(targetRow) { mutableListOf() }
+            val explicitVisuals = mutableListOf<Pair<Int, Int>>()
 
             var child = rowElem.firstChild
             while (child != null) {
@@ -789,7 +845,7 @@ object OpenXmlDocumentParser {
                             throw java.io.IOException("Invalid shared string reference at $cellRef")
                         cellVal = sharedStrings[idx]
                     }
-                    cellVal = formatter.format(cellVal, cellType, style)
+                    cellVal = styleTable.formatter.format(cellVal, cellType, style)
                     expandedTextChars += cellVal.length
                     require(expandedTextChars <= SpreadsheetGeometry.MAX_TEXT_CHARS) {
                         "Worksheet expanded text exceeds layout budget"
@@ -813,8 +869,16 @@ object OpenXmlDocumentParser {
                     }
                     while (existingCells.size <= targetCol) existingCells.add("")
                     existingCells[targetCol] = cellVal
+                    if (style != 0 && styleTable.visuals[style] != styleTable.visuals[0]) {
+                        explicitVisuals.add(targetCol to style)
+                    }
                 }
                 child = child.nextSibling
+            }
+            if (explicitVisuals.isNotEmpty()) {
+                styledRows[targetRow - 1] = IntArray(existingCells.size).also { codes ->
+                    for ((col, style) in explicitVisuals) codes[col] = style
+                }
             }
         }
 
@@ -839,7 +903,8 @@ object OpenXmlDocumentParser {
         }
 
         // Trim trailing completely empty rows from the end of the worksheet
-        while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() }) {
+        while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() } &&
+            outRows.lastIndex !in styledRows && outRows.lastIndex !in rowHeights) {
             outRows.removeAt(outRows.size - 1)
         }
         return metadata()

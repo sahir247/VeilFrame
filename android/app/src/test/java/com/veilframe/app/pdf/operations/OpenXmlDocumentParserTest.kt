@@ -178,6 +178,27 @@ class OpenXmlDocumentParserTest {
     }
 
     @Test
+    fun parsesExplicitCellAppearanceAndSparseStyleIndices() {
+        val workbook = """<workbook><sheets><sheet name="Styles" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><fonts><font/><font><b/><i val="1"/><color rgb="FF112233"/></font></fonts><fills><fill/><fill><patternFill patternType="solid"><fgColor rgb="FFAABBCC"/></patternFill></fill></fills><cellStyleXfs><xf fontId="1" fillId="1"><alignment horizontal="center"/></xf></cellStyleXfs><cellXfs><xf/><xf xfId="0" applyFont="0" applyFill="0" applyAlignment="0"/><xf fontId="1" applyFont="1"><alignment horizontal="right"/></xf></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="C1" s="1" t="inlineStr"><is><t>center</t></is></c><c r="E1" s="2" t="inlineStr"><is><t>right</t></is></c></row><row r="2"><c r="A2" s="1"/></row></sheetData></worksheet>"""
+        val file = createZipFile(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val parsed = OpenXmlDocumentParser.parseXlsx(file).sheets.single()
+            val center = parsed.styles.at(0, 2)
+            assertTrue(center.bold && center.italic)
+            assertEquals(0x112233, center.textRgb)
+            assertEquals(0xAABBCC, center.fillRgb)
+            assertEquals("center", center.horizontal)
+            assertEquals("right", parsed.styles.at(0, 4).horizontal)
+            assertEquals(XlsxCellStyle(), parsed.styles.at(0, 1))
+            assertEquals(center, parsed.styles.at(1, 0))
+            assertEquals(2, parsed.rows.size)
+        } finally { file.delete() }
+    }
+
+    @Test
     fun testParseXlsxMinimal() {
         val sharedStringsXml = """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
