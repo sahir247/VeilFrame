@@ -2350,4 +2350,43 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(operators))
         }
     }
+
+    @Test
+    fun headerScaleWithDocumentTracksPrintScaleAndRejectsUnalignedMargins() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Paper" sheetId="1"/></sheets></workbook>"""
+        val base = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><pageSetup scale="50"/><headerFooter scaleWithDoc="1" alignWithMargins="1"><oddHeader>&amp;CSCALED</oddHeader></headerFooter></worksheet>"""
+        fun input(sheet: String) = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        fun headerSize(sheet: String, name: String): Float {
+            val source=input(sheet)
+            val out=File(tempFolder.root,name)
+            kotlinx.coroutines.runBlocking { OfficeConverter().convertXlsxToPdf(source,out,context,savedPrintLayout=true) }
+            return PDDocument.load(out).use { pdf ->
+                assertEquals(1,pdf.numberOfPages)
+                val sizes=mutableListOf<Float>()
+                val stripper=object : PDFTextStripper() {
+                    override fun processTextPosition(position: com.tom_roush.pdfbox.text.TextPosition) {
+                        if(position.unicode == "S") sizes.add(position.fontSizeInPt)
+                        super.processTextPosition(position)
+                    }
+                }
+                assertTrue(stripper.getText(pdf).contains("SCALED"))
+                assertTrue(sizes.isNotEmpty())
+                sizes.first()
+            }
+        }
+        val scaled=headerSize(base,"header-scaled.pdf")
+        val fixed=headerSize(base.replace("scaleWithDoc=\"1\"","scaleWithDoc=\"0\""),
+            "header-physical.pdf")
+        assertTrue("Header must shrink with saved 50% print scale",scaled < fixed*0.75f)
+        assertEquals(9f,fixed,0.5f)
+        val invalid=input(base.replace("alignWithMargins=\"1\"","alignWithMargins=\"0\""))
+        val noPdf=File(tempFolder.root,"header-unaligned.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(invalid,noPdf,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected unsupported independent header geometry")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("header/footer margins"))
+        }
+        assertTrue(!noPdf.exists())
+    }
 }

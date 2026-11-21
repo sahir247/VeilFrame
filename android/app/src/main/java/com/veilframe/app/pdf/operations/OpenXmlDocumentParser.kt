@@ -1127,6 +1127,8 @@ object OpenXmlDocumentParser {
                 raw[name] = part(name)
             raw["differentOddEven"] = element.getAttribute("differentOddEven")
             raw["differentFirst"] = element.getAttribute("differentFirst")
+            raw["scaleWithDoc"] = element.getAttribute("scaleWithDoc")
+            raw["alignWithMargins"] = element.getAttribute("alignWithMargins")
             raw
         })
         fun hiddenFlag(element: Element): Boolean? = when (element.getAttribute("hidden")) {

@@ -9,7 +9,8 @@ data class XlsxPrintHeaderFooter(
     val oddHeader: String = "", val oddFooter: String = "",
     val evenHeader: String = "", val evenFooter: String = "",
     val firstHeader: String = "", val firstFooter: String = "",
-    val differentOddEven: Boolean = false, val differentFirst: Boolean = false
+    val differentOddEven: Boolean = false, val differentFirst: Boolean = false,
+    val scaleWithDoc: Boolean = true, val alignWithMargins: Boolean = true
 ) {
     fun headerFor(page: Int, printedPage: Int = page): String = when {
         differentFirst && page == 1 -> firstHeader
@@ -27,8 +28,9 @@ data class XlsxPrintHeaderFooter(
     companion object {
         fun parse(parts: Map<String,String>?): XlsxPrintHeaderFooter {
             if (parts == null) return XlsxPrintHeaderFooter()
-            fun flag(name: String): Boolean = when (parts[name].orEmpty()) {
-                "", "0", "false" -> false
+            fun flag(name: String, default: Boolean = false): Boolean = when (parts[name].orEmpty()) {
+                "" -> default
+                "0", "false" -> false
                 "1", "true" -> true
                 else -> throw IllegalArgumentException("Invalid $name flag")
             }
@@ -37,7 +39,8 @@ data class XlsxPrintHeaderFooter(
             }
             return XlsxPrintHeaderFooter(value("oddHeader"),value("oddFooter"),
                 value("evenHeader"),value("evenFooter"),value("firstHeader"),value("firstFooter"),
-                flag("differentOddEven"),flag("differentFirst"))
+                flag("differentOddEven"),flag("differentFirst"),
+                flag("scaleWithDoc",true),flag("alignWithMargins",true))
         }
 
         fun expand(raw: String, sheet: String, page: Int, pages: Int): Sections {

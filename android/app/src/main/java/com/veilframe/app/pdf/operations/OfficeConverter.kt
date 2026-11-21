@@ -1198,13 +1198,22 @@ class OfficeConverter {
         val font = PDType1Font.HELVETICA
         fun draw(raw: String, header: Boolean) {
             if (raw.isEmpty()) return
+            require(print.alignWithMargins) {
+                "Unaligned Excel header/footer margins are not reproducible; use full worksheet export"
+            }
             val sections = XlsxPrintHeaderFooter.expand(raw, sheet, printedPage, pages)
+            // OOXML defaults scaleWithDoc and alignWithMargins to true.
+            // Excel scales the header font along with worksheet print scale.
+            val fontSize = if (print.scaleWithDoc) 9f*plan.scale else 9f
+            require(fontSize.isFinite() && fontSize in 0.75f..36f) {
+                "Saved header/footer font scaling exceeds supported physical geometry"
+            }
             val edge = if (header) "header" else "footer"
             val marginInches = settings.margins[edge]?.toFloatOrNull() ?: 0.3f
             require(marginInches.isFinite() && marginInches in 0f..20f) { "Invalid saved $edge margin" }
-            val y = if (header) plan.height - marginInches*72f - 9f else marginInches*72f
+            val y = if (header) plan.height - marginInches*72f - fontSize else marginInches*72f
             require(if (header) y >= plan.height - (plan.top - plan.headingTop) + 4f
-                    else y + 11f <= plan.bottom) {
+                    else y + fontSize + 2f <= plan.bottom) {
                 "Saved $edge collides with worksheet content; use full worksheet export"
             }
             val zone = plan.contentWidth / 3f
@@ -1214,7 +1223,7 @@ class OfficeConverter {
                     // Do not size sanitized text and then emit a silently changed
                     // header/footer. The exact expanded value must be encodable.
                     font.encode(value)
-                    font.getStringWidth(value) * 9f / 1000f
+                    font.getStringWidth(value) * fontSize / 1000f
                 } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
                 require(width <= zone - 8f) { "Saved $edge text exceeds its page section" }
                 val x = plan.left + i*zone + when (i) {
@@ -1224,7 +1233,7 @@ class OfficeConverter {
                 }
                 stream.setNonStrokingColor(0,0,0)
                 stream.beginText()
-                stream.setFont(font,9f)
+                stream.setFont(font,fontSize)
                 stream.newLineAtOffset(x,y)
                 stream.showText(value)
                 stream.endText()
