@@ -633,31 +633,48 @@ object OpenXmlDocumentParser {
                 require(chartRel.type.endsWith("/chart")) { "Invalid drawing chart relationship type" }
                 val chartEntry = zip.getEntry(chartRel.path) ?: throw IOException("Missing chart part")
                 val chart = parseCachedChart(parseXml(budget.read(zip, chartEntry)).documentElement)
-                if (chart == null) unsupported++ else charts.add(chart.copy(sourceAnchor = chartSourceAnchor(ref)))
+                if (chart == null) unsupported++ else {
+                    val anchor = chartSourceAnchor(ref)
+                    charts.add(chart.copy(sourceAnchor = anchor.description,
+                        printAreaAnchorTrusted = anchor.printAreaTrusted))
+                }
             }
         }
         return charts to unsupported
     }
 
-    private fun chartSourceAnchor(ref: Element): String? {
+    private data class ChartAnchor(val description: String?, val printAreaTrusted: Boolean)
+
+    private fun chartSourceAnchor(ref: Element): ChartAnchor {
         var node: Node? = ref.parentNode
         while (node is Element) {
             val anchor = node
             if (anchor.localName() in setOf("twoCellAnchor", "oneCellAnchor")) {
-                fun cell(name: String): String? {
+                fun cell(name: String): Pair<String, Boolean>? {
                     val marker = anchor.childElements(name).singleOrNull() ?: return null
                     val row = marker.childElements("row").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     val col = marker.childElements("col").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     require(row in 0 until 1_048_576 && col in 0 until 16_384) { "Invalid chart cell anchor" }
-                    return SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)
+                    // Cell markers alone are not a full drawing rectangle. A
+                    // nonzero/invalid offset can move a chart beyond the listed
+                    // cells. Without measuring EMUs against the original sheet
+                    // geometry it must not authorize excluding a chart from a
+                    // saved print area. Keep provenance for full export.
+                    val bounded = listOf("colOff", "rowOff").all { key ->
+                        val parts = marker.childElements(key)
+                        parts.size <= 1 && (parts.isEmpty() || parts.single().textContent.trim() == "0")
+                    }
+                    return (SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)) to bounded
                 }
-                val first = cell("from") ?: return null
+                val first = cell("from") ?: return ChartAnchor(null, false)
                 val last = cell("to")
-                return if (last == null) first else "$first:$last"
+                val description = if (last == null) first.first else "${first.first}:${last.first}"
+                return ChartAnchor(description,
+                    anchor.localName() == "twoCellAnchor" && last != null && first.second && last.second)
             }
             node = node.parentNode
         }
-        return null
+        return ChartAnchor(null, false)
     }
 
     private fun parseCachedChart(root: Element): XlsxCachedChart? {

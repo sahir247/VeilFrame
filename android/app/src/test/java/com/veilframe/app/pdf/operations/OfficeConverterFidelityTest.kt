@@ -2090,6 +2090,7 @@ class OfficeConverterFidelityTest {
             "xl/charts/c.xml" to chart))
         val outside = input("&#36;B&#36;2")
         assertEquals("C5:D7", OpenXmlDocumentParser.parseXlsx(outside).sheets.single().charts.single().sourceAnchor)
+        assertTrue(OpenXmlDocumentParser.parseXlsx(outside).sheets.single().charts.single().printAreaAnchorTrusted)
         assertTrue(XlsxSavedPrintLayout.chartMayIntersectPrintArea("C5",
             OpenXmlDocumentParser.CellRangeAddress(0,1,0,1)))
         assertTrue(!XlsxSavedPrintLayout.chartMayIntersectPrintArea("C5:D7",
@@ -2113,5 +2114,41 @@ class OfficeConverterFidelityTest {
             assertTrue(expected.message.orEmpty().contains("intersects the print area"))
         }
         assertTrue(!invalid.exists())
+        val displacedDrawing = drawing.replace("</xdr:to>",
+            "<xdr:colOff>999999999999</xdr:colOff></xdr:to>")
+        val displaced = createZip(mapOf("xl/workbook.xml" to workbook("&#36;B&#36;2"),
+            "xl/worksheets/sheet1.xml" to sheet, "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to displacedDrawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/c.xml" to chart))
+        val untrusted = OpenXmlDocumentParser.parseXlsx(displaced).sheets.single().charts.single()
+        assertEquals("C5:D7", untrusted.sourceAnchor)
+        assertTrue(!untrusted.printAreaAnchorTrusted)
+        val unsafeOffsets = File(tempFolder.root,"unbounded-chart-offset.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(displaced,unsafeOffsets,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected unbounded drawing-offset rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("intersects the print area"))
+        }
+        assertTrue(!unsafeOffsets.exists())
+    }
+
+    @Test
+    fun savedPrintRejectsUnencodableHeaderGlyphsWithoutPublishingOutput() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><headerFooter><oddHeader>&amp;C漢字</oddHeader></headerFooter></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val printed = File(tempFolder.root,"unsupported-header.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(input,printed,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected explicit unsupported-font rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("glyphs"))
+        }
+        assertTrue(!printed.exists())
+        // Full worksheet export must remain independent of saved print metadata.
+        val full = File(tempFolder.root,"no-header-full.pdf")
+        OfficeConverter().convertXlsxToPdf(input,full,context)
+        PDDocument.load(full).use { pdf -> assertTrue(PDFTextStripper().getText(pdf).contains("42")) }
     }
 }

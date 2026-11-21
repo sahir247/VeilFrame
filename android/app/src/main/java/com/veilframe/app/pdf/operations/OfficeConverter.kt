@@ -977,7 +977,8 @@ class OfficeConverter {
                     val areas = XlsxSavedPrintLayout.areas(
                         sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
                     for (chart in sheet.charts) {
-                        require(areas.none { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }) {
+                        require(chart.printAreaAnchorTrusted &&
+                            areas.none { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }) {
                             "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
                         }
                     }
@@ -1183,8 +1184,12 @@ class OfficeConverter {
             val zone = plan.contentWidth / 3f
             for ((i,value) in listOf(sections.left, sections.center, sections.right).withIndex()) {
                 if (value.isEmpty()) continue
-                val width = try { font.getStringWidth(sanitizeText(value)) * 9f / 1000f }
-                    catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
+                val width = try {
+                    // Do not size sanitized text and then emit a silently changed
+                    // header/footer. The exact expanded value must be encodable.
+                    font.encode(value)
+                    font.getStringWidth(value) * 9f / 1000f
+                } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
                 require(width <= zone - 8f) { "Saved $edge text exceeds its page section" }
                 val x = plan.left + i*zone + when (i) {
                     0 -> 4f
@@ -1195,7 +1200,7 @@ class OfficeConverter {
                 stream.beginText()
                 stream.setFont(font,9f)
                 stream.newLineAtOffset(x,y)
-                safeShowText(stream,value,font)
+                stream.showText(value)
                 stream.endText()
             }
         }
