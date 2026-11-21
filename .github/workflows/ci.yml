@@ -294,8 +294,10 @@ jobs:
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
+            # Cross-commit queued SDK runs can be cancelled on rapid PR pushes.
+            # Only reuse completed-successful SDK artifacts from other commits.
             CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
-              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
+              '[.[] | select(.status == "completed" and .conclusion == "success")] | first // {}')
             RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
             ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
           fi
