@@ -2090,6 +2090,10 @@ class OfficeConverterFidelityTest {
             "xl/charts/c.xml" to chart))
         val outside = input("&#36;B&#36;2")
         assertEquals("C5:D7", OpenXmlDocumentParser.parseXlsx(outside).sheets.single().charts.single().sourceAnchor)
+        assertTrue(XlsxSavedPrintLayout.chartMayIntersectPrintArea("C5",
+            OpenXmlDocumentParser.CellRangeAddress(0,1,0,1)))
+        assertTrue(!XlsxSavedPrintLayout.chartMayIntersectPrintArea("C5:D7",
+            OpenXmlDocumentParser.CellRangeAddress(0,1,0,1)))
         val output = File(tempFolder.root,"outside-chart.pdf")
         OfficeConverter().convertXlsxToPdf(outside,output,context,savedPrintLayout=true)
         PDDocument.load(output).use { doc ->

@@ -737,3 +737,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Prevent saved-print chart-cache disclosure and false pages
 
 - An explicit Excel saved print area is an output boundary: cached chart appendices belong only to full-content export. In selected saved-print mode, omit chart caches whose validated two-cell provenance lies entirely outside all selected print areas. Reject charts that touch the area, lack a trustworthy anchor or have unsupported drawing objects, rather than append misleading pages or silently lose printable content. When no explicit range exists, refuse unknown chart placement. Full-content export retains chart appendices. Added outside/inside print-area and full-export PDF regression. Original anchored chart rendering remains a separate fidelity gate; CI pending.
+
+- Harden saved chart print-area admission: one-cell anchors with unknown drawing extents are always treated as potentially intersecting the print area; two-cell anchors wholly outside remain the only positively excludable form. Added direct anchor-boundary regression. CI pending.

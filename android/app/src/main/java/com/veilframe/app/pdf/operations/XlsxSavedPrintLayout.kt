@@ -123,6 +123,9 @@ internal object XlsxSavedPrintLayout {
         if (anchor == null) return true // unknown position: fail closed
         val ends = anchor.split(':')
         require(ends.size in 1..2) { "Invalid drawing chart source anchor" }
+        // A one-cell anchor carries a separate EMU size, so it may reach far
+        // beyond its starting cell. It is not safe to declare it out of range.
+        if (ends.size == 1) return true
         fun parse(ref: String): Pair<Int,Int> {
             require(ref.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) {
                 "Invalid drawing chart cell marker"
