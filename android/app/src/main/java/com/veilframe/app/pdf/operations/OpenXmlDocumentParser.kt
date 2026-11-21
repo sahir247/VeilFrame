@@ -1495,6 +1495,42 @@ object OpenXmlDocumentParser {
             prevRow = rowIdx
         }
 
+        // SpreadsheetML does not serialize most blank cells. Self-contained
+        // row/column expressions still style blanks inside the admitted visible
+        // rectangle. Never expand a whole-column sqref beyond the saved grid.
+        val expressionRules = conditional.filter { it.expression != null }
+        if (expressionRules.isNotEmpty()) {
+            val visibleRows = outRows.size
+            val visibleColumns = outRows.maxOfOrNull { it.size } ?: 0
+            require(visibleRows.toLong() * visibleColumns <= SpreadsheetGeometry.MAX_GRID_CELLS) {
+                "Conditional blank-cell styling exceeds visible grid budget"
+            }
+            for (rule in expressionRules) for (range in rule.ranges) {
+                val firstRow = range.firstRow.coerceAtLeast(0)
+                val lastRow = minOf(range.lastRow,visibleRows-1)
+                val firstCol = range.firstCol.coerceAtLeast(0)
+                val lastCol = minOf(range.lastCol,visibleColumns-1)
+                if (firstRow > lastRow || firstCol > lastCol) continue
+                for (r in firstRow..lastRow) for (c in firstCol..lastCol) {
+                    if (occupied[r+1]?.contains(c) == true) continue
+                    if (rule.expression?.matches(r,c,null) != true) continue
+                    conditionalChecks += conditionalCost
+                    require(conditionalChecks <= 8_000_000L) {
+                        "Conditional formatting blank-cell evaluation exceeds budget"
+                    }
+                    val applied = XlsxConditionalFormatting.apply(styleTable.visuals[0],
+                        r,c,null,conditional,scaleExtents=scaleExtents)
+                    val code = internStyle(0,applied)
+                    if (code == 0) continue
+                    val prior = styledRows[r]
+                    val entries = if (prior != null && prior.size > c) prior else
+                        prior?.copyOf(maxOf(c+1,prior.size*2).coerceAtMost(MAX_XLSX_COLUMNS)) ?: IntArray(c+1)
+                    entries[c] = code
+                    styledRows[r] = entries
+                }
+            }
+        }
+
         // Trim trailing completely empty rows from the end of the worksheet
         while (outRows.isNotEmpty() && outRows.last().all { it.isBlank() } &&
             outRows.lastIndex !in styledRows && outRows.lastIndex !in rowHeights) {
