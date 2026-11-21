@@ -23,7 +23,7 @@ internal object XlsxAnchoredChartRenderer {
     /** Refuse clipped, hidden, repeated-title, multi-area and multi-page charts. */
     fun locate(chart: XlsxCachedChart, layout: SheetLayout,
         plans: List<XlsxSavedPrintLayout.Plan>): Placement? {
-        if (!chart.printsWithSheet || !chart.printAreaAnchorTrusted ||
+        if (!chart.printsWithSheet || chart.drawingOffsets == null ||
             chart.kind !in setOf("column","bar","line","combo","scatter")) return null
         val ends = chart.sourceAnchor?.split(':') ?: return null
         if (ends.size != 2) return null
@@ -31,19 +31,29 @@ internal object XlsxAnchoredChartRenderer {
         val to = marker(ends[1]) ?: return null
         val rows = to.row-from.row
         val cols = to.col-from.col
+        val offsets = chart.drawingOffsets ?: return null
+        val fromX = offsets.fromColEmu/12_700f
+        val fromY = offsets.fromRowEmu/12_700f
+        val toX = offsets.toColEmu/12_700f
+        val toY = offsets.toRowEmu/12_700f
         if (rows !in 2..512 || cols !in 2..128 ||
-            to.row > layout.rowCount || to.col > layout.colCount) return null
+            to.row > layout.rowCount || to.col > layout.colCount ||
+            fromX >= layout.colWidths[from.col] || fromY >= layout.rowHeights[from.row] ||
+            (toX > 0f && (to.col >= layout.colCount || toX >= layout.colWidths[to.col])) ||
+            (toY > 0f && (to.row >= layout.rowCount || toY >= layout.rowHeights[to.row]))) return null
         var found: Placement? = null
         for ((pi,plan) in plans.withIndex()) for ((ti,tile) in plan.tiles.withIndex()) {
             val rr = tile.first; val cc = tile.second
             val r = rr.indexOf(from.row); val c = cc.indexOf(from.col)
-            if (r < 0 || c < 0 || r+rows > rr.size || c+cols > cc.size) continue
-            if ((0 until rows).any { rr[r+it] != from.row+it } ||
-                (0 until cols).any { cc[c+it] != from.col+it }) continue
-            val x = cc.take(c).sumOf { layout.colWidths[it].toDouble() }.toFloat()
-            val y = -rr.take(r).sumOf { layout.rowHeights[it].toDouble() }.toFloat()
-            val w = (from.col until to.col).sumOf { layout.colWidths[it].toDouble() }.toFloat()
-            val h = (from.row until to.row).sumOf { layout.rowHeights[it].toDouble() }.toFloat()
+            val rowCount = rows + if (toY > 0f) 1 else 0
+            val colCount = cols + if (toX > 0f) 1 else 0
+            if (r < 0 || c < 0 || r+rowCount > rr.size || c+colCount > cc.size) continue
+            if ((0 until rowCount).any { rr[r+it] != from.row+it } ||
+                (0 until colCount).any { cc[c+it] != from.col+it }) continue
+            val x = cc.take(c).sumOf { layout.colWidths[it].toDouble() }.toFloat() + fromX
+            val y = -rr.take(r).sumOf { layout.rowHeights[it].toDouble() }.toFloat() - fromY
+            val w = (from.col until to.col).sumOf { layout.colWidths[it].toDouble() }.toFloat()+toX-fromX
+            val h = (from.row until to.row).sumOf { layout.rowHeights[it].toDouble() }.toFloat()+toY-fromY
             if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite() ||
                 w < 120f || h < 80f || found != null) return null
             found = Placement(pi,ti,x,y,w,h)

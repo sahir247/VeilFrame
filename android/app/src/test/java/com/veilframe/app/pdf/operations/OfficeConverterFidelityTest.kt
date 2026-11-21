@@ -2352,6 +2352,42 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun emuOffsetChartsRespectCellDimensionsAndRejectClippedMarkers() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Offset" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Offset!&#36;A&#36;1:&#36;H&#36;12</definedName></definedNames></workbook>"""
+        val sheet = """<worksheet><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="12"><c r="H12"><v>2</v></c></row></sheetData><pageSetup fitToWidth="1" fitToHeight="1"/><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/c.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>63500</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>25400</xdr:rowOff></xdr:from><xdr:to><xdr:col>6</xdr:col><xdr:colOff>127000</xdr:colOff><xdr:row>9</xdr:row><xdr:rowOff>50800</xdr:rowOff></xdr:to><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>"""
+        val chart = """<c:chartSpace><c:chart><c:title><c:tx><c:v>EMU proof</c:v></c:tx></c:title><c:plotArea><c:lineChart><c:grouping val="standard"/><c:ser><c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>2</c:v></c:pt><c:pt idx="1"><c:v>4</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>"""
+        fun input(drawingXml:String)=createZip(mapOf("xl/workbook.xml" to wb,
+            "xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to drawingXml,
+            "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/c.xml" to chart))
+        val parsed=OpenXmlDocumentParser.parseXlsx(input(drawing)).sheets.single().charts.single()
+        assertTrue(!parsed.printAreaAnchorTrusted)
+        assertEquals(63500L,parsed.drawingOffsets!!.fromColEmu)
+        assertEquals(127000L,parsed.drawingOffsets!!.toColEmu)
+        val printed=File(tempFolder.root,"offset-within-cell.pdf")
+        OfficeConverter().convertXlsxToPdf(input(drawing),printed,context,savedPrintLayout=true)
+        PDDocument.load(printed).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            assertTrue(PDFTextStripper().getText(pdf).contains("EMU proof"))
+        }
+        val tooWide=drawing.replace("<xdr:colOff>127000</xdr:colOff>",
+            "<xdr:colOff>20000000</xdr:colOff>")
+        val invalid=File(tempFolder.root,"bad-offset.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(input(tooWide),invalid,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected out-of-cell chart rejection")
+        } catch(expected:IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("intersects the print area"))
+        }
+        assertTrue(!invalid.exists())
+    }
+
+    @Test
     fun headerScaleWithDocumentTracksPrintScaleAndRejectsUnalignedMargins() = runBlocking {
         val wb = """<workbook><sheets><sheet name="Paper" sheetId="1"/></sheets></workbook>"""
         val base = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><pageSetup scale="50"/><headerFooter scaleWithDoc="1" alignWithMargins="1"><oddHeader>&amp;CSCALED</oddHeader></headerFooter></worksheet>"""

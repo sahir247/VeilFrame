@@ -637,7 +637,8 @@ object OpenXmlDocumentParser {
                     val anchor = chartSourceAnchor(ref)
                     charts.add(chart.copy(sourceAnchor = anchor.description,
                         printAreaAnchorTrusted = anchor.printAreaTrusted,
-                        printsWithSheet = anchor.printsWithSheet))
+                        printsWithSheet = anchor.printsWithSheet,
+                        drawingOffsets = anchor.offsets))
                 }
             }
         }
@@ -645,7 +646,7 @@ object OpenXmlDocumentParser {
     }
 
     private data class ChartAnchor(val description: String?, val printAreaTrusted: Boolean,
-        val printsWithSheet: Boolean = true)
+        val printsWithSheet: Boolean = true, val offsets: XlsxCachedChart.DrawingOffsets? = null)
 
     private fun chartSourceAnchor(ref: Element): ChartAnchor {
         var node: Node? = ref.parentNode
@@ -659,28 +660,34 @@ object OpenXmlDocumentParser {
                     "0", "false" -> false
                     else -> throw IllegalArgumentException("Invalid chart fPrintsWithSheet flag")
                 }
-                fun cell(name: String): Pair<String, Boolean>? {
+                data class Point(val label: String, val colOff: Long?, val rowOff: Long?)
+                fun cell(name: String): Point? {
                     val marker = anchor.childElements(name).singleOrNull() ?: return null
                     val row = marker.childElements("row").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     val col = marker.childElements("col").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     require(row in 0 until 1_048_576 && col in 0 until 16_384) { "Invalid chart cell anchor" }
-                    // Cell markers alone are not a full drawing rectangle. A
-                    // nonzero/invalid offset can move a chart beyond the listed
-                    // cells. Without measuring EMUs against the original sheet
-                    // geometry it must not authorize excluding a chart from a
-                    // saved print area. Keep provenance for full export.
-                    val bounded = listOf("colOff", "rowOff").all { key ->
+                    fun offset(key: String): Long? {
                         val parts = marker.childElements(key)
-                        parts.size == 1 && parts.single().textContent.trim() == "0"
+                        if (parts.size != 1) return null
+                        val value = parts.single().textContent.trim().toLongOrNull() ?: return null
+                        // Reject extremely large, negative or malformed offsets
+                        // until the actual sheet cell's dimensions are known.
+                        return value.takeIf { it in 0L..20_000_000L }
                     }
-                    return (SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)) to bounded
+                    return Point(SpreadsheetLayoutEngine.colIndexToRef(col) + (row+1),
+                        offset("colOff"), offset("rowOff"))
                 }
-                val first = cell("from") ?: return ChartAnchor(null, false, prints)
+                val first = cell("from") ?: return ChartAnchor(null,false,prints)
                 val last = cell("to")
-                val description = if (last == null) first.first else "${first.first}:${last.first}"
-                return ChartAnchor(description,
-                    anchor.localName() == "twoCellAnchor" && last != null && first.second && last.second,
-                    prints)
+                val description = if (last == null) first.label else "${first.label}:${last.label}"
+                val zero = first.colOff == 0L && first.rowOff == 0L &&
+                    last?.colOff == 0L && last.rowOff == 0L
+                val offsets = if (anchor.localName() == "twoCellAnchor" && last != null &&
+                    first.colOff != null && first.rowOff != null &&
+                    last.colOff != null && last.rowOff != null)
+                    XlsxCachedChart.DrawingOffsets(first.colOff,first.rowOff,last.colOff,last.rowOff)
+                    else null
+                return ChartAnchor(description,offsets != null && zero,prints,offsets)
             }
             node = node.parentNode
         }

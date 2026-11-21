@@ -977,7 +977,7 @@ class OfficeConverter {
                     val areas = XlsxSavedPrintLayout.areas(
                         sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
                     for (chart in sheet.charts.filter { it.printsWithSheet }) {
-                        require(chart.printAreaAnchorTrusted) {
+                        require(chart.printAreaAnchorTrusted || chart.drawingOffsets != null) {
                             "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
                         }
                         // A chart wholly outside the selected area is omitted.
