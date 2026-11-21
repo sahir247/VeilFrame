@@ -432,6 +432,53 @@ jobs:
           set -Eeuo pipefail
           ./gradlew :app:testDebugUnitTest --stacktrace
 
+      # Keep actionable JUnit assertions available after a failed test gate.
+      # This does not change Gradle's exit status or mark tests successful.
+      - name: Diagnose Android unit-test failures
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          reports = sorted(glob.glob('android/app/build/test-results/testDebugUnitTest/**/TEST-*.xml', recursive=True))
+          if not reports:
+              print('No JUnit XML produced (the failure may precede unit tests)')
+          shown = 0
+          for file in reports:
+              try:
+                  suite = ET.parse(file).getroot()
+              except ET.ParseError as exc:
+                  print(f'Unreadable JUnit XML {os.path.basename(file)}: {exc}')
+                  continue
+              for case in suite.iter('testcase'):
+                  for failure in list(case.findall('failure')) + list(case.findall('error')):
+                      label = f"{case.get('classname', '?')}.{case.get('name', '?')}"
+                      detail = (failure.get('message', '') + '\\n' + (failure.text or ''))[:2400]
+                      print(f'FAILED {label}\\n{detail}')
+                      shown += 1
+                      if shown >= 40:
+                          break
+                  if shown >= 40:
+                      break
+              if shown >= 40:
+                  break
+          print(f'Shown failing test cases: {shown}')
+          PY
+
+      - name: Upload Android unit-test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-evidence-${{ github.run_id }}
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: ignore
+          retention-days: 7
+
       # Compile instrumented Office and native device regressions in PR CI.
       # No emulator/hardware is available on this runner: this is compilation,
       # never claim physical-device acceptance from this step.
