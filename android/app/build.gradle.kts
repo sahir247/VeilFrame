@@ -228,7 +228,7 @@ dependencies {
         exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
         exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
     }
-    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.87")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
     implementation("org.bouncycastle:bcutil-jdk18on:1.86")
 
