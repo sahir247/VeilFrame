@@ -946,7 +946,7 @@ class OfficeConverter {
 
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
-            if (savedPrintLayout) pdf.documentInformation.subject = "Approximate saved Excel print layout; charts reconstructed separately; unsupported print features may differ."
+            if (savedPrintLayout) pdf.documentInformation.subject = "Approximate saved Excel print layout; out-of-area charts omitted, unplaceable drawings rejected. No printer-exact guarantee."
             val limits = LayoutLimits(
                 minPageWidth = 842f,
                 minPageHeight = 595f,
@@ -965,6 +965,23 @@ class OfficeConverter {
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 if (savedPrintLayout && !sheet.visible) continue
+                if (savedPrintLayout && (sheet.charts.isNotEmpty() || sheet.unsupportedDrawings > 0)) {
+                    require(sheet.unsupportedDrawings == 0) {
+                        "Saved print layout contains unplaceable drawing objects; use full worksheet export"
+                    }
+                    // Reconstructed appendix charts would leak cached data outside
+                    // a saved print range and add pages Excel never requested.
+                    require(sheet.printSettings.area != null) {
+                        "Saved print layout cannot locate charts without an explicit print area; use full worksheet export"
+                    }
+                    val areas = XlsxSavedPrintLayout.areas(
+                        sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
+                    for (chart in sheet.charts) {
+                        require(areas.none { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }) {
+                            "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
+                        }
+                    }
+                }
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0 &&
                     !(savedPrintLayout && sheet.printSettings.area != null)) continue // Empty sheet
@@ -1019,7 +1036,8 @@ class OfficeConverter {
                     }
                 }
                 }
-                for (chart in sheet.charts) renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint)
+                if (!savedPrintLayout) for (chart in sheet.charts)
+                    renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint)
                 if (sheet.unsupportedDrawings > 0 && maxCol == 0 && sheet.mergedRegions.isEmpty()) {
                     require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
                     val page = PDPage(PDRectangle(842f, 595f))

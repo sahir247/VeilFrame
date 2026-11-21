@@ -117,6 +117,33 @@ internal object XlsxSavedPrintLayout {
         return OpenXmlDocumentParser.CellRangeAddress(first.first,last.first,first.second,last.second)
     }
 
+    /** Source chart anchors are cell-boundary provenance, not exact EMU placement. */
+    fun chartMayIntersectPrintArea(anchor: String?,
+        area: OpenXmlDocumentParser.CellRangeAddress): Boolean {
+        if (anchor == null) return true // unknown position: fail closed
+        val ends = anchor.split(':')
+        require(ends.size in 1..2) { "Invalid drawing chart source anchor" }
+        fun parse(ref: String): Pair<Int,Int> {
+            require(ref.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) {
+                "Invalid drawing chart cell marker"
+            }
+            val col = OpenXmlDocumentParser.colRefToIndex(ref)
+            val row = ref.dropWhile { it.isLetter() }.toInt() - 1
+            require(row in 0 until 1_048_576 && col in 0 until 16_384) {
+                "Drawing chart marker exceeds worksheet bounds"
+            }
+            return row to col
+        }
+        val from = parse(ends.first()); val to = parse(ends.last())
+        require(from.first <= to.first && from.second <= to.second) {
+            "Reversed drawing chart source anchor"
+        }
+        // Conservatively include the far marker cell: OOXML offsets can extend
+        // the shape into it, and no partial chart may be silently omitted.
+        return from.first <= area.lastRow && to.first >= area.firstRow &&
+            from.second <= area.lastCol && to.second >= area.firstCol
+    }
+
     fun plan(layout: SheetLayout, area: OpenXmlDocumentParser.CellRangeAddress, settings: XlsxSavedPrintSettings,
         titles: Titles = Titles()): Plan {
         fun mm(v: Float) = v * 72f / 25.4f

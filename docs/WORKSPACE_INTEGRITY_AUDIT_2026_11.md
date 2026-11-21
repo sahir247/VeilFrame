@@ -733,3 +733,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Workbook sheet visibility in selected print mode
 
 - Preserve each workbook sheet's visible/hidden/veryHidden state through relationship-validated parsing, including hidden sheets' content checks. Saved-print mode skips hidden and veryHidden sheets; full-content export intentionally retains their values. Reject malformed visibility state and all-hidden/no-page saved print output instead of silently publishing an empty or private worksheet. Added two-sheet/full-export/no-visible PDF regression. This is an explicit mode distinction, not a change to Excel's underlying file. CI pending.
+
+### A28 — Prevent saved-print chart-cache disclosure and false pages
+
+- An explicit Excel saved print area is an output boundary: cached chart appendices belong only to full-content export. In selected saved-print mode, omit chart caches whose validated two-cell provenance lies entirely outside all selected print areas. Reject charts that touch the area, lack a trustworthy anchor or have unsupported drawing objects, rather than append misleading pages or silently lose printable content. When no explicit range exists, refuse unknown chart placement. Full-content export retains chart appendices. Added outside/inside print-area and full-export PDF regression. Original anchored chart rendering remains a separate fidelity gate; CI pending.
