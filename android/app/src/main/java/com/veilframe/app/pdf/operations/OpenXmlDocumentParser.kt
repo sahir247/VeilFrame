@@ -666,7 +666,8 @@ object OpenXmlDocumentParser {
             val line = chartTypes.first { it.localName() == "lineChart" }
             if (bar.childElements("barDir").singleOrNull()?.getAttribute("val") != "col" ||
                 bar.childElements("grouping").singleOrNull()?.getAttribute("val") != "clustered" ||
-                line.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard")) return null
+                line.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard") ||
+                bar.childElements("ser").isEmpty() || line.childElements("ser").isEmpty()) return null
             fun axes(type: Element) = type.childElements("axId").map { it.getAttribute("val") }
             val barAxes = axes(bar); val lineAxes = axes(line)
             // Secondary-axis charts cannot be mapped to one value scale.
@@ -1511,13 +1512,17 @@ object OpenXmlDocumentParser {
                 val firstCol = range.firstCol.coerceAtLeast(0)
                 val lastCol = minOf(range.lastCol,visibleColumns-1)
                 if (firstRow > lastRow || firstCol > lastCol) continue
+                // Count *every* candidate check before evaluating. Counting only
+                // matches allowed 256 rules x 2M blanks to traverse unboundedly.
+                val visited = (lastRow - firstRow + 1).toLong() * (lastCol - firstCol + 1)
+                val costPerCell = conditionalCost.coerceAtLeast(1L)
+                require(visited <= (8_000_000L - conditionalChecks).coerceAtLeast(0L) / costPerCell) {
+                    "Conditional formatting blank-cell evaluation exceeds budget"
+                }
+                conditionalChecks += visited * costPerCell
                 for (r in firstRow..lastRow) for (c in firstCol..lastCol) {
                     if (occupied[r+1]?.contains(c) == true) continue
                     if (rule.expression?.matches(r,c,null) != true) continue
-                    conditionalChecks += conditionalCost
-                    require(conditionalChecks <= 8_000_000L) {
-                        "Conditional formatting blank-cell evaluation exceeds budget"
-                    }
                     val applied = XlsxConditionalFormatting.apply(styleTable.visuals[0],
                         r,c,null,conditional,scaleExtents=scaleExtents)
                     val code = internStyle(0,applied)

@@ -705,3 +705,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - Scatter axis correctness follow-up: compute numeric bounds exclusively from complete saved (X,Y) pairs that are actually drawn, avoiding misleading axis compression from an unpaired extreme. Preserve missing points in the audit table. No invented interpolation.
 
 - CI regression 44845773881: `numericConditionalFormattingUsesRawValuesAndGlobalPriority` expected the previously unsupported `C1>0` rule count to remain 1. Since the bounded same-cell expression now deliberately evaluates C1, the correct contract is zero unsupported rules plus priority-composed bold and red fill on C1. Updated the test with those stronger assertions rather than skipping it. Full suite rerun pending.
+
+- Admission hardening: precharge the entire scanned blank-cell range area times conditional predicate/range cost, not only the matches, so large repeated expression regions cannot bypass the eight-million-check budget. Require both column and line groups to have data in combination charts, avoiding a zero-width bar denominator. Zero changed behavior for admitted ordinary workbooks. CI pending.
