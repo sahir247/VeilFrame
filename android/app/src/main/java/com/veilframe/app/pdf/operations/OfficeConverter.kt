@@ -964,6 +964,7 @@ class OfficeConverter {
             val checkpoint: () -> Unit = { renderContext.ensureActive() }
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
+                if (savedPrintLayout && !sheet.visible) continue
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
                 if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0 &&
                     !(savedPrintLayout && sheet.printSettings.area != null)) continue // Empty sheet
@@ -1030,6 +1031,10 @@ class OfficeConverter {
                 }
             }
 
+            require(pdf.numberOfPages > 0) {
+                if (savedPrintLayout) "No visible printable worksheets in saved print layout"
+                else "Workbook contains no printable worksheet content"
+            }
             require(pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             publishOfficePdf(pdf, pdfFile)
         } finally {

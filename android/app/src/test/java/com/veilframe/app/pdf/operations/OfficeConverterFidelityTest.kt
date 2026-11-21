@@ -2042,4 +2042,38 @@ class OfficeConverterFidelityTest {
             assertTrue(fontsUsed.any { it.contains("Courier-Oblique") })
         }
     }
+    @Test
+    fun savedPrintSkipsHiddenSheetsWithoutRemovingTheirFullExportValues() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Visible" sheetId="1"/><sheet name="Concealed" state="veryHidden" sheetId="2"/></sheets></workbook>"""
+        val visible = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>PUBLIC_SHEET</t></is></c></row></sheetData></worksheet>"""
+        val hidden = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>INTERNAL_SHEET</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,
+            "xl/worksheets/sheet1.xml" to visible, "xl/worksheets/sheet2.xml" to hidden))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input)
+        assertEquals(listOf(true,false),parsed.sheets.map { it.visible })
+        val printed = File(tempFolder.root,"visible-only.pdf")
+        OfficeConverter().convertXlsxToPdf(input,printed,context,savedPrintLayout=true)
+        PDDocument.load(printed).use { doc ->
+            assertEquals(1,doc.numberOfPages)
+            val text = PDFTextStripper().getText(doc)
+            assertTrue(text.contains("PUBLIC_SHEET") && !text.contains("INTERNAL_SHEET"))
+        }
+        val full = File(tempFolder.root,"with-hidden.pdf")
+        OfficeConverter().convertXlsxToPdf(input,full,context)
+        PDDocument.load(full).use { doc ->
+            val text = PDFTextStripper().getText(doc)
+            assertTrue(text.contains("PUBLIC_SHEET") && text.contains("INTERNAL_SHEET"))
+        }
+        val allHidden = createZip(mapOf("xl/workbook.xml" to
+            """<workbook><sheets><sheet name="Concealed" state="hidden" sheetId="1"/></sheets></workbook>""",
+            "xl/worksheets/sheet1.xml" to hidden))
+        val noPages = File(tempFolder.root,"no-visible.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(allHidden,noPages,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected hidden-sheet print rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("visible printable"))
+        }
+        assertTrue(!noPages.exists())
+    }
 }

@@ -729,3 +729,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Common workbook font-family substitution
 
 - Resolve bounded OOXML font names through inherited fontId definitions and select matching PDF base-14 Times or Courier variants (bold/italic included) for common serif/monospace families. Width measurement, wrapping and PDF output now use the same selected font; preserve default Helvetica for unknown and compatible sans faces. This is *substitution*, not original Times New Roman or Courier New embedding, and does not imply Unicode coverage or exact glyph metrics. Added parser/font-metric/PDF resource regression. CI pending.
+
+### A28 — Workbook sheet visibility in selected print mode
+
+- Preserve each workbook sheet's visible/hidden/veryHidden state through relationship-validated parsing, including hidden sheets' content checks. Saved-print mode skips hidden and veryHidden sheets; full-content export intentionally retains their values. Reject malformed visibility state and all-hidden/no-page saved print output instead of silently publishing an empty or private worksheet. Added two-sheet/full-export/no-visible PDF regression. This is an explicit mode distinction, not a change to Excel's underlying file. CI pending.

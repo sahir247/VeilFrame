@@ -424,7 +424,8 @@ object OpenXmlDocumentParser {
         val unsupportedConditionalRules: Int = 0,
         val charts: List<XlsxCachedChart> = emptyList(),
         val unsupportedDrawings: Int = 0,
-        val printSettings: XlsxSavedPrintSettings = XlsxSavedPrintSettings()
+        val printSettings: XlsxSavedPrintSettings = XlsxSavedPrintSettings(),
+        val visible: Boolean = true
     )
 
     const val MAX_SUPPORTED_ROW_GAP = 500
@@ -433,7 +434,7 @@ object OpenXmlDocumentParser {
         val sheets: List<XlsxSheetData>
     )
 
-    private data class SheetPart(val name: String, val path: String)
+    private data class SheetPart(val name: String, val path: String, val visible: Boolean)
     private data class WorkbookRelationship(val type: String, val path: String)
 
     private fun relatedPartPath(source: String, target: String): String {
@@ -479,6 +480,11 @@ object OpenXmlDocumentParser {
             if (element.localName() != "sheet") continue
             val title = element.getAttribute("name")
             require(title.isNotBlank()) { "Workbook contains an unnamed sheet" }
+            val visible = when (element.getAttribute("state")) {
+                "", "visible" -> true
+                "hidden", "veryHidden" -> false
+                else -> throw IOException("Invalid workbook sheet visibility: $title")
+            }
             val path = if (relationships != null) {
                 // Namespace prefix is not fixed; the relationship attribute is identified
                 // by local name. sheetId is not the relationship ID.
@@ -500,7 +506,7 @@ object OpenXmlDocumentParser {
             }
             require(usedPaths.add(path)) { "Multiple workbook sheets reference $path" }
             require(zip.getEntry(path) != null) { "Missing worksheet part: $title ($path)" }
-            parts.add(SheetPart(title, path))
+            parts.add(SheetPart(title, path, visible))
         }
         require(parts.isNotEmpty()) { "Workbook has no worksheets" }
         if (relationships == null) {
@@ -577,6 +583,7 @@ object OpenXmlDocumentParser {
                 val printTitles = localNames.filter { it.getAttribute("name") == "_xlnm.Print_Titles" }
                 sheets.add(XlsxSheetData(
                     name = part.name, rows = sheetRows, sparseRows = sheetSparseRows,
+                    visible = part.visible,
                     mergedRegions = sheetMergedRegions, frozenColumns = metadata.frozenCols, frozenRows = metadata.frozenRows,
                     cachedFormulaCount = metadata.cachedFormulaCount, dimensions = metadata.dimensions,
                     styles = metadata.styles, unsupportedConditionalRules = metadata.unsupportedConditionalRules,
