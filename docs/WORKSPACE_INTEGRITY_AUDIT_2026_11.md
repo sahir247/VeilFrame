@@ -673,3 +673,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Bounded saved print header/footer fields
 
 - Parse odd/even/first header-footer variants and explicit parity flags. Resolve deterministic &, P/N page counters and sheet name tokens and left/center/right sections, with physical margin checks, finite section width and overlap rejection before drawing vector PDF text. Unsupported time/date, fonts, pictures and other Excel field escapes fail saved-print export rather than silently strip content; full worksheet mode remains independent. Added pure expansion and two-page PDF fixture. CI/device validation pending; font matching and printer parity remain open.
+
+### A28 — Numeric cached XY scatter reconstruction
+
+- Parse scatter xVal/yVal numeric OOXML caches with explicit point indices and missing points, refuse invalid/NaN pairs and unsupported smoothing. Draw separate real numeric XY axes and marker/line/lineMarker vectors with overflow-safe normalization, gap-aware segments and a paired-coordinate audit table. Retain bounded cache sizes, original source file untouched and no formula execution. No claim of preserved original chart anchors, Excel axis units, secondary axes or per-series marker styling. Added geometry and ZIP-to-PDF fixture. CI pending.

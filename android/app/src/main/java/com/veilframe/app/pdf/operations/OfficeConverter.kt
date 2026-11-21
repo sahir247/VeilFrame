@@ -1160,6 +1160,10 @@ class OfficeConverter {
             renderCachedPieChart(pdf, sheet, chart, checkpoint)
             return
         }
+        if (chart.kind == "scatter") {
+            renderCachedScatterChart(pdf, sheet, chart, checkpoint)
+            return
+        }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
         val stacked = chart.kind in setOf("bar", "column") && chart.grouping in setOf("stacked", "percentStacked")
         val percentStacked = stacked && chart.grouping == "percentStacked"
@@ -1261,6 +1265,80 @@ class OfficeConverter {
                         label(series.values[index]?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",230f+i*column,y,8f)
                 }
                 label("Labels and numbers abbreviated for display; absent cache points are not inferred.", 30f, 28f, 8f)
+            }
+        }
+    }
+
+    /** Saved numerical pairs are drawn on actual XY axes; no categorical spacing. */
+    private fun renderCachedScatterChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart,
+        checkpoint: () -> Unit) {
+        val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715)
+        require(chart.series.size in 1..6 && chart.scatterStyle in setOf("marker","line","lineMarker"))
+        val xAxis = XlsxScatterGeometry.axis(chart.series.flatMap { it.xValues })
+        val yAxis = XlsxScatterGeometry.axis(chart.series.flatMap { it.values })
+        val segments = chart.categories.indices.chunked(12)
+        for ((panel, indices) in segments.withIndex()) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val page = PDPage(PDRectangle(842f,595f))
+            pdf.addPage(page)
+            PDPageContentStream(pdf,page).use { stream ->
+                val font = PDType1Font.HELVETICA
+                fun textAt(s: String, x: Float, y: Float, size: Float = 9f) {
+                    stream.setNonStrokingColor(0,0,0)
+                    stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
+                    safeShowText(stream,s,font); stream.endText()
+                }
+                textAt(sheet.take(70) + " / XY scatter (cached) " + (panel+1),30f,565f,11f)
+                textAt(chart.title.take(95),30f,545f,13f)
+                textAt("Numeric XY coordinates; cached data only, not recalculated",30f,529f)
+                val left = 98f; val bottom = 272f; val width = 672f; val height = 234f
+                stream.setStrokingColor(210,210,210); stream.setLineWidth(0.6f)
+                for (tick in 0..4) {
+                    val f = tick/4f
+                    val x = left+f*width; val y = bottom+f*height
+                    stream.moveTo(x,bottom); stream.lineTo(x,bottom+height); stream.stroke()
+                    stream.moveTo(left,y); stream.lineTo(left+width,y); stream.stroke()
+                    textAt(xAxis.label(f),x-12f,bottom-20f,8f)
+                    textAt(yAxis.label(f),30f,y-3f,8f)
+                }
+                for ((seriesIndex,series) in chart.series.withIndex()) {
+                    checkpoint()
+                    require(series.xValues.size == series.values.size)
+                    val rgb = palette[seriesIndex%palette.size]
+                    stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+                    stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+                    stream.setLineWidth(1.3f)
+                    var prev: Pair<Float,Float>? = null
+                    for (index in indices) {
+                        checkpoint()
+                        val x = series.xValues.getOrNull(index)
+                        val y = series.values.getOrNull(index)
+                        if (x == null || y == null) { prev = null; continue }
+                        val px = left+xAxis.fraction(x)*width
+                        val py = bottom+yAxis.fraction(y)*height
+                        if (chart.scatterStyle != "marker") prev?.let {
+                            stream.moveTo(it.first,it.second); stream.lineTo(px,py); stream.stroke()
+                        }
+                        if (chart.scatterStyle != "line") {
+                            stream.addRect(px-2f,py-2f,4f,4f); stream.fill()
+                        }
+                        prev = px to py
+                    }
+                    textAt(series.name.take(15),30f+seriesIndex*125f,238f,8f)
+                }
+                for ((local,index) in indices.withIndex()) {
+                    val y = 215f - local*14f
+                    textAt("Point " + (index+1),30f,y,8f)
+                    for ((j,series) in chart.series.withIndex()) {
+                        val x = series.xValues.getOrNull(index)
+                        val v = series.values.getOrNull(index)
+                        val pair = if (x == null || v == null) "(missing)" else
+                            String.format(java.util.Locale.US,"%.3g, %.3g",x,v)
+                        textAt(pair,150f+j*110f,y,8f)
+                    }
+                }
+                textAt("Paired coordinates; gaps are not interpolated. Source axes and styling may differ.",30f,28f,8f)
             }
         }
     }

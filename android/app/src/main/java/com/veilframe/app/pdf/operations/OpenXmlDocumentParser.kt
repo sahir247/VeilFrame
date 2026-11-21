@@ -650,6 +650,11 @@ object OpenXmlDocumentParser {
                 }
             }
             "pieChart" -> "pie"
+            "scatterChart" -> {
+                val style = type.childElements("scatterStyle").singleOrNull()?.getAttribute("val").orEmpty().ifEmpty { "marker" }
+                if (style !in setOf("marker", "line", "lineMarker")) return null
+                "scatter"
+            }
             "lineChart" -> {
                 if (type.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard")) return null
                 "line"
@@ -686,6 +691,33 @@ object OpenXmlDocumentParser {
         }
         val series = type.childElements("ser")
         if (series.isEmpty() || series.size > 6 || (kind == "pie" && series.size != 1)) return null
+        if (kind == "scatter") {
+            val style = type.childElements("scatterStyle").singleOrNull()?.getAttribute("val").orEmpty().ifEmpty { "marker" }
+            val parsedScatter = mutableListOf<XlsxCachedChart.Series>()
+            var longest = 0
+            for ((index, ser) in series.withIndex()) {
+                val xs = cache(ser.childElements("xVal").singleOrNull(), true) ?: return null
+                val ys = cache(ser.childElements("yVal").singleOrNull(), true) ?: return null
+                if (xs.size != ys.size) return null
+                fun numeric(cached: List<String?>): List<Double?>? {
+                    val values = mutableListOf<Double?>()
+                    for (value in cached) {
+                        val number = value?.toDoubleOrNull()
+                        if (value != null && (number == null || !number.isFinite())) return null
+                        values.add(number)
+                    }
+                    return values
+                }
+                val xValues = numeric(xs) ?: return null
+                val yValues = numeric(ys) ?: return null
+                longest = maxOf(longest, xValues.size)
+                parsedScatter.add(XlsxCachedChart.Series(
+                    text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
+                    yValues, xValues))
+            }
+            return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
+                "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style)
+        }
         var labels: List<String?>? = null
         val parsed = mutableListOf<XlsxCachedChart.Series>()
         for ((index, ser) in series.withIndex()) {

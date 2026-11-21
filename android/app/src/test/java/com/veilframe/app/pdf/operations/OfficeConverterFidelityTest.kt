@@ -1774,4 +1774,31 @@ class OfficeConverterFidelityTest {
             assertTrue(text.contains("Foot 1") && text.contains("Foot 2"))
         }
     }
+    @Test
+    fun cachedScatterUsesNumericXYNotCategoryIndices() = runBlocking {
+        val axis = XlsxScatterGeometry.axis(listOf(-Double.MAX_VALUE,0.0,Double.MAX_VALUE))
+        assertEquals(0f,axis.fraction(-Double.MAX_VALUE),0.0001f)
+        assertEquals(0.5f,axis.fraction(0.0),0.0001f)
+        assertEquals(1f,axis.fraction(Double.MAX_VALUE),0.0001f)
+        val workbook = """<workbook><sheets><sheet name="XY" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:wsDr>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/xy.xml"/></Relationships>"""
+        val chart = """<c:chartSpace><c:chart><c:plotArea><c:scatterChart><c:scatterStyle val="lineMarker"/><c:ser><c:tx><c:v>S1</c:v></c:tx><c:xVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>-4</c:v></c:pt><c:pt idx="1"><c:v>0</c:v></c:pt><c:pt idx="2"><c:v>40</c:v></c:pt></c:numLit></c:xVal><c:yVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="2"><c:v>30</c:v></c:pt></c:numLit></c:yVal></c:ser></c:scatterChart></c:plotArea></c:chart></c:chartSpace>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,"xl/drawings/d.xml" to drawing,
+            "xl/drawings/_rels/d.xml.rels" to drawingRel,"xl/charts/xy.xml" to chart))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single().charts.single()
+        assertEquals("scatter",parsed.kind)
+        assertEquals(listOf(-4.0,0.0,40.0),parsed.series.single().xValues)
+        assertEquals(listOf(10.0,null,30.0),parsed.series.single().values)
+        val out = File(tempFolder.root,"xy.pdf")
+        OfficeConverter().convertXlsxToPdf(input,out,context)
+        PDDocument.load(out).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("XY scatter") && text.contains("(missing)"))
+        }
+    }
 }
