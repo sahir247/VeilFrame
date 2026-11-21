@@ -132,6 +132,11 @@ internal object XlsxConditionalFormatting {
                 return if (inverted) !matches else matches
             }
         }
+        data class BooleanChain(val all: Boolean, val terms: List<Expression>) : Expression() {
+            override fun matches(row: Int, column: Int, raw: BigDecimal?): Boolean =
+                if (all) terms.all { it.matches(row, column, raw) }
+                else terms.any { it.matches(row, column, raw) }
+        }
         data class CurrentCell(val operator: String, val operand: BigDecimal) : Expression() {
             override fun matches(row: Int, column: Int, raw: BigDecimal?): Boolean {
                 val compare = raw?.compareTo(operand) ?: return false
@@ -155,6 +160,40 @@ internal object XlsxConditionalFormatting {
     fun expression(source: String, ranges: List<OpenXmlDocumentParser.CellRangeAddress>): Expression? {
         if (source.length > 128 || ranges.size != 1) return null
         val text = source.trim().removePrefix("=").replace(Regex("\\s+"),"")
+        // Only bounded AND/OR over already supported, independently validated
+        // same-cell comparisons and deterministic ROW/COLUMN bands. No cross-
+        // cell lookup, general Excel evaluator or short-circuit side effects.
+        val conjunction = when {
+            text.startsWith("AND(", ignoreCase = true) && text.endsWith(")") -> true
+            text.startsWith("OR(", ignoreCase = true) && text.endsWith(")") -> false
+            else -> null
+        }
+        if (conjunction != null) {
+            val body = text.substring(if (conjunction) 4 else 3, text.length - 1)
+            val terms = mutableListOf<String>()
+            var depth = 0
+            var start = 0
+            for ((index, char) in body.withIndex()) {
+                when (char) {
+                    '(' -> depth++
+                    ')' -> if (--depth < 0) return null
+                    ',' -> if (depth == 0) {
+                        terms.add(body.substring(start,index))
+                        start = index + 1
+                        if (terms.size > 3) return null
+                    }
+                }
+            }
+            if (depth != 0) return null
+            terms.add(body.substring(start))
+            if (terms.size !in 2..4 || terms.any { it.isBlank() }) return null
+            val atoms = terms.map { term ->
+                val atom = expression(term, ranges) ?: return null
+                if (atom is Expression.BooleanChain) return null // no nested Boolean grammar
+                atom
+            }
+            return Expression.BooleanChain(conjunction, atoms)
+        }
         val modulo = Regex("""(?i)MOD\((ROW|COLUMN)\(\),([1-9][0-9]{0,2})\)(=|<>)([0-9]{1,3})""")
             .matchEntire(text)
         if (modulo != null) {

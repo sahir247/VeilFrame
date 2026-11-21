@@ -1862,6 +1862,16 @@ class OfficeConverterFidelityTest {
             XlsxConditionalFormatting.expression("A1>12",range))
         assertEquals(null,XlsxConditionalFormatting.expression("B1>12",range))
         assertEquals(null,XlsxConditionalFormatting.expression("SUM(A1:A3)>10",range))
+        val within = XlsxConditionalFormatting.expression("AND(A1>12,A1<15)",range)
+        assertNotNull(within)
+        assertTrue(within!!.matches(1,0,java.math.BigDecimal("13")))
+        assertTrue(!within.matches(2,0,java.math.BigDecimal("15")))
+        val either = XlsxConditionalFormatting.expression("OR(MOD(ROW(),2)=0,A1>20)",range)
+        assertNotNull(either)
+        assertTrue(either!!.matches(1,0,null)) // row banding works for blank cells
+        assertTrue(!either.matches(0,0,java.math.BigDecimal("13")))
+        assertEquals(null,XlsxConditionalFormatting.expression("AND(A1>10,B1>10)",range))
+        assertEquals(null,XlsxConditionalFormatting.expression("AND(A1>1,OR(A1<3,A1>9))",range))
         assertEquals(null,XlsxConditionalFormatting.expression("\u0024A\u00241>5",range))
         val workbook = """<workbook><sheets><sheet name="Formula" sheetId="1"/></sheets></workbook>"""
         val styles = """<styleSheet><dxfs><dxf><fill><patternFill patternType="solid"><fgColor rgb="FF22CC33"/></patternFill></fill></dxf></dxfs></styleSheet>"""
@@ -1880,6 +1890,23 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(input,pdf,context)
         PDDocument.load(pdf).use { doc -> assertTrue(PDFTextStripper().getText(doc).contains("13")) }
     }
+    @Test
+    fun formulaConditionalAndUsesSavedValuesAndPriorityWithoutRecalculation() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Conditions" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><dxfs><dxf><fill><patternFill patternType="solid"><fgColor rgb="FF31AB45"/></patternFill></fill></dxf></dxfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c></row><row r="2"><c r="A2"><v>13</v></c></row><row r="3"><c r="A3"><v>15</v></c></row></sheetData><conditionalFormatting sqref="A1:A3"><cfRule type="expression" priority="1" dxfId="0"><formula>AND(A1&gt;12,A1&lt;15)</formula></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(0, parsed.unsupportedConditionalRules)
+        assertEquals(null,parsed.styles.at(0,0).fillRgb)
+        assertEquals(0x31AB45,parsed.styles.at(1,0).fillRgb)
+        assertEquals(null,parsed.styles.at(2,0).fillRgb)
+        val out = File(tempFolder.root,"conditional-and.pdf")
+        OfficeConverter().convertXlsxToPdf(input,out,context)
+        PDDocument.load(out).use { pdf -> assertTrue(PDFTextStripper().getText(pdf).contains("13")) }
+    }
+
     @Test
     fun savedFontPointSizeControlsPdfTextAndMeasuredRowHeight() = runBlocking {
         val wb = """<workbook><sheets><sheet name="Fonts" sheetId="1"/></sheets></workbook>"""
