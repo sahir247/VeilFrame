@@ -1169,10 +1169,12 @@ object OpenXmlDocumentParser {
         if (thresholds.size !in 2..3 || colors.size != thresholds.size) return null
         val stops = thresholds.zip(colors).map { (threshold, color) ->
             val type = threshold.getAttribute("type")
-            if (type !in setOf("min", "max", "num", "percent")) return null
+            if (type !in setOf("min", "max", "num", "percent", "percentile")) return null
             val raw = threshold.getAttribute("val")
-            val value = if (type in setOf("num", "percent")) XlsxConditionalFormatting.number(raw) ?: return null else null
-            if (type == "percent" && (value == null || value < java.math.BigDecimal.ZERO || value > java.math.BigDecimal("100"))) return null
+            val value = if (type in setOf("num", "percent", "percentile"))
+                XlsxConditionalFormatting.number(raw) ?: return null else null
+            if (type in setOf("percent", "percentile") && (value == null ||
+                value < java.math.BigDecimal.ZERO || value > java.math.BigDecimal("100"))) return null
             val rgb = color.getAttribute("rgb")
             if (!rgb.matches(Regex("[0-9A-Fa-f]{8}")) || color.hasAttribute("theme") ||
                 color.hasAttribute("indexed") || color.hasAttribute("tint")) return null
@@ -1185,11 +1187,11 @@ object OpenXmlDocumentParser {
     private fun conditionalStops(elements: List<Element>): List<XlsxConditionalFormatting.ScaleStop>? {
         return elements.map { element ->
             val type = element.getAttribute("type")
-            if (type !in setOf("min","max","num","percent")) return null
-            val number = if (type in setOf("num","percent")) XlsxConditionalFormatting.number(element.getAttribute("val"))
-                ?: return null else null
-            if (type == "percent" && (number == null || number < java.math.BigDecimal.ZERO ||
-                number > java.math.BigDecimal("100"))) return null
+            if (type !in setOf("min","max","num","percent","percentile")) return null
+            val number = if (type in setOf("num","percent","percentile"))
+                XlsxConditionalFormatting.number(element.getAttribute("val")) ?: return null else null
+            if (type in setOf("percent","percentile") && (number == null ||
+                number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal("100"))) return null
             if (element.hasAttribute("gte") && element.getAttribute("gte") !in setOf("1","true")) return null
             XlsxConditionalFormatting.ScaleStop(type,number,0)
         }
@@ -1283,6 +1285,13 @@ object OpenXmlDocumentParser {
         var conditionalChecks = 0L
         val conditionalCost = conditional.sumOf { it.ranges.size.toLong() }
         val scaleRules = conditional.filter { it.scale != null || it.bar != null || it.icons != null }
+        fun needsPercentiles(rule: XlsxConditionalFormatting.Rule): Boolean =
+            rule.scale?.stops?.any { it.type == "percentile" } == true ||
+                rule.bar?.let { it.low.type == "percentile" || it.high.type == "percentile" } == true ||
+                rule.icons?.stops?.any { it.type == "percentile" } == true
+        val percentileRules = scaleRules.filter(::needsPercentiles)
+        val percentileBuckets = mutableMapOf<Int, MutableList<java.math.BigDecimal>>()
+        var percentileSamples = 0
         val scaleExtents = mutableMapOf<Int, XlsxConditionalFormatting.NumericExtent>()
         data class DeferredNumeric(val row: Int, val col: Int, val style: Int, val raw: java.math.BigDecimal)
         val deferredNumeric = mutableListOf<DeferredNumeric>()
@@ -1438,6 +1447,12 @@ object OpenXmlDocumentParser {
                             for (rule in scaleRules) if (rule.ranges.any { it.contains(r, targetCol) }) {
                                 scaleExtents[rule.priority] = scaleExtents[rule.priority]?.include(rawNumeric)
                                     ?: XlsxConditionalFormatting.NumericExtent(rawNumeric, rawNumeric)
+                                if (rule in percentileRules) {
+                                    require(++percentileSamples <= 200_000) {
+                                        "Conditional percentile sample budget exceeded"
+                                    }
+                                    percentileBuckets.getOrPut(rule.priority) { mutableListOf() }.add(rawNumeric)
+                                }
                             }
                         } else {
                             val base = styleTable.visuals[style]
@@ -1463,6 +1478,12 @@ object OpenXmlDocumentParser {
             }
         }
 
+        for (rule in percentileRules) {
+            val samples = percentileBuckets[rule.priority].orEmpty()
+            scaleExtents[rule.priority]?.let { extent ->
+                scaleExtents[rule.priority] = extent.withPercentiles(samples)
+            }
+        }
         for (cell in deferredNumeric) {
             val base = styleTable.visuals[cell.style]
             val applied = XlsxConditionalFormatting.apply(base, cell.row, cell.col, cell.raw, conditional,

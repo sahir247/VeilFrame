@@ -1905,4 +1905,24 @@ class OfficeConverterFidelityTest {
             assertTrue(sizes.getValue("L") > sizes.getValue("S") * 1.8f)
         }
     }
+    @Test
+    fun percentileColorScalesPreserveDuplicateSamplesAndInterpolate() = runBlocking {
+        val raw = listOf("0","0","10","100","100")
+        val extent = XlsxConditionalFormatting.NumericExtent(
+            java.math.BigDecimal("0"), java.math.BigDecimal("100"))
+            .withPercentiles(raw.map { java.math.BigDecimal(it) })
+        assertEquals(java.math.BigDecimal("5.00"), extent.percentile(java.math.BigDecimal("37.5")))
+        assertEquals(java.math.BigDecimal("100"), extent.percentile(java.math.BigDecimal("100")))
+        assertEquals(null, extent.percentile(java.math.BigDecimal("101")))
+        val wb = """<workbook><sheets><sheet name="Pct" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>0</v></c></row><row r="2"><c r="A2"><v>0</v></c></row><row r="3"><c r="A3"><v>10</v></c></row><row r="4"><c r="A4"><v>100</v></c></row><row r="5"><c r="A5"><v>100</v></c></row></sheetData><conditionalFormatting sqref="A1:A5"><cfRule type="colorScale" priority="1"><colorScale><cfvo type="min"/><cfvo type="percentile" val="50"/><cfvo type="max"/><color rgb="FFFF0000"/><color rgb="FFFFFF00"/><color rgb="FF00FF00"/></colorScale></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(0,parsed.unsupportedConditionalRules)
+        assertEquals(0xFFFF00,parsed.styles.at(2,0).fillRgb)
+        assertEquals(0x00FF00,parsed.styles.at(4,0).fillRgb)
+        val pdf = File(tempFolder.root,"percentile.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context)
+        PDDocument.load(pdf).use { doc -> assertTrue(PDFTextStripper().getText(doc).contains("100")) }
+    }
 }

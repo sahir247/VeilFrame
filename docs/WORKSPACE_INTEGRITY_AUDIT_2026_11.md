@@ -709,3 +709,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - Admission hardening: precharge the entire scanned blank-cell range area times conditional predicate/range cost, not only the matches, so large repeated expression regions cannot bypass the eight-million-check budget. Require both column and line groups to have data in combination charts, avoiding a zero-width bar denominator. Zero changed behavior for admitted ordinary workbooks. CI pending.
 
 - Added adversarial regression: 160 conditional row-expression rules spanning a 100×100 visible grid must be rejected by work budgeting, not iterate all cross-products. Confirms the bound is enforced for blank cells and not just matched cells. CI pending.
+
+### A28 — Bounded inclusive percentile color-scale and indicator thresholds
+
+- Resolve `cfvo type=percentile` from the complete saved numeric distribution of each rule's ranges, retain duplicates, sort only after all cells are read, and use inclusive (N−1) rank interpolation. Apply identical threshold semantics to color scales, classic data bars and three-light sets. Strict 0–100 threshold admission, existing conditional work budget and a further 200,000 total percentile-sample cap prevent unbounded sorting/materialization. No external references or formula execution. Added pure percentile and five-row ZIP/PDF fixture; CI and device parity pending.

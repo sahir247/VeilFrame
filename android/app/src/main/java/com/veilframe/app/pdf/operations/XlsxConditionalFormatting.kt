@@ -12,8 +12,25 @@ internal object XlsxConditionalFormatting {
         val bar: DataBar? = null, val icons: IconSet? = null,
         val expression: Expression? = null)
     data class ScaleStop(val type: String, val value: BigDecimal?, val rgb: Int)
-    data class NumericExtent(val minimum: BigDecimal, val maximum: BigDecimal) {
+    data class NumericExtent(val minimum: BigDecimal, val maximum: BigDecimal,
+        val percentileSamples: List<BigDecimal> = emptyList()) {
         fun include(value: BigDecimal) = NumericExtent(minOf(minimum, value), maxOf(maximum, value))
+        fun withPercentiles(values: List<BigDecimal>): NumericExtent =
+            copy(percentileSamples = values.sorted())
+
+        /** Inclusive rank interpolation, with duplicate saved numbers retained. */
+        fun percentile(percent: BigDecimal): BigDecimal? {
+            if (percentileSamples.isEmpty() || percent < BigDecimal.ZERO ||
+                percent > BigDecimal("100")) return null
+            if (percentileSamples.size == 1) return percentileSamples.first()
+            val position = BigDecimal(percentileSamples.lastIndex).multiply(percent)
+                .divide(BigDecimal("100"))
+            val low = position.toInt()
+            val high = (low + 1).coerceAtMost(percentileSamples.lastIndex)
+            val portion = position.subtract(BigDecimal(low))
+            val first = percentileSamples[low]
+            return first.add(percentileSamples[high].subtract(first).multiply(portion))
+        }
     }
     data class ColorScale(val stops: List<ScaleStop>) {
         fun color(raw: BigDecimal, extent: NumericExtent): Int? {
@@ -24,6 +41,7 @@ internal object XlsxConditionalFormatting {
                     "max" -> extent.maximum
                     "num" -> stop.value ?: return null
                     "percent" -> extent.minimum.add(span.multiply(stop.value ?: return null).movePointLeft(2))
+                    "percentile" -> extent.percentile(stop.value ?: return null) ?: return null
                     else -> return null
                 }
             }
@@ -52,6 +70,7 @@ internal object XlsxConditionalFormatting {
             "num" -> value
             "percent" -> extent.minimum.add(extent.maximum.subtract(extent.minimum)
                 .multiply(value ?: return null).movePointLeft(2))
+            "percentile" -> extent.percentile(value ?: return null)
             else -> null
         }
     }
