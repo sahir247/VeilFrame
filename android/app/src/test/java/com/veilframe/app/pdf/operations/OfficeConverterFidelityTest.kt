@@ -1992,4 +1992,25 @@ class OfficeConverterFidelityTest {
             assertTrue(text.contains("FIRST") && text.contains("THIRD"))
         }
     }
+    @Test
+    fun savedDefaultHiddenRowsRequireExplicitVisibleOverrides() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="HiddenDefaults" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetFormatPr zeroHeight="1"/><sheetData><row r="1" hidden="0"><c r="A1" t="inlineStr"><is><t>SHOWONE</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>DONTPRINT</t></is></c></row><row r="3" hidden="false"><c r="A3" t="inlineStr"><is><t>SHOWTHREE</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertTrue(parsed.printSettings.defaultRowsHidden)
+        assertEquals(setOf(0,2),parsed.printSettings.visibleRows)
+        val printed = File(tempFolder.root,"default-hidden.pdf")
+        OfficeConverter().convertXlsxToPdf(input,printed,context,savedPrintLayout=true)
+        PDDocument.load(printed).use { doc ->
+            val text = PDFTextStripper().getText(doc)
+            assertTrue(text.contains("SHOWONE") && text.contains("SHOWTHREE"))
+            assertTrue(!text.contains("DONTPRINT"))
+        }
+        val full = File(tempFolder.root,"default-hidden-full.pdf")
+        OfficeConverter().convertXlsxToPdf(input,full,context)
+        PDDocument.load(full).use { doc ->
+            assertTrue(PDFTextStripper().getText(doc).contains("DONTPRINT"))
+        }
+    }
 }

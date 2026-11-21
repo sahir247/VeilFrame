@@ -1099,12 +1099,19 @@ object OpenXmlDocumentParser {
             }
         }
         val hiddenRows = rowVisibility.filterValues { it }.keys.toSet()
+        val visibleRows = rowVisibility.filterValues { !it }.keys.toSet()
+        val zeroHeight = when (one("sheetFormatPr")?.getAttribute("zeroHeight").orEmpty()) {
+            "", "0", "false" -> false
+            "1", "true" -> true
+            else -> throw IOException("Invalid default hidden-row flag")
+        }
         return XlsxSavedPrintSettings(setup = setup, margins = attrs(one("pageMargins")),
             fitToPage = props["fitToPage"] in setOf("1", "true"), gridLines = options["gridLines"] in setOf("1", "true"),
             centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
             centerVertical = options["verticalCentered"] in setOf("1", "true"),
             printHeadings = headings,
             rowBreaks = rowBreaks, colBreaks = colBreaks, hiddenRows = hiddenRows, hiddenColumns = hiddenColumns,
+            defaultRowsHidden = zeroHeight, visibleRows = visibleRows,
             headerFooter = headerFooter,
             unsupportedFeatures = partialBreaks ||
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))

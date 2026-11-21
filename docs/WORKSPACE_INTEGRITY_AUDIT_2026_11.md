@@ -721,3 +721,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Saved print row and column headings
 
 - Support explicitly saved `printOptions headings=1` in saved-print mode only. Reserve a 40pt row-number gutter and 18pt column-title gutter before fit-to-page and manual-break planning, then render actual zero-based sheet column labels (A..XFD) and one-based row indices as PDF text at a physical 8pt size independent of scaling. Respect hidden rows/columns and repeated print-title cells. Default full-content export remains unchanged. Added two-page XLSX-to-PDF fixture and physical gutter assertions. Printer-specific heading fonts and grid geometry remain approximate; CI pending.
+
+### A28 — Default-hidden Excel row visibility
+
+- Honor saved `sheetFormatPr zeroHeight=1` (default-hidden rows) in selected print-layout mode, with explicit row `hidden=0/false` overrides and `hidden=1/true` remaining hidden. Apply same predicate to repeated title rows and page-size admission without materializing a million hidden row entries. Fail print mode when the area has no visible cells, instead of leaking hidden worksheet values. Default complete export deliberately retains all cell data. Added end-to-end visibility/no-leak fixture and checked default flag validation. CI pending.
