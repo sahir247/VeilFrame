@@ -24,6 +24,12 @@ permissions:
   contents: write
   actions: read
 
+# Do not build every intermediate PR revision simultaneously. Keep releases,
+# tags, manual workflow dispatches and main pushes independent/non-cancellable.
+concurrency:
+  group: veilframe-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ------------------------------------------------------------------ #
   # 1. Multi-Platform Test Matrix: Linux, Windows, macOS x Python 3.10-12
