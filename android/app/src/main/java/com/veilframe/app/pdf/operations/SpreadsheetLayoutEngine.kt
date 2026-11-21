@@ -253,6 +253,8 @@ object SpreadsheetLayoutEngine {
                 if (text.isNotBlank()) {
                     val style = sheet.styles.at(rIdx, c)
                     if (style.textRotation != 0) XlsxRotatedText.lines(text, style.textRotation)
+                    else if (respectSavedDimensions && !style.wrapText)
+                        text.split(Regex("\\r\\n|\\r|\\n"))
                     else wrapCellText(text, style.font(fontNormal), style.fontSizePt ?: limits.fontSizeCell,
                         colWidths[c] - 8f - (if (style.icon != null) 13f else 0f))
                 } else {

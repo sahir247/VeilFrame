@@ -1005,7 +1005,8 @@ object OpenXmlDocumentParser {
             XlsxCellBorders(side("left"), side("right"), side("top"), side("bottom"))
         }.ifEmpty { listOf(XlsxCellBorders()) }
         data class Xf(val number: Int = 0, val font: Int = 0, val fill: Int = 0,
-                      val align: String = "left", val border: Int = 0, val vertical: String = "top", val rotation: Int = 0)
+                      val align: String = "left", val border: Int = 0, val vertical: String = "top",
+                      val rotation: Int = 0, val wrapText: Boolean = false)
         fun resolve(xf: Element, base: Xf): Xf {
             fun selected(attribute: String, apply: String, inherited: Int): Int =
                 when (xf.getAttribute(apply)) {
@@ -1025,10 +1026,16 @@ object OpenXmlDocumentParser {
                 require(value != null && (value in 0..180 || value == 255)) { "Invalid worksheet text rotation" }
                 value
             } ?: base.rotation
+            val wrapped = when (alignment?.getAttribute("wrapText")) {
+                null, "" -> base.wrapText
+                "1", "true" -> true
+                "0", "false" -> false
+                else -> throw IOException("Invalid saved worksheet wrapText flag")
+            }
             val result = Xf(selected("numFmtId", "applyNumberFormat", base.number),
                 selected("fontId", "applyFont", base.font),
                 selected("fillId", "applyFill", base.fill), align,
-                selected("borderId", "applyBorder", base.border), vertical, rotation)
+                selected("borderId", "applyBorder", base.border), vertical, rotation, wrapped)
             require(result.font in fonts.indices && result.fill in fills.indices && result.border in borders.indices) {
                 "Invalid cell font/fill/border reference"
             }
@@ -1048,7 +1055,7 @@ object OpenXmlDocumentParser {
             }, vertical = when (it.vertical) {
                 "top", "center", "bottom" -> it.vertical
                 else -> "top"
-            }, textRotation = it.rotation)
+            }, textRotation = it.rotation, wrapText = it.wrapText)
         }
         val differential = collection("dxfs", "dxf").map { dxf ->
             val font = one(dxf, "font")

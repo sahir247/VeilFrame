@@ -20,7 +20,8 @@ data class XlsxCellStyle(
     val dataBar: XlsxDataBarVisual? = null,
     val icon: XlsxIconVisual? = null,
     val fontSizePt: Float? = null,
-    val fontFace: String? = null
+    val fontFace: String? = null,
+    val wrapText: Boolean = false
 ) {
     internal fun font(base: PDFont): PDFont = when (fontFace?.trim()?.lowercase(java.util.Locale.ROOT)) {
         "times new roman", "times", "liberation serif", "nimbus roman" -> when {

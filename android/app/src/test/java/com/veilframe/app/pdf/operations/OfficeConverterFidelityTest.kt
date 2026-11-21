@@ -2424,6 +2424,33 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun savedPrintWrapTextFlagControlsLongCellLineBreaksWithoutChangingFullExport() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Wrap" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><cellXfs><xf/><xf applyAlignment="1"><alignment wrapText="1"/></xf><xf applyAlignment="1"><alignment wrapText="0"/></xf></cellXfs></styleSheet>"""
+        val longLabel="SAVEDEXACTLABELWITHLONGCONTENT"
+        val cells = """<worksheet><cols><col min="1" max="2" width="7" customWidth="1"/></cols><sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>$longLabel</t></is></c><c r="B1" s="2" t="inlineStr"><is><t>$longLabel</t></is></c></row></sheetData></worksheet>"""
+        val input=createZip(mapOf("xl/workbook.xml" to workbook,"xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to cells))
+        val parsed=OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertTrue(parsed.styles.at(0,0).wrapText)
+        assertTrue(!parsed.styles.at(0,1).wrapText)
+        val normal=SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,
+            com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,LayoutLimits())
+        val saved=SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,
+            com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,LayoutLimits(),
+            respectSavedDimensions=true)
+        assertTrue(saved.rowWrappedLines[0][0].size > 1)
+        assertEquals(listOf(longLabel),saved.rowWrappedLines[0][1])
+        assertTrue(saved.colWidths[0] < normal.colWidths[0])
+        val pdf=File(tempFolder.root,"explicit-wrap.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context,savedPrintLayout=true)
+        PDDocument.load(pdf).use { document ->
+            val extracted=PDFTextStripper().getText(document)
+            assertTrue(extracted.contains(longLabel))
+        }
+    }
+
+    @Test
     fun savedPrintUsesDeclaredCellGeometryInsteadOfContentAutofit() = runBlocking {
         val workbook="""<workbook><sheets><sheet name="Widths" sheetId="1"/></sheets></workbook>"""
         val text="A_very_long_cell_that_must_not_expand_print_width"
