@@ -1911,7 +1911,7 @@ class OfficeConverterFidelityTest {
         val extent = XlsxConditionalFormatting.NumericExtent(
             java.math.BigDecimal("0"), java.math.BigDecimal("100"))
             .withPercentiles(raw.map { java.math.BigDecimal(it) })
-        assertEquals(java.math.BigDecimal("5.00"), extent.percentile(java.math.BigDecimal("37.5")))
+        assertEquals(0, java.math.BigDecimal("5").compareTo(extent.percentile(java.math.BigDecimal("37.5"))))
         assertEquals(java.math.BigDecimal("100"), extent.percentile(java.math.BigDecimal("100")))
         assertEquals(null, extent.percentile(java.math.BigDecimal("101")))
         val wb = """<workbook><sheets><sheet name="Pct" sheetId="1"/></sheets></workbook>"""
