@@ -1078,7 +1078,8 @@ class OfficeConverter {
                 existing + List(requiredCols - existing.size) { "" } else existing
         }
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
-            styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits)
+            styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits,
+            respectSavedDimensions = true)
         val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
         val anchoredCharts = sheet.charts.filter { chart -> chart.printsWithSheet &&
             areas.any { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }

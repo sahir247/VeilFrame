@@ -174,7 +174,8 @@ object SpreadsheetLayoutEngine {
         sheet: OpenXmlDocumentParser.XlsxSheetData,
         sheetIndex: Int,
         fontNormal: PDFont,
-        limits: LayoutLimits
+        limits: LayoutLimits,
+        respectSavedDimensions: Boolean = false
     ): SheetLayout {
         val extent = SpreadsheetGeometry.inspect(sheet.rows, sheet.mergedRegions)
         // Preserve blank geometry covered by declared merge ranges.
@@ -220,7 +221,19 @@ object SpreadsheetLayoutEngine {
             require(declared <= maxAllowedColWidth) {
                 "Declared column width exceeds available tile width; use wider export settings"
             }
-            minOf(maxAllowedColWidth, maxOf(declared, maxW + 16f, 45f))
+            if (respectSavedDimensions) {
+                // Printing must not secretly AutoFit columns to long text.
+                // The source's width is a maximum-digit-width measurement,
+                // approximated in points by XlsxDimensions; the printer/font
+                // reference metrics are disclosed separately.
+                val explicitlySized = sheet.dimensions.columnWidths.containsKey(c) ||
+                    sheet.dimensions.defaultColumnWidth != null
+                val saved = if (explicitlySized) declared else 45f
+                require(saved in 3f..maxAllowedColWidth) {
+                    "Saved print column width is not renderable without a geometry fallback"
+                }
+                saved
+            } else minOf(maxAllowedColWidth, maxOf(declared, maxW + 16f, 45f))
         }
 
         val colX = FloatArray(maxCol)
@@ -258,7 +271,12 @@ object SpreadsheetLayoutEngine {
                     size, leading).height
                 required = maxOf(required, height + limits.paddingVertical)
             }
-            maxOf(required, sheet.dimensions.rowMinPt(rIdx))
+            val fixedHeight = if (respectSavedDimensions &&
+                sheet.dimensions.rowHeightsPt.containsKey(rIdx)) sheet.dimensions.rowMinPt(rIdx) else null
+            if (fixedHeight != null) {
+                require(fixedHeight in 3f..409.5f) { "Saved print row height is not renderable" }
+                fixedHeight // fixed Excel row: clip text within the saved cell
+            } else maxOf(required, sheet.dimensions.rowMinPt(rIdx))
         }
 
         val rowY = FloatArray(rows.size)

@@ -2388,6 +2388,31 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun savedPrintUsesDeclaredCellGeometryInsteadOfContentAutofit() = runBlocking {
+        val workbook="""<workbook><sheets><sheet name="Widths" sheetId="1"/></sheets></workbook>"""
+        val text="A_very_long_cell_that_must_not_expand_print_width"
+        val sheet="""<worksheet><cols><col min="1" max="1" width="6" customWidth="1"/></cols><sheetData><row r="1" ht="13" customHeight="1"><c r="A1" t="inlineStr"><is><t>$text</t></is></c></row></sheetData></worksheet>"""
+        val file=createZip(mapOf("xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed=OpenXmlDocumentParser.parseXlsx(file).sheets.single()
+        val font=com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA
+        val full=SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,font,LayoutLimits())
+        val printed=SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,font,LayoutLimits(),
+            respectSavedDimensions=true)
+        assertTrue(full.colWidths[0] > printed.colWidths[0])
+        assertEquals(parsed.dimensions.columnMinPt(0),printed.colWidths[0],0.01f)
+        assertEquals(13f,printed.rowHeights[0],0.01f)
+        assertTrue(full.rowHeights[0] > printed.rowHeights[0])
+        val out=File(tempFolder.root,"print-width-not-autofit.pdf")
+        OfficeConverter().convertXlsxToPdf(file,out,context,savedPrintLayout=true)
+        PDDocument.load(out).use { pdf -> assertEquals(1,pdf.numberOfPages) }
+        val preserved=File(tempFolder.root,"content-autofit.pdf")
+        OfficeConverter().convertXlsxToPdf(file,preserved,context)
+        PDDocument.load(preserved).use { pdf ->
+            assertTrue(PDFTextStripper().getText(pdf).contains(text))
+        }
+    }
+
+    @Test
     fun customSavedPaperDimensionsOverridePaperSizeAndRejectHalfSpecified() = runBlocking {
         val wb = """<workbook><sheets><sheet name="Custom" sheetId="1"/></sheets></workbook>"""
         val body = """<sheetData><row r="1"><c r="A1"><v>23</v></c></row></sheetData>"""
