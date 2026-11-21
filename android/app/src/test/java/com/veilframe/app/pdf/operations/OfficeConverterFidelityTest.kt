@@ -2173,6 +2173,27 @@ class OfficeConverterFidelityTest {
             assertTrue(expected.message.orEmpty().contains("intersects the print area"))
         }
         assertTrue(!malformed.exists())
+        // An OOXML chart marked fPrintsWithSheet=0 must not reject print mode,
+        // even when its location intersects the selected range.
+        val noPrintDrawing = drawing.replace("</xdr:twoCellAnchor>",
+            "<xdr:clientData fPrintsWithSheet=\"0\"/></xdr:twoCellAnchor>")
+        val noPrint = createZip(mapOf("xl/workbook.xml" to workbook("&#36;D&#36;8"),
+            "xl/worksheets/sheet1.xml" to sheet, "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to noPrintDrawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/c.xml" to chart))
+        assertTrue(!OpenXmlDocumentParser.parseXlsx(noPrint).sheets.single().charts.single().printsWithSheet)
+        val printedNoChart = File(tempFolder.root,"nonprinting-chart.pdf")
+        OfficeConverter().convertXlsxToPdf(noPrint,printedNoChart,context,savedPrintLayout=true)
+        PDDocument.load(printedNoChart).use { doc ->
+            assertEquals(1, doc.numberOfPages)
+            val text = PDFTextStripper().getText(doc)
+            assertTrue(text.contains("VISIBLE_DATA") && !text.contains("HIDDEN_CHART_LABEL"))
+        }
+        val nonPrintingFull = File(tempFolder.root,"nonprinting-full.pdf")
+        OfficeConverter().convertXlsxToPdf(noPrint,nonPrintingFull,context)
+        PDDocument.load(nonPrintingFull).use { doc ->
+            assertTrue(PDFTextStripper().getText(doc).contains("HIDDEN_CHART_LABEL"))
+        }
     }
 
     @Test

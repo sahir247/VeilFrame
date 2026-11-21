@@ -636,20 +636,29 @@ object OpenXmlDocumentParser {
                 if (chart == null) unsupported++ else {
                     val anchor = chartSourceAnchor(ref)
                     charts.add(chart.copy(sourceAnchor = anchor.description,
-                        printAreaAnchorTrusted = anchor.printAreaTrusted))
+                        printAreaAnchorTrusted = anchor.printAreaTrusted,
+                        printsWithSheet = anchor.printsWithSheet))
                 }
             }
         }
         return charts to unsupported
     }
 
-    private data class ChartAnchor(val description: String?, val printAreaTrusted: Boolean)
+    private data class ChartAnchor(val description: String?, val printAreaTrusted: Boolean,
+        val printsWithSheet: Boolean = true)
 
     private fun chartSourceAnchor(ref: Element): ChartAnchor {
         var node: Node? = ref.parentNode
         while (node is Element) {
             val anchor = node
             if (anchor.localName() in setOf("twoCellAnchor", "oneCellAnchor")) {
+                val client = anchor.childElements("clientData")
+                require(client.size <= 1) { "Ambiguous chart print contract" }
+                val prints = when (client.singleOrNull()?.getAttribute("fPrintsWithSheet").orEmpty()) {
+                    "", "1", "true" -> true
+                    "0", "false" -> false
+                    else -> throw IllegalArgumentException("Invalid chart fPrintsWithSheet flag")
+                }
                 fun cell(name: String): Pair<String, Boolean>? {
                     val marker = anchor.childElements(name).singleOrNull() ?: return null
                     val row = marker.childElements("row").singleOrNull()?.textContent?.toIntOrNull() ?: return null
@@ -666,11 +675,12 @@ object OpenXmlDocumentParser {
                     }
                     return (SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)) to bounded
                 }
-                val first = cell("from") ?: return ChartAnchor(null, false)
+                val first = cell("from") ?: return ChartAnchor(null, false, prints)
                 val last = cell("to")
                 val description = if (last == null) first.first else "${first.first}:${last.first}"
                 return ChartAnchor(description,
-                    anchor.localName() == "twoCellAnchor" && last != null && first.second && last.second)
+                    anchor.localName() == "twoCellAnchor" && last != null && first.second && last.second,
+                    prints)
             }
             node = node.parentNode
         }

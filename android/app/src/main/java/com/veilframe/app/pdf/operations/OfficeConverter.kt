@@ -965,7 +965,7 @@ class OfficeConverter {
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 if (savedPrintLayout && !sheet.visible) continue
-                if (savedPrintLayout && (sheet.charts.isNotEmpty() || sheet.unsupportedDrawings > 0)) {
+                if (savedPrintLayout && (sheet.charts.any { it.printsWithSheet } || sheet.unsupportedDrawings > 0)) {
                     require(sheet.unsupportedDrawings == 0) {
                         "Saved print layout contains unplaceable drawing objects; use full worksheet export"
                     }
@@ -976,7 +976,7 @@ class OfficeConverter {
                     }
                     val areas = XlsxSavedPrintLayout.areas(
                         sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
-                    for (chart in sheet.charts) {
+                    for (chart in sheet.charts.filter { it.printsWithSheet }) {
                         require(chart.printAreaAnchorTrusted &&
                             areas.none { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }) {
                             "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
