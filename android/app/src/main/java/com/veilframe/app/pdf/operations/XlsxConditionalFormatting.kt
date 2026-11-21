@@ -44,8 +44,8 @@ internal object XlsxConditionalFormatting {
         }
     }
 
-    private fun threshold(type: String, value: BigDecimal?, extent: NumericExtent): BigDecimal? =
-        when (type) {
+    private fun threshold(type: String, value: BigDecimal?, extent: NumericExtent): BigDecimal? {
+        return when (type) {
             "min" -> extent.minimum
             "max" -> extent.maximum
             "num" -> value
@@ -53,6 +53,7 @@ internal object XlsxConditionalFormatting {
                 .multiply(value ?: return null).movePointLeft(2))
             else -> null
         }
+    }
 
     data class DataBar(val low: ScaleStop, val high: ScaleStop, val showValue: Boolean,
         val minimumLength: Int, val maximumLength: Int, val rgb: Int) {
