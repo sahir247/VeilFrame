@@ -280,9 +280,10 @@ jobs:
           REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
-          # Prefer an artifact built from this exact head or this feature branch.
-          # If neither exists, a successful main-branch SDK is safe only when every
-          # OpenCV SDK build input is identical between that artifact SHA and HEAD.
+          # Prefer a *successful* SDK artifact from this head, then this branch,
+          # then main. A queued exact-head build may fail or be cancelled; a
+          # successful source-identical artifact is stronger evidence.
+          # Never use stale SDK inputs or a failed/cancelled SDK run.
           RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
             --branch "$REQUIRED_BRANCH" \
@@ -290,7 +291,7 @@ jobs:
             --json databaseId,headSha,status,conclusion)
 
           RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
-            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+            '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success")] | first | .databaseId // empty')
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
@@ -302,8 +303,9 @@ jobs:
             ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
           fi
 
-          # Dependency-only and app-only PRs do not trigger an OpenCV SDK build.
-          # Reuse the latest successful main artifact only after checking its source
+          # App-only PRs may still trigger OpenCV through a changed CI workflow.
+          # Prefer an existing verified artifact over waiting for that build.
+          # Reuse a successful main artifact only after checking its source
           # tree against this exact PR head for all SDK-defining inputs below.
           if [ -z "$RUN_ID" ]; then
             MAIN_RUNS=$(gh run list --repo "${{ github.repository }}" \
