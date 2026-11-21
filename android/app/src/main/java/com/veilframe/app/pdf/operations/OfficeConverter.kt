@@ -977,10 +977,12 @@ class OfficeConverter {
                     val areas = XlsxSavedPrintLayout.areas(
                         sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
                     for (chart in sheet.charts.filter { it.printsWithSheet }) {
-                        require(chart.printAreaAnchorTrusted &&
-                            areas.none { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }) {
+                        require(chart.printAreaAnchorTrusted) {
                             "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
                         }
+                        // A chart wholly outside the selected area is omitted.
+                        // An intersecting one is admitted later only when it can
+                        // be painted at its exact cell-boundary anchor in one tile.
                     }
                 }
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
@@ -1078,13 +1080,22 @@ class OfficeConverter {
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
             styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits)
         val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
+        val anchoredCharts = sheet.charts.filter { chart -> chart.printsWithSheet &&
+            areas.any { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }
+        }.map { chart ->
+            val placement = XlsxAnchoredChartRenderer.locate(chart,layout,plans)
+            require(placement != null) {
+                "A saved chart intersects the print area but cannot fit on one complete printable tile; use full worksheet export"
+            }
+            chart to placement
+        }
         require(plans.sumOf { it.tiles.size.toLong() } + pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) {
             "Saved print areas exceed PDF page budget"
         }
         val merges = SpreadsheetMergeIndex(layout.rowCount, layout.colCount, layout.mergedRegions)
         val sheetPages = plans.sumOf { it.tiles.size }
         var sheetPageNumber = 0
-        for (plan in plans) for (tile in plan.tiles) {
+        for ((planIndex,plan) in plans.withIndex()) for ((tileIndex,tile) in plan.tiles.withIndex()) {
             sheetPageNumber++
             checkpoint()
             require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
@@ -1128,6 +1139,10 @@ class OfficeConverter {
                     }
                     renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
+                    for ((chart,placement) in anchoredCharts) if (placement.plan == planIndex && placement.tile == tileIndex) {
+                        checkpoint()
+                        XlsxAnchoredChartRenderer.draw(stream,chart,placement,checkpoint)
+                    }
                     if (settings.printHeadings) {
                         // Inverse font scaling keeps heading glyphs 8 pt even
                         // when cells use an explicitly saved 10-400% print scale.

@@ -2268,4 +2268,45 @@ class OfficeConverterFidelityTest {
             assertTrue(operators.contains("2.5 w"))
         }
     }
+
+    @Test
+    fun boundedSavedChartRendersAtItsOriginalCellAnchorAndRejectsSplitTiles() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Plot" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Plot!&#36;A&#36;1:&#36;H&#36;12</definedName></definedNames></workbook>"""
+        val sheet = """<worksheet><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Outside chart</t></is></c></row><row r="12"><c r="H12"><v>1</v></c></row></sheetData><pageSetup fitToWidth="1" fitToHeight="1"/><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>9</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/plot.xml"/></Relationships>"""
+        val chart = """<c:chartSpace><c:chart><c:title><c:tx><c:v>Budget chart</c:v></c:tx></c:title><c:plotArea><c:lineChart><c:grouping val="standard"/><c:ser><c:tx><c:v>Series</c:v></c:tx><c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>Jan</c:v></c:pt><c:pt idx="1"><c:v>Feb</c:v></c:pt><c:pt idx="2"><c:v>Mar</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>2</c:v></c:pt><c:pt idx="1"><c:v>4</c:v></c:pt><c:pt idx="2"><c:v>3</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>"""
+        fun input(sheetXml: String) = createZip(mapOf("xl/workbook.xml" to wb,
+            "xl/worksheets/sheet1.xml" to sheetXml,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to drawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/plot.xml" to chart))
+        val file = input(sheet)
+        val parsed = OpenXmlDocumentParser.parseXlsx(file).sheets.single()
+        assertEquals("B2:G10",parsed.charts.single().sourceAnchor)
+        assertTrue(parsed.charts.single().printAreaAnchorTrusted)
+        val output = File(tempFolder.root,"anchored-chart.pdf")
+        OfficeConverter().convertXlsxToPdf(file,output,context,savedPrintLayout=true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("Outside chart") && text.contains("Budget chart"))
+            assertTrue(!text.contains("Cached chart 1")) // no synthetic appendix page
+            val raw = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bc\s*$""").containsMatchIn(raw) ||
+                Regex("""(?m)\bl\s*$""").containsMatchIn(raw))
+        }
+        val broken = sheet.replace("<pageSetup fitToWidth=\"1\" fitToHeight=\"1\"/>",
+            "<rowBreaks><brk id=\"5\" man=\"1\"/></rowBreaks>")
+            .replace("<pageSetUpPr fitToPage=\"1\"/>","<pageSetUpPr fitToPage=\"0\"/>")
+        val invalid = File(tempFolder.root,"split-anchored-chart.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(input(broken),invalid,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected cross-tile chart rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("intersects the print area"))
+        }
+        assertTrue(!invalid.exists())
+    }
 }
