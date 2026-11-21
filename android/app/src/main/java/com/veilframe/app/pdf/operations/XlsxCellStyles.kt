@@ -19,13 +19,28 @@ data class XlsxCellStyle(
     val textRotation: Int = 0,
     val dataBar: XlsxDataBarVisual? = null,
     val icon: XlsxIconVisual? = null,
-    val fontSizePt: Float? = null
+    val fontSizePt: Float? = null,
+    val fontFace: String? = null
 ) {
-    internal fun font(base: PDFont): PDFont = when {
-        bold && italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE
-        bold -> PDType1Font.HELVETICA_BOLD
-        italic -> PDType1Font.HELVETICA_OBLIQUE
-        else -> base
+    internal fun font(base: PDFont): PDFont = when (fontFace?.trim()?.lowercase(java.util.Locale.ROOT)) {
+        "times new roman", "times", "liberation serif", "nimbus roman" -> when {
+            bold && italic -> PDType1Font.TIMES_BOLD_ITALIC
+            bold -> PDType1Font.TIMES_BOLD
+            italic -> PDType1Font.TIMES_ITALIC
+            else -> PDType1Font.TIMES_ROMAN
+        }
+        "courier new", "courier", "liberation mono", "nimbus mono", "consolas" -> when {
+            bold && italic -> PDType1Font.COURIER_BOLD_OBLIQUE
+            bold -> PDType1Font.COURIER_BOLD
+            italic -> PDType1Font.COURIER_OBLIQUE
+            else -> PDType1Font.COURIER
+        }
+        else -> when {
+            bold && italic -> PDType1Font.HELVETICA_BOLD_OBLIQUE
+            bold -> PDType1Font.HELVETICA_BOLD
+            italic -> PDType1Font.HELVETICA_OBLIQUE
+            else -> base
+        }
     }
 }
 

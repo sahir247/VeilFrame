@@ -725,3 +725,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Default-hidden Excel row visibility
 
 - Honor saved `sheetFormatPr zeroHeight=1` (default-hidden rows) in selected print-layout mode, with explicit row `hidden=0/false` overrides and `hidden=1/true` remaining hidden. Apply same predicate to repeated title rows and page-size admission without materializing a million hidden row entries. Fail print mode when the area has no visible cells, instead of leaking hidden worksheet values. Default complete export deliberately retains all cell data. Added end-to-end visibility/no-leak fixture and checked default flag validation. CI pending.
+
+### A28 — Common workbook font-family substitution
+
+- Resolve bounded OOXML font names through inherited fontId definitions and select matching PDF base-14 Times or Courier variants (bold/italic included) for common serif/monospace families. Width measurement, wrapping and PDF output now use the same selected font; preserve default Helvetica for unknown and compatible sans faces. This is *substitution*, not original Times New Roman or Courier New embedding, and does not imply Unicode coverage or exact glyph metrics. Added parser/font-metric/PDF resource regression. CI pending.

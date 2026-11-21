@@ -2013,4 +2013,33 @@ class OfficeConverterFidelityTest {
             assertTrue(PDFTextStripper().getText(doc).contains("DONTPRINT"))
         }
     }
+    @Test
+    fun savedSerifAndMonospaceFontFamiliesUseMatchingPdfMetrics() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Faces" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><fonts><font/><font><name val="Times New Roman"/><sz val="13"/><b/></font><font><name val="Courier New"/><sz val="11"/><i/></font></fonts><cellXfs><xf/><xf fontId="1" applyFont="1"/><xf fontId="2" applyFont="1"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>SERIF</t></is></c><c r="B1" s="2" t="inlineStr"><is><t>MONO</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals("Times New Roman",parsed.styles.at(0,0).fontFace)
+        assertEquals("Courier New",parsed.styles.at(0,1).fontFace)
+        assertEquals(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.TIMES_BOLD.name,
+            parsed.styles.at(0,0).font(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA).name)
+        assertEquals(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.COURIER_OBLIQUE.name,
+            parsed.styles.at(0,1).font(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA).name)
+        val pdf = File(tempFolder.root,"font-faces.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context)
+        PDDocument.load(pdf).use { doc ->
+            val fontsUsed = mutableSetOf<String>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(position: com.tom_roush.pdfbox.text.TextPosition) {
+                    if (position.unicode in setOf("S","M")) fontsUsed.add(position.font.name)
+                    super.processTextPosition(position)
+                }
+            }
+            stripper.getText(doc)
+            assertTrue(fontsUsed.any { it.contains("Times-Bold") })
+            assertTrue(fontsUsed.any { it.contains("Courier-Oblique") })
+        }
+    }
 }

@@ -888,6 +888,8 @@ object OpenXmlDocumentParser {
                 textRgb = rgb(one(it, "color")), fontSizePt = one(it, "sz")?.getAttribute("val")?.let { raw ->
                     raw.toFloatOrNull()?.takeIf { size -> size.isFinite() && size in 1f..144f }
                         ?: throw IOException("Invalid or unsupported worksheet font size")
+                }, fontFace = one(it, "name")?.getAttribute("val")?.takeIf { raw ->
+                    raw.isNotBlank() && raw.length <= 128
                 })
         }.ifEmpty { listOf(XlsxCellStyle()) }
         val fills = collection("fills", "fill").map {
