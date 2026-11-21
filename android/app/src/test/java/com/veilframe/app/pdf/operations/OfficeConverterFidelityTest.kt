@@ -2166,4 +2166,28 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(input,full,context)
         PDDocument.load(full).use { pdf -> assertTrue(PDFTextStripper().getText(pdf).contains("42")) }
     }
+
+    @Test
+    fun savedPrintUsesExplicitFirstPageAndOffsetFieldsForOddEvenHeaders() = runBlocking {
+        assertEquals("At 12 of 3",XlsxPrintHeaderFooter.expand("&CAt &P+2 of &N","S",10,3).center)
+        assertEquals("At 8",XlsxPrintHeaderFooter.expand("&CAt &P-2","S",10,3).center)
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            XlsxPrintHeaderFooter.expand("&P+", "S", 10,3)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            XlsxPrintHeaderFooter.expand("&P-999999", "S", 2,3)
+        }
+        val wb = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>111</v></c></row><row r="2"><c r="A2"><v>222</v></c></row></sheetData><pageSetup useFirstPageNumber="1" firstPageNumber="8"/><rowBreaks><brk id="1" man="1"/></rowBreaks><headerFooter differentOddEven="1"><oddHeader>&amp;Codd &amp;P+2 of &amp;N</oddHeader><evenHeader>&amp;Ceven &amp;P</evenHeader><oddFooter>&amp;Rminus &amp;P-1</oddFooter><evenFooter>&amp;Rminus &amp;P-1</evenFooter></headerFooter></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb, "xl/worksheets/sheet1.xml" to sheet))
+        val printed = File(tempFolder.root,"explicit-page-number.pdf")
+        OfficeConverter().convertXlsxToPdf(input,printed,context,savedPrintLayout=true)
+        PDDocument.load(printed).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val first = PDFTextStripper().apply { startPage=1; endPage=1 }.getText(pdf)
+            val second = PDFTextStripper().apply { startPage=2; endPage=2 }.getText(pdf)
+            assertTrue(first.contains("even 8") && first.contains("minus 7"))
+            assertTrue(second.contains("odd 11 of 2") && second.contains("minus 8"))
+        }
+    }
 }

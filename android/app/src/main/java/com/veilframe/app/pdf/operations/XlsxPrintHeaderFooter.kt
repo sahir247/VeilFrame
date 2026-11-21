@@ -11,14 +11,14 @@ data class XlsxPrintHeaderFooter(
     val firstHeader: String = "", val firstFooter: String = "",
     val differentOddEven: Boolean = false, val differentFirst: Boolean = false
 ) {
-    fun headerFor(page: Int): String = when {
+    fun headerFor(page: Int, printedPage: Int = page): String = when {
         differentFirst && page == 1 -> firstHeader
-        differentOddEven && page % 2 == 0 -> evenHeader
+        differentOddEven && printedPage % 2 == 0 -> evenHeader
         else -> oddHeader
     }
-    fun footerFor(page: Int): String = when {
+    fun footerFor(page: Int, printedPage: Int = page): String = when {
         differentFirst && page == 1 -> firstFooter
-        differentOddEven && page % 2 == 0 -> evenFooter
+        differentOddEven && printedPage % 2 == 0 -> evenFooter
         else -> oddFooter
     }
 
@@ -41,7 +41,7 @@ data class XlsxPrintHeaderFooter(
         }
 
         fun expand(raw: String, sheet: String, page: Int, pages: Int): Sections {
-            require(page in 1..pages && pages <= SpreadsheetGeometry.MAX_PAGES)
+            require(page in 1..999_999 && pages in 1..SpreadsheetGeometry.MAX_PAGES)
             require(raw.length <= 255 && sheet.length <= 1024)
             val parts = Array(3) { StringBuilder() }
             var section = 1 // Excel's unqualified text belongs to the center.
@@ -59,7 +59,23 @@ data class XlsxPrintHeaderFooter(
                     'C' -> section = 1
                     'R' -> section = 2
                     '&' -> parts[section].append('&')
-                    'P' -> parts[section].append(page)
+                    'P' -> {
+                        // Excel &P+number / &P-number adjust the printed page,
+                        // not a literal suffix. Reject malformed or excessive
+                        // offsets instead of emitting a misleading label.
+                        var offset = 0
+                        if (i < raw.length && (raw[i] == '+' || raw[i] == '-')) {
+                            val sign = if (raw[i++] == '+') 1 else -1
+                            val start = i
+                            while (i < raw.length && raw[i] in '0'..'9') i++
+                            require(i > start && i - start <= 6) { "Invalid header/footer page offset" }
+                            offset = sign * (raw.substring(start,i).toIntOrNull()
+                                ?: throw IllegalArgumentException("Invalid header/footer page offset"))
+                        }
+                        val printed = page.toLong() + offset
+                        require(printed in 1..999_999L) { "Header/footer page offset out of range" }
+                        parts[section].append(printed)
+                    }
                     'N' -> parts[section].append(pages)
                     'A' -> parts[section].append(sheet)
                     else -> throw IllegalArgumentException("Unsupported Excel header/footer field &$token")

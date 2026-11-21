@@ -1169,10 +1169,21 @@ class OfficeConverter {
     private fun drawSavedPrintHeaderFooter(stream: PDPageContentStream, settings: XlsxSavedPrintSettings,
         plan: XlsxSavedPrintLayout.Plan, sheet: String, page: Int, pages: Int) {
         val print = settings.headerFooter
+        val numbered = when (settings.setup["useFirstPageNumber"]) {
+            null, "", "0", "false" -> false
+            "1", "true" -> true
+            else -> throw IllegalArgumentException("Invalid Excel first-page-number flag")
+        }
+        val firstPage = if (numbered) settings.setup["firstPageNumber"]?.toIntOrNull()
+            ?: throw IllegalArgumentException("Missing Excel first page number") else 1
+        require(firstPage in 1..999_999 && firstPage.toLong() + pages - 1 <= 999_999L) {
+            "Excel printed page number exceeds supported budget"
+        }
+        val printedPage = firstPage + page - 1
         val font = PDType1Font.HELVETICA
         fun draw(raw: String, header: Boolean) {
             if (raw.isEmpty()) return
-            val sections = XlsxPrintHeaderFooter.expand(raw, sheet, page, pages)
+            val sections = XlsxPrintHeaderFooter.expand(raw, sheet, printedPage, pages)
             val edge = if (header) "header" else "footer"
             val marginInches = settings.margins[edge]?.toFloatOrNull() ?: 0.3f
             require(marginInches.isFinite() && marginInches in 0f..20f) { "Invalid saved $edge margin" }
@@ -1204,8 +1215,8 @@ class OfficeConverter {
                 stream.endText()
             }
         }
-        draw(print.headerFor(page), true)
-        draw(print.footerFor(page), false)
+        draw(print.headerFor(page, printedPage), true)
+        draw(print.footerFor(page, printedPage), false)
     }
 
     /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
