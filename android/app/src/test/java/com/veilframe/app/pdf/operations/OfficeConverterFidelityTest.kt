@@ -1827,4 +1827,25 @@ class OfficeConverterFidelityTest {
             assertTrue(text.contains("[column+line]") && text.contains("Volume") && text.contains("Price"))
         }
     }
+    @Test
+    fun savedConditionalDataBarsAndTrafficIconsReachPdfVectors() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Bars" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>10</v></c><c r="B1"><v>0</v></c></row><row r="2"><c r="A2"><v>20</v></c><c r="B2"><v>50</v></c></row><row r="3"><c r="A3"><v>30</v></c><c r="B3"><v>100</v></c></row></sheetData><conditionalFormatting sqref="A1:A3"><cfRule type="dataBar" priority="1"><dataBar showValue="0"><cfvo type="min"/><cfvo type="max"/><color rgb="FF2468AA"/></dataBar></cfRule></conditionalFormatting><conditionalFormatting sqref="B1:B3"><cfRule type="iconSet" priority="2"><iconSet iconSet="3TrafficLights1" showValue="0"><cfvo type="percent" val="0"/><cfvo type="percent" val="33"/><cfvo type="percent" val="67"/></iconSet></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        val b1 = parsed.styles.at(0,0).dataBar
+        val b3 = parsed.styles.at(2,0).dataBar
+        assertNotNull(b1); assertNotNull(b3)
+        assertTrue(b3!!.end > b1!!.end)
+        assertTrue(!b3.showValue)
+        assertEquals(0xD94A3A,parsed.styles.at(0,1).icon!!.rgb)
+        assertEquals(0x48A65E,parsed.styles.at(2,1).icon!!.rgb)
+        val out = File(tempFolder.root,"bars.pdf")
+        OfficeConverter().convertXlsxToPdf(input,out,context)
+        PDDocument.load(out).use { pdf ->
+            val operators = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bc\s*$""").containsMatchIn(operators))
+            assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(operators))
+        }
+    }
 }

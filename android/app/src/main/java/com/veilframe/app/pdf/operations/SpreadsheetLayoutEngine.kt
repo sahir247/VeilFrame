@@ -209,7 +209,8 @@ object SpreadsheetLayoutEngine {
                             cleanLine.length * 5f
                         }
                     } ?: 0f
-                    if (maxLineW > maxW) maxW = maxLineW
+                    if (maxLineW + if (style.icon != null) 13f else 0f > maxW)
+                        maxW = maxLineW + if (style.icon != null) 13f else 0f
                 }
             }
             // Strict ceiling: individual column width cannot exceed maximum tile table width budget

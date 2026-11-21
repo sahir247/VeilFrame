@@ -1109,11 +1109,13 @@ object OpenXmlDocumentParser {
                 val text = type in XlsxConditionalFormatting.textOperators && literal.length in 1..1024 &&
                     literal.none { it in "*?~" } && (op.isEmpty() || op == type)
                 val scale = if (type == "colorScale") parseConditionalColorScale(rule) else null
-                val delta = if (scale != null) XlsxConditionalFormatting.Delta() else if (numeric || text) {
+                val bar = if (type == "dataBar") parseConditionalDataBar(rule) else null
+                val icons = if (type == "iconSet") parseConditionalIconSet(rule) else null
+                val delta = if (scale != null || bar != null || icons != null) XlsxConditionalFormatting.Delta() else if (numeric || text) {
                     if (id == null) XlsxConditionalFormatting.Delta() else differential[id]
                 } else null
                 result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, if (text) type else op,
-                    operands.filterNotNull(), delta, if (text) literal else null, scale))
+                    operands.filterNotNull(), delta, if (text) literal else null, scale, bar, icons))
                 require(result.size <= 256) { "Too many conditional formatting rules" }
             }
         }
@@ -1138,6 +1140,57 @@ object OpenXmlDocumentParser {
         }
         if (stops.drop(1).any { it.type == "min" } || stops.dropLast(1).any { it.type == "max" }) return null
         return XlsxConditionalFormatting.ColorScale(stops)
+    }
+
+    private fun conditionalStops(elements: List<Element>): List<XlsxConditionalFormatting.ScaleStop>? {
+        return elements.map { element ->
+            val type = element.getAttribute("type")
+            if (type !in setOf("min","max","num","percent")) return null
+            val number = if (type in setOf("num","percent")) XlsxConditionalFormatting.number(element.getAttribute("val"))
+                ?: return null else null
+            if (type == "percent" && (number == null || number < java.math.BigDecimal.ZERO ||
+                number > java.math.BigDecimal("100"))) return null
+            if (element.hasAttribute("gte") && element.getAttribute("gte") !in setOf("1","true")) return null
+            XlsxConditionalFormatting.ScaleStop(type,number,0)
+        }
+    }
+
+    private fun parseConditionalDataBar(rule: Element): XlsxConditionalFormatting.DataBar? {
+        val bar = rule.childElements("dataBar").singleOrNull() ?: return null
+        if (rule.childElements("extLst").isNotEmpty()) return null // x14 custom rendering cannot be inferred.
+        val stops = conditionalStops(bar.childElements("cfvo")) ?: return null
+        if (stops.size != 2) return null
+        val rgb = bar.childElements("color").singleOrNull()?.getAttribute("rgb") ?: return null
+        if (!rgb.matches(Regex("[0-9A-Fa-f]{8}"))) return null
+        fun flag(key: String, default: Boolean): Boolean? = when (bar.getAttribute(key)) {
+            "" -> default
+            "0","false" -> false
+            "1","true" -> true
+            else -> null
+        }
+        val show = flag("showValue",true) ?: return null
+        val minimum = bar.getAttribute("minLength").ifEmpty { "10" }.toIntOrNull() ?: return null
+        val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
+        if (minimum !in 0..100 || maximum !in minimum..100) return null
+        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,minimum,maximum,rgb.takeLast(6).toInt(16))
+    }
+
+    private fun parseConditionalIconSet(rule: Element): XlsxConditionalFormatting.IconSet? {
+        val icons = rule.childElements("iconSet").singleOrNull() ?: return null
+        if (icons.getAttribute("iconSet") !in setOf("","3TrafficLights1","3TrafficLights2") ||
+            icons.childElements("cfIcon").isNotEmpty() || icons.getAttribute("custom") in setOf("1","true")) return null
+        val stops = conditionalStops(icons.childElements("cfvo")) ?: return null
+        if (stops.size != 3) return null
+        fun flag(key: String, default: Boolean): Boolean? = when (icons.getAttribute(key)) {
+            "" -> default
+            "0","false" -> false
+            "1","true" -> true
+            else -> null
+        }
+        val reverse = flag("reverse",false) ?: return null
+        val show = flag("showValue",true) ?: return null
+        if (flag("percent",true) != true) return null
+        return XlsxConditionalFormatting.IconSet(stops,reverse,show)
     }
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
@@ -1189,7 +1242,7 @@ object OpenXmlDocumentParser {
         val derivedStyles = mutableMapOf<XlsxCellStyle, Int>()
         var conditionalChecks = 0L
         val conditionalCost = conditional.sumOf { it.ranges.size.toLong() }
-        val scaleRules = conditional.filter { it.scale != null }
+        val scaleRules = conditional.filter { it.scale != null || it.bar != null || it.icons != null }
         val scaleExtents = mutableMapOf<Int, XlsxConditionalFormatting.NumericExtent>()
         data class DeferredNumeric(val row: Int, val col: Int, val style: Int, val raw: java.math.BigDecimal)
         val deferredNumeric = mutableListOf<DeferredNumeric>()
@@ -1339,7 +1392,7 @@ object OpenXmlDocumentParser {
                             // A scale needs the complete raw range, including later rows.
                             conditionalChecks += conditionalCost
                             require(conditionalChecks <= 8_000_000L && deferredNumeric.size < 200_000) {
-                                "Conditional color-scale evaluation exceeds budget"
+                                "Conditional visual evaluation exceeds budget"
                             }
                             deferredNumeric.add(DeferredNumeric(r, targetCol, style, rawNumeric))
                             for (rule in scaleRules) if (rule.ranges.any { it.contains(r, targetCol) }) {

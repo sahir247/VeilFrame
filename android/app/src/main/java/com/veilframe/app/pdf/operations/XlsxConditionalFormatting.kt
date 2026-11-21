@@ -8,7 +8,8 @@ internal object XlsxConditionalFormatting {
     data class Rule(val priority: Int, val stop: Boolean,
         val ranges: List<OpenXmlDocumentParser.CellRangeAddress>, val operator: String,
         val operands: List<BigDecimal>, val delta: Delta?, val literalText: String? = null,
-        val scale: ColorScale? = null)
+        val scale: ColorScale? = null,
+        val bar: DataBar? = null, val icons: IconSet? = null)
     data class ScaleStop(val type: String, val value: BigDecimal?, val rgb: Int)
     data class NumericExtent(val minimum: BigDecimal, val maximum: BigDecimal) {
         fun include(value: BigDecimal) = NumericExtent(minOf(minimum, value), maxOf(maximum, value))
@@ -43,6 +44,56 @@ internal object XlsxConditionalFormatting {
         }
     }
 
+    private fun threshold(type: String, value: BigDecimal?, extent: NumericExtent): BigDecimal? =
+        when (type) {
+            "min" -> extent.minimum
+            "max" -> extent.maximum
+            "num" -> value
+            "percent" -> extent.minimum.add(extent.maximum.subtract(extent.minimum)
+                .multiply(value ?: return null).movePointLeft(2))
+            else -> null
+        }
+
+    data class DataBar(val low: ScaleStop, val high: ScaleStop, val showValue: Boolean,
+        val minimumLength: Int, val maximumLength: Int, val rgb: Int) {
+        fun visual(raw: BigDecimal, extent: NumericExtent): XlsxDataBarVisual? {
+            val lower = threshold(low.type, low.value, extent) ?: return null
+            val upper = threshold(high.type, high.value, extent) ?: return null
+            if (lower > upper) return null
+            if (lower == upper) return XlsxDataBarVisual(0f, maximumLength / 100f, rgb, showValue)
+            val span = upper.subtract(lower)
+            val bounded = raw.max(lower).min(upper)
+            fun ratio(value: BigDecimal): Float = value.divide(span,java.math.MathContext.DECIMAL64)
+                .toFloat().coerceIn(0f,1f)
+            val start: Float
+            val end: Float
+            if (lower >= BigDecimal.ZERO || upper <= BigDecimal.ZERO) {
+                val fraction = ratio(bounded.subtract(lower))
+                val length = (minimumLength + (maximumLength - minimumLength)*fraction) / 100f
+                start = if (upper <= BigDecimal.ZERO) 1f else 0f
+                end = if (upper <= BigDecimal.ZERO) 1f-length else length
+            } else {
+                // Signed bars use a real zero baseline. This differs from some
+                // proprietary x14 appearance extensions, which are not inferred.
+                start = ratio(lower.negate())
+                end = ratio(bounded.subtract(lower))
+            }
+            return XlsxDataBarVisual(start,end,rgb,showValue)
+        }
+    }
+
+    data class IconSet(val stops: List<ScaleStop>, val reverse: Boolean, val showValue: Boolean) {
+        fun visual(raw: BigDecimal, extent: NumericExtent): XlsxIconVisual? {
+            if (stops.size != 3) return null
+            val values = stops.map { threshold(it.type,it.value,extent) ?: return null }
+            if (values.zipWithNext().any { (left,right) -> left > right }) return null
+            val tier = when { raw >= values[2] -> 2; raw >= values[1] -> 1; else -> 0 }
+            val selected = if (reverse) 2-tier else tier
+            val palette = intArrayOf(0xD94A3A,0xE0B63C,0x48A65E)
+            return XlsxIconVisual(palette[selected],showValue)
+        }
+    }
+
     val operators = setOf("equal", "notEqual", "greaterThan", "greaterThanOrEqual",
         "lessThan", "lessThanOrEqual", "between", "notBetween")
     val textOperators = setOf("containsText", "notContainsText", "beginsWith", "endsWith")
@@ -55,6 +106,8 @@ internal object XlsxConditionalFormatting {
         var italic: Boolean? = null
         var text: Int? = null
         var fill: Int? = null
+        var barVisual: XlsxDataBarVisual? = null
+        var iconVisual: XlsxIconVisual? = null
         for (rule in rules) {
             if (rule.ranges.none { it.contains(row, col) }) continue
             val delta = rule.delta ?: break // unknown higher-priority condition may suppress lower rules
@@ -64,6 +117,18 @@ internal object XlsxConditionalFormatting {
                 val extent = scaleExtents[rule.priority] ?: continue
                 val color = scale.color(raw, extent) ?: break
                 if (fill == null) fill = color
+                if (rule.stop) break
+                continue
+            }
+            if (rule.bar != null || rule.icons != null) {
+                if (raw == null) continue
+                val extent = scaleExtents[rule.priority] ?: continue
+                if (rule.bar != null && barVisual == null) {
+                    barVisual = rule.bar.visual(raw,extent) ?: break
+                }
+                if (rule.icons != null && iconVisual == null) {
+                    iconVisual = rule.icons.visual(raw,extent) ?: break
+                }
                 if (rule.stop) break
                 continue
             }
@@ -100,6 +165,7 @@ internal object XlsxConditionalFormatting {
             if (rule.stop) break
         }
         return base.copy(bold = bold ?: base.bold, italic = italic ?: base.italic,
-            textRgb = text ?: base.textRgb, fillRgb = fill ?: base.fillRgb)
+            textRgb = text ?: base.textRgb, fillRgb = fill ?: base.fillRgb,
+            dataBar = barVisual ?: base.dataBar, icon = iconVisual ?: base.icon)
     }
 }

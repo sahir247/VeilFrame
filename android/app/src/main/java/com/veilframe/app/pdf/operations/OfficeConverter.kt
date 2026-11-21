@@ -1704,6 +1704,7 @@ class OfficeConverter {
         val font = style.font(fontNormal)
         fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
+        if (style.dataBar?.showValue == false || style.icon?.showValue == false) return
         if (style.textRotation != 0 && chunkLines.isNotEmpty()) {
             require(completeCell) { "Cannot split rotated cell text across row fragments" }
             drawRotatedSpreadsheetText(contentStream, cellLeft, cellTop, cellW, cellH,
@@ -1822,14 +1823,43 @@ class OfficeConverter {
 
     private fun fillSpreadsheetCell(stream: PDPageContentStream?, left: Float, top: Float,
                                     width: Float, height: Float, style: XlsxCellStyle) {
-        val rgb = style.fillRgb ?: return
         if (stream == null) return
-        stream.saveGraphicsState()
-        try {
-            stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
-            stream.addRect(left, top - height, width, height)
-            stream.fill()
-        } finally { stream.restoreGraphicsState() }
+        style.fillRgb?.let { rgb ->
+            stream.saveGraphicsState()
+            try {
+                stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+                stream.addRect(left, top - height, width, height)
+                stream.fill()
+            } finally { stream.restoreGraphicsState() }
+        }
+        style.dataBar?.let { bar ->
+            val available = (width - 8f).coerceAtLeast(0f)
+            val x1 = left + 4f + minOf(bar.start,bar.end)*available
+            val x2 = left + 4f + maxOf(bar.start,bar.end)*available
+            if (x2 > x1 && height > 6f) {
+                stream.saveGraphicsState()
+                try {
+                    stream.setNonStrokingColor(bar.rgb ushr 16 and 255,bar.rgb ushr 8 and 255,bar.rgb and 255)
+                    stream.addRect(x1, top-height+3f, x2-x1, height-6f)
+                    stream.fill()
+                } finally { stream.restoreGraphicsState() }
+            }
+        }
+        style.icon?.let { icon ->
+            if (width < 14f || height < 12f) return@let
+            val cx = left + 8f; val cy = top - height/2f; val radius = 4f
+            val k = radius * 0.55228475f
+            stream.saveGraphicsState()
+            try {
+                stream.setNonStrokingColor(icon.rgb ushr 16 and 255,icon.rgb ushr 8 and 255,icon.rgb and 255)
+                stream.moveTo(cx+radius,cy)
+                stream.curveTo(cx+radius,cy+k,cx+k,cy+radius,cx,cy+radius)
+                stream.curveTo(cx-k,cy+radius,cx-radius,cy+k,cx-radius,cy)
+                stream.curveTo(cx-radius,cy-k,cx-k,cy-radius,cx,cy-radius)
+                stream.curveTo(cx+k,cy-radius,cx+radius,cy-k,cx+radius,cy)
+                stream.closePath(); stream.fill()
+            } finally { stream.restoreGraphicsState() }
+        }
     }
 
     private fun setSpreadsheetTextColor(stream: PDPageContentStream?, style: XlsxCellStyle) {
@@ -1853,7 +1883,7 @@ class OfficeConverter {
 
     private fun spreadsheetTextX(text: String, font: PDFont, size: Float, left: Float,
                                  width: Float, style: XlsxCellStyle): Float {
-        if (style.horizontal == "left") return left + 4f
+        if (style.horizontal == "left") return left + if (style.icon != null) 17f else 4f
         val textWidth = try { font.getStringWidth(text) / 1000f * size }
             catch (_: Exception) { return left + 4f }
         val offset = if (style.horizontal == "center") (width - textWidth) / 2f

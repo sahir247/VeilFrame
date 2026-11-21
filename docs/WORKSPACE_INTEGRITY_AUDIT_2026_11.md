@@ -681,3 +681,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Primary-axis cached column+line combination charts
 
 - Recognize exactly one clustered-column plus one standard-line chart within the same plot area only when both reference the same two nonblank axis identifiers. Parse each group's series caches with shared category order, render bars and connecting lines on one actual numeric scale and preserve missing points. Secondary axes, mixed horizontal orientation, stacked combo and multi-type charts are explicitly unsupported and reported rather than silently flattened. Added same-axis and secondary-axis ZIP/PDF fixtures. Per-series formatting and saved anchor placement still open; CI pending.
+
+### A28 — Numeric data bars and three-light indicator vectors
+
+- Parse classic OOXML dataBar min/max/number/percent stops, bounded minLength/maxLength, explicit RGB and showValue, plus 3TrafficLights1/2 thresholds, reverse and showValue. Evaluate numeric ranges after complete worksheet parse, cache bounded per-cell visual geometry and render bars/circular signal glyphs as PDF vector graphics (with value suppression when requested). Signed bar baselines are approximate and proprietary x14 advanced formatting, other icon families, percentiles/formulas and Excel gradient styling remain explicitly unsupported or unreconstructed. No formula execution. Added parser/PDF regression. CI pending.
