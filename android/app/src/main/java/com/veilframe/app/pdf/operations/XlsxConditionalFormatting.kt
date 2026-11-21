@@ -9,7 +9,8 @@ internal object XlsxConditionalFormatting {
         val ranges: List<OpenXmlDocumentParser.CellRangeAddress>, val operator: String,
         val operands: List<BigDecimal>, val delta: Delta?, val literalText: String? = null,
         val scale: ColorScale? = null,
-        val bar: DataBar? = null, val icons: IconSet? = null)
+        val bar: DataBar? = null, val icons: IconSet? = null,
+        val expression: Expression? = null)
     data class ScaleStop(val type: String, val value: BigDecimal?, val rgb: Int)
     data class NumericExtent(val minimum: BigDecimal, val maximum: BigDecimal) {
         fun include(value: BigDecimal) = NumericExtent(minOf(minimum, value), maxOf(maximum, value))
@@ -95,6 +96,59 @@ internal object XlsxConditionalFormatting {
         }
     }
 
+    sealed class Expression {
+        abstract fun matches(row: Int, column: Int, raw: BigDecimal?): Boolean
+        data class Modulo(val rows: Boolean, val divisor: Int, val remainder: Int,
+            val inverted: Boolean) : Expression() {
+            override fun matches(row: Int, column: Int, raw: BigDecimal?): Boolean {
+                val value = if (rows) row + 1 else column + 1
+                val matches = value % divisor == remainder
+                return if (inverted) !matches else matches
+            }
+        }
+        data class CurrentCell(val operator: String, val operand: BigDecimal) : Expression() {
+            override fun matches(row: Int, column: Int, raw: BigDecimal?): Boolean {
+                val compare = raw?.compareTo(operand) ?: return false
+                return when (operator) {
+                    "=" -> compare == 0
+                    "<>" -> compare != 0
+                    ">" -> compare > 0
+                    ">=" -> compare >= 0
+                    "<" -> compare < 0
+                    "<=" -> compare <= 0
+                    else -> false
+                }
+            }
+        }
+    }
+
+    /**
+     * Deliberately no general formula evaluator, external references, volatile
+     * functions, or absolute references. Expressions cover only explicit cells.
+     */
+    fun expression(source: String, ranges: List<OpenXmlDocumentParser.CellRangeAddress>): Expression? {
+        if (source.length > 128 || ranges.size != 1) return null
+        val text = source.trim().removePrefix("=").replace(Regex("\\s+"),"")
+        val modulo = Regex("""(?i)MOD\((ROW|COLUMN)\(\),([1-9][0-9]{0,2})\)(=|<>)([0-9]{1,3})""")
+            .matchEntire(text)
+        if (modulo != null) {
+            val divisor = modulo.groupValues[2].toInt()
+            val remainder = modulo.groupValues[4].toInt()
+            if (remainder >= divisor) return null
+            return Expression.Modulo(modulo.groupValues[1].equals("ROW",true),divisor,remainder,
+                modulo.groupValues[3] == "<>")
+        }
+        val comparison = Regex("""(?i)([A-Z]{1,3})([1-9][0-9]{0,6})(>=|<=|<>|>|<|=)(-?[0-9]+(?:\.[0-9]+)?)""")
+            .matchEntire(text) ?: return null
+        val row = comparison.groupValues[2].toIntOrNull() ?: return null
+        if (row != ranges[0].firstRow + 1) return null
+        val col = runCatching { OpenXmlDocumentParser.colRefToIndex(comparison.groupValues[1] + "1") }.getOrNull()
+            ?: return null
+        if (col != ranges[0].firstCol) return null
+        val operand = number(comparison.groupValues[4]) ?: return null
+        return Expression.CurrentCell(comparison.groupValues[3], operand)
+    }
+
     val operators = setOf("equal", "notEqual", "greaterThan", "greaterThanOrEqual",
         "lessThan", "lessThanOrEqual", "between", "notBetween")
     val textOperators = setOf("containsText", "notContainsText", "beginsWith", "endsWith")
@@ -130,6 +184,16 @@ internal object XlsxConditionalFormatting {
                 if (rule.icons != null && iconVisual == null) {
                     iconVisual = rule.icons.visual(raw,extent) ?: break
                 }
+                if (rule.stop) break
+                continue
+            }
+            val expression = rule.expression
+            if (expression != null) {
+                if (!expression.matches(row,col,raw)) continue
+                if (bold == null) bold = delta.bold
+                if (italic == null) italic = delta.italic
+                if (text == null) text = delta.textRgb
+                if (fill == null) fill = delta.fillRgb
                 if (rule.stop) break
                 continue
             }

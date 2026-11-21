@@ -1848,4 +1848,28 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(operators))
         }
     }
+    @Test
+    fun boundedFormulaConditionalFormattingRespectsRelativeCellsAndModulo() = runBlocking {
+        val range = listOf(OpenXmlDocumentParser.CellRangeAddress(0,2,0,0))
+        assertEquals(XlsxConditionalFormatting.Expression.Modulo(true,2,0,false),
+            XlsxConditionalFormatting.expression("MOD(ROW(),2)=0",range))
+        assertEquals(XlsxConditionalFormatting.Expression.CurrentCell(">", java.math.BigDecimal("12")),
+            XlsxConditionalFormatting.expression("A1>12",range))
+        assertEquals(null,XlsxConditionalFormatting.expression("B1>12",range))
+        assertEquals(null,XlsxConditionalFormatting.expression("SUM(A1:A3)>10",range))
+        assertEquals(null,XlsxConditionalFormatting.expression("\u0024A\u00241>5",range))
+        val workbook = """<workbook><sheets><sheet name="Formula" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><dxfs><dxf><fill><patternFill patternType="solid"><fgColor rgb="FF22CC33"/></patternFill></fill></dxf></dxfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c></row><row r="2"><c r="A2"><v>13</v></c></row><row r="3"><c r="A3"><v>15</v></c></row></sheetData><conditionalFormatting sqref="A1:A3"><cfRule type="expression" priority="1" dxfId="0"><formula>MOD(ROW(),2)=0</formula></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook,"xl/styles.xml" to styles,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(0,parsed.unsupportedConditionalRules)
+        assertEquals(null,parsed.styles.at(0,0).fillRgb)
+        assertEquals(0x22CC33,parsed.styles.at(1,0).fillRgb)
+        assertEquals(null,parsed.styles.at(2,0).fillRgb)
+        val pdf = File(tempFolder.root,"formula.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context)
+        PDDocument.load(pdf).use { doc -> assertTrue(PDFTextStripper().getText(doc).contains("13")) }
+    }
 }

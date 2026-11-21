@@ -685,3 +685,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Numeric data bars and three-light indicator vectors
 
 - Parse classic OOXML dataBar min/max/number/percent stops, bounded minLength/maxLength, explicit RGB and showValue, plus 3TrafficLights1/2 thresholds, reverse and showValue. Evaluate numeric ranges after complete worksheet parse, cache bounded per-cell visual geometry and render bars/circular signal glyphs as PDF vector graphics (with value suppression when requested). Signed bar baselines are approximate and proprietary x14 advanced formatting, other icon families, percentiles/formulas and Excel gradient styling remain explicitly unsupported or unreconstructed. No formula execution. Added parser/PDF regression. CI pending.
+
+### A28 — Restricted, deterministic conditional expressions
+
+- Evaluate only self-contained MOD(ROW(),n)=r / MOD(COLUMN(),n)=r row/column banding and current-cell relative A1 comparisons with a literal numeric operand, on explicitly saved cells. Validate a single anchor range, relative reference exactly at that anchor, bounded modulus and numbers; refuse absolute, cross-cell, volatile, external, general-function or arbitrary Excel formulas. Uses saved cached cell values, does not execute Excel or recalculate formulas. Keep existing priority/stop/differential formatting; unsupported expressions remain disclosed and block unsafe lower-priority inferences. Added direct expression and ZIP/PDF fixture. Blank-cell conditional styling remains unresolved. CI pending.

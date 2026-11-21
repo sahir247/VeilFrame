@@ -1111,11 +1111,13 @@ object OpenXmlDocumentParser {
                 val scale = if (type == "colorScale") parseConditionalColorScale(rule) else null
                 val bar = if (type == "dataBar") parseConditionalDataBar(rule) else null
                 val icons = if (type == "iconSet") parseConditionalIconSet(rule) else null
-                val delta = if (scale != null || bar != null || icons != null) XlsxConditionalFormatting.Delta() else if (numeric || text) {
+                val expression = if (type == "expression" && rule.childElements("formula").size == 1)
+                    XlsxConditionalFormatting.expression(rule.childElements("formula").single().textContent, ranges) else null
+                val delta = if (scale != null || bar != null || icons != null) XlsxConditionalFormatting.Delta() else if (numeric || text || expression != null) {
                     if (id == null) XlsxConditionalFormatting.Delta() else differential[id]
                 } else null
                 result.add(XlsxConditionalFormatting.Rule(priority, stop, ranges, if (text) type else op,
-                    operands.filterNotNull(), delta, if (text) literal else null, scale, bar, icons))
+                    operands.filterNotNull(), delta, if (text) literal else null, scale, bar, icons, expression))
                 require(result.size <= 256) { "Too many conditional formatting rules" }
             }
         }
