@@ -662,7 +662,7 @@ object OpenXmlDocumentParser {
                     // saved print area. Keep provenance for full export.
                     val bounded = listOf("colOff", "rowOff").all { key ->
                         val parts = marker.childElements(key)
-                        parts.size <= 1 && (parts.isEmpty() || parts.single().textContent.trim() == "0")
+                        parts.size == 1 && parts.single().textContent.trim() == "0"
                     }
                     return (SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)) to bounded
                 }

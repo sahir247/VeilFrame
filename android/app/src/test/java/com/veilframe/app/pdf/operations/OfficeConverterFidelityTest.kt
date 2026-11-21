@@ -2081,7 +2081,7 @@ class OfficeConverterFidelityTest {
         fun workbook(area: String): String = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">Print!&#36;A&#36;1:$area</definedName></definedNames></workbook>"""
         val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>VISIBLE_DATA</t></is></c></row></sheetData><drawing r:id="d"/></worksheet>"""
         val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
-        val drawing = """<xdr:wsDr><xdr:twoCellAnchor><xdr:from><xdr:col>2</xdr:col><xdr:row>4</xdr:row></xdr:from><xdr:to><xdr:col>3</xdr:col><xdr:row>6</xdr:row></xdr:to><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>"""
+        val drawing = """<xdr:wsDr><xdr:twoCellAnchor><xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>6</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>"""
         val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/c.xml"/></Relationships>"""
         val chart = """<c:chartSpace><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:cat><c:strLit><c:ptCount val="1"/><c:pt idx="0"><c:v>HIDDEN_CHART_LABEL</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>99999</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>"""
         fun input(area: String) = createZip(mapOf("xl/workbook.xml" to workbook(area),
@@ -2114,8 +2114,8 @@ class OfficeConverterFidelityTest {
             assertTrue(expected.message.orEmpty().contains("intersects the print area"))
         }
         assertTrue(!invalid.exists())
-        val displacedDrawing = drawing.replace("</xdr:to>",
-            "<xdr:colOff>999999999999</xdr:colOff></xdr:to>")
+        val displacedDrawing = drawing.replace("<xdr:colOff>0</xdr:colOff><xdr:row>6</xdr:row>",
+            "<xdr:colOff>999999999999</xdr:colOff><xdr:row>6</xdr:row>")
         val displaced = createZip(mapOf("xl/workbook.xml" to workbook("&#36;B&#36;2"),
             "xl/worksheets/sheet1.xml" to sheet, "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
             "xl/drawings/d.xml" to displacedDrawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
@@ -2131,6 +2131,21 @@ class OfficeConverterFidelityTest {
             assertTrue(expected.message.orEmpty().contains("intersects the print area"))
         }
         assertTrue(!unsafeOffsets.exists())
+        val missingOffsetDrawing = drawing.replace("<xdr:rowOff>0</xdr:rowOff>","")
+        val missingOffsets = createZip(mapOf("xl/workbook.xml" to workbook("&#36;B&#36;2"),
+            "xl/worksheets/sheet1.xml" to sheet, "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to missingOffsetDrawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/c.xml" to chart))
+        assertTrue(!OpenXmlDocumentParser.parseXlsx(missingOffsets).sheets.single()
+            .charts.single().printAreaAnchorTrusted)
+        val malformed = File(tempFolder.root,"missing-chart-offset.pdf")
+        try {
+            OfficeConverter().convertXlsxToPdf(missingOffsets,malformed,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected incomplete drawing-marker rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("intersects the print area"))
+        }
+        assertTrue(!malformed.exists())
     }
 
     @Test
