@@ -40,7 +40,7 @@ enum class MotionTrackingStatus {
  * @param dx Horizontal translation in pixels between Frame N-1 and Frame N.
  * @param dy Vertical translation in pixels between Frame N-1 and Frame N.
  * @param da Angular rotation in radians between Frame N-1 and Frame N.
- * @param confidence Reliability score in [0.0..1.0] based on tracked feature count.
+ * @param confidence Heuristic support score in [0.0..1.0], not a calibrated probability.
  * @param status Explicit tracking diagnostic status.
  */
 data class CameraMotion(
@@ -131,6 +131,13 @@ interface FrameMotionEstimator {
  * Lucas-Kanade sparse optical flow ([Video.calcOpticalFlowPyrLK]), and partial
  * affine estimation ([Calib3d.estimateAffinePartial2D]).
  */
+internal fun motionSupportConfidence(detected: Int, tracked: Int, inliers: Int): Double {
+    if (detected < 4 || tracked !in 4..detected || inliers !in 4..tracked) return 0.0
+    val consensus = inliers.toDouble() / tracked
+    if (consensus < 0.5) return 0.0
+    return (inliers.toDouble() / detected) * (inliers / 32.0).coerceAtMost(1.0)
+}
+
 class OpenCvOpticalFlowEstimator(
     private val maxCorners: Int = 200,
     private val qualityLevel: Double = 0.01,
@@ -183,19 +190,34 @@ class OpenCvOpticalFlowEstimator(
             // 4. Estimate Partial Affine Transform (Translation + Rotation)
             val goodPrevMat = MatOfPoint2f(*goodPrev.toTypedArray())
             val goodCurrMat = MatOfPoint2f(*goodCurr.toTypedArray())
+            val inliers = Mat()
             var transformMat: Mat? = null
             try {
-                transformMat = Calib3d.estimateAffinePartial2D(goodPrevMat, goodCurrMat)
-                if (transformMat != null && !transformMat.empty() && transformMat.rows() >= 2 && transformMat.cols() >= 3) {
-                    val dx = transformMat.get(0, 2)[0]
-                    val dy = transformMat.get(1, 2)[0]
-                    val da = Math.atan2(transformMat.get(1, 0)[0], transformMat.get(0, 0)[0])
-                    val confidence = (goodPrev.size.toDouble() / maxCorners.toDouble()).coerceIn(0.1, 1.0)
-                    return CameraMotion(dx, dy, da, confidence = confidence, status = MotionTrackingStatus.TRACKED)
+                transformMat = Calib3d.estimateAffinePartial2D(goodPrevMat, goodCurrMat, inliers)
+                if (transformMat != null && !transformMat.empty() && transformMat.rows() == 2 && transformMat.cols() == 3) {
+                    val a = transformMat.get(0, 0)[0]
+                    val b = transformMat.get(1, 0)[0]
+                    val tx = transformMat.get(0, 2)[0]
+                    val ty = transformMat.get(1, 2)[0]
+                    val count = if (inliers.empty()) 0 else Core.countNonZero(inliers)
+                    val confidence = motionSupportConfidence(cornerArray.size, goodPrev.size, count)
+                    val scale = kotlin.math.hypot(a, b)
+                    if (confidence > 0.0 && scale.isFinite() && scale in 0.8..1.25 &&
+                        tx.isFinite() && ty.isFinite()) {
+                        val da = Math.atan2(b, a)
+                        // Rigid motion expressed at frame center, consistent with
+                        // buildCorrectiveMatrix's centered rotation semantics.
+                        val cx = prevGray.cols() / 2.0
+                        val cy = prevGray.rows() / 2.0
+                        val dx = a * cx - b * cy + tx - cx
+                        val dy = b * cx + a * cy + ty - cy
+                        if (dx.isFinite() && dy.isFinite()) return CameraMotion(dx, dy, da, confidence, MotionTrackingStatus.TRACKED)
+                    }
                 }
             } finally {
                 goodPrevMat.release()
                 goodCurrMat.release()
+                inliers.release()
                 transformMat?.release()
             }
 
@@ -679,7 +701,9 @@ class VideoStabilizerEngine(
         val corrections = computeCorrections(raw, smoothed)
         val trackedCount = motions.count { it.status == MotionTrackingStatus.TRACKED }
         val failureCount = motions.size - trackedCount
-        val meanConfidence = if (motions.isNotEmpty()) motions.map { it.confidence }.average() else 1.0
+        val meanConfidence = if (motions.isNotEmpty()) motions.map {
+            if (it.status == MotionTrackingStatus.TRACKED && it.confidence.isFinite()) it.confidence.coerceIn(0.0, 1.0) else 0.0
+        }.average() else 0.0
         val failureRate = if (motions.isNotEmpty()) failureCount.toDouble() / motions.size.toDouble() else 0.0
 
         return TrajectoryAnalysisReport(

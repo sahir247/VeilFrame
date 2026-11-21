@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.AtomicFile
+import android.util.Log
 import com.veilframe.app.cv.document.DocumentScanner
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,6 +14,45 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.Closeable
 import java.util.UUID
+
+/** Keep replaced files readable if writing/encoding fails or the process dies. */
+private inline fun writeSessionFileAtomically(file: File, writer: (FileOutputStream) -> Unit) {
+    val atomic = AtomicFile(file)
+    val stream = atomic.startWrite()
+    try {
+        writer(stream)
+        atomic.finishWrite(stream)
+    } catch (failure: Throwable) {
+        atomic.failWrite(stream)
+        throw failure
+    }
+}
+
+/** Session manifests and caches may reference only nonempty files inside the owning directory. */
+private fun ownedSessionFile(sessionDir: File, path: String): File? {
+    if (path.isBlank()) return null
+    val file = File(path).canonicalFile
+    return file.takeIf { it.parentFile == sessionDir.canonicalFile && it.isFile && it.length() > 0L }
+}
+
+private fun isValidPageIdentity(id: String): Boolean =
+    id.isNotBlank() && id.none { it == '/' || it == '\\' || it.code < 32 || it.code == 127 }
+
+/** Validates the editor's ordered TL/TR/BR/BL boundary, not an auto-reordered polygon. */
+internal fun isValidDocumentCrop(points: List<org.opencv.core.Point>, width: Int, height: Int): Boolean {
+    if (width < 2 || height < 2 || points.size != 4 ||
+        points.any { !it.x.isFinite() || !it.y.isFinite() ||
+            it.x < 0.0 || it.y < 0.0 || it.x > width || it.y > height }) return false
+    for (i in points.indices) {
+        val a = points[i]
+        val b = points[(i + 1) % 4]
+        val c = points[(i + 2) % 4]
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        if (dx * dx + dy * dy < 4.0 || dx * (c.y - b.y) - dy * (c.x - b.x) <= 1.0) return false
+    }
+    return true
+}
 
 /** Borrowed cached image or temporary export decode with explicit ownership. */
 internal class ExportPageBitmap(val bitmap: Bitmap, private val temporary: Boolean) : Closeable {
@@ -47,6 +88,9 @@ data class ScannedPage(
     var watermarkFont: String = "Sans-Serif",
     // Revision counter to discard stale async render jobs
     var editVersion: Long = 0L,
+    // Old previews may remain visible; they must not be exported as current edits.
+    @Transient var renderedVersion: Long = editVersion,
+    @Transient var persistedRenderVersion: Long = editVersion,
     // Transient in-memory cached bitmaps for smooth rendering
     @Transient var originalBitmapCache: Bitmap? = null,
     @Transient var processedBitmapCache: Bitmap? = null,
@@ -72,11 +116,15 @@ data class ScannedPage(
      * Already-cached UI bitmaps are borrowed and are never recycled by the export.
      */
     internal fun openBitmapForExport(context: Context): ExportPageBitmap? {
-        processedBitmapCache?.takeUnless { it.isRecycled }?.let {
-            return ExportPageBitmap(it, temporary = false)
+        if (renderedVersion == editVersion) {
+            processedBitmapCache?.takeUnless { it.isRecycled }?.let {
+                return ExportPageBitmap(it, temporary = false)
+            }
         }
-        processedImagePath?.takeIf { File(it).isFile }?.let { path ->
-            BitmapFactory.decodeFile(path)?.let { return ExportPageBitmap(it, temporary = true) }
+        if (persistedRenderVersion == editVersion) {
+            processedImagePath?.takeIf { File(it).isFile }?.let { path ->
+                BitmapFactory.decodeFile(path)?.let { return ExportPageBitmap(it, temporary = true) }
+            }
         }
 
         // Render using a detached page object. Native rendering may decode the original,
@@ -94,7 +142,7 @@ data class ScannedPage(
             if (rendered != null) {
                 ExportPageBitmap(rendered, temporary = rendered !== borrowedOriginal)
             } else {
-                borrowedOriginal?.let { ExportPageBitmap(it, temporary = false) }
+                throw java.io.IOException("Could not render current page edits")
             }
         } finally {
             copyForExport.originalBitmapCache?.takeIf { it !== borrowedOriginal && !it.isRecycled }?.recycle()
@@ -137,6 +185,7 @@ data class ScannedPage(
      */
     fun updateCaches(resultBmp: Bitmap) {
         processedBitmapCache = resultBmp
+        renderedVersion = editVersion
         val maxThumbDim = 200
         val scale = (maxThumbDim.toFloat() / resultBmp.width.coerceAtLeast(resultBmp.height)).coerceAtMost(1f)
         val thumbW = (resultBmp.width * scale).toInt().coerceAtLeast(1)
@@ -151,19 +200,27 @@ data class ScannedPage(
     ): Bitmap? {
         val orig = getOriginalBitmap(context) ?: return null
         var currentMat = com.veilframe.app.cv.core.BitmapBridge.toMat(orig)
+        var pendingBitmap: Bitmap? = null
         try {
             cvContext?.ensureActive()
 
             // 1. Perspective Warp Crop (if 4 corners specified in original image coordinates)
             val quad = corners
-            if (quad != null && quad.size == 4) {
-                try {
-                    val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(currentMat, quad)
-                    currentMat.release()
-                    currentMat = warped
-                } catch (_: Throwable) {
-                    // Fall back to unwarped image
+            if (quad != null) {
+                require(isValidDocumentCrop(quad, orig.width, orig.height)) {
+                    "Invalid document crop: corners must form a convex, non-crossing boundary"
                 }
+                // The crop editor's selected coordinates are authoritative. Do not
+                // silently nudge them with subpixel detection or rotate after warping.
+                val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
+                    currentMat, quad, refineSubPix = false, autoSkewCorrection = false
+                )
+                if (warped.empty()) {
+                    warped.release()
+                    throw java.io.IOException("Perspective correction returned no image")
+                }
+                currentMat.release()
+                currentMat = warped
             }
             cvContext?.ensureActive()
 
@@ -231,11 +288,12 @@ data class ScannedPage(
             cvContext?.ensureActive()
 
             var resultBmp = com.veilframe.app.cv.core.BitmapBridge.toBitmap(currentMat)
+            pendingBitmap = resultBmp
 
             // 5. Warmth / Temperature Adjustment
             if (warmth != 0.0) {
+                val wBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                 try {
-                    val wBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                     val canvas = android.graphics.Canvas(wBmp)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     val rScale = (1.0 + warmth * 0.2).toFloat().coerceIn(0.5f, 1.5f)
@@ -250,13 +308,17 @@ data class ScannedPage(
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
                     if (wBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = wBmp
-                } catch (_: Exception) {}
+                    pendingBitmap = resultBmp
+                } catch (failure: Throwable) {
+                    wBmp.recycle()
+                    throw failure
+                }
             }
 
             // 6. Color Filter Presets (Sepia, Vintage, Cool, Warm)
             if (filterPreset != "None" && filterPreset != "Default") {
+                val fBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                 try {
-                    val fBmp = Bitmap.createBitmap(resultBmp.width, resultBmp.height, Bitmap.Config.ARGB_8888)
                     val canvas = android.graphics.Canvas(fBmp)
                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                     val cm = android.graphics.ColorMatrix()
@@ -298,7 +360,11 @@ data class ScannedPage(
                     canvas.drawBitmap(resultBmp, 0f, 0f, paint)
                     if (fBmp !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                     resultBmp = fBmp
-                } catch (_: Exception) {}
+                    pendingBitmap = resultBmp
+                } catch (failure: Throwable) {
+                    fBmp.recycle()
+                    throw failure
+                }
             }
 
             // 7. Text Watermark / Document Stamp Overlay
@@ -314,52 +380,92 @@ data class ScannedPage(
                 val stamped = com.veilframe.app.media.watermark.WatermarkEngine.applyWatermark(resultBmp, state)
                 if (stamped !== resultBmp && !resultBmp.isRecycled) resultBmp.recycle()
                 resultBmp = stamped
+                pendingBitmap = resultBmp
             }
 
             if (updateCaches) {
                 updateCaches(resultBmp)
             }
 
+            pendingBitmap = null
             return resultBmp
         } finally {
+            pendingBitmap?.takeUnless { it.isRecycled }?.recycle()
             currentMat.release()
         }
     }
 
     fun saveBitmapsToDisk(context: Context, sessionDir: File) {
-        sessionDir.mkdirs()
-        // Save original bitmap if present and not on disk
-        val origFile = File(sessionDir, "page_${id}_orig.jpg")
-        if (originalBitmapCache != null && !originalBitmapCache!!.isRecycled) {
-            if (!origFile.exists() || originalImagePath.isEmpty()) {
-                FileOutputStream(origFile).use { fos ->
-                    originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)
-                }
-                originalImagePath = origFile.absolutePath
+        check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
+        require(isValidPageIdentity(id)) { "Invalid page identity" }
+        // Existing source paths must be owned by this session, never an unrelated file.
+        if (originalImagePath.isNotBlank() &&
+            File(originalImagePath).canonicalFile.parentFile != sessionDir.canonicalFile) {
+            throw java.io.IOException("Original path is outside the document session")
+        }
+        // The original is an immutable source for all later edits. Keep existing legacy
+        // paths; new originals are stored losslessly rather than recompressed to JPEG.
+        if (ownedSessionFile(sessionDir, originalImagePath) == null) {
+            val source = originalBitmapCache?.takeUnless { it.isRecycled }
+                ?: throw java.io.IOException("Original page image unavailable")
+            val standard = File(sessionDir, "page_${id}_orig.png")
+            // An orphan from a failed previous save is not proof that it
+            // contains this source. Never overwrite or adopt it by filename.
+            val origFile = if (standard.exists()) File(sessionDir, "page_${id}_orig_${UUID.randomUUID()}.png") else standard
+            if (origFile.canonicalFile.parentFile != sessionDir.canonicalFile) {
+                throw java.io.IOException("Original page destination is outside the session")
             }
+            writeSessionFileAtomically(origFile) { fos ->
+                check(source.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Original page encoding failed" }
+            }
+            check(ownedSessionFile(sessionDir, origFile.absolutePath) != null) { "Original page was not persisted" }
+            originalImagePath = origFile.absolutePath
         }
 
-        // Save processed bitmap if present
-        if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
-            val procFile = File(sessionDir, "page_${id}_proc.png")
-            FileOutputStream(procFile).use { fos ->
-                processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)
-            }
-            processedImagePath = procFile.absolutePath
+        // Invalid optional caches must never be recorded as the current render.
+        if (persistedRenderVersion == editVersion &&
+            (ownedSessionFile(sessionDir, processedImagePath.orEmpty()) == null ||
+                ownedSessionFile(sessionDir, thumbnailPath.orEmpty()) == null)) {
+            processedImagePath = null
+            thumbnailPath = null
+            persistedRenderVersion = -1L
+        }
 
-            // Save thumbnail
-            val thumbFile = File(sessionDir, "page_${id}_thumb.jpg")
-            val thumbBmp = thumbnailBitmapCache ?: run {
-                val maxThumbDim = 200
-                val scale = (maxThumbDim.toFloat() / processedBitmapCache!!.width.coerceAtLeast(processedBitmapCache!!.height)).coerceAtMost(1f)
-                val thumbW = (processedBitmapCache!!.width * scale).toInt().coerceAtLeast(1)
-                val thumbH = (processedBitmapCache!!.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(processedBitmapCache!!, thumbW, thumbH, true)
+        val processed = processedBitmapCache?.takeUnless { it.isRecycled }
+        if (renderedVersion != editVersion || processed == null) return
+        if (persistedRenderVersion == editVersion &&
+            processedImagePath?.let { File(it).isFile } == true &&
+            thumbnailPath?.let { File(it).isFile } == true) return
+
+        // A committed manifest must never reference a file being overwritten by a
+        // later, potentially failed, version. Only publish these new paths together.
+        val generation = UUID.randomUUID().toString()
+        val procFile = File(sessionDir, "page_${id}_proc_$generation.png")
+        val thumbFile = File(sessionDir, "page_${id}_thumb_$generation.jpg")
+        val existingThumb = thumbnailBitmapCache?.takeUnless { it.isRecycled }
+        val thumb = existingThumb ?: run {
+            val scale = (200f / processed.width.coerceAtLeast(processed.height)).coerceAtMost(1f)
+            Bitmap.createScaledBitmap(processed, (processed.width * scale).toInt().coerceAtLeast(1),
+                (processed.height * scale).toInt().coerceAtLeast(1), true)
+        }
+        try {
+            writeSessionFileAtomically(procFile) { fos ->
+                check(processed.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Processed page encoding failed" }
             }
-            FileOutputStream(thumbFile).use { fos ->
-                thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)
+            writeSessionFileAtomically(thumbFile) { fos ->
+                check(thumb.compress(Bitmap.CompressFormat.JPEG, 80, fos)) { "Page thumbnail encoding failed" }
             }
+            check(ownedSessionFile(sessionDir, procFile.absolutePath) != null &&
+                ownedSessionFile(sessionDir, thumbFile.absolutePath) != null) { "Render cache was not persisted" }
+            processedImagePath = procFile.absolutePath
             thumbnailPath = thumbFile.absolutePath
+            persistedRenderVersion = renderedVersion
+        } catch (failure: Throwable) {
+            procFile.delete()
+            thumbFile.delete()
+            throw failure
+        } finally {
+            if (thumb !== existingThumb && thumb !== processed && !thumb.isRecycled) thumb.recycle()
         }
     }
 }
@@ -390,14 +496,14 @@ class DocumentSession(
         set(value) { id = value }
 
     internal val _pages = mutableListOf<ScannedPage>()
-    val pages: List<ScannedPage> get() = _pages.toList()
+    val pages: List<ScannedPage> get() = synchronized(_pages) { _pages.toList() }
 
     var createdAt: Long = System.currentTimeMillis()
     var lastModifiedAt: Long = System.currentTimeMillis()
 
     var activePageIndex: Int = 0
 
-    fun replaceAllPages(newPages: List<ScannedPage>) {
+    fun replaceAllPages(newPages: List<ScannedPage>) = synchronized(_pages) {
         _pages.clear()
         _pages.addAll(newPages)
         activePageIndex = 0
@@ -454,6 +560,8 @@ class DocumentSession(
         val newPage = ScannedPage(
             originalBitmapCache = copyOrig,
             processedBitmapCache = copyProc,
+            renderedVersion = if (src.renderedVersion == src.editVersion && copyProc != null) 0L else -1L,
+            persistedRenderVersion = -1L,
             rotationDegrees = src.rotationDegrees,
             mode = src.mode,
             corners = src.corners?.map { org.opencv.core.Point(it.x, it.y) },
@@ -510,33 +618,177 @@ class DocumentSession(
     // DISK PERSISTENCE LAYER (Process-Death Survival)
     // =========================================================================
 
-    fun saveToDisk(context: Context) {
-        try {
-            val sessionDir = getSessionDirectory(context, id)
-            sessionDir.mkdirs()
+    internal data class SaveSnapshot(
+        val sessionId: String,
+        val sequence: Long,
+        val pages: List<Pair<ScannedPage, ScannedPage>>,
+        val title: String,
+        val created: Long,
+        val modified: Long,
+        val active: Int
+    )
 
-            val pagesSnapshot = synchronized(_pages) { _pages.toList() }
+    /** Capture on the UI owner before scheduling disk work. */
+    /** Capture immutable edit metadata and strong bitmap references on the UI owner. */
+    internal fun snapshotForExport(): DocumentSession = synchronized(_pages) {
+        DocumentSession(id = id, title = title).also { snapshot ->
+            snapshot._pages.addAll(_pages.map { page ->
+                page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) })
+            })
+            snapshot.activePageIndex = activePageIndex
+            snapshot.createdAt = createdAt
+            snapshot.lastModifiedAt = lastModifiedAt
+        }
+    }
+
+    internal fun captureSaveSnapshot(): SaveSnapshot = synchronized(_pages) {
+        SaveSnapshot(id, saveSequence.incrementAndGet(),
+            _pages.map { page -> page to page.copy(corners = page.corners?.map { org.opencv.core.Point(it.x, it.y) }) },
+            title, createdAt, lastModifiedAt, activePageIndex.coerceIn(0, (_pages.size - 1).coerceAtLeast(0)))
+    }
+
+    fun saveToDisk(context: Context): Boolean = saveToDisk(context, captureSaveSnapshot())
+
+    internal fun saveToDisk(context: Context, snapshot: SaveSnapshot): Boolean {
+        val sessionId = snapshot.sessionId
+        return synchronized(sessionLock(sessionId)) {
+        val newRenderFiles = mutableListOf<File>()
+        var manifestWriteStarted = false
+        var manifestVerified = false
+        try {
+            val sessionDir = getSessionDirectory(context, sessionId)
+            // Explicit deletion retires this identity for the lifetime of the process.
+            // A queued snapshot must never recreate a deleted private document.
+            if (retiredDirectories.contains(sessionDir.absolutePath)) return@synchronized false
+            check(sessionDir.isDirectory || sessionDir.mkdirs()) { "Cannot create session directory" }
+            val manifestFile = File(sessionDir, "manifest.json")
+            // A queued snapshot from another controller/instance must not overwrite a
+            // later committed snapshot. The epoch scopes monotonic tickets to this process.
+            val current = try {
+                JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+            } catch (_: java.io.FileNotFoundException) { null }
+            val integrityVersion = current?.optInt("imageIntegrityVersion", 0) ?: 0
+            require(current == null || (current.getString("id") == sessionId && integrityVersion in 0..1)) {
+                "Invalid previous recovery manifest"
+            }
+            if (current?.optString("writerEpoch") == writerEpoch &&
+                current.optLong("writerSequence", -1L) > snapshot.sequence) return@synchronized true
+
+            val pagePairs = snapshot.pages
+            val pagesSnapshot = pagePairs.map { it.second }
+            require(pagesSnapshot.isNotEmpty() && pagesSnapshot.all { isValidPageIdentity(it.id) } &&
+                pagesSnapshot.map { it.id }.toSet().size == pagesSnapshot.size) { "Invalid or duplicate document page identity" }
+            val snapshotTitle = snapshot.title
+            val snapshotCreated = snapshot.created
+            val snapshotModified = snapshot.modified
+            val snapshotActive = snapshot.active
+
+            // The manifest pins immutable originals and generation-specific caches.
+            // Never bless changed bytes simply because another autosave ran.
+            val previousDigests = HashMap<String, String>()
+            val previousOriginals = HashMap<String, String>()
+            val legacyPaths = HashSet<String>()
+            fun canonicalPath(path: String): String = File(path).canonicalPath
+            current?.getJSONArray("pages")?.let { prior ->
+                for (i in 0 until prior.length()) {
+                    val entry = prior.getJSONObject(i)
+                    val pageId = entry.getString("id")
+                    require(isValidPageIdentity(pageId) && pageId !in previousOriginals) {
+                        "Invalid previous page identity"
+                    }
+                    val original = entry.getString("originalImagePath")
+                    require(original.isNotBlank() && File(original).canonicalFile.parentFile == sessionDir.canonicalFile) {
+                        "Invalid previously committed original"
+                    }
+                    previousOriginals[pageId] = canonicalPath(original)
+                    for ((pathKey, digestKey) in listOf("originalImagePath" to "originalSha256",
+                        "processedImagePath" to "processedSha256", "thumbnailPath" to "thumbnailSha256")) {
+                        val path = entry.optString(pathKey, "")
+                        if (path.isBlank()) continue
+                        val canonical = canonicalPath(path)
+                        val digest = entry.optString(digestKey, "")
+                        if (integrityVersion == 1 || digest.isNotEmpty()) {
+                            if (pathKey == "originalImagePath") {
+                                require(digest.matches(Regex("[a-f0-9]{64}"))) { "Committed original digest missing or invalid" }
+                            }
+                            val existing = previousDigests.put(canonical, digest)
+                            require(existing == null || existing == digest) { "Conflicting committed page digests" }
+                        } else legacyPaths.add(canonical)
+                    }
+                }
+            }
+            val digests = HashMap<String, String>()
+            fun checkedDigest(path: String): String {
+                val canonical = canonicalPath(path)
+                return digests.getOrPut(canonical) {
+                    val file = requireNotNull(ownedSessionFile(sessionDir, canonical)) { "Saved page unavailable" }
+                    val actual = PersistedPageIntegrity.digest(file)
+                    val prior = previousDigests[canonical]
+                    require(prior == null || actual == prior) { "Previously committed page bytes changed" }
+                    require(canonical !in legacyPaths || PersistedPageIntegrity.legacyDecodes(file)) {
+                        "Legacy image could not be decoded for digest migration"
+                    }
+                    actual
+                }
+            }
 
             // 1. Save all page images to session folder
             for (page in pagesSnapshot) {
+                // Rebuild disposable caches rather than accepting corrupt old bytes.
+                previousOriginals[page.id]?.let { pinned ->
+                    if (page.originalImagePath.isBlank()) page.originalImagePath = pinned
+                    require(canonicalPath(page.originalImagePath) == pinned) { "Committed original path changed" }
+                    checkedDigest(pinned)
+                }
+                if (page.originalImagePath.isNotBlank() &&
+                    (canonicalPath(page.originalImagePath) in previousDigests || canonicalPath(page.originalImagePath) in legacyPaths)) {
+                    checkedDigest(page.originalImagePath)
+                }
+                val originalRender = page.processedImagePath
+                val originalThumbnail = page.thumbnailPath
+                if (listOfNotNull(originalRender, originalThumbnail).any { path ->
+                        val canonical = canonicalPath(path)
+                        val expected = previousDigests[canonical]
+                        when {
+                            expected != null -> ownedSessionFile(sessionDir, canonical)
+                                ?.let { PersistedPageIntegrity.verify(it, expected) } != true
+                            canonical in legacyPaths -> ownedSessionFile(sessionDir, canonical)
+                                ?.let { PersistedPageIntegrity.legacyDecodes(it) } != true
+                            else -> false
+                        }
+                    }) {
+                    page.processedImagePath = null
+                    page.thumbnailPath = null
+                    page.persistedRenderVersion = -1L
+                }
                 page.saveBitmapsToDisk(context, sessionDir)
+                page.processedImagePath?.takeIf { it != originalRender }?.let { newRenderFiles.add(File(it)) }
+                page.thumbnailPath?.takeIf { it != originalThumbnail }?.let { newRenderFiles.add(File(it)) }
             }
 
             // 2. Write session JSON manifest
             val json = JSONObject().apply {
-                put("id", id)
-                put("title", title)
-                put("createdAt", createdAt)
-                put("lastModifiedAt", lastModifiedAt)
-                put("activePageIndex", activePageIndex)
+                put("id", sessionId)
+                put("imageIntegrityVersion", 1)
+                put("writerEpoch", writerEpoch)
+                put("writerSequence", snapshot.sequence)
+                put("title", snapshotTitle)
+                put("createdAt", snapshotCreated)
+                put("lastModifiedAt", snapshotModified)
+                put("activePageIndex", snapshotActive)
 
                 val pagesArray = JSONArray()
                 for (page in pagesSnapshot) {
                     val pageJson = JSONObject().apply {
                         put("id", page.id)
                         put("originalImagePath", page.originalImagePath)
-                        put("processedImagePath", page.processedImagePath ?: "")
-                        put("thumbnailPath", page.thumbnailPath ?: "")
+                        put("originalSha256", checkedDigest(page.originalImagePath))
+                        val processed = if (page.persistedRenderVersion == page.editVersion) page.processedImagePath.orEmpty() else ""
+                        val thumbnail = if (page.persistedRenderVersion == page.editVersion) page.thumbnailPath.orEmpty() else ""
+                        put("processedImagePath", processed)
+                        put("processedSha256", if (processed.isNotBlank()) checkedDigest(processed) else "")
+                        put("thumbnailPath", thumbnail)
+                        put("thumbnailSha256", if (thumbnail.isNotBlank()) checkedDigest(thumbnail) else "")
                         put("rotationDegrees", page.rotationDegrees)
                         put("mode", page.mode.name)
                         put("exposureStops", page.exposureStops)
@@ -569,41 +821,114 @@ class DocumentSession(
                 put("pages", pagesArray)
             }
 
-            val manifestFile = File(sessionDir, "manifest.json")
-            manifestFile.writeText(json.toString())
+            val serialized = json.toString()
+            // AtomicFile.finishWrite is void on Android and may log a failed rename.
+            // Verify the committed manifest before calling this a successful recovery save.
+            manifestWriteStarted = true
+            writeSessionFileAtomically(manifestFile) { stream ->
+                stream.write(serialized.toByteArray(Charsets.UTF_8))
+            }
+            val stored = AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
+            check(stored == serialized) { "Manifest commit could not be verified" }
+            manifestVerified = true
+            // Hand committed paths back only to still-current page objects.
+            if (id == sessionId) synchronized(_pages) {
+                for ((live, saved) in pagePairs) {
+                    if (_pages.none { it === live }) continue
+                    if (live.originalImagePath.isBlank()) live.originalImagePath = saved.originalImagePath
+                    if (live.editVersion == saved.editVersion) {
+                        live.processedImagePath = saved.processedImagePath
+                        live.thumbnailPath = saved.thumbnailPath
+                        live.persistedRenderVersion = saved.persistedRenderVersion
+                    }
+                }
+            }
+            // Delete only obsolete generation-scoped render caches. Originals and
+            // legacy paths are never deleted by this maintenance pass. If an export
+            // races a removed cache, it can re-render from the retained original.
+            val retained = pagesSnapshot.flatMap { listOfNotNull(it.processedImagePath, it.thumbnailPath) }.toHashSet()
+            if (id == sessionId) synchronized(_pages) {
+                retained.addAll(_pages.flatMap { listOfNotNull(it.processedImagePath, it.thumbnailPath) })
+            }
+            val generated = Regex("""page_.+_(?:proc|thumb)_[0-9a-fA-F-]{36}\.(?:png|jpg)""")
+            sessionDir.listFiles()?.forEach { file ->
+                if (generated.matches(file.name) && file.absolutePath !in retained) file.delete()
+            }
+            true
         } catch (e: Exception) {
-            // Log / ignore persistence failure during transient teardown
+            Log.e("DocumentSession", "Session $sessionId save or post-commit cache maintenance failed", e)
+            // A confirmed manifest remains valid even if optional maintenance fails.
+            manifestVerified
+        } finally {
+            if (!manifestWriteStarted) {
+                // The prior manifest cannot reference these newly allocated generations.
+                // If a manifest write was attempted, retain them conservatively until a
+                // later verified commit can safely reclaim unreferenced files.
+                newRenderFiles.forEach { file ->
+                    try { file.delete() } catch (e: SecurityException) {
+                        Log.w("DocumentSession", "Cannot remove abandoned render cache", e)
+                    }
+                }
+            }
+        }
         }
     }
 
     companion object {
+        private val writerEpoch = UUID.randomUUID().toString()
+        private val saveSequence = java.util.concurrent.atomic.AtomicLong()
+        private val sessionLocks = Array(32) { Any() }
+        private val retiredDirectories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        private fun sessionLock(id: String): Any = sessionLocks[(id.hashCode() and Int.MAX_VALUE) % sessionLocks.size]
         fun getSessionsBaseDir(context: Context): File {
             return File(context.filesDir, "document_sessions").apply { mkdirs() }
         }
 
         fun getSessionDirectory(context: Context, sessionId: String): File {
+            require(sessionId.isNotBlank() && sessionId != "." && sessionId != ".." &&
+                !sessionId.contains('/') && !sessionId.contains('\\')) { "Invalid document session identity" }
             return File(getSessionsBaseDir(context), sessionId)
         }
 
-        fun loadFromDisk(context: Context, sessionId: String): DocumentSession? {
+        fun loadFromDisk(context: Context, sessionId: String): DocumentSession? = synchronized(sessionLock(sessionId)) {
             val sessionDir = getSessionDirectory(context, sessionId)
             val manifestFile = File(sessionDir, "manifest.json")
-            if (!manifestFile.exists()) return null
-
-            return try {
-                val json = JSONObject(manifestFile.readText())
+            if (retiredDirectories.contains(sessionDir.absolutePath)) return@synchronized null
+            try {
+                val json = JSONObject(AtomicFile(manifestFile).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+                require(json.getString("id") == sessionId) { "Session manifest identity mismatch" }
                 val session = DocumentSession(
-                    id = json.getString("id"),
+                    id = sessionId,
                     title = json.optString("title", "Scanned Document")
                 ).apply {
                     createdAt = json.optLong("createdAt", System.currentTimeMillis())
                     lastModifiedAt = json.optLong("lastModifiedAt", System.currentTimeMillis())
                 }
 
-                val pagesArray = json.optJSONArray("pages") ?: JSONArray()
+                val integrityVersion = json.optInt("imageIntegrityVersion", 0)
+                require(integrityVersion in 0..1) { "Unsupported recovery integrity contract" }
+                val checkedFiles = HashMap<Pair<String, String>, Boolean>()
+                fun checkedImage(page: JSONObject, pathKey: String, digestKey: String): File? {
+                    val file = ownedSessionFile(sessionDir, page.optString(pathKey, "")) ?: return null
+                    val expected = page.optString(digestKey, "")
+                    val valid = checkedFiles.getOrPut(file.absolutePath to expected) {
+                        if (integrityVersion == 1 || expected.isNotBlank()) PersistedPageIntegrity.verify(file, expected)
+                        else PersistedPageIntegrity.legacyDecodes(file)
+                    }
+                    return file.takeIf { valid }
+                }
+
+                val pagesArray = json.getJSONArray("pages")
+                require(pagesArray.length() > 0) { "Saved document has no pages" }
                 val loadedPages = mutableListOf<ScannedPage>()
+                val pageIds = HashSet<String>()
                 for (i in 0 until pagesArray.length()) {
                     val p = pagesArray.getJSONObject(i)
+                    val pageId = p.getString("id")
+                    require(isValidPageIdentity(pageId) && pageIds.add(pageId)) { "Invalid or duplicate page identity" }
+                    val original = requireNotNull(checkedImage(p, "originalImagePath", "originalSha256")) { "Saved original page unavailable or corrupt" }
+                    val processed = checkedImage(p, "processedImagePath", "processedSha256")
+                    val thumbnail = if (processed != null) checkedImage(p, "thumbnailPath", "thumbnailSha256") else null
                     val modeStr = p.optString("mode", DocumentScanner.DocumentMode.ENHANCED.name)
                     val mode = try {
                         DocumentScanner.DocumentMode.valueOf(modeStr)
@@ -621,10 +946,11 @@ class DocumentSession(
                     }
 
                     val page = ScannedPage(
-                        id = p.getString("id"),
-                        originalImagePath = p.optString("originalImagePath", ""),
-                        processedImagePath = p.optString("processedImagePath", "").takeIf { it.isNotEmpty() },
-                        thumbnailPath = p.optString("thumbnailPath", "").takeIf { it.isNotEmpty() },
+                        id = pageId,
+                        originalImagePath = original.absolutePath,
+                        processedImagePath = processed?.absolutePath,
+                        thumbnailPath = thumbnail?.absolutePath,
+                        persistedRenderVersion = if (processed != null) 0L else -1L,
                         rotationDegrees = p.optInt("rotationDegrees", 0),
                         mode = mode,
                         corners = cornersList,
@@ -661,19 +987,21 @@ class DocumentSession(
             val dirs = baseDir.listFiles() ?: return emptyList()
 
             for (dir in dirs) {
-                if (dir.isDirectory) {
+                if (dir.isDirectory) synchronized(sessionLock(dir.name)) {
+                    if (retiredDirectories.contains(dir.absolutePath)) return@synchronized
                     val manifest = File(dir, "manifest.json")
-                    if (manifest.exists()) {
+                    if (manifest.exists() || File(dir, "manifest.json.bak").exists()) {
                         try {
-                            val json = JSONObject(manifest.readText())
+                            val json = JSONObject(AtomicFile(manifest).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
                             val id = json.getString("id")
+                            require(id == dir.name) { "Session manifest identity mismatch" }
                             val title = json.optString("title", "Scanned Document")
                             val lastMod = json.optLong("lastModifiedAt", dir.lastModified())
                             val pagesArr = json.optJSONArray("pages")
                             val count = pagesArr?.length() ?: 0
                             val firstThumb = if (count > 0) {
                                 val firstPage = pagesArr!!.getJSONObject(0)
-                                firstPage.optString("thumbnailPath", "").takeIf { it.isNotEmpty() && File(it).exists() }
+                                ownedSessionFile(dir, firstPage.optString("thumbnailPath", ""))?.absolutePath
                             } else null
 
                             list.add(
@@ -692,11 +1020,16 @@ class DocumentSession(
             return list.sortedByDescending { it.lastModifiedAt }
         }
 
-        fun deleteSession(context: Context, sessionId: String) {
+        fun deleteSession(context: Context, sessionId: String): Boolean = synchronized(sessionLock(sessionId)) {
             try {
                 val dir = getSessionDirectory(context, sessionId)
-                dir.deleteRecursively()
-            } catch (_: Exception) {}
+                retiredDirectories.add(dir.absolutePath)
+                // Retry is allowed on deletion failure; autosaves cannot write here again.
+                !dir.exists() || (dir.deleteRecursively() && !dir.exists())
+            } catch (e: Exception) {
+                Log.e("DocumentSession", "Could not delete recovery document", e)
+                false
+            }
         }
     }
 }

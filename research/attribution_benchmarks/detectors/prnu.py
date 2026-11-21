@@ -15,6 +15,8 @@ Methodology:
 """
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
+import hashlib
+import math
 
 from ..common.models import (
     BenchmarkEnvironment,
@@ -51,7 +53,7 @@ def extract_noise_residual(img: np.ndarray, filter_radius: int = 2) -> np.ndarra
 
 def estimate_camera_fingerprint(frames: List[np.ndarray]) -> np.ndarray:
     """
-    Estimates composite sensor fingerprint by maximum-likelihood averaging of residuals.
+    Estimates a baseline fingerprint by unweighted averaging of residuals.
     """
     if not frames:
         return np.zeros((1, 1), dtype=np.float64)
@@ -71,7 +73,7 @@ def evaluate_prnu_pair_benchmark(
     env: Optional[BenchmarkEnvironment] = None,
 ) -> BenchmarkResult:
     """
-    Evaluates PRNU 2D cross-correlation and PCE between reference and transformed video frames.
+    Measures same-recording residual similarity, not independent camera attribution.
     """
     if env is None:
         env = BenchmarkEnvironment()
@@ -112,6 +114,8 @@ def evaluate_prnu_pair_benchmark(
             "peak_coordinate": list(peak_coord),
             "evaluated_frames_ref": len(ref_frames),
             "evaluated_frames_trans": len(trans_frames),
+            "evaluation_scope": "same_recording_residual_diagnostic",
+            "independent_camera_attribution": False,
         },
         units={
             "ref_self_pce": "energy_ratio",
@@ -164,8 +168,8 @@ def evaluate_prnu_corpus_benchmark(
 
     Structure of camera_corpora:
     {
-        "cam_A": {"ref": [frames...], "trans": [frames...]},
-        "cam_B": {"ref": [frames...], "trans": [frames...]},
+        "cam_A": {"ref": [enrollment frames...], "original": [held-out probes...], "trans": [transformed probes...]},
+        "cam_B": {"ref": [enrollment frames...], "original": [held-out probes...], "trans": [transformed probes...]},
         ...
     }
     """
@@ -185,32 +189,67 @@ def evaluate_prnu_corpus_benchmark(
             error_message="Requires at least 2 distinct camera corpora to compute ROC/AUC attribution curves",
         )
 
-    # Compute fingerprints
-    ref_fps: Dict[str, np.ndarray] = {}
-    trans_fps: Dict[str, np.ndarray] = {}
-    for cid, clips in camera_corpora.items():
-        ref_fps[cid] = estimate_camera_fingerprint(clips.get("ref", []))
-        trans_fps[cid] = estimate_camera_fingerprint(clips.get("trans", []))
+    def unavailable(reason: str) -> BenchmarkResult:
+        return BenchmarkResult(
+            benchmark_name="prnu_corpus_attribution",
+            benchmark_version="0.2.0",
+            status="unavailable",
+            signal_metrics=SignalMetrics("prnu_corpus_metrics"),
+            detector_metrics=DetectorMetrics("prnu_corpus_matcher", "MultiCamera_ROC", 0.0, pce_threshold, "UNAVAILABLE"),
+            attribution_metrics=AttributionMetrics(0),
+            environment=env,
+            error_message=reason,
+        )
+
+    if not math.isfinite(pce_threshold) or pce_threshold < 0:
+        return unavailable("Invalid PCE threshold")
+    enrollment_hashes = set()
+    probe_hashes = set()
+    expected_shape = None
+    for cid in cam_ids:
+        clips = camera_corpora[cid]
+        for role in ("ref", "original", "trans"):
+            frames = clips.get(role, [])
+            if not frames:
+                return unavailable(f"Camera {cid} has no {role} frames")
+            for frame in frames:
+                array = np.asarray(frame, dtype=np.float64)
+                if array.ndim != 2 or min(array.shape) < 12 or not np.isfinite(array).all():
+                    return unavailable(f"Invalid frame in {cid}/{role}")
+                if expected_shape is None:
+                    expected_shape = array.shape
+                if array.shape != expected_shape:
+                    return unavailable("All frames must use the same registered geometry")
+                digest = hashlib.sha256(np.ascontiguousarray(array).tobytes()).digest()
+                (enrollment_hashes if role == "ref" else probe_hashes).add(digest)
+        if len(clips["original"]) != len(clips["trans"]):
+            return unavailable(f"Camera {cid} has unpaired original/transformed probes")
+    if enrollment_hashes & probe_hashes:
+        return unavailable("Enrollment/probe leakage: duplicate frame in held-out probes")
+
+    ref_fps = {cid: estimate_camera_fingerprint(camera_corpora[cid]["ref"]) for cid in cam_ids}
+    orig_fps = {cid: estimate_camera_fingerprint(camera_corpora[cid]["original"]) for cid in cam_ids}
+    trans_fps = {cid: estimate_camera_fingerprint(camera_corpora[cid]["trans"]) for cid in cam_ids}
+    if any(np.std(fp) < 1e-12 for fp in list(ref_fps.values()) + list(orig_fps.values())):
+        return unavailable("Enrollment or original probe fingerprint has no measurable variance")
 
     same_cam_before: List[float] = []
     same_cam_after: List[float] = []
     diff_cam_before: List[float] = []
     diff_cam_after: List[float] = []
 
-    for i, c1 in enumerate(cam_ids):
-        # Same camera match
-        pce_self_b, _, _ = compute_pce_and_ncc(ref_fps[c1], ref_fps[c1])
-        pce_self_a, _, _ = compute_pce_and_ncc(ref_fps[c1], trans_fps[c1])
-        same_cam_before.append(pce_self_b)
-        same_cam_after.append(pce_self_a)
-
-        # Cross camera matches
-        for j, c2 in enumerate(cam_ids):
-            if i != j:
-                pce_cross_b, _, _ = compute_pce_and_ncc(ref_fps[c1], ref_fps[c2])
-                pce_cross_a, _, _ = compute_pce_and_ncc(ref_fps[c1], trans_fps[c2])
-                diff_cam_before.append(pce_cross_b)
-                diff_cam_after.append(pce_cross_a)
+    # Both conditions query the same enrolled references with paired held-out
+    # probes. Exact duplicate rejection is not proof of independent capture.
+    for c1 in cam_ids:
+        for c2 in cam_ids:
+            before, _, _ = compute_pce_and_ncc(ref_fps[c1], orig_fps[c2])
+            after, _, _ = compute_pce_and_ncc(ref_fps[c1], trans_fps[c2])
+            if c1 == c2:
+                same_cam_before.append(before)
+                same_cam_after.append(after)
+            else:
+                diff_cam_before.append(before)
+                diff_cam_after.append(after)
 
     auc_before, roc_b = compute_roc_and_auc(same_cam_before, diff_cam_before, higher_is_match=True)
     auc_after, roc_a = compute_roc_and_auc(same_cam_after, diff_cam_after, higher_is_match=True)
@@ -255,13 +294,19 @@ def evaluate_prnu_corpus_benchmark(
             "before_transformation": {"tpr": tpr_b, "fpr": fpr_b, "auc": auc_before},
             "after_transformation": {"tpr": tpr_a, "fpr": fpr_a, "auc": auc_after},
             "auc_delta": float(auc_after - auc_before),
+            "baseline": "held_out_original_probes",
+            "evaluation_unit": "aggregate_camera_probe",
+            "matched_pairs_per_condition": len(same_cam_before),
+            "nonmatched_pairs_per_condition": len(diff_cam_before),
+            "threshold_scope": "fixed_supplied_threshold_not_calibrated",
+            "limitations": "Exact duplicate rejection does not prove independent captures; no anonymity certification.",
             "tpr_delta": float(tpr_a - tpr_b),
         },
     )
 
     return BenchmarkResult(
         benchmark_name="prnu_corpus_attribution",
-        benchmark_version="0.1.0",
+        benchmark_version="0.2.0",
         status="success",
         signal_metrics=sig_metrics,
         detector_metrics=det_metrics,

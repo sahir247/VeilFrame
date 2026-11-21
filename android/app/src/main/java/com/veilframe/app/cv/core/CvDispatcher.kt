@@ -291,6 +291,11 @@ class CvJob<T> internal constructor(
 
     suspend fun await(): CvResult<T> = result.await()
 
+    /** Wait for actual worker termination before disposing any leased input or orphan result. */
+    suspend fun joinWorker() {
+        coroutine?.join()
+    }
+
     /** Non-blocking peek; null while the job is still pending/running. */
     fun tryGetNow(): CvResult<T>? = if (result.isCompleted) result.getCompleted() else null
 

@@ -10,6 +10,7 @@ import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.prnu.PrnuSanitizerEngine
 import com.veilframe.app.cv.prnu.ncnn.VeilNetNanoNative
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before

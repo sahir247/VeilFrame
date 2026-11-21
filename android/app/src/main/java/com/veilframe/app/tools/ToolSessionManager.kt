@@ -284,8 +284,8 @@ class ToolSessionManager(
                 configureOptions(
                     paramHeader = "AI BUNDLE CONFIGURATION",
                     primaryLabel = "Token Budget",
-                    primaryDesc = "Target context window limit for LLM prompt ingestion",
-                    primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
+                    primaryDesc = "Choose o200k_base or cl100k_base artifact tokens (2 MiB cap); chat overhead differs. Byte-only: 32 MiB.",
+                    primaryChips = BundleBudgetOptions.choices.map { it.label },
                     primaryDefaultIndex = 1,
                     formatLabel = "Bundle Format",
                     formatDesc = "Output archive extension and structured packaging",
@@ -601,6 +601,7 @@ class ToolSessionManager(
 
     fun clearSelectedTarget(logMessage: Boolean = true) {
         val state = currentState
+        state.targetRevision++
         state.selectedUri = null
         state.selectedPathDisplay = "No file or folder selected"
         state.isFolderSelected = false

@@ -24,6 +24,12 @@ permissions:
   contents: write
   actions: read
 
+# Do not build every intermediate PR revision simultaneously. Keep releases,
+# tags, manual workflow dispatches and main pushes independent/non-cancellable.
+concurrency:
+  group: veilframe-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ------------------------------------------------------------------ #
   # 1. Multi-Platform Test Matrix: Linux, Windows, macOS x Python 3.10-12
@@ -280,9 +286,10 @@ jobs:
           REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
-          # Prefer an artifact built from this exact head or this feature branch.
-          # If neither exists, a successful main-branch SDK is safe only when every
-          # OpenCV SDK build input is identical between that artifact SHA and HEAD.
+          # Prefer a *successful* SDK artifact from this head, then this branch,
+          # then main. A queued exact-head build may fail or be cancelled; a
+          # successful source-identical artifact is stronger evidence.
+          # Never use stale SDK inputs or a failed/cancelled SDK run.
           RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
             --branch "$REQUIRED_BRANCH" \
@@ -290,18 +297,21 @@ jobs:
             --json databaseId,headSha,status,conclusion)
 
           RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
-            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+            '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success")] | first | .databaseId // empty')
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
+            # Cross-commit queued SDK runs can be cancelled on rapid PR pushes.
+            # Only reuse completed-successful SDK artifacts from other commits.
             CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
-              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
+              '[.[] | select(.status == "completed" and .conclusion == "success")] | first // {}')
             RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
             ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
           fi
 
-          # Dependency-only and app-only PRs do not trigger an OpenCV SDK build.
-          # Reuse the latest successful main artifact only after checking its source
+          # App-only PRs may still trigger OpenCV through a changed CI workflow.
+          # Prefer an existing verified artifact over waiting for that build.
+          # Reuse a successful main artifact only after checking its source
           # tree against this exact PR head for all SDK-defining inputs below.
           if [ -z "$RUN_ID" ]; then
             MAIN_RUNS=$(gh run list --repo "${{ github.repository }}" \
@@ -421,6 +431,63 @@ jobs:
         run: |
           set -Eeuo pipefail
           ./gradlew :app:testDebugUnitTest --stacktrace
+
+      # Keep actionable JUnit assertions available after a failed test gate.
+      # This does not change Gradle's exit status or mark tests successful.
+      - name: Diagnose Android unit-test failures
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          reports = sorted(glob.glob('android/app/build/test-results/testDebugUnitTest/**/TEST-*.xml', recursive=True))
+          if not reports:
+              print('No JUnit XML produced (the failure may precede unit tests)')
+          shown = 0
+          for file in reports:
+              try:
+                  suite = ET.parse(file).getroot()
+              except ET.ParseError as exc:
+                  print(f'Unreadable JUnit XML {os.path.basename(file)}: {exc}')
+                  continue
+              for case in suite.iter('testcase'):
+                  for failure in list(case.findall('failure')) + list(case.findall('error')):
+                      label = f"{case.get('classname', '?')}.{case.get('name', '?')}"
+                      detail = (failure.get('message', '') + '\\n' + (failure.text or ''))[:2400]
+                      print(f'FAILED {label}\\n{detail}')
+                      shown += 1
+                      if shown >= 40:
+                          break
+                  if shown >= 40:
+                      break
+              if shown >= 40:
+                  break
+          print(f'Shown failing test cases: {shown}')
+          PY
+
+      - name: Upload Android unit-test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-evidence-${{ github.run_id }}
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Compile instrumented Office and native device regressions in PR CI.
+      # No emulator/hardware is available on this runner: this is compilation,
+      # never claim physical-device acceptance from this step.
+      - name: Compile Android device regression tests (no device execution)
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:compileDebugAndroidTestKotlin --stacktrace
 
       - name: Assemble ARM64 debug APK
         working-directory: android

@@ -9,7 +9,8 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
+import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.rendering.PDFRenderer
@@ -40,7 +41,7 @@ data class OcrPageResult(
     val text: String,
     val markdownText: String = "",
     val blocks: List<OcrTextBlock>,
-    val confidence: Float
+    val confidence: Float?
 )
 
 /**
@@ -67,8 +68,15 @@ data class OcrTextLine(
 data class OcrWord(
     val text: String,
     val boundingBox: OcrBoundingBox?,
-    val confidence: Float
+    val confidence: Float?
 )
+
+/** Null means recognition did not supply confidence for at least one word. */
+internal fun pageOcrConfidence(words: List<OcrWord>): Float? {
+    if (words.isEmpty()) return null
+    val values = words.map { it.confidence?.takeIf { score -> score.isFinite() && score in 0f..1f } ?: return null }
+    return values.average().toFloat()
+}
 
 /**
  * Bounding box for OCR elements.
@@ -104,9 +112,12 @@ data class SearchablePdfResult(
  * Outcome of single-image OCR: recognized text plus a debug trail
  * (dimensions, path results) shown when nothing is recognized.
  */
+enum class ImageOcrStatus { TEXT_FOUND, NO_TEXT, INCOMPLETE, FAILED }
+
 data class ImageOcrOutcome(
     val text: String,
-    val debug: String = ""
+    val debug: String = "",
+    val status: ImageOcrStatus = if (text.isBlank()) ImageOcrStatus.NO_TEXT else ImageOcrStatus.TEXT_FOUND
 )
 
 /**
@@ -120,7 +131,6 @@ class PdfOcrProcessor(private val context: Context) {
     private companion object {
         private const val MAX_OCR_PIXELS = 4_000_000 // ~4MP per page
         private const val OCR_CHUNK_SIZE = 3
-        private const val MAX_WORDS_PER_PAGE = 1000
     }
     
     /**
@@ -207,7 +217,7 @@ class PdfOcrProcessor(private val context: Context) {
                             text = pageText,
                             markdownText = pageMarkdown,
                             blocks = blocks,
-                            confidence = 0.85f
+                            confidence = pageOcrConfidence(words)
                         )
                         pageResults.add(pageResult)
 
@@ -289,7 +299,7 @@ class PdfOcrProcessor(private val context: Context) {
             // Create a temp file
             val cacheDir = File(context.cacheDir, "ocr_cache")
             if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_searchable_${System.currentTimeMillis()}.pdf")
+            tempFile = File.createTempFile("temp_searchable_", ".pdf", cacheDir)
             
             context.contentResolver.openInputStream(inputUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -304,25 +314,30 @@ class PdfOcrProcessor(private val context: Context) {
             // Load with memory safety
             document = PDDocument.load(tempFile, MemoryUsageSetting.setupTempFileOnly())
             
+            requirePdfRewriteAllowed(document)
             val totalPages = document.numberOfPages
             progressCallback(10)
             
             val renderer = PDFRenderer(document)
+            val fonts = SearchableOcrFonts(context, document)
+            val layerDigests = linkedMapOf<Int, ByteArray>()
             
             for (pageIndex in 0 until totalPages) {
                 ensureActive()
                 val page = document.getPage(pageIndex)
                 
                 // Render page to image for OCR
-                val dpi = getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
+                val dpi = getSafeOcrDpi(page.cropBox.width, page.cropBox.height)
                 val pageImage = renderer.renderImageWithDPI(pageIndex, dpi)
                 
                 try {
                     ensureActive()
                     val words = performOcrOnBitmap(pageImage)
 
-                    if (words.isNotEmpty()) {
-                        addTextLayerToPage(document, page, words, pageImage.width, pageImage.height, dpi)
+                    val visibleWords = words.filter { it.text.isNotBlank() }
+                    if (visibleWords.isNotEmpty()) {
+                        addTextLayerToPage(document, page, visibleWords, pageImage.width, pageImage.height, fonts)
+                        layerDigests[pageIndex] = digestOcrWords(visibleWords.asSequence().map { it.text })
                     }
                 } finally {
                     pageImage.recycle()
@@ -338,10 +353,17 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(90)
             ensureActive()
             
-            // Save the document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-                document.save(outputStream)
-                outputStream.flush()
+            val verificationContext = kotlin.coroutines.coroutineContext
+            exportVerifiedPdf(context, document, totalPages, verify = { saved ->
+                for ((index, digest) in layerDigests) {
+                    verificationContext.ensureActive()
+                    if (!digest.contentEquals(digestSerializedOcrLayer(saved.getPage(index)) { verificationContext.ensureActive() })) {
+                        throw IOException("OCR text did not survive serialization on page ${index + 1}")
+                    }
+                }
+            }) {
+                context.contentResolver.openOutputStream(outputUri)
+                    ?: throw IOException("Cannot open destination URI for writing")
             }
             
             document.close()
@@ -473,29 +495,40 @@ class PdfOcrProcessor(private val context: Context) {
             if (options.outWidth <= 0 || options.outHeight <= 0) {
                 return@withContext ImageOcrOutcome(
                     text = "",
-                    debug = "${trail}decode=FAIL(unsupported format ${options.outMimeType})"
+                    debug = "${trail}decode=FAIL(unsupported format ${options.outMimeType})",
+                    status = ImageOcrStatus.FAILED
                 )
             }
 
             // Path 1: wrapped-PDF pipeline (same renderer path as PDF OCR).
             var text = ""
+            var successfulAttempts = 0
+            var failedAttempts = 0
             try {
                 val wrapped = wrapImageAsPdf(imageUri)
                 if (wrapped != null) {
                     try {
                         trail.append("wrap=OK(${wrapped.length() / 1024}KB) ")
                         val result = extractTextWithOcr(pdfUri = Uri.fromFile(wrapped))
-                        text = if (result.success) result.fullText else ""
+                        if (result.success) {
+                            successfulAttempts++
+                            text = result.fullText
+                        } else {
+                            failedAttempts++
+                            trail.append("wrapped-OCR=FAIL ")
+                        }
                         trail.append("rendered-words=${text.split("\\s+".toRegex()).count { it.isNotBlank() }} ")
                     } finally {
                         wrapped.delete()
                     }
                 } else {
+                    failedAttempts++
                     trail.append("wrap=FAIL ")
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                failedAttempts++
                 trail.append("wrap-EX:${e.message} ")
                 android.util.Log.e("PdfOcrProcessor", "image OCR wrapped path failed", e)
             }
@@ -504,21 +537,29 @@ class PdfOcrProcessor(private val context: Context) {
             if (text.isBlank()) {
                 try {
                     text = recognizeImageBitmapDirect(imageUri, options, trail)
+                    successfulAttempts++
                     trail.append("direct-chars=${text.length} ")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    failedAttempts++
                     trail.append("direct-EX:${e.message} ")
                     android.util.Log.e("PdfOcrProcessor", "image OCR direct path failed", e)
                 }
             }
 
-            ImageOcrOutcome(text = text, debug = trail.toString().trim())
+            val status = when {
+                text.isNotBlank() -> ImageOcrStatus.TEXT_FOUND
+                successfulAttempts == 0 -> ImageOcrStatus.FAILED
+                failedAttempts > 0 -> ImageOcrStatus.INCOMPLETE
+                else -> ImageOcrStatus.NO_TEXT
+            }
+            ImageOcrOutcome(text = text, debug = trail.toString().trim(), status = status)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             android.util.Log.e("PdfOcrProcessor", "extractTextFromImage failed: ${e.message}", e)
-            ImageOcrOutcome(text = "", debug = "${trail}EX:${e.message}".trim())
+            ImageOcrOutcome(text = "", debug = "${trail}EX:${e.message}".trim(), status = ImageOcrStatus.FAILED)
         }
     }
 
@@ -539,7 +580,7 @@ class PdfOcrProcessor(private val context: Context) {
         }
         val bitmap = context.contentResolver.openInputStream(imageUri)?.use {
             BitmapFactory.decodeStream(it, null, decodeOptions)
-        } ?: return@withContext ""
+        } ?: throw IOException("Cannot decode selected image for OCR")
         val oriented = applyExifOrientation(imageUri, bitmap)
         trail.append("bitmap=${oriented.width}x${oriented.height} ")
         try {
@@ -612,43 +653,38 @@ class PdfOcrProcessor(private val context: Context) {
         words: List<OcrWord>,
         imageWidth: Int,
         imageHeight: Int,
-        dpi: Float
+        fonts: SearchableOcrFonts
     ) {
-        val cropBox = page.cropBox
-        val font = PDType1Font.HELVETICA
-
-        val contentStream = PDPageContentStream(
-            document,
-            page,
-            PDPageContentStream.AppendMode.APPEND,
-            true,
-            true
+        val crop = page.cropBox
+        val geometry = OcrPageGeometry(
+            crop.lowerLeftX, crop.lowerLeftY, crop.width, crop.height,
+            page.rotation, imageWidth, imageHeight
         )
-
-        try {
-            val graphicsState = PDExtendedGraphicsState()
-            graphicsState.nonStrokingAlphaConstant = 0f
-            contentStream.setGraphicsStateParameters(graphicsState)
-
-            val scale = 72f / dpi
-            for (word in words.take(MAX_WORDS_PER_PAGE)) {
-                val box = word.boundingBox ?: continue
-                val cleanText = word.text.filter { it.code < 256 }
-                if (cleanText.isBlank()) continue
-
-                val pdfX = cropBox.lowerLeftX + box.left * scale
-                val pdfY = cropBox.upperRightY - box.bottom * scale
-                val boxHeightPts = (box.bottom - box.top) * scale
-                val fontSize = (boxHeightPts * 0.8f).coerceIn(4f, 24f)
-
-                contentStream.beginText()
-                contentStream.setFont(font, fontSize)
-                contentStream.newLineAtOffset(pdfX, pdfY)
-                contentStream.showText(cleanText)
-                contentStream.endText()
+        PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
+            val graphics = PDExtendedGraphicsState()
+            graphics.nonStrokingAlphaConstant = 0f
+            stream.setGraphicsStateParameters(graphics)
+            for (word in words) {
+                if (word.text.isBlank()) continue
+                val box = word.boundingBox ?: throw IOException("OCR word has no positioning information")
+                val placement = geometry.place(box.left, box.top, box.right, box.bottom)
+                // Never silently remove characters. An unsupported font glyph fails the
+                // operation before the destination is opened.
+                val (font, width) = fonts.select(word.text)
+                if (!width.isFinite() || width <= 0f) throw IOException("Invalid OCR word width")
+                val fontSize = placement.height * 0.8f
+                val stretch = placement.width / (width * fontSize)
+                stream.beginText()
+                stream.setFont(font, fontSize)
+                stream.setRenderingMode(com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode.NEITHER)
+                stream.setTextMatrix(Matrix(
+                    placement.ux * stretch, placement.uy * stretch,
+                    -placement.uy, placement.ux,
+                    placement.x, placement.y
+                ))
+                stream.showText(word.text)
+                stream.endText()
             }
-        } finally {
-            contentStream.close()
         }
     }
 
@@ -736,5 +772,24 @@ class PdfOcrProcessor(private val context: Context) {
      */
     fun close() {
         ocrEngine.close()
+    }
+}
+
+/** The OCR recognizer is Latin-only. Use embeddable font fallbacks, never drop glyphs. */
+internal class SearchableOcrFonts(context: Context, document: PDDocument) {
+    private val candidates = listOf<() -> PDType0Font>(
+        { context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_sans).use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_serif).use { PDType0Font.load(document, it) } },
+        { context.resources.openRawResource(com.veilframe.app.R.font.font_mono).use { PDType0Font.load(document, it) } }
+    ).map { loader -> lazy { runCatching(loader).getOrNull() } }
+
+    fun select(text: String): Pair<PDType0Font, Float> {
+        for (candidate in candidates) {
+            val font = candidate.value ?: continue
+            val width = try { font.getStringWidth(text) / 1000f } catch (_: IllegalArgumentException) { continue }
+            if (width.isFinite() && width > 0f) return font to width
+        }
+        throw IOException("Searchable PDF fonts cannot encode all recognized characters; no text was silently removed")
     }
 }

@@ -171,6 +171,8 @@ androidComponents {
 }
 
 dependencies {
+    // Bundled, offline byte-pair tokenizer; exact named-encoding artifact counts.
+    implementation("com.knuddels:jtokkit:1.1.0")
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
@@ -291,7 +293,14 @@ tasks.register("verifyDependencyResolution") {
                 .filterIsInstance<org.gradle.api.artifacts.result.UnresolvedDependencyResult>()
             if (failures.isNotEmpty()) {
                 val details = failures.joinToString("\n") { failure ->
-                    "${failure.requested.displayName}: ${failure.failure.message}"
+                    // Gradle's top-level ModuleVersionResolveException often says
+                    // only "Could not resolve X", hiding a nested HTTP 429. Keep
+                    // a bounded cause chain so CI retries transient throttling,
+                    // while missing modules/incompatibilities remain failures.
+                    val chain = generateSequence(failure.failure) { it.cause }
+                        .take(10).mapNotNull { it.message?.take(600) }
+                        .distinct().joinToString(" -> ")
+                    "${failure.requested.displayName}: $chain"
                 }
                 throw GradleException("Unresolved dependencies in $scope:\n$details")
             }

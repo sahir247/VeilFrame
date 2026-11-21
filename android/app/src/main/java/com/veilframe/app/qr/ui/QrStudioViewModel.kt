@@ -1508,14 +1508,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
+                if (!QrExporter.isVerified(report, content)) {
                     _state.value = _state.value.copy(
-                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
+                        saveResult = "Export rejected: ${report.warnings.firstOrNull() ?: "Strict verification failed"}",
+                        lastSavedUri = null,
                         scanabilityReport = report
                     )
+                    return@launchExportJob
                 }
+                val verified = renderResult as QrRenderResult.Success
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.JPEG, 95)
+                    QrExporter.saveVerifiedRaster(getApplication(), bmp, content, verified.design, verified.matrix, Bitmap.CompressFormat.JPEG, 95)
                 }
                 when (exportResult) {
                     is QrOutputResult.Success -> {
@@ -1870,14 +1873,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
+                if (!QrExporter.isVerified(report, content)) {
                     _state.value = _state.value.copy(
-                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
+                        saveResult = "Export rejected: ${report.warnings.firstOrNull() ?: "Strict verification failed"}",
+                        lastSavedUri = null,
                         scanabilityReport = report
                     )
+                    return@launchExportJob
                 }
+                val verified = renderResult as QrRenderResult.Success
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.PNG, 100)
+                    QrExporter.saveVerifiedRaster(getApplication(), bmp, content, verified.design, verified.matrix, Bitmap.CompressFormat.PNG, 100)
                 }
                 when (exportResult) {
                     is QrOutputResult.Success -> {
@@ -1964,14 +1970,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
+                if (!QrExporter.isVerified(report, content)) {
                     _state.value = _state.value.copy(
-                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
+                        saveResult = "Export rejected: ${report.warnings.firstOrNull() ?: "Strict verification failed"}",
+                        lastSavedUri = null,
                         scanabilityReport = report
                     )
+                    return@launchExportJob
                 }
+                val verified = renderResult as QrRenderResult.Success
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.savePdfTyped(getApplication(), bmp)
+                    QrExporter.savePdfTyped(getApplication(), bmp, content = content, design = verified.design, matrix = verified.matrix)
                 }
                 when (exportResult) {
                     is QrOutputResult.Success -> {
@@ -2182,13 +2191,19 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
+                if (!QrExporter.isVerified(report, content)) {
                     _state.value = _state.value.copy(
-                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Sharing anyway.",
+                        saveResult = "Export rejected: ${report.warnings.firstOrNull() ?: "Strict verification failed"}",
+                        lastSavedUri = null,
                         scanabilityReport = report
                     )
+                    return@launchExportJob
                 }
-                QrExporter.share(getApplication(), bmp)
+                val verified = renderResult as QrRenderResult.Success
+                val shared = QrExporter.shareVerifiedRaster(getApplication(), bmp, content, verified.design, verified.matrix)
+                if (shared is QrOutputResult.Failure) {
+                    _state.value = _state.value.copy(saveResult = "Share failed: ${shared.error.description}", lastSavedUri = null)
+                }
             } finally {
                 if (bmp !== _state.value.bitmap && bmp !== preRepairSnapshot?.bitmap) {
                     bmp.recycle()

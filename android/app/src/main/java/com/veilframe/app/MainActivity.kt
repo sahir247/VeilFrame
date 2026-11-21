@@ -72,6 +72,7 @@ import com.veilframe.app.ui.settings.SettingsOverlayCoordinator
 import com.veilframe.app.ui.tools.ToolsCatalogueCoordinator
 import com.veilframe.app.updates.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var navigationController: MainNavigationController
     internal lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
+    private var genericTargetIndexJob: Job? = null
     private lateinit var appUpdateManager: AppUpdateManager
     private lateinit var libraryCoordinator: LibraryCoordinator
     private lateinit var toolsCatalogueCoordinator: ToolsCatalogueCoordinator
@@ -153,6 +155,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
             cacheDir.listFiles()?.forEach { candidate ->
+                if (candidate.isDirectory && candidate.name.startsWith("bundle_review_") &&
+                    candidate.lastModified() < cutoff) candidate.deleteRecursively()
                 if (candidate.isFile && candidate.lastModified() < cutoff &&
                     candidate.name.endsWith(".pdf") &&
                     (candidate.name.startsWith("veilframe_unlocked_") ||
@@ -355,7 +359,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        workspaceHost.onDestroy()
+        launchers.releasePendingCutout()
+        if (::toolExecutionController.isInitialized) toolExecutionController.release()
+        activeBundleReview?.dismiss()
+        activeBundleReview = null
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
             docScannerController.release()
@@ -390,6 +397,9 @@ class MainActivity : AppCompatActivity() {
         if (::pdfSuiteCoordinator.isInitialized) {
             pdfSuiteCoordinator.discardAllResources()
         }
+        if (::qrStudioController.isInitialized) qrStudioController.discardAndReleaseAllResources()
+        if (::provenanceController.isInitialized) provenanceController.reset()
+        workspaceHost.onDestroy()
     }
 
     private fun initSubControllers() {
@@ -730,9 +740,9 @@ class MainActivity : AppCompatActivity() {
             onPickImageRequest = {
                 launchers.launchBgRemoverPicker()
             },
-            onExportPngRequest = { file ->
+            onExportPngRequest = { file, owned ->
                 val mime = safStorageManager.getExportMimeType(file)
-                launchers.launchBgRemoverExport(file, mime)
+                launchers.launchBgRemoverExport(file, mime, owned)
             },
             onNavigateBack = {
                 navigationController.navigateBackFromWorkspace()
@@ -858,7 +868,11 @@ class MainActivity : AppCompatActivity() {
         // Target Pickers inside Tool
         binding.btnPickFolder.setOnClickListener { launchers.launchFolderPicker() }
         binding.btnPickFile.setOnClickListener { openFilePickerForCurrentTool() }
-        binding.btnClearTarget.setOnClickListener { toolSessionManager.clearSelectedTarget(logMessage = true) }
+        binding.btnClearTarget.setOnClickListener {
+            genericTargetIndexJob?.cancel()
+            if (toolExecutionController.isExecuting) toolExecutionController.cancelExecution()
+            toolSessionManager.clearSelectedTarget(logMessage = true)
+        }
         binding.btnChangeTarget.setOnClickListener { openFilePickerForCurrentTool() }
 
         // Execution Monitor Console Toggle
@@ -872,7 +886,7 @@ class MainActivity : AppCompatActivity() {
 
         // Result Card Direct Actions
         binding.btnResultSave.setOnClickListener { launchExportCurrentArtifact() }
-        binding.btnResultShare.setOnClickListener { toolExecutionController.shareLastResult() }
+        binding.btnResultShare.setOnClickListener { launchShareCurrentArtifact() }
         binding.btnResultPreview.setOnClickListener {
             val file = toolSessionManager.currentState.lastGeneratedFile
             if (file != null && file.exists()) {
@@ -885,7 +899,7 @@ class MainActivity : AppCompatActivity() {
 
         // Multi-Format Export Action (Save As to device storage)
         binding.btnExportResult.setOnClickListener { launchExportCurrentArtifact() }
-        binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
+        binding.btnShareResult.setOnClickListener { launchShareCurrentArtifact() }
     }
 
     internal fun handleHomeFileIntake(uri: Uri) {
@@ -952,11 +966,165 @@ class MainActivity : AppCompatActivity() {
     private fun launchExportCurrentArtifact() {
         val file = toolSessionManager.currentState.lastGeneratedFile
         if (file != null && file.exists()) {
-            val mimeType = safStorageManager.getExportMimeType(file)
-            launchers.launchExportDocument(file.name, mimeType)
+            reviewBundleBeforeTransfer(file, "Save") { reviewed, owned ->
+                val mimeType = safStorageManager.getExportMimeType(reviewed)
+                launchers.launchExportDocument(reviewed.name, mimeType, reviewed, owned)
+            }
         } else {
             Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun launchShareCurrentArtifact() {
+        val file = toolSessionManager.currentState.lastGeneratedFile
+        if (file == null || !file.isFile) {
+            Toast.makeText(this, "No output artifact to share", Toast.LENGTH_SHORT).show()
+            return
+        }
+        reviewBundleBeforeTransfer(file, "Share") { reviewed, _ -> toolExecutionController.shareLastResult(reviewed) }
+    }
+
+    private var activeBundleReview: androidx.appcompat.app.AlertDialog? = null
+
+    private fun reviewBundleBeforeTransfer(file: File, action: String, proceed: (File, Boolean) -> Boolean) {
+        activeBundleReview?.dismiss()
+        activeBundleReview = null
+        if (toolSessionManager.currentToolMode != ToolMode.AI_BUNDLE) {
+            proceed(file, false)
+            return
+        }
+        val reviewDirectory = File(cacheDir, "bundle_review_${java.util.UUID.randomUUID()}")
+        val reviewedFile = File(reviewDirectory, file.name)
+        var frozen = false
+        var handedOff = false
+        val originalLength = file.length()
+        val originalModified = file.lastModified()
+        fun stillCurrent(): Boolean = !isFinishing && !isDestroyed &&
+            toolSessionManager.currentToolMode == ToolMode.AI_BUNDLE &&
+            toolSessionManager.currentState.lastGeneratedFile == file && file.isFile &&
+            file.length() == originalLength && file.lastModified() == originalModified
+
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 8)
+        }
+        val warning = android.widget.TextView(this).apply {
+            text = "Masking is heuristic and may be disabled. Credentials, personal data and confidential code can remain. Review the exact local artifact before transferring."
+        }
+        val status = android.widget.TextView(this)
+        val allowUnread = android.widget.CheckBox(this).apply {
+            text = "Transfer without opening every page. Unread content may contain sensitive data."
+            isEnabled = false
+        }
+        val nav = android.widget.LinearLayout(this)
+        val previous = android.widget.Button(this).apply { text = "Previous"; isEnabled = false }
+        val next = android.widget.Button(this).apply { text = "Next"; isEnabled = false }
+        nav.addView(previous)
+        nav.addView(next)
+        val pageText = android.widget.TextView(this).apply {
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(pageText)
+        }
+        content.addView(warning)
+        content.addView(nav)
+        content.addView(status)
+        content.addView(scroll, android.widget.LinearLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, (240 * resources.displayMetrics.density).toInt()
+        ))
+        content.addView(allowUnread)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Review AI bundle")
+            .setView(content)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("$action after review", null)
+            .create()
+        val offsets = mutableListOf(0L)
+        var position = 0
+        var following: Long? = null
+        var pageJob: kotlinx.coroutines.Job? = null
+        val reviewGate = com.veilframe.app.tools.BundleReviewGate()
+
+        fun refreshTransferGate() {
+            if (!dialog.isShowing) return
+            allowUnread.isEnabled = reviewGate.pageReady && !reviewGate.reachedEnd
+            val button = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+            button.text = if (reviewGate.reachedEnd) "$action after review" else "$action with unread pages"
+            button.isEnabled = reviewGate.canTransfer(allowUnread.isChecked)
+        }
+        allowUnread.setOnCheckedChangeListener { _, _ -> refreshTransferGate() }
+
+        fun loadPage() {
+            pageJob?.cancel()
+            val index = position
+            val offset = offsets[index]
+            previous.isEnabled = false
+            next.isEnabled = false
+            reviewGate.loading()
+            refreshTransferGate()
+            status.text = "Loading bundle page ${index + 1}…"
+            pageJob = lifecycleScope.launch {
+                val page = try {
+                    withContext(Dispatchers.IO) {
+                        if (!frozen) {
+                            val cc = kotlin.coroutines.coroutineContext
+                            com.veilframe.app.tools.BundleReviewReader.freeze(file, reviewedFile) { cc.ensureActive() }
+                        }
+                        com.veilframe.app.tools.BundleReviewReader.read(reviewedFile, offset)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                if (!dialog.isShowing || position != index) return@launch
+                if (page == null || !stillCurrent()) {
+                    status.text = "Bundle changed or could not be read. Transfer blocked."
+                    pageText.text = ""
+                    return@launch
+                }
+                frozen = true
+                following = page.nextOffset
+                pageText.text = page.text
+                reviewGate.loaded(following == null)
+                status.text = "Page ${index + 1}" + if (following == null) " — end of bundle" else " — more content follows"
+                scroll.scrollTo(0, 0)
+                previous.isEnabled = index > 0
+                next.isEnabled = following != null
+                refreshTransferGate()
+            }
+        }
+        previous.setOnClickListener { if (position > 0) { position--; loadPage() } }
+        next.setOnClickListener {
+            following?.let { offset ->
+                if (position + 1 == offsets.size) offsets.add(offset)
+                position++
+                loadPage()
+            }
+        }
+        dialog.setOnDismissListener {
+            if (activeBundleReview === dialog) activeBundleReview = null
+            val job = pageJob
+            job?.cancel()
+            if (!handedOff) {
+                if (job != null) job.invokeOnCompletion { reviewDirectory.deleteRecursively() }
+                else reviewDirectory.deleteRecursively()
+            }
+        }
+        activeBundleReview = dialog
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            if (reviewGate.canTransfer(allowUnread.isChecked) && frozen && reviewedFile.isFile && stillCurrent()) {
+                handedOff = proceed(reviewedFile, true)
+                dialog.dismiss()
+            } else {
+                Toast.makeText(this, "Bundle changed; review it again", Toast.LENGTH_LONG).show()
+                dialog.dismiss()
+            }
+        }
+        loadPage()
     }
 
     private var lastNavClickTime = 0L
@@ -1263,8 +1431,16 @@ class MainActivity : AppCompatActivity() {
         launchers.openFilePickerForCurrentTool(toolSessionManager.currentToolMode)
     }
 
+    private fun beginGenericTargetSelection(): com.veilframe.app.tools.ToolSessionState {
+        genericTargetIndexJob?.cancel()
+        if (toolExecutionController.isExecuting) toolExecutionController.cancelExecution()
+        // The previous artifact and COMPLETE state belong to the previous selection.
+        toolSessionManager.clearSelectedTarget(logMessage = false)
+        return toolSessionManager.currentState
+    }
+
     internal fun handleSingleFileSelected(uri: Uri) {
-        val state = toolSessionManager.currentState
+        val state = beginGenericTargetSelection()
         state.selectedUri = uri
         state.isFolderSelected = false
         state.selectedPathDisplay = safStorageManager.getDisplayName(uri)
@@ -1300,7 +1476,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun handleFolderSelected(uri: Uri) {
-        val state = toolSessionManager.currentState
+        val state = beginGenericTargetSelection()
         state.selectedUri = uri
         state.isFolderSelected = true
         state.selectedPathDisplay = safStorageManager.getDisplayName(uri)
@@ -1314,31 +1490,55 @@ class MainActivity : AppCompatActivity() {
         binding.tvTargetDetails.text = "Indexing directory contents..."
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_amber))
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
+        val owner = com.veilframe.app.tools.ToolTargetOwner(state)
+        val mode = toolSessionManager.currentToolMode
+        genericTargetIndexJob = lifecycleScope.launch(Dispatchers.IO) {
+            val cc = kotlin.coroutines.coroutineContext
             var count = 0
             var totalBytes = 0L
+            var entries = 0
+            var incomplete = false
+            val visited = HashSet<String>()
 
-            fun inspectDoc(doc: DocumentFile) {
+            fun inspectDoc(doc: DocumentFile, depth: Int) {
+                cc.ensureActive()
+                if (entries >= 50_000 || depth > 128) { incomplete = true; return }
+                entries++
                 if (doc.isDirectory) {
-                    doc.listFiles().forEach { inspectDoc(it) }
+                    if (!visited.add(doc.uri.toString())) { incomplete = true; return }
+                    for (child in doc.listFiles()) {
+                        if (entries >= 50_000) { incomplete = true; break }
+                        inspectDoc(child, depth + 1)
+                    }
                 } else if (doc.isFile) {
                     count++
-                    totalBytes += doc.length()
+                    val size = doc.length().coerceAtLeast(0)
+                    totalBytes = if (size > Long.MAX_VALUE - totalBytes) Long.MAX_VALUE else totalBytes + size
+                } else {
+                    incomplete = true
                 }
             }
 
-            rootDoc?.listFiles()?.forEach { inspectDoc(it) }
-
-            state.targetFileCount = count
-            state.targetTotalBytes = totalBytes
+            try {
+                val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
+                if (rootDoc == null) incomplete = true else inspectDoc(rootDoc, 0)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                incomplete = true
+            }
 
             withContext(Dispatchers.Main) {
-                binding.tvTargetDetails.text = "$count files • ${safStorageManager.formatBytes(totalBytes)} • Ready"
-                binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
+                if (toolSessionManager.currentToolMode != mode || !owner.owns(toolSessionManager.currentState)) return@withContext
+                state.targetFileCount = count
+                state.targetTotalBytes = totalBytes
+                binding.tvTargetDetails.text = "$count indexed files • ${safStorageManager.formatBytes(totalBytes)}" +
+                    if (incomplete) " • Partial index" else " • Ready"
+                binding.tvTargetDetails.setTextColor(getColor(if (incomplete) R.color.vf_accent_amber else R.color.vf_accent_green))
                 toolSessionManager.updatePrivacySummaryUI()
                 toolSessionManager.updatePrimaryActionDock(state)
-                consoleLogController.log("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count files, ${safStorageManager.formatBytes(totalBytes)})")
+                consoleLogController.log("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count indexed files, ${safStorageManager.formatBytes(totalBytes)})" +
+                    if (incomplete) " — index incomplete" else "")
             }
         }
     }
@@ -1474,8 +1674,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (::docScannerController.isInitialized && !docScannerController.session.isEmpty) {
-            docScannerController.session.saveToDisk(this)
-            outState.putString(KEY_DOC_SCANNER_SESSION_ID, docScannerController.session.sessionId)
+            val saved = docScannerController.session.saveToDisk(this)
+            if (saved || File(
+                    com.veilframe.app.document.DocumentSession.getSessionDirectory(this, docScannerController.session.sessionId),
+                    "manifest.json"
+                ).isFile) {
+                outState.putString(KEY_DOC_SCANNER_SESSION_ID, docScannerController.session.sessionId)
+            }
         }
         if (::backgroundRemoverController.isInitialized) {
             backgroundRemoverController.currentSourceUri?.let {
@@ -1653,6 +1858,7 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.navigation.ScreenState.BACKGROUND_REMOVER -> if (::backgroundRemoverController.isInitialized) backgroundRemoverController else null
             com.veilframe.app.navigation.ScreenState.MOTION_LAB -> if (::motionLabController.isInitialized) motionLabController else null
             com.veilframe.app.navigation.ScreenState.QR_STUDIO -> if (::qrStudioController.isInitialized) qrStudioController else null
+            com.veilframe.app.navigation.ScreenState.PROVENANCE -> if (::provenanceController.isInitialized) provenanceController else null
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_ENTRY,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_CAMERA,
             com.veilframe.app.navigation.ScreenState.DOCUMENT_SCANNER_PAGES,

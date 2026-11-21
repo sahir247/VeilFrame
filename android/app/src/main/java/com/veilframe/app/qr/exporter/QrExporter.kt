@@ -19,6 +19,11 @@ import com.veilframe.app.qr.model.QrFrame
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrOutputFormat
 import com.veilframe.app.qr.model.QrOutputResult
+import com.veilframe.app.qr.validation.ScanabilityReport
+import com.veilframe.app.qr.validation.ScanabilityValidator
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.graphics.Canvas
@@ -27,6 +32,7 @@ import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,6 +42,97 @@ import java.util.Locale
  * vector SVG, animated GIF, and video (MP4/MOV) with EFQRCode-grade typed error boundary.
  */
 object QrExporter {
+
+    /** Successful publication requires the single pending row to have been updated. */
+    private suspend fun publishPending(context: Context, uri: Uri, values: ContentValues) {
+        currentCoroutineContext().ensureActive()
+        requirePublishedRow(context.contentResolver.update(uri, values, null, null))
+    }
+
+    @VisibleForTesting
+    internal fun requirePublishedRow(updatedRows: Int) {
+        if (updatedRows != 1) throw IOException("MediaStore publication updated $updatedRows rows; expected 1")
+    }
+
+
+    /** Strict verification is a publication precondition, not merely a preview warning. */
+    internal fun isVerified(report: ScanabilityReport, content: String): Boolean =
+        !report.validationSkipped && report.isStrictlyCompliant && report.isScanReady &&
+            report.decodeResult.success && report.decodeResult.text == content
+
+    internal suspend fun encodeVerifiedRaster(
+        bitmap: Bitmap,
+        content: String,
+        design: QrDesign,
+        matrix: QrMatrix,
+        format: Bitmap.CompressFormat,
+        quality: Int
+    ): QrOutputResult<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            currentCoroutineContext().ensureActive()
+            val bytes = java.io.ByteArrayOutputStream().use { out ->
+                if (!bitmap.compress(format, quality, out)) {
+                    return@withContext QrOutputResult.Failure(
+                        if (format == Bitmap.CompressFormat.PNG) QrError.Output.PngEncodingFailed("PNG encoding failed")
+                        else QrError.Output.JpegEncodingFailed("JPEG encoding failed")
+                    )
+                }
+                out.toByteArray()
+            }
+            val decoded = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: return@withContext QrOutputResult.Failure(
+                    QrError.Validation.ScanabilityFailed("Encoded raster could not be reopened")
+                )
+            try {
+                if (decoded.width != bitmap.width || decoded.height != bitmap.height) {
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Validation.ScanabilityFailed("Encoded raster dimensions changed")
+                    )
+                }
+                val report = ScanabilityValidator.validateStrict(decoded, design, matrix, content)
+                currentCoroutineContext().ensureActive()
+                if (!isVerified(report, content)) {
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Validation.ScanabilityFailed("Encoded raster failed strict verification", report.warnings)
+                    )
+                }
+                QrOutputResult.Success(bytes)
+            } finally {
+                decoded.recycle()
+            }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            QrOutputResult.Failure(QrError.fromThrowable(t))
+        }
+    }
+
+    suspend fun saveVerifiedRaster(
+        context: Context,
+        bitmap: Bitmap,
+        content: String,
+        design: QrDesign,
+        matrix: QrMatrix,
+        format: Bitmap.CompressFormat,
+        quality: Int
+    ): QrOutputResult<Uri> {
+        return when (val encoded = encodeVerifiedRaster(bitmap, content, design, matrix, format, quality)) {
+            is QrOutputResult.Failure -> encoded
+            is QrOutputResult.Success -> if (format == Bitmap.CompressFormat.PNG) {
+                saveImageBytesTyped(context, encoded.value, "png", "image/png")
+            } else {
+                saveImageBytesTyped(context, encoded.value, "jpg", "image/jpeg")
+            }
+        }
+    }
+
+    private suspend fun validateEncodedAnimation(context: Context, file: File, matrix: QrMatrix,
+                                                   design: QrDesign, content: String): QrError? {
+        val report = AnimatedArtifactVerifier.verify(context, file, matrix, design, content)
+        return if (report.isAllFramesScanReady) null else QrError.Validation.ScanabilityFailed(
+            report.failureReasons.firstOrNull() ?: "Encoded animation failed strict verification",
+            report.failureReasons
+        )
+    }
 
     private fun timestampName(ext: String): String {
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -98,7 +195,7 @@ object QrExporter {
 
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -132,6 +229,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -218,7 +316,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -243,6 +341,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -481,7 +580,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -506,6 +605,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -685,7 +785,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Video.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -709,6 +809,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -735,25 +836,31 @@ object QrExporter {
         design: QrDesign,
         matrix: QrMatrix
     ): QrError.Validation.ScanabilityFailed? {
-        if (!pdfFile.exists() || pdfFile.length() == 0L) return null
+        if (!pdfFile.exists() || pdfFile.length() == 0L) return QrError.Validation.ScanabilityFailed("PDF artifact is empty or missing")
         var pfd: ParcelFileDescriptor? = null
         var renderer: android.graphics.pdf.PdfRenderer? = null
         var page: android.graphics.pdf.PdfRenderer.Page? = null
         var rasterBmp: Bitmap? = null
         return try {
             pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            if (pfd == null) return null
+            if (pfd == null) return QrError.Validation.ScanabilityFailed("PDF artifact could not be opened")
             renderer = android.graphics.pdf.PdfRenderer(pfd)
-            if (renderer.pageCount <= 0) return null
+            if (renderer.pageCount != 1) return QrError.Validation.ScanabilityFailed("Expected exactly one printable QR page")
             page = renderer.openPage(0)
-            val renderW = maxOf(1024, page.width * 2)
-            val renderH = maxOf(1024, page.height * 2)
-            rasterBmp = Bitmap.createBitmap(renderW, renderH, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(rasterBmp)
-            canvas.drawColor(Color.WHITE)
-            page.render(rasterBmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            // Render the actual centered square occupied by the QR, not the entire
+            // portrait page: the strict geometry verifier expects the QR's own bounds.
+            val side = minOf(page.width, page.height) * 0.8f
+            val renderSize = design.outputSize.coerceIn(512, 2048)
+            val scale = renderSize / side
+            val transform = android.graphics.Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(-(page.width - side) * 0.5f * scale, -(page.height - side) * 0.5f * scale)
+            }
+            rasterBmp = Bitmap.createBitmap(renderSize, renderSize, Bitmap.Config.ARGB_8888)
+            Canvas(rasterBmp).drawColor(Color.WHITE)
+            page.render(rasterBmp, null, transform, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(rasterBmp, design, matrix, content)
-            if (!report.isScanReady && !report.validationSkipped) {
+            if (!isVerified(report, content)) {
                 QrError.Validation.ScanabilityFailed(
                     "Post-export PDF artifact verification failed: rendered page degraded scanability",
                     report.warnings
@@ -761,12 +868,9 @@ object QrExporter {
             } else {
                 null
             }
-        } catch (_: NoClassDefFoundError) {
-            null
-        } catch (_: UnsatisfiedLinkError) {
-            null
-        } catch (_: Exception) {
-            null
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            QrError.Validation.ScanabilityFailed("PDF artifact verification unavailable: ${t.message ?: t.javaClass.simpleName}")
         } finally {
             try { rasterBmp?.recycle() } catch (_: Throwable) {}
             try { page?.close() } catch (_: Throwable) {}
@@ -803,7 +907,7 @@ object QrExporter {
             val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidthPoints, pageHeightPoints, 1).create()
             val page = document.startPage(pageInfo)
             val canvas = page.canvas
-            val scale = (pageWidthPoints.toFloat() * 0.8f) / bitmap.width.toFloat()
+            val scale = minOf(pageWidthPoints.toFloat() / bitmap.width, pageHeightPoints.toFloat() / bitmap.height) * 0.8f
             val targetW = bitmap.width * scale
             val targetH = bitmap.height * scale
             val left = (pageWidthPoints - targetW) / 2f
@@ -856,7 +960,7 @@ object QrExporter {
                         }
                         cv.clear()
                         cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                        context.contentResolver.update(uri, cv, null, null)
+                        publishPending(context, uri, cv)
                         QrOutputResult.Success(uri)
                     } else {
                         @Suppress("DEPRECATION")
@@ -888,6 +992,7 @@ object QrExporter {
                 tempPdf.delete()
             }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         } finally {
             document.close()
@@ -948,7 +1053,7 @@ object QrExporter {
                 }
                 cv.clear()
                 cv.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
+                publishPending(context, uri, cv)
                 pendingUri = null
                 QrOutputResult.Success(uri)
             } else {
@@ -972,6 +1077,7 @@ object QrExporter {
             pendingUri?.let { uri ->
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {}
             }
+            if (t is CancellationException) throw t
             QrOutputResult.Failure(QrError.fromThrowable(t))
         }
     }
@@ -1018,7 +1124,7 @@ object QrExporter {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
                 val success = renderResult as QrRenderResult.Success
-                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                if (!isVerified(success.report, content)) {
                     return QrOutputResult.Failure(
                         QrError.Validation.ScanabilityFailed(
                             success.report.warnings.firstOrNull() ?: "Scanability validation failed",
@@ -1031,7 +1137,7 @@ object QrExporter {
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
                 try {
-                    saveBitmapTyped(context, bmp, Bitmap.CompressFormat.PNG, 100)
+                    saveVerifiedRaster(context, bmp, content, success.design, success.matrix, Bitmap.CompressFormat.PNG, 100)
                 } finally {
                     bmp.recycle()
                 }
@@ -1042,7 +1148,7 @@ object QrExporter {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
                 val success = renderResult as QrRenderResult.Success
-                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                if (!isVerified(success.report, content)) {
                     return QrOutputResult.Failure(
                         QrError.Validation.ScanabilityFailed(
                             success.report.warnings.firstOrNull() ?: "Scanability validation failed",
@@ -1056,36 +1162,7 @@ object QrExporter {
                     )
 
                 try {
-                    // Verify post-compression JPEG scanability strictly before exporting
-                    val baos = java.io.ByteArrayOutputStream()
-                    val compressed = bmp.compress(Bitmap.CompressFormat.JPEG, format.quality, baos)
-                    if (!compressed) {
-                        return QrOutputResult.Failure(QrError.Output.JpegEncodingFailed("JPEG compression returned false"))
-                    }
-                    val jpegBytes = baos.toByteArray()
-                    val decodedBmp = android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-                    if (decodedBmp != null) {
-                        try {
-                            val postCompressReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                                decodedBmp,
-                                effectiveDesign,
-                                matrix,
-                                content
-                            )
-                            if (!postCompressReport.isScanReady && !postCompressReport.validationSkipped) {
-                                return QrOutputResult.Failure(
-                                    QrError.Validation.ScanabilityFailed(
-                                        "JPEG compression at quality ${format.quality} degraded scanability below decode threshold",
-                                        postCompressReport.warnings
-                                    )
-                                )
-                            }
-                        } finally {
-                            decodedBmp.recycle()
-                        }
-                    }
-
-                    saveImageBytesTyped(context, jpegBytes, "jpg", "image/jpeg")
+                    saveVerifiedRaster(context, bmp, content, success.design, success.matrix, Bitmap.CompressFormat.JPEG, format.quality)
                 } finally {
                     bmp.recycle()
                 }
@@ -1114,7 +1191,7 @@ object QrExporter {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
                 val success = renderResult as QrRenderResult.Success
-                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                if (!isVerified(success.report, content)) {
                     return QrOutputResult.Failure(
                         QrError.Validation.ScanabilityFailed(
                             success.report.warnings.firstOrNull() ?: "Scanability validation failed",
@@ -1142,7 +1219,12 @@ object QrExporter {
                     return QrOutputResult.Failure(gifResult.error)
                 }
                 val gifBytes = (gifResult as QrOutputResult.Success).value
-                saveGifTyped(context, gifBytes)
+                val artifact = File.createTempFile("qr_verify_gif_", ".gif", context.cacheDir)
+                try {
+                    artifact.writeBytes(gifBytes)
+                    val error = validateEncodedAnimation(context, artifact, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveGifTyped(context, gifBytes)
+                } finally { artifact.delete() }
             }
             is QrOutputFormat.Apng -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)
@@ -1163,7 +1245,8 @@ object QrExporter {
                     if (apngResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(apngResult.error)
                     }
-                    saveApngTyped(context, tempFile)
+                    val error = validateEncodedAnimation(context, tempFile, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveApngTyped(context, tempFile)
                 } finally {
                     tempFile.delete()
                 }
@@ -1187,7 +1270,8 @@ object QrExporter {
                     if (vidResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(vidResult.error)
                     }
-                    saveVideoTyped(context, tempFile)
+                    val error = validateEncodedAnimation(context, tempFile, matrix, effectiveDesign, content)
+                    if (error != null) QrOutputResult.Failure(error) else saveVideoTyped(context, tempFile)
                 } finally {
                     tempFile.delete()
                 }
@@ -1199,38 +1283,56 @@ object QrExporter {
      * Opens system share sheet for [bitmap] using temporary cache file.
      * Prevents side-effect of permanently polluting the user's Pictures gallery.
      */
-    suspend fun share(context: Context, bitmap: Bitmap) = withContext(Dispatchers.IO) {
-        if (bitmap.isRecycled) return@withContext
-        val cacheShareDir = File(context.cacheDir, "share")
-        if (!cacheShareDir.exists()) {
-            cacheShareDir.mkdirs()
-        }
-        val shareFile = File(cacheShareDir, "qr_share.png")
-        try {
-            FileOutputStream(shareFile).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            val uri = try {
-                androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    shareFile
-                )
-            } catch (_: Exception) {
-                Uri.fromFile(shareFile)
-            }
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/png"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                clipData = android.content.ClipData.newUri(context.contentResolver, "Share QR Code", uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            val chooser = Intent.createChooser(intent, "Share QR Code").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(chooser)
-        } catch (_: Throwable) {
-            // Non-fatal if share intent dispatch cannot be completed
-        }
+    suspend fun shareVerifiedRaster(
+        context: Context,
+        bitmap: Bitmap,
+        content: String,
+        design: QrDesign,
+        matrix: QrMatrix
+    ): QrOutputResult<Uri> = when (val encoded = encodeVerifiedRaster(
+        bitmap, content, design, matrix, Bitmap.CompressFormat.PNG, 100
+    )) {
+        is QrOutputResult.Failure -> encoded
+        is QrOutputResult.Success -> sharePngBytes(context, encoded.value)
     }
+
+    suspend fun share(context: Context, bitmap: Bitmap) {
+        if (bitmap.isRecycled) return
+        val bytes = java.io.ByteArrayOutputStream().use { out ->
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) return
+            out.toByteArray()
+        }
+        sharePngBytes(context, bytes)
+    }
+
+    private suspend fun sharePngBytes(context: Context, bytes: ByteArray): QrOutputResult<Uri> =
+        withContext(Dispatchers.IO) {
+            var file: File? = null
+            try {
+                val dir = File(context.cacheDir, "share")
+                check(dir.isDirectory || dir.mkdirs()) { "Cannot create QR share directory" }
+                val artifact = File.createTempFile("qr_share_", ".png", dir)
+                file = artifact
+                artifact.writeBytes(bytes)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.provider", artifact
+                )
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = android.content.ClipData.newUri(context.contentResolver, "Share QR Code", uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = Intent.createChooser(intent, "Share QR Code").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                currentCoroutineContext().ensureActive()
+                context.startActivity(chooser)
+                QrOutputResult.Success(uri)
+            } catch (t: Throwable) {
+                file?.delete()
+                if (t is CancellationException) throw t
+                QrOutputResult.Failure(QrError.fromThrowable(t))
+            }
+        }
 }

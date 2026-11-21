@@ -25,7 +25,8 @@ import com.veilframe.app.media.JobType
 import com.veilframe.app.media.ProcessingJob
 import com.veilframe.app.media.rife.RifeModelManager
 import com.veilframe.app.media.rife.RifeNcnnNative
-import com.arthenica.ffmpegkit.FFmpegKit
+import com.veilframe.app.media.executeOwnedFfmpeg
+import kotlinx.coroutines.CancellationException
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import org.opencv.imgcodecs.Imgcodecs
@@ -92,14 +93,12 @@ class VeilFrameProcessingService : Service() {
 
         fun cancelProcessing(context: Context, jobId: UUID? = null) {
             val current = activeJob
+            if (jobId != null && current?.id != jobId) return
             if (current == null || current.state != JobState.RUNNING) {
+                if (jobId != null) return
                 try {
                     context.stopService(Intent(context, VeilFrameProcessingService::class.java))
                 } catch (_: Exception) {}
-                return
-            }
-
-            if (jobId != null && current.id != jobId) {
                 return
             }
 
@@ -237,17 +236,22 @@ class VeilFrameProcessingService : Service() {
             if (!isTargetJob) {
                 return START_NOT_STICKY
             }
-            promoteToForeground("Cancelling processing...")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            // Keep the owner alive until its native session has drained.
+            // Its coroutine finally stops the service.
+            if (currentExecutionJob?.isCompleted != false) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } else {
+                promoteToForeground("Cancelling processing...")
+            }
             return START_NOT_STICKY
         }
 
         // Concurrency guard: if another job is already running, reject duplicate start without mutating active state
         synchronized(this) {
             val current = activeJob
-            if (current != null && current.state == JobState.RUNNING) {
-                Log.w(TAG, "Refusing duplicate start: job ${current.id} is already RUNNING")
+            if (currentExecutionJob?.isCompleted == false || (current != null && current.state == JobState.RUNNING)) {
+                Log.w(TAG, "Refusing duplicate start: prior processing session is still owned")
                 if (!isForegroundStarted) {
                     promoteToForeground("Processing media with VeilFrame...")
                 }
@@ -363,6 +367,13 @@ class VeilFrameProcessingService : Service() {
                         executeVideoCleaning(jobId, inputUri, inputPath, outputUri, outputPath)
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                synchronized(this@VeilFrameProcessingService) {
+                    if (activeJob?.id == jobId && activeJob?.state == JobState.RUNNING) {
+                        activeJob = activeJob?.copy(state = JobState.CANCELLED)
+                    }
+                }
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Foreground processing failed: ${e.message}", e)
                 synchronized(this@VeilFrameProcessingService) {
@@ -417,6 +428,7 @@ class VeilFrameProcessingService : Service() {
 
         if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
             val result = mediaBackend.cleanVideoCancellableDetailed(effectiveInPath, effectiveOutPath)
+            kotlin.coroutines.coroutineContext.ensureActive()
             val ok = result.isSuccess
             val fallbackWarning = if (
                 result.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK
@@ -467,10 +479,11 @@ class VeilFrameProcessingService : Service() {
         multiplier: Int,
         isTarget60fps: Boolean
     ) {
-        val workDir = File(cacheDir, "motionlab_${System.currentTimeMillis()}").apply { mkdirs() }
+        val workDir = File(cacheDir, "motionlab_${UUID.randomUUID()}").apply { mkdirs() }
         val framesDir = File(workDir, "frames").apply { mkdirs() }
         val outDir = File(workDir, "out").apply { mkdirs() }
         val inFile = File(workDir, "in.mp4")
+        var stagedOutput: File? = null
 
         try {
             updateNotificationProgress("Preparing video source…", 5)
@@ -499,7 +512,7 @@ class VeilFrameProcessingService : Service() {
             jobCallback?.onProgress(jobId, 15, "Extracting frames…")
 
             val maxSeconds = 60
-            val extractSession = FFmpegKit.executeWithArguments(
+            val extractSession = executeOwnedFfmpeg(
                 arrayOf(
                     "-y",
                     "-i", inFile.absolutePath,
@@ -735,8 +748,10 @@ class VeilFrameProcessingService : Service() {
                 File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
             }
             destFile.parentFile?.mkdirs()
+            val stage = File(destFile.parentFile, ".motion_${UUID.randomUUID()}.mp4")
+            stagedOutput = stage
 
-            val encodeSession = FFmpegKit.executeWithArguments(
+            val encodeSession = executeOwnedFfmpeg(
                 arrayOf(
                     "-y",
                     "-framerate", framerateStr,
@@ -750,22 +765,28 @@ class VeilFrameProcessingService : Service() {
                     "-pix_fmt", "yuv420p",
                     "-c:a", "copy",
                     "-shortest",
-                    destFile.absolutePath
+                    stage.absolutePath
                 )
             )
-            if (!ReturnCode.isSuccess(encodeSession.returnCode) || !destFile.exists() || destFile.length() == 0L) {
+            if (!ReturnCode.isSuccess(encodeSession.returnCode) || !stage.isFile || stage.length() == 0L) {
                 throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
             }
 
+            kotlin.coroutines.coroutineContext.ensureActive()
             synchronized(this) {
-                if (activeJob?.id == jobId) {
-                    activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                if (activeJob?.id != jobId || activeJob?.state != JobState.RUNNING) {
+                    throw CancellationException("Motion Lab operation no longer owns publication")
                 }
+                java.nio.file.Files.move(stage.toPath(), destFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                stagedOutput = null
+                activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
             }
             jobCallback?.onProgress(jobId, 100, "Complete")
             jobCallback?.onCompleted(jobId, destFile.absolutePath)
             showCompletionNotification("Motion Lab Finished", "Synthesized video ready")
         } finally {
+            stagedOutput?.delete()
             workDir.deleteRecursively()
         }
     }
@@ -816,7 +837,7 @@ class VeilFrameProcessingService : Service() {
             val clampedMargin = marginPercent.coerceIn(0, 20)
             val deshakeFilter = VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedMargin)
 
-            val session = FFmpegKit.executeWithArguments(
+            val session = executeOwnedFfmpeg(
                 arrayOf(
                     "-y",
                     "-i", effectiveInPath,
@@ -842,13 +863,9 @@ class VeilFrameProcessingService : Service() {
             jobCallback?.onProgress(jobId, 100, "Complete")
             jobCallback?.onCompleted(jobId, effectiveOutPath)
             showCompletionNotification("Video Stabilizer Finished", "Stabilized video ready")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            synchronized(this) {
-                if (activeJob?.id == jobId) {
-                    activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
-                }
-            }
-            jobCallback?.onFailed(jobId, e.message ?: "Stabilization failed")
             throw e
         } finally {
             tempInFile?.delete()

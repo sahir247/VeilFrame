@@ -15,6 +15,7 @@ import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrOutputResult
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.validation.ScanabilityValidator
+import kotlinx.coroutines.ensureActive
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -1242,6 +1243,7 @@ object AnimatedQrGenerator {
         val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
 
         for ((idx, frame) in sourceFrames.withIndex()) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val renderResult = renderFrameResultAt(matrix, baseDesign, frame, accumulatedMs, outputSize, geometry)
             when (renderResult) {
                 is QrOutputResult.Failure -> {
@@ -1249,14 +1251,14 @@ object AnimatedQrGenerator {
                 }
                 is QrOutputResult.Success -> {
                     val frameDesign = baseDesign.copy(outputSize = outputSize)
-                    val report = ScanabilityValidator.validateStrict(
-                        renderResult.value.bitmap,
-                        frameDesign,
-                        matrix,
-                        expectedContent
-                    )
+                    val bitmap = renderResult.value.bitmap
+                    val report = try {
+                        ScanabilityValidator.validateStrict(bitmap, frameDesign, matrix, expectedContent)
+                    } finally {
+                        if (bitmap !== frame.bitmap) bitmap.recycle()
+                    }
                     frameReports.add(report)
-                    if (!report.isStrictlyCompliant) {
+                    if (!com.veilframe.app.qr.exporter.QrExporter.isVerified(report, expectedContent)) {
                         failureReasons.add("Frame $idx failed strict validation: ${report.warnings.joinToString("; ")}")
                     }
                 }
@@ -1264,14 +1266,14 @@ object AnimatedQrGenerator {
             accumulatedMs += frame.durationMs
         }
 
-        val allReady = frameReports.size == sourceFrames.size && frameReports.all { it.isStrictlyCompliant }
+        val allReady = frameReports.size == sourceFrames.size && frameReports.all { com.veilframe.app.qr.exporter.QrExporter.isVerified(it, expectedContent) }
         val worstSeparation = frameReports.minOfOrNull { it.contrast.separation } ?: 0f
         val worstMargin = frameReports.minOfOrNull { it.quietZone.minMargin } ?: 0f
 
         return AnimatedScanabilityReport(
             isAllFramesScanReady = allReady,
             totalFrames = sourceFrames.size,
-            passedFrames = frameReports.count { it.isStrictlyCompliant },
+            passedFrames = frameReports.count { com.veilframe.app.qr.exporter.QrExporter.isVerified(it, expectedContent) },
             frameReports = frameReports,
             worstSeparation = worstSeparation,
             worstQuietZoneMargin = worstMargin,
@@ -1290,7 +1292,27 @@ object AnimatedQrGenerator {
         baseDesign: QrDesign,
         expectedContent: String
     ): AnimatedScanabilityReport {
-        val extracted = AnimatedMediaHelper.extractFrames(context, uri)
-        return validateAnimatedFramesStrict(matrix, baseDesign, extracted, expectedContent, baseDesign.outputSize)
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val file = File.createTempFile("qr_verify_input_", ".media", context.cacheDir)
+            try {
+                val input = context.contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("Cannot open encoded animation")
+                input.use { stream ->
+                    file.outputStream().use { output ->
+                        val block = ByteArray(64 * 1024)
+                        var size = 0L
+                        while (true) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val count = stream.read(block)
+                            if (count < 0) break
+                            size += count
+                            require(size <= 128L * 1024 * 1024) { "Encoded animation input exceeds verification limit" }
+                            output.write(block, 0, count)
+                        }
+                    }
+                }
+                com.veilframe.app.qr.exporter.AnimatedArtifactVerifier.verify(context, file, matrix, baseDesign, expectedContent)
+            } finally { file.delete() }
+        }
     }
 }

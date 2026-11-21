@@ -189,7 +189,12 @@ object ImageMetadataSanitizer {
      * Removes the listed EXIF tags without re-encoding pixels. This does not remove all
      * possible non-EXIF metadata blocks; callers requiring broader metadata removal must re-encode.
      */
-    fun stripExifLossless(inputFile: File, outputFile: File): Boolean {
+    fun stripExifLossless(
+        inputFile: File,
+        outputFile: File,
+        allowPixelReencode: Boolean = true,
+        preserveOrientation: Boolean = false
+    ): Boolean {
         return try {
             outputFile.parentFile?.mkdirs()
             if (inputFile.absolutePath != outputFile.absolutePath) {
@@ -199,6 +204,7 @@ object ImageMetadataSanitizer {
             val exif = ExifInterface(outputFile.absolutePath)
             val failedTags = mutableListOf<String>()
             for (tag in ALL_EXIF_TAGS) {
+                if (preserveOrientation && tag == ExifInterface.TAG_ORIENTATION) continue
                 try {
                     exif.setAttribute(tag, null)
                 } catch (_: Exception) {
@@ -211,8 +217,13 @@ object ImageMetadataSanitizer {
             exif.saveAttributes()
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Lossless EXIF strip failed: ${e.message}. Falling back to pixel re-encode.")
-            reencodePixels(inputFile, outputFile)
+            if (!allowPixelReencode) {
+                Log.w(TAG, "Lossless EXIF strip failed; pixel re-encode was not authorized", e)
+                false
+            } else {
+                Log.w(TAG, "Lossless EXIF strip failed: ${e.message}. Falling back to pixel re-encode.")
+                reencodePixels(inputFile, outputFile)
+            }
         }
     }
 

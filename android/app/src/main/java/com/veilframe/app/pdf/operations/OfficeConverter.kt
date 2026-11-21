@@ -14,6 +14,8 @@ import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
 
@@ -44,6 +46,30 @@ class OfficeConverter {
     var maxPdfPageWidthOverride: Float? = null
     var forceExportStrategy: ExportStrategy? = null
     var repeatFrozenColumnsInTiling: Boolean = false
+
+    /** Stage, reopen and verify page count before atomically replacing the caller's destination. */
+    internal suspend fun publishOfficePdf(pdf: PDDocument, destination: File) {
+        val expected = pdf.numberOfPages
+        require(expected > 0) { "Conversion produced no pages" }
+        val parent = destination.absoluteFile.parentFile ?: error("No destination directory")
+        check(parent.isDirectory || parent.mkdirs()) { "Cannot create destination directory" }
+        val staged = File.createTempFile("office_export_", ".pdf", parent)
+        try {
+            currentCoroutineContext().ensureActive()
+            pdf.save(staged)
+            PDDocument.load(staged).use { reopened ->
+                check(reopened.numberOfPages == expected) { "Serialized Office PDF page count changed" }
+            }
+            currentCoroutineContext().ensureActive()
+            java.nio.file.Files.move(
+                staged.toPath(), destination.absoluteFile.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        } finally {
+            staged.delete()
+        }
+    }
 
     private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
     private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
@@ -135,24 +161,21 @@ class OfficeConverter {
     suspend fun convertDocxToPdf(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
         try {
             convertDocxViaOpenXml(docxFile, pdfFile, context)
-        } catch (t: Throwable) {
-            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed (${t.message}), trying POI / fallback", t)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (primary: Exception) {
+            // Each renderer publishes only its verified staged PDF. Keep any prior destination intact.
+            android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed; trying POI", primary)
             try {
                 convertDocxToPdfInternal(docxFile, pdfFile, context)
-            } catch (t2: Throwable) {
-                android.util.Log.w("OfficeConverter", "POI DOCX conversion failed (${t2.message}), falling back to lightweight XML text extractor", t2)
-                val extracted = extractDocxTextViaZip(docxFile)
-                if (extracted.isNotBlank()) {
-                    val tempText = File(context.cacheDir, "docx_fallback_${System.currentTimeMillis()}.txt")
-                    try {
-                        tempText.writeText(extracted)
-                        convertTextToPdf(tempText, pdfFile, context)
-                    } finally {
-                        tempText.delete()
-                    }
-                } else {
-                    convertTextToPdf(docxFile, pdfFile, context)
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (secondary: Exception) {
+                secondary.addSuppressed(primary)
+                throw java.io.IOException("DOCX conversion failed; text-only export would lose formatting.", secondary)
+            } catch (unsupported: LinkageError) {
+                unsupported.addSuppressed(primary)
+                throw java.io.IOException("DOCX fallback renderer unavailable; no faithful PDF was produced.", unsupported)
             }
         }
     }
@@ -170,6 +193,7 @@ class OfficeConverter {
 
         val pdf = PDDocument()
         var contentStream: PDPageContentStream? = null
+        try {
 
         val pageBounds = PDRectangle.A4
         val margin = 50f
@@ -186,6 +210,7 @@ class OfficeConverter {
 
         try {
             for (node in doc.nodes) {
+                currentCoroutineContext().ensureActive()
                 when (node) {
                     is OpenXmlDocumentParser.DocxNode.ParagraphNode -> {
                         val p = node.paragraph
@@ -309,13 +334,13 @@ class OfficeConverter {
                 }
             }
         } finally {
-            try { contentStream?.close() } catch (_: Exception) {}
+            contentStream?.close()
         }
 
-        FileOutputStream(pdfFile).use { out ->
-            pdf.save(out)
+        publishOfficePdf(pdf, pdfFile)
+        } finally {
+            pdf.close()
         }
-        try { pdf.close() } catch (_: Exception) {}
     }
 
     private suspend fun convertDocxToPdfInternal(docxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
@@ -872,9 +897,7 @@ class OfficeConverter {
             contentStream?.close()
             contentStream = null
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
-            }
+            publishOfficePdf(pdf, pdfFile)
 
         } finally {
             try {
@@ -907,7 +930,8 @@ class OfficeConverter {
      * - Level 3 (Lossless 2D Tiling): Row-major two-dimensional panel tiling with continuation banners and optional frozen columns.
      * Uses OpenXmlDocumentParser to execute offline on Android ART with zero Apache POI crashes.
      */
-    suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context) = withContext(Dispatchers.IO) {
+    suspend fun convertXlsxToPdf(xlsxFile: File, pdfFile: File, context: android.content.Context,
+        savedPrintLayout: Boolean = false) = withContext(Dispatchers.IO) {
         PDFBoxResourceLoader.init(context)
 
         val workbookData = OpenXmlDocumentParser.parseXlsx(xlsxFile)
@@ -922,6 +946,7 @@ class OfficeConverter {
 
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
+            if (savedPrintLayout) pdf.documentInformation.subject = "Approximate saved Excel print layout; out-of-area charts omitted, unplaceable drawings rejected. No printer-exact guarantee."
             val limits = LayoutLimits(
                 minPageWidth = 842f,
                 minPageHeight = 595f,
@@ -935,11 +960,49 @@ class OfficeConverter {
                 repeatFrozenColumnsInTiling = repeatFrozenColumnsInTiling
             )
 
+            val renderContext = currentCoroutineContext()
+            val checkpoint: () -> Unit = { renderContext.ensureActive() }
             for ((sheetIdx, sheet) in workbookData.sheets.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                if (savedPrintLayout && !sheet.visible) continue
+                if (savedPrintLayout && (sheet.charts.any { it.printsWithSheet } || sheet.unsupportedDrawings > 0)) {
+                    require(sheet.unsupportedDrawings == 0) {
+                        "Saved print layout contains unplaceable drawing objects; use full worksheet export"
+                    }
+                    // Reconstructed appendix charts would leak cached data outside
+                    // a saved print range and add pages Excel never requested.
+                    require(sheet.printSettings.area != null) {
+                        "Saved print layout cannot locate charts without an explicit print area; use full worksheet export"
+                    }
+                    val areas = XlsxSavedPrintLayout.areas(
+                        sheet.name,sheet.printSettings,sheet.rows,sheet.mergedRegions)
+                    for (chart in sheet.charts.filter { it.printsWithSheet }) {
+                        require(chart.printAreaAnchorTrusted || chart.drawingOffsets != null) {
+                            "A saved chart intersects the print area or lacks a verifiable anchor; use full worksheet export"
+                        }
+                        // A chart wholly outside the selected area is omitted.
+                        // An intersecting one is admitted later only when it can
+                        // be painted at its exact cell-boundary anchor in one tile.
+                    }
+                }
                 val maxCol = sheet.rows.maxOfOrNull { it.size } ?: 0
-                if (maxCol == 0) continue // Empty sheet
+                if (maxCol == 0 && sheet.mergedRegions.isEmpty() && sheet.charts.isEmpty() && sheet.unsupportedDrawings == 0 &&
+                    !(savedPrintLayout && sheet.printSettings.area != null)) continue // Empty sheet
 
-                val plan = SpreadsheetLayoutEngine.createExportPlan(sheet, sheetIdx, fontNormal, limits)
+                val notes = buildList {
+                    if (sheet.cachedFormulaCount > 0) add("cached formulas; not recalculated")
+                    if (sheet.unsupportedConditionalRules > 0) add("conditional formatting partial")
+                    if (sheet.charts.isNotEmpty()) add("cached charts follow")
+                    if (sheet.unsupportedDrawings > 0) add("some drawing objects unsupported")
+                }
+                val displayedSheet = if (notes.isEmpty()) sheet else sheet.copy(name = sheet.name + " [" + notes.joinToString("; ") + "]")
+                if (savedPrintLayout && (maxCol > 0 || sheet.mergedRegions.isNotEmpty() || sheet.printSettings.area != null)) {
+                    renderSavedPrintSheet(pdf, sheet, sheetIdx, fontNormal, limits, checkpoint)
+                } else if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
+                val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits)
+                require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
+                    "Workbook exceeds PDF page budget"
+                }
 
                 when (plan.strategy) {
                     ExportStrategy.NATURAL_SIZE -> {
@@ -949,7 +1012,8 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontBold = fontBold,
                             limits = limits,
-                            isExtended = false
+                            isExtended = false,
+                            checkpoint = checkpoint
                         )
                     }
                     ExportStrategy.EXTENDED_SIZE -> {
@@ -959,7 +1023,8 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontBold = fontBold,
                             limits = limits,
-                            isExtended = true
+                            isExtended = true,
+                            checkpoint = checkpoint
                         )
                     }
                     ExportStrategy.TILED -> {
@@ -968,17 +1033,476 @@ class OfficeConverter {
                             plan = plan,
                             fontNormal = fontNormal,
                             fontBold = fontBold,
-                            limits = limits
+                            limits = limits,
+                            checkpoint = checkpoint
                         )
+                    }
+                }
+                }
+                if (!savedPrintLayout) for (chart in sheet.charts)
+                    renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint)
+                if (sheet.unsupportedDrawings > 0 && maxCol == 0 && sheet.mergedRegions.isEmpty()) {
+                    require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+                    val page = PDPage(PDRectangle(842f, 595f))
+                    pdf.addPage(page)
+                    PDPageContentStream(pdf, page).use { stream ->
+                        stream.beginText(); stream.setFont(fontBold, 12f); stream.newLineAtOffset(30f, 550f)
+                        safeShowText(stream, sheet.name + ": unsupported drawing objects", fontBold); stream.endText()
                     }
                 }
             }
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
+            require(pdf.numberOfPages > 0) {
+                if (savedPrintLayout) "No visible printable worksheets in saved print layout"
+                else "Workbook contains no printable worksheet content"
             }
+            require(pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun renderSavedPrintSheet(pdf: PDDocument, sheet: OpenXmlDocumentParser.XlsxSheetData, index: Int,
+        font: PDType1Font, limits: LayoutLimits, checkpoint: () -> Unit) {
+        val settings = sheet.printSettings
+        val areas = XlsxSavedPrintLayout.areas(sheet.name, settings, sheet.rows, sheet.mergedRegions)
+        val titles = XlsxSavedPrintLayout.titles(sheet.name, settings)
+        val requiredRows = maxOf(sheet.rows.size, areas.maxOf { it.lastRow } + 1, (titles.rows?.last ?: -1) + 1)
+        val requiredCols = maxOf(sheet.rows.maxOfOrNull { it.size } ?: 0, areas.maxOf { it.lastCol } + 1,
+            (titles.columns?.last ?: -1) + 1)
+        require(requiredRows.toLong() * requiredCols <= SpreadsheetGeometry.MAX_GRID_CELLS) { "Print area exceeds layout budget" }
+        val rows = List(requiredRows) { r ->
+            val existing = sheet.rows.getOrNull(r).orEmpty()
+            if (r == requiredRows - 1 && existing.size < requiredCols)
+                existing + List(requiredCols - existing.size) { "" } else existing
+        }
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
+            styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits,
+            respectSavedDimensions = true)
+        val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
+        val anchoredCharts = sheet.charts.filter { chart -> chart.printsWithSheet &&
+            areas.any { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }
+        }.map { chart ->
+            val placement = XlsxAnchoredChartRenderer.locate(chart,layout,plans)
+            require(placement != null) {
+                "A saved chart intersects the print area but cannot fit on one complete printable tile; use full worksheet export"
+            }
+            chart to placement
+        }
+        require(plans.sumOf { it.tiles.size.toLong() } + pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) {
+            "Saved print areas exceed PDF page budget"
+        }
+        val merges = SpreadsheetMergeIndex(layout.rowCount, layout.colCount, layout.mergedRegions)
+        val sheetPages = plans.sumOf { it.tiles.size }
+        var sheetPageNumber = 0
+        for ((planIndex,plan) in plans.withIndex()) for ((tileIndex,tile) in plan.tiles.withIndex()) {
+            sheetPageNumber++
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val rowRange = tile.first
+            val colRange = tile.second
+            val tableW = colRange.sumOf { layout.colWidths[it].toDouble() }.toFloat()
+            val tableH = rowRange.sumOf { layout.rowHeights[it].toDouble() }.toFloat()
+            val left = plan.left + if (settings.centerHorizontal) (plan.contentWidth - tableW * plan.scale) / 2f else 0f
+            val top = plan.height - plan.top - if (settings.centerVertical) (plan.contentHeight - tableH * plan.scale) / 2f else 0f
+            val page = PDPage(PDRectangle(plan.width, plan.height))
+            pdf.addPage(page)
+            PDPageContentStream(pdf, page).use { stream ->
+                stream.saveGraphicsState()
+                try {
+                    stream.transform(Matrix(plan.scale, 0f, 0f, plan.scale, left, top))
+                    val xs = mutableMapOf<Int,Float>()
+                    val ys = mutableMapOf<Int,Float>()
+                    var runningX = 0f; var runningY = 0f
+                    for (c in colRange) { xs[c] = runningX; runningX += layout.colWidths[c] }
+                    for (r in rowRange) { ys[r] = -runningY; runningY += layout.rowHeights[r] }
+                    fun x(c: Int) = xs.getValue(c)
+                    fun y(r: Int) = ys.getValue(r)
+                    for (r in rowRange) {
+                        checkpoint()
+                        for (c in colRange) {
+                            if (merges.at(r,c) >= 0) continue
+                            drawCellChunk(stream, x(c), y(r), layout.colWidths[c], layout.rowHeights[r],
+                                layout.rowWrappedLines[r][c], font, limits.fontSizeCell, limits.lineHeight, layout.cellStyles.at(r,c))
+                        }
+                    }
+                    for (geom in layout.mergedGeometries) {
+                        if (rowRange.none { it in geom.firstRow..geom.lastRow } ||
+                            colRange.none { it in geom.firstCol..geom.lastCol }) continue
+                        require((geom.firstRow..geom.lastRow).all { it in ys } &&
+                            (geom.firstCol..geom.lastCol).all { it in xs }) {
+                            "Saved print boundary cuts through a merged cell; use content-preserving export"
+                        }
+                        drawCellChunk(stream, x(geom.firstCol), y(geom.firstRow), geom.totalWidth, geom.totalHeight,
+                            geom.wrappedLines, font, limits.fontSizeCell, limits.lineHeight,
+                            layout.cellStyles.at(geom.firstRow,geom.firstCol))
+                    }
+                    renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
+                        { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
+                    for ((chart,placement) in anchoredCharts) if (placement.plan == planIndex && placement.tile == tileIndex) {
+                        checkpoint()
+                        XlsxAnchoredChartRenderer.draw(stream,chart,placement,checkpoint)
+                    }
+                    if (settings.printHeadings) {
+                        // Inverse font scaling keeps heading glyphs 8 pt even
+                        // when cells use an explicitly saved 10-400% print scale.
+                        val titleSize = 8f / plan.scale
+                        val topY = 6f / plan.scale
+                        stream.setNonStrokingColor(65,70,76)
+                        for (c in colRange) {
+                            checkpoint()
+                            val label = SpreadsheetLayoutEngine.colIndexToRef(c)
+                            val width = font.getStringWidth(label) * titleSize / 1000f
+                            val cx = x(c) + (layout.colWidths[c] - width)/2f
+                            stream.beginText(); stream.setFont(font, titleSize)
+                            stream.newLineAtOffset(cx, topY)
+                            safeShowText(stream,label,font); stream.endText()
+                        }
+                        for (r in rowRange) {
+                            checkpoint()
+                            val label = (r+1).toString()
+                            val width = font.getStringWidth(label) * titleSize / 1000f
+                            val rightEdge = -5f/plan.scale
+                            val baseline = y(r) - layout.rowHeights[r]/2f - titleSize/3f
+                            stream.beginText(); stream.setFont(font, titleSize)
+                            stream.newLineAtOffset(rightEdge-width,baseline)
+                            safeShowText(stream,label,font); stream.endText()
+                        }
+                    }
+                } finally { stream.restoreGraphicsState() }
+                drawSavedPrintHeaderFooter(stream, settings, plan, sheet.name, sheetPageNumber, sheetPages)
+                if (plan.bottom >= 12f) {
+                    stream.beginText(); stream.setFont(font, 8f); stream.newLineAtOffset(plan.left, 5f)
+                    val note = if (settings.unsupportedFeatures || sheet.unsupportedConditionalRules > 0 ||
+                        sheet.unsupportedDrawings > 0 || sheet.charts.isNotEmpty()) " - some features reconstructed or omitted" else ""
+                    safeShowText(stream, "Approximate saved print layout" + note, font); stream.endText()
+                }
+            }
+        }
+    }
+
+    private fun drawSavedPrintHeaderFooter(stream: PDPageContentStream, settings: XlsxSavedPrintSettings,
+        plan: XlsxSavedPrintLayout.Plan, sheet: String, page: Int, pages: Int) {
+        val print = settings.headerFooter
+        val numbered = when (settings.setup["useFirstPageNumber"]) {
+            null, "", "0", "false" -> false
+            "1", "true" -> true
+            else -> throw IllegalArgumentException("Invalid Excel first-page-number flag")
+        }
+        val firstPage = if (numbered) settings.setup["firstPageNumber"]?.toIntOrNull()
+            ?: throw IllegalArgumentException("Missing Excel first page number") else 1
+        require(firstPage in 1..999_999 && firstPage.toLong() + pages - 1 <= 999_999L) {
+            "Excel printed page number exceeds supported budget"
+        }
+        val printedPage = firstPage + page - 1
+        val font = PDType1Font.HELVETICA
+        fun draw(raw: String, header: Boolean) {
+            if (raw.isEmpty()) return
+            require(print.alignWithMargins) {
+                "Unaligned Excel header/footer margins are not reproducible; use full worksheet export"
+            }
+            val sections = XlsxPrintHeaderFooter.expand(raw, sheet, printedPage, pages)
+            // OOXML defaults scaleWithDoc and alignWithMargins to true.
+            // Excel scales the header font along with worksheet print scale.
+            val fontSize = if (print.scaleWithDoc) 9f*plan.scale else 9f
+            require(fontSize.isFinite() && fontSize in 0.75f..36f) {
+                "Saved header/footer font scaling exceeds supported physical geometry"
+            }
+            val edge = if (header) "header" else "footer"
+            val marginInches = settings.margins[edge]?.toFloatOrNull() ?: 0.3f
+            require(marginInches.isFinite() && marginInches in 0f..20f) { "Invalid saved $edge margin" }
+            val y = if (header) plan.height - marginInches*72f - fontSize else marginInches*72f
+            require(if (header) y >= plan.height - (plan.top - plan.headingTop) + 4f
+                    else y + fontSize + 2f <= plan.bottom) {
+                "Saved $edge collides with worksheet content; use full worksheet export"
+            }
+            val zone = plan.contentWidth / 3f
+            for ((i,value) in listOf(sections.left, sections.center, sections.right).withIndex()) {
+                if (value.isEmpty()) continue
+                val width = try {
+                    // Do not size sanitized text and then emit a silently changed
+                    // header/footer. The exact expanded value must be encodable.
+                    font.encode(value)
+                    font.getStringWidth(value) * fontSize / 1000f
+                } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
+                require(width <= zone - 8f) { "Saved $edge text exceeds its page section" }
+                val x = plan.left + i*zone + when (i) {
+                    0 -> 4f
+                    1 -> (zone - width) / 2f
+                    else -> zone - width - 4f
+                }
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText()
+                stream.setFont(font,fontSize)
+                stream.newLineAtOffset(x,y)
+                stream.showText(value)
+                stream.endText()
+            }
+        }
+        draw(print.headerFor(page, printedPage), true)
+        draw(print.footerFor(page, printedPage), false)
+    }
+
+    /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
+    private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+        if (chart.kind == "pie") {
+            renderCachedPieChart(pdf, sheet, chart, checkpoint)
+            return
+        }
+        if (chart.kind == "scatter") {
+            renderCachedScatterChart(pdf, sheet, chart, checkpoint)
+            return
+        }
+        val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
+        val combo = chart.kind == "combo"
+        val comboBarCount = if (combo) chart.series.count { it.chartKind == "column" } else 0
+        val stacked = chart.kind in setOf("bar", "column") && chart.grouping in setOf("stacked", "percentStacked")
+        val percentStacked = stacked && chart.grouping == "percentStacked"
+        val maxAbs = chart.series.flatMap { it.values }.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }
+            ?.takeIf { it > 0.0 } ?: 1.0
+        val stacks = if (stacked) XlsxStackedChart.segments(chart, maxAbs, percentStacked) else emptyList()
+        val bounds = if (stacked) stacks.flatten().filterNotNull().flatMap { listOf(it.start, it.end) }
+            else chart.series.flatMap { it.values }.filterNotNull().map { it / maxAbs }
+        val min = minOf(0.0, bounds.minOrNull() ?: 0.0)
+        val max = maxOf(0.0, bounds.maxOrNull() ?: 0.0)
+        val high = if (max == min) min + 1.0 else max
+        fun normalizedFraction(v: Double) = ((v - min) / (high - min)).toFloat().coerceIn(0f, 1f)
+        fun fraction(v: Double) = normalizedFraction(v / maxAbs)
+        for ((panel, indices) in chart.categories.indices.chunked(12).withIndex()) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val page = PDPage(PDRectangle(842f, 595f))
+            pdf.addPage(page)
+            PDPageContentStream(pdf, page).use { stream ->
+                val font = PDType1Font.HELVETICA
+                fun label(value: String, x: Float, y: Float, size: Float = 9f, bold: Boolean = false) {
+                    val f = if (bold) PDType1Font.HELVETICA_BOLD else font
+                    stream.setNonStrokingColor(0, 0, 0)
+                    stream.beginText(); stream.setFont(f, size); stream.newLineAtOffset(x, y)
+                    safeShowText(stream, value, f); stream.endText()
+                }
+                fun color(rgb: Int) { stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
+                fun stroke(rgb: Int) { stream.setStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
+                fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
+                    stream.moveTo(x1,y1); stream.lineTo(x2,y2); stream.stroke()
+                }
+                label(sheet.take(70) + " / Cached chart " + (panel + 1), 30f, 565f, 11f, true)
+                label(chart.title.take(80) + if (combo) " [column+line]" else
+                    if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
+                label("Saved chart cache; reconstructed appearance, not recalculated" +
+                    (chart.sourceAnchor?.let { " / cells $it" } ?: ""), 30f, 529f)
+                val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
+                val horizontal = chart.kind == "bar"
+                val slot = (if (horizontal) height else width) / indices.size
+                val zero = if (horizontal) left + normalizedFraction(0.0)*width else bottom + normalizedFraction(0.0)*height
+                stroke(0xB0B0B0); stream.setLineWidth(0.5f)
+                if (horizontal) line(zero,bottom,zero,bottom+height) else line(left,zero,left+width,zero)
+                for (tick in 0..4) {
+                    val f = tick / 4f
+                    val normalized = min + (high - min)*f
+                    val v = normalized * maxAbs
+                    val value = if (percentStacked) String.format(java.util.Locale.US, "%.0f%%", normalized*100)
+                        else if (v.isFinite()) String.format(java.util.Locale.US, "%.4g", v)
+                        else String.format(java.util.Locale.US, "%.4g x %.4g", normalized, maxAbs)
+                    stroke(0xE0E0E0)
+                    if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-25f,8f) }
+                    else { val y = bottom + f*height; line(left,y,left+width,y); label(value,30f,y-3f,8f) }
+                }
+                for ((seriesIndex, series) in chart.series.withIndex()) {
+                    checkpoint()
+                    var previous: Pair<Float,Float>? = null
+                    val bar = slot * 0.8f / (if (stacked) 1 else if (combo) comboBarCount else chart.series.size)
+                    for ((local, index) in indices.withIndex()) {
+                        val v = series.values[index]
+                        if (v == null) { previous = null; continue }
+                        val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
+                        if (chart.kind == "line" || (combo && series.chartKind == "line")) {
+                            val y = bottom + fraction(v)*height
+                            stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
+                            previous?.let { line(it.first,it.second,position,y) }
+                            color(series.rgb ?: palette[seriesIndex])
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,position,y,4f)
+                            previous = position to y
+                        } else {
+                            color(series.rgb ?: palette[seriesIndex])
+                            val ordinal = if (combo) chart.series.take(seriesIndex).count { it.chartKind == "column" } else seriesIndex
+                            val offset = position - slot*0.4f + (if (stacked) 0 else ordinal)*bar
+                            val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
+                                XlsxStackedChart.Segment(0.0, v / maxAbs)
+                            val start = normalizedFraction(segment.start)
+                            val end = normalizedFraction(segment.end)
+                            if (horizontal) {
+                                val x1 = left + start*width; val x2 = left + end*width
+                                stream.addRect(minOf(x1,x2),offset,kotlin.math.abs(x2-x1),bar*0.9f)
+                            } else {
+                                val y1 = bottom + start*height; val y2 = bottom + end*height
+                                stream.addRect(offset,minOf(y1,y2),bar*0.9f,kotlin.math.abs(y2-y1))
+                            }
+                            stream.fill()
+                        }
+                    }
+                }
+                for ((local,index) in indices.withIndex()) {
+                    if (horizontal) label((index+1).toString(),80f,bottom+height-slot*(local+0.5f)-3f,8f)
+                    else label((index+1).toString(),left+slot*(local+0.5f)-3f,bottom-12f,8f)
+                }
+                // Index labels and a numeric cache table make small bars, missing values and
+                // category order auditable independently from the simplified chart graphics.
+                val column = 570f / chart.series.size
+                for ((i,series) in chart.series.withIndex()) {
+                    color(series.rgb ?: palette[i]); stream.addRect(230f+i*column,231f,8f,8f); stream.fill()
+                    label(series.name.take(14),241f+i*column,231f,8f)
+                }
+                for ((local,index) in indices.withIndex()) {
+                    val y = 213f-local*14f
+                    label((index+1).toString() + " " + (chart.categories[index] ?: "(missing category)").take(30),30f,y,8f)
+                    for ((i,series) in chart.series.withIndex())
+                        label(series.values[index]?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",230f+i*column,y,8f)
+                }
+                label("Labels and numbers abbreviated for display; absent cache points are not inferred.", 30f, 28f, 8f)
+            }
+        }
+    }
+
+    /** Saved numerical pairs are drawn on actual XY axes; no categorical spacing. */
+    private fun renderCachedScatterChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart,
+        checkpoint: () -> Unit) {
+        val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715)
+        require(chart.series.size in 1..6 && chart.scatterStyle in setOf("marker","line","lineMarker"))
+        val pairs = chart.series.flatMap { series ->
+            series.xValues.zip(series.values).mapNotNull { (x, y) ->
+                if (x == null || y == null) null else x to y
+            }
+        }
+        // Only drawable complete (x,y) pairs determine axes. An unmatched
+        // large value must not flatten the actually plotted data.
+        val xAxis = XlsxScatterGeometry.axis(pairs.map { it.first })
+        val yAxis = XlsxScatterGeometry.axis(pairs.map { it.second })
+        val segments = chart.categories.indices.chunked(12)
+        for ((panel, indices) in segments.withIndex()) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            val page = PDPage(PDRectangle(842f,595f))
+            pdf.addPage(page)
+            PDPageContentStream(pdf,page).use { stream ->
+                val font = PDType1Font.HELVETICA
+                fun textAt(s: String, x: Float, y: Float, size: Float = 9f) {
+                    stream.setNonStrokingColor(0,0,0)
+                    stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
+                    safeShowText(stream,s,font); stream.endText()
+                }
+                textAt(sheet.take(70) + " / XY scatter (cached) " + (panel+1),30f,565f,11f)
+                textAt(chart.title.take(95),30f,545f,13f)
+                textAt("Numeric XY coordinates; cached data only, not recalculated" +
+                    (chart.sourceAnchor?.let { " / cells $it" } ?: ""),30f,529f)
+                val left = 98f; val bottom = 272f; val width = 672f; val height = 234f
+                stream.setStrokingColor(210,210,210); stream.setLineWidth(0.6f)
+                for (tick in 0..4) {
+                    val f = tick/4f
+                    val x = left+f*width; val y = bottom+f*height
+                    stream.moveTo(x,bottom); stream.lineTo(x,bottom+height); stream.stroke()
+                    stream.moveTo(left,y); stream.lineTo(left+width,y); stream.stroke()
+                    textAt(xAxis.label(f),x-12f,bottom-20f,8f)
+                    textAt(yAxis.label(f),30f,y-3f,8f)
+                }
+                for ((seriesIndex,series) in chart.series.withIndex()) {
+                    checkpoint()
+                    require(series.xValues.size == series.values.size)
+                    val rgb = series.rgb ?: palette[seriesIndex%palette.size]
+                    stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+                    stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+                    stream.setLineWidth(series.strokeWidthPt ?: 1.3f)
+                    var prev: Pair<Float,Float>? = null
+                    for (index in indices) {
+                        checkpoint()
+                        val x = series.xValues.getOrNull(index)
+                        val y = series.values.getOrNull(index)
+                        if (x == null || y == null) { prev = null; continue }
+                        val px = left+xAxis.fraction(x)*width
+                        val py = bottom+yAxis.fraction(y)*height
+                        if (chart.scatterStyle != "marker") prev?.let {
+                            stream.moveTo(it.first,it.second); stream.lineTo(px,py); stream.stroke()
+                        }
+                        if (chart.scatterStyle != "line") {
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,px,py,4f)
+                        }
+                        prev = px to py
+                    }
+                    textAt(series.name.take(15),30f+seriesIndex*125f,238f,8f)
+                }
+                for ((local,index) in indices.withIndex()) {
+                    val y = 215f - local*14f
+                    textAt("Point " + (index+1),30f,y,8f)
+                    for ((j,series) in chart.series.withIndex()) {
+                        val x = series.xValues.getOrNull(index)
+                        val v = series.values.getOrNull(index)
+                        val pair = if (x == null || v == null) "(missing)" else
+                            String.format(java.util.Locale.US,"%.3g, %.3g",x,v)
+                        textAt(pair,150f+j*110f,y,8f)
+                    }
+                }
+                textAt("Paired coordinates; gaps are not interpolated. Source axes and styling may differ.",30f,28f,8f)
+            }
+        }
+    }
+
+    /** Render a single complete pie; splitting the denominator across pages would mislead. */
+    private fun renderCachedPieChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+        checkpoint()
+        val values = chart.series.single().values
+        require(values.size in 1..12 && values.all { it == null || (it.isFinite() && it >= 0.0) })
+        val max = values.filterNotNull().maxOrNull() ?: 0.0
+        require(max > 0.0)
+        val total = values.sumOf { (it ?: 0.0) / max }
+        val colors = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82,
+            0xAA4167, 0x6D7C35, 0x5264B4, 0x9B653C, 0x557D83, 0x777777)
+        require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+        val page = PDPage(PDRectangle(842f, 595f))
+        pdf.addPage(page)
+        PDPageContentStream(pdf, page).use { stream ->
+            val font = PDType1Font.HELVETICA
+            fun label(text: String, x: Float, y: Float, size: Float = 10f) {
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
+                safeShowText(stream,text,font); stream.endText()
+            }
+            fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+            label(sheet.take(70) + " / Cached pie chart", 30f,565f,12f)
+            label(chart.title.take(85),30f,543f,14f)
+            label("Saved chart cache; reconstructed appearance, not recalculated",30f,523f)
+            val cx = 225f; val cy = 300f; val radius = 170f
+            var angle = Math.PI / 2
+            for ((i,v) in values.withIndex()) {
+                checkpoint()
+                val share = if (v == null) 0.0 else (v / max) / total
+                if (share > 0.0) {
+                    val sweep = -2 * Math.PI * share
+                    val segments = kotlin.math.ceil(kotlin.math.abs(sweep) / (Math.PI / 2)).toInt().coerceAtLeast(1)
+                    val delta = sweep / segments
+                    color(colors[i])
+                    stream.moveTo(cx,cy)
+                    stream.lineTo(cx + radius * kotlin.math.cos(angle).toFloat(), cy + radius * kotlin.math.sin(angle).toFloat())
+                    repeat(segments) {
+                        val end = angle + delta
+                        val k = (4.0 / 3.0 * kotlin.math.tan(delta / 4.0)).toFloat()
+                        val x0 = kotlin.math.cos(angle).toFloat(); val y0 = kotlin.math.sin(angle).toFloat()
+                        val x1 = kotlin.math.cos(end).toFloat(); val y1 = kotlin.math.sin(end).toFloat()
+                        stream.curveTo(cx + radius*(x0-k*y0), cy + radius*(y0+k*x0),
+                            cx + radius*(x1+k*y1), cy + radius*(y1-k*x1),
+                            cx + radius*x1, cy + radius*y1)
+                        angle = end
+                    }
+                    stream.closePath(); stream.fill()
+                }
+                val y = 481f - i * 26f
+                color(colors[i]); stream.addRect(430f,y-3f,10f,10f); stream.fill()
+                label((i+1).toString() + " " + (chart.categories[i] ?: "(missing category)").take(27),447f,y)
+                label(v?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",650f,y,9f)
+                label(if (v == null) "-" else String.format(java.util.Locale.US,"%.2f%%",share*100),750f,y,9f)
+            }
+            label("Shares are relative to nonnegative saved values; missing values are excluded.",30f,60f,9f)
+            label("Category labels and values abbreviated for display.",30f,44f,9f)
         }
     }
 
@@ -988,177 +1512,56 @@ class OfficeConverter {
         fontNormal: PDType1Font,
         fontBold: PDType1Font,
         limits: LayoutLimits,
-        isExtended: Boolean
+        isExtended: Boolean,
+        checkpoint: () -> Unit
     ) {
         val layout = plan.sheetLayout
-        val pageBounds = PDRectangle(plan.pageWidth, plan.pageHeight)
-        var currentPage = PDPage(pageBounds)
-        if (isExtended && plan.userUnit > 1.0f) {
-            currentPage.setUserUnit(plan.userUnit)
+        val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
+            layout.mergedGeometries.map { it.range })
+        fun addPage(page: PDPage) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
+            pdf.addPage(page)
         }
-        pdf.addPage(currentPage)
-        var contentStream: PDPageContentStream? = PDPageContentStream(pdf, currentPage)
-
-        if (isExtended && plan.userUnit > 1.0f) {
-            contentStream?.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-        }
-
-        val naturalWidth = layout.naturalPageWidth
-        val naturalHeight = layout.naturalPageHeight
-
-        // Page title header in natural coordinates
-        contentStream?.beginText()
-        contentStream?.setFont(fontBold, 12f)
-        contentStream?.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
-        safeShowText(contentStream, "Spreadsheet: ${layout.name}", fontBold)
-        contentStream?.endText()
-
-        var yPosition = naturalHeight - limits.margin - 20f
-
-        for (rIdx in 0 until layout.rowCount) {
-            val rowCellLines = layout.rowWrappedLines[rIdx]
-            val maxLinesInRow = rowCellLines.maxOfOrNull { it.size } ?: 1
-            val pageUsableHeight = (naturalHeight - (2 * limits.margin) - 20f).coerceAtLeast(30f)
-            val totalRowHeight = layout.rowHeights[rIdx]
-
-            if (totalRowHeight <= pageUsableHeight) {
-                if (yPosition - totalRowHeight < limits.margin) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
-                    }
-                    pdf.addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
-                }
-            } else {
-                if (yPosition - (limits.lineHeight * 2 + limits.paddingVertical) < limits.margin) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
-                    }
-                    pdf.addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
+        val page = PDPage(PDRectangle(plan.pageWidth, plan.pageHeight))
+        if (isExtended && plan.userUnit > 1f) page.setUserUnit(plan.userUnit)
+        addPage(page)
+        PDPageContentStream(pdf, page).use { stream ->
+            if (isExtended && plan.userUnit > 1f) {
+                stream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
+            }
+            val naturalHeight = layout.naturalPageHeight
+            stream.beginText()
+            stream.setFont(fontBold, 12f)
+            stream.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
+            safeShowText(stream, "Spreadsheet: ${layout.name}", fontBold)
+            stream.endText()
+            val tableTop = naturalHeight - limits.margin - 20f
+            fun rowTop(row: Int) = tableTop - layout.rowY[row]
+            for (r in 0 until layout.rowCount) {
+                checkpoint()
+                val top = rowTop(r)
+                val height = layout.rowHeights[r]
+                require(top - height >= limits.margin - 0.1f) { "Natural worksheet exceeds page geometry" }
+                for (c in 0 until layout.colCount) {
+                    if (mergeIndex.at(r, c) >= 0) continue
+                    drawCellChunk(stream, layout.colX[c], top, layout.colWidths[c], height,
+                        layout.rowWrappedLines[r][c], fontNormal, limits.fontSizeCell, limits.lineHeight,
+                        layout.cellStyles.at(r, c))
                 }
             }
-
-            val totalLines = maxOf(1, maxLinesInRow)
-            var startLine = 0
-            while (startLine < totalLines) {
-                val availableHeight = (yPosition - limits.margin).coerceAtLeast(limits.lineHeight + limits.paddingVertical)
-                val remainingLines = totalLines - startLine
-                val maxFittingLines = ((availableHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
-                val linesInChunk = minOf(remainingLines, maxFittingLines)
-                val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
-
-                for (colIndex in 0 until layout.colCount) {
-                    val merged = layout.mergedGeometries.firstOrNull {
-                        it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol
-                    }
-                    if (merged != null) {
-                        // Merged cell: draw once across the full merged column span
-                        if (colIndex == merged.firstCol) {
-                            val cellLeft = layout.colX[merged.firstCol]
-                            val cellW = (merged.firstCol..merged.lastCol).sumOf { layout.colWidths[it].toDouble() }.toFloat()
-                            val isFirstRow = (rIdx == merged.firstRow && startLine == 0)
-                            val isLastRow = (rIdx == merged.lastRow && startLine + linesInChunk >= totalLines)
-
-                            contentStream?.setStrokingColor(210, 215, 220)
-                            contentStream?.setLineWidth(0.5f)
-                            if (isFirstRow) {
-                                contentStream?.moveTo(cellLeft, yPosition)
-                                contentStream?.lineTo(cellLeft + cellW, yPosition)
-                                contentStream?.stroke()
-                            }
-                            if (isLastRow) {
-                                contentStream?.moveTo(cellLeft, yPosition - chunkHeight)
-                                contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
-                                contentStream?.stroke()
-                            }
-                            contentStream?.moveTo(cellLeft, yPosition)
-                            contentStream?.lineTo(cellLeft, yPosition - chunkHeight)
-                            contentStream?.stroke()
-
-                            contentStream?.moveTo(cellLeft + cellW, yPosition)
-                            contentStream?.lineTo(cellLeft + cellW, yPosition - chunkHeight)
-                            contentStream?.stroke()
-
-                            if (isFirstRow && merged.wrappedLines.isNotEmpty()) {
-                                contentStream?.saveGraphicsState()
-                                contentStream?.addRect(
-                                    cellLeft + 1f,
-                                    (yPosition - merged.totalHeight + 1f).coerceAtLeast(limits.margin),
-                                    (cellW - 2f).coerceAtLeast(1f),
-                                    (merged.totalHeight - 2f).coerceAtLeast(1f)
-                                )
-                                contentStream?.clip()
-
-                                var textY = yPosition - 4f - limits.fontSizeCell
-                                for (lineText in merged.wrappedLines) {
-                                    contentStream?.beginText()
-                                    contentStream?.setFont(fontNormal, limits.fontSizeCell)
-                                    contentStream?.newLineAtOffset(cellLeft + 4f, textY)
-                                    safeShowText(contentStream, lineText, fontNormal)
-                                    contentStream?.endText()
-                                    textY -= limits.lineHeight
-                                }
-                                contentStream?.restoreGraphicsState()
-                            }
-                        }
-                        continue
-                    }
-
-                    val cellLeft = layout.colX[colIndex]
-                    val cellW = layout.colWidths[colIndex]
-                    val lines = rowCellLines[colIndex]
-                    val chunkLines = if (lines.isNotEmpty() && startLine < lines.size) {
-                        lines.subList(startLine, minOf(lines.size, startLine + linesInChunk))
-                    } else {
-                        emptyList()
-                    }
-
-                    drawCellChunk(
-                        contentStream = contentStream,
-                        cellLeft = cellLeft,
-                        cellTop = yPosition,
-                        cellW = cellW,
-                        cellH = chunkHeight,
-                        chunkLines = chunkLines,
-                        fontNormal = fontNormal,
-                        fontSizeCell = limits.fontSizeCell,
-                        lineHeight = limits.lineHeight
-                    )
-                }
-
-                yPosition -= chunkHeight
-                startLine += linesInChunk
-
-                if (startLine < totalLines) {
-                    contentStream?.close()
-                    currentPage = PDPage(pageBounds)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        currentPage.setUserUnit(plan.userUnit)
-                    }
-                    pdf.addPage(currentPage)
-                    contentStream = PDPageContentStream(pdf, currentPage)
-                    if (isExtended && plan.userUnit > 1.0f) {
-                        contentStream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
-                    }
-                    yPosition = naturalHeight - limits.margin - 20f
-                }
+            for (geom in layout.mergedGeometries) {
+                checkpoint()
+                drawCellChunk(stream, layout.colX[geom.firstCol], rowTop(geom.firstRow),
+                    geom.totalWidth, geom.totalHeight, geom.wrappedLines,
+                    fontNormal, limits.fontSizeCell, limits.lineHeight,
+                    layout.cellStyles.at(geom.firstRow, geom.firstCol))
             }
+            renderSpreadsheetEdges(stream, layout, mergeIndex, 0 until layout.rowCount,
+                (0 until layout.colCount).toList(), { rowTop(it) },
+                { rowTop(it) - layout.rowHeights[it] }, { layout.colX[it] },
+                true, true, checkpoint)
         }
-
-        contentStream?.close()
     }
 
     private fun renderTiledSheet(
@@ -1166,211 +1569,223 @@ class OfficeConverter {
         plan: ExportPlan,
         fontNormal: PDType1Font,
         fontBold: PDType1Font,
-        limits: LayoutLimits
+        limits: LayoutLimits,
+        checkpoint: () -> Unit
     ) {
         val layout = plan.sheetLayout
+        val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
+            layout.mergedGeometries.map { it.range })
         val margin = limits.margin
 
         for (tile in plan.tiles) {
+            checkpoint()
+            require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             val pageBounds = PDRectangle(tile.tilePageWidth, tile.tilePageHeight)
             val page = PDPage(pageBounds)
             pdf.addPage(page)
-            val contentStream = PDPageContentStream(pdf, page)
+            PDPageContentStream(pdf, page).use { contentStream ->
 
-            val pageW = tile.tilePageWidth
-            val pageH = tile.tilePageHeight
+                val pageW = tile.tilePageWidth
+                val pageH = tile.tilePageHeight
 
-            // 1. Title Banner
-            val startColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol)
-            val endColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol)
-            val startRowDisplay = tile.rowGroup.startRow + 1
-            val endRowDisplay = tile.rowGroup.endRow + 1
-            val panelNum = tile.colGroup.groupIndex + 1
-            val totalPanels = tile.colGroup.totalGroups
+                // 1. Title Banner
+                val startColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol)
+                val endColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol)
+                val startRowDisplay = tile.rowGroup.startRow + 1
+                val endRowDisplay = tile.rowGroup.endRow + 1
+                val panelNum = tile.colGroup.groupIndex + 1
+                val totalPanels = tile.colGroup.totalGroups
 
-            val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
+                val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
 
-            contentStream.beginText()
-            contentStream.setFont(fontBold, 11f)
-            contentStream.newLineAtOffset(margin, pageH - margin + 10f)
-            safeShowText(contentStream, headerText, fontBold)
-            contentStream.endText()
-
-            // 2. Horizontal Continuation Banners
-            val topOffset = margin + 14f
-            if (tile.colGroup.hasLeftContinuation) {
-                val prevColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol - 1)
                 contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                contentStream.newLineAtOffset(margin, pageH - topOffset)
-                safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                contentStream.setFont(fontBold, 11f)
+                contentStream.newLineAtOffset(margin, pageH - margin + 10f)
+                safeShowText(contentStream, headerText, fontBold)
                 contentStream.endText()
-            }
-            if (tile.colGroup.hasRightContinuation) {
-                val nextColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol + 1)
-                contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                val rightText = "Continues right -> $nextColRef"
-                val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
-                contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
-                safeShowText(contentStream, rightText, fontBold)
-                contentStream.endText()
-            }
 
-            // 3. Down Continuation Banner
-            if (tile.rowGroup.hasDownContinuation) {
-                val nextRowDisplay = tile.rowGroup.endRow + 2
-                contentStream.beginText()
-                contentStream.setFont(fontBold, 9f)
-                contentStream.newLineAtOffset(margin, margin - 14f)
-                safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
-                contentStream.endText()
-            }
-
-            // 4. Calculate Column Positions on this tile
-            val colsToDraw = mutableListOf<Int>()
-            if (tile.colGroup.frozenCols.isNotEmpty()) {
-                colsToDraw.addAll(tile.colGroup.frozenCols)
-            }
-            colsToDraw.addAll(tile.colGroup.activeCols)
-
-            val tileColX = mutableMapOf<Int, Float>()
-            var runningX = margin
-            for (c in colsToDraw) {
-                tileColX[c] = runningX
-                runningX += layout.colWidths[c]
-            }
-
-            // 5. Calculate row vertical positions on this tile
-            val rowsOnTile = (tile.rowGroup.startRow..tile.rowGroup.endRow).toList()
-            val rowTopMap = mutableMapOf<Int, Float>()
-            val rowBottomMap = mutableMapOf<Int, Float>()
-            val rowHeightMap = mutableMapOf<Int, Float>()
-            var yPosition = pageH - margin - 22f
-
-            for (rIdx in rowsOnTile) {
-                val rowHeight = if (tile.rowGroup.linesInStartRow != -1) {
-                    tile.rowGroup.groupTableHeight
-                } else {
-                    layout.rowHeights[rIdx]
+                // 2. Horizontal Continuation Banners
+                val topOffset = margin + 14f
+                if (tile.colGroup.hasLeftContinuation) {
+                    val prevColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.startCol - 1)
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    contentStream.newLineAtOffset(margin, pageH - topOffset)
+                    safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                    contentStream.endText()
                 }
-                rowTopMap[rIdx] = yPosition
-                rowBottomMap[rIdx] = yPosition - rowHeight
-                rowHeightMap[rIdx] = rowHeight
-                yPosition -= rowHeight
-            }
+                if (tile.colGroup.hasRightContinuation) {
+                    val nextColRef = SpreadsheetLayoutEngine.colIndexToRef(tile.colGroup.endCol + 1)
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    val rightText = "Continues right -> $nextColRef"
+                    val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
+                    contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
+                    safeShowText(contentStream, rightText, fontBold)
+                    contentStream.endText()
+                }
 
-            // 6. Draw unmerged cells
-            for (rIdx in rowsOnTile) {
-                val cellTop = rowTopMap[rIdx]!!
-                val cellH = rowHeightMap[rIdx]!!
-                val rowLines = layout.rowWrappedLines[rIdx]
+                // 3. Down Continuation Banner
+                if (tile.rowGroup.hasDownContinuation) {
+                    val nextRowDisplay = tile.rowGroup.endRow + 2
+                    contentStream.beginText()
+                    contentStream.setFont(fontBold, 9f)
+                    contentStream.newLineAtOffset(margin, margin - 14f)
+                    safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
+                    contentStream.endText()
+                }
 
-                for (colIndex in colsToDraw) {
-                    // Skip cells that belong to any merged region
-                    if (layout.mergedGeometries.any { it.firstRow <= rIdx && rIdx <= it.lastRow && it.firstCol <= colIndex && colIndex <= it.lastCol }) {
-                        continue
-                    }
+                // 4. Calculate Column Positions on this tile
+                val colsToDraw = mutableListOf<Int>()
+                if (tile.colGroup.frozenCols.isNotEmpty()) {
+                    colsToDraw.addAll(tile.colGroup.frozenCols)
+                }
+                colsToDraw.addAll(tile.colGroup.activeCols)
 
-                    val cellLeft = tileColX[colIndex] ?: margin
-                    val cellW = layout.colWidths[colIndex]
-                    val fullLines = rowLines[colIndex]
-                    val chunkLines = if (tile.rowGroup.linesInStartRow != -1) {
-                        if (fullLines.isNotEmpty() && tile.rowGroup.startLineOfStartRow < fullLines.size) {
-                            fullLines.subList(
-                                tile.rowGroup.startLineOfStartRow,
-                                minOf(fullLines.size, tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow)
-                            )
-                        } else {
-                            emptyList()
-                        }
+                val tileColX = mutableMapOf<Int, Float>()
+                var runningX = margin
+                for (c in colsToDraw) {
+                    tileColX[c] = runningX
+                    runningX += layout.colWidths[c]
+                }
+
+                // 5. Calculate row vertical positions on this tile
+                val rowsOnTile = (tile.rowGroup.startRow..tile.rowGroup.endRow).toList()
+                val rowTopMap = mutableMapOf<Int, Float>()
+                val rowBottomMap = mutableMapOf<Int, Float>()
+                val rowHeightMap = mutableMapOf<Int, Float>()
+                var yPosition = pageH - margin - 22f
+
+                for (rIdx in rowsOnTile) {
+                    val rowHeight = if (tile.rowGroup.linesInStartRow != -1) {
+                        tile.rowGroup.groupTableHeight
                     } else {
-                        fullLines
+                        layout.rowHeights[rIdx]
                     }
-
-                    drawCellChunk(
-                        contentStream = contentStream,
-                        cellLeft = cellLeft,
-                        cellTop = cellTop,
-                        cellW = cellW,
-                        cellH = cellH,
-                        chunkLines = chunkLines,
-                        fontNormal = fontNormal,
-                        fontSizeCell = limits.fontSizeCell,
-                        lineHeight = limits.lineHeight
-                    )
-                }
-            }
-
-            // 7. Draw merged cell geometries that intersect this tile
-            for (geom in layout.mergedGeometries) {
-                val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
-                val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
-                if (visCols.isEmpty() || visRows.isEmpty()) continue
-
-                val sliceLeft = tileColX[visCols.first()]!!
-                val sliceRight = tileColX[visCols.last()]!! + layout.colWidths[visCols.last()]
-                val sliceWidth = sliceRight - sliceLeft
-                val sliceTop = rowTopMap[visRows.first()]!!
-                val sliceBottom = rowBottomMap[visRows.last()]!!
-                val sliceHeight = sliceTop - sliceBottom
-
-                val isLeftTrueEdge = (visCols.first() == geom.firstCol)
-                val isRightTrueEdge = (visCols.last() == geom.lastCol)
-                val isTopTrueEdge = (visRows.first() == geom.firstRow && tile.rowGroup.startLineOfStartRow == 0)
-                val isBottomTrueEdge = (visRows.last() == geom.lastRow)
-
-                // Stroke outer perimeter lines only - zero internal gridlines!
-                contentStream.setStrokingColor(210, 215, 220)
-                contentStream.setLineWidth(0.5f)
-
-                if (isTopTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceTop)
-                    contentStream.lineTo(sliceRight, sliceTop)
-                    contentStream.stroke()
-                }
-                if (isBottomTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceBottom)
-                    contentStream.lineTo(sliceRight, sliceBottom)
-                    contentStream.stroke()
-                }
-                if (isLeftTrueEdge) {
-                    contentStream.moveTo(sliceLeft, sliceTop)
-                    contentStream.lineTo(sliceLeft, sliceBottom)
-                    contentStream.stroke()
-                }
-                if (isRightTrueEdge) {
-                    contentStream.moveTo(sliceRight, sliceTop)
-                    contentStream.lineTo(sliceRight, sliceBottom)
-                    contentStream.stroke()
+                    rowTopMap[rIdx] = yPosition
+                    rowBottomMap[rIdx] = yPosition - rowHeight
+                    rowHeightMap[rIdx] = rowHeight
+                    yPosition -= rowHeight
                 }
 
-                // Text rendering: only on anchor slice to prevent duplicate text across panels
-                val isAnchor = (isLeftTrueEdge && isTopTrueEdge)
-                if (isAnchor && geom.wrappedLines.isNotEmpty()) {
-                    contentStream.saveGraphicsState()
-                    contentStream.addRect(
-                        sliceLeft + 1f,
-                        sliceBottom + 1f,
-                        (sliceWidth - 2f).coerceAtLeast(1f),
-                        (sliceHeight - 2f).coerceAtLeast(1f)
-                    )
-                    contentStream.clip()
+                // 6. Draw unmerged cells
+                for (rIdx in rowsOnTile) {
+                    checkpoint()
+                    val cellTop = rowTopMap[rIdx]!!
+                    val cellH = rowHeightMap[rIdx]!!
+                    val rowLines = layout.rowWrappedLines[rIdx]
 
-                    var textY = sliceTop - 4f - limits.fontSizeCell
-                    for (lineText in geom.wrappedLines) {
-                        contentStream.beginText()
-                        contentStream.setFont(fontNormal, limits.fontSizeCell)
-                        contentStream.newLineAtOffset(sliceLeft + 4f, textY)
-                        safeShowText(contentStream, lineText, fontNormal)
-                        contentStream.endText()
-                        textY -= limits.lineHeight
+                    for (colIndex in colsToDraw) {
+                        // Skip cells that belong to any merged region
+                        if (mergeIndex.at(rIdx, colIndex) >= 0) {
+                            continue
+                        }
+
+                        val cellLeft = tileColX[colIndex] ?: margin
+                        val cellW = layout.colWidths[colIndex]
+                        val fullLines = rowLines[colIndex]
+                        val chunkLines = if (tile.rowGroup.linesInStartRow != -1) {
+                            if (fullLines.isNotEmpty() && tile.rowGroup.startLineOfStartRow < fullLines.size) {
+                                fullLines.subList(
+                                    tile.rowGroup.startLineOfStartRow,
+                                    minOf(fullLines.size, tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow)
+                                )
+                            } else {
+                                emptyList()
+                            }
+                        } else {
+                            fullLines
+                        }
+
+                        drawCellChunk(
+                            contentStream = contentStream,
+                            cellLeft = cellLeft,
+                            cellTop = cellTop,
+                            cellW = cellW,
+                            cellH = cellH,
+                            chunkLines = chunkLines,
+                            fontNormal = fontNormal,
+                            fontSizeCell = limits.fontSizeCell,
+                            lineHeight = limits.lineHeight,
+                            style = layout.cellStyles.at(rIdx, colIndex),
+                            completeCell = tile.rowGroup.linesInStartRow == -1
+                        )
                     }
-                    contentStream.restoreGraphicsState()
                 }
-            }
 
-            contentStream.close()
+                // 7. Draw merged cell geometries that intersect this tile
+                for (geom in layout.mergedGeometries) {
+                    checkpoint()
+                    if (geom.lastRow < tile.rowGroup.startRow || geom.firstRow > tile.rowGroup.endRow) continue
+                    val visCols = colsToDraw.filter { it in geom.firstCol..geom.lastCol }
+                    val visRows = rowsOnTile.filter { it in geom.firstRow..geom.lastRow }
+                    if (visCols.isEmpty() || visRows.isEmpty()) continue
+
+                    val sliceLeft = tileColX[visCols.first()]!!
+                    val sliceRight = tileColX[visCols.last()]!! + layout.colWidths[visCols.last()]
+                    val sliceWidth = sliceRight - sliceLeft
+                    val sliceTop = rowTopMap[visRows.first()]!!
+                    val sliceBottom = rowBottomMap[visRows.last()]!!
+                    val sliceHeight = sliceTop - sliceBottom
+                    val style = layout.cellStyles.at(geom.firstRow, geom.firstCol)
+                    val font = style.font(fontNormal)
+                    val cellSize = style.fontSizePt ?: limits.fontSizeCell
+                    val cellLeading = limits.lineHeight * cellSize / limits.fontSizeCell
+                    fillSpreadsheetCell(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight, style)
+
+                    val isLeftTrueEdge = (visCols.first() == geom.firstCol)
+                    val isTopTrueEdge = (visRows.first() == geom.firstRow && tile.rowGroup.startLineOfStartRow == 0)
+
+                    // Text rendering: only on anchor slice to prevent duplicate text across panels
+                    val isAnchor = (isLeftTrueEdge && isTopTrueEdge && geom.firstCol in tile.colGroup.activeCols)
+                    if (isAnchor && geom.wrappedLines.isNotEmpty() && style.textRotation != 0) {
+                        drawCellChunk(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight,
+                            geom.wrappedLines, fontNormal, limits.fontSizeCell, limits.lineHeight, style)
+                    } else if (isAnchor && geom.wrappedLines.isNotEmpty()) {
+                        // Wrapping across the entire merge is invalid on a narrower
+                        // anchor tile. Rewrap inside its actual visible rectangle.
+                        val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
+                            font, cellSize, (sliceWidth - 8f - (if (style.icon != null) 13f else 0f)).coerceAtLeast(1f))
+                        val requiredHeight = 4f + cellSize +
+                            (anchorLines.size - 1).coerceAtLeast(0) * cellLeading
+                        require(requiredHeight <= sliceHeight - 1f) {
+                            "Merged cell text does not fit its anchor tile; increase tile dimensions"
+                        }
+                        contentStream.saveGraphicsState()
+                        contentStream.addRect(
+                            sliceLeft + 1f,
+                            sliceBottom + 1f,
+                            (sliceWidth - 2f).coerceAtLeast(1f),
+                            (sliceHeight - 2f).coerceAtLeast(1f)
+                        )
+                        contentStream.clip()
+
+                        setSpreadsheetTextColor(contentStream, style)
+                        val completeMerge = visRows.size == geom.lastRow - geom.firstRow + 1 &&
+                            visCols.size == geom.lastCol - geom.firstCol + 1 && tile.rowGroup.linesInStartRow == -1
+                        var textY = spreadsheetFirstBaseline(sliceTop, sliceHeight, cellSize,
+                            cellLeading, anchorLines.size, if (completeMerge) style.vertical else "top")
+                        for (lineText in anchorLines) {
+                            contentStream.beginText()
+                            contentStream.setFont(font, cellSize)
+                            contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, sliceLeft, sliceWidth, style), textY)
+                            safeShowText(contentStream, lineText, font)
+                            contentStream.endText()
+                            textY -= cellLeading
+                        }
+                        contentStream.restoreGraphicsState()
+                    }
+                }
+
+                val endsRow = tile.rowGroup.linesInStartRow == -1 ||
+                    tile.rowGroup.startLineOfStartRow + tile.rowGroup.linesInStartRow >=
+                    maxOf(1, layout.rowWrappedLines[tile.rowGroup.endRow].maxOfOrNull { it.size } ?: 1)
+                renderSpreadsheetEdges(contentStream, layout, mergeIndex,
+                    tile.rowGroup.startRow..tile.rowGroup.endRow, colsToDraw,
+                    { rowTopMap.getValue(it) }, { rowBottomMap.getValue(it) },
+                    { tileColX.getValue(it) }, tile.rowGroup.startLineOfStartRow == 0,
+                    endsRow, checkpoint)
+            }
         }
     }
 
@@ -1383,19 +1798,23 @@ class OfficeConverter {
         chunkLines: List<String>,
         fontNormal: PDFont,
         fontSizeCell: Float,
-        lineHeight: Float
+        lineHeight: Float,
+        style: XlsxCellStyle,
+        completeCell: Boolean = true
     ) {
         if (contentStream == null) return
+        val font = style.font(fontNormal)
+        val cellSize = style.fontSizePt ?: fontSizeCell
+        val cellLeading = lineHeight * cellSize / fontSizeCell
+        fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
-        // 1. Draw Cell border lines
-        contentStream.setStrokingColor(210, 215, 220)
-        contentStream.setLineWidth(0.5f)
-        contentStream.moveTo(cellLeft, cellTop)
-        contentStream.lineTo(cellLeft + cellW, cellTop)
-        contentStream.lineTo(cellLeft + cellW, cellTop - cellH)
-        contentStream.lineTo(cellLeft, cellTop - cellH)
-        contentStream.lineTo(cellLeft, cellTop)
-        contentStream.stroke()
+        if (style.dataBar?.showValue == false || style.icon?.showValue == false) return
+        if (style.textRotation != 0 && chunkLines.isNotEmpty()) {
+            require(completeCell) { "Cannot split rotated cell text across row fragments" }
+            drawRotatedSpreadsheetText(contentStream, cellLeft, cellTop, cellW, cellH,
+                chunkLines, font, cellSize, cellLeading, style)
+            return
+        }
 
         // 2. Draw cell string values safely clipped within cell boundaries
         if (chunkLines.isNotEmpty()) {
@@ -1408,17 +1827,208 @@ class OfficeConverter {
             )
             contentStream.clip()
 
-            var textY = cellTop - 4f - fontSizeCell
+            setSpreadsheetTextColor(contentStream, style)
+            var textY = spreadsheetFirstBaseline(cellTop, cellH, cellSize, cellLeading,
+                chunkLines.size, if (completeCell) style.vertical else "top")
             for (lineText in chunkLines) {
                 contentStream.beginText()
-                contentStream.setFont(fontNormal, fontSizeCell)
-                contentStream.newLineAtOffset(cellLeft + 4f, textY)
-                safeShowText(contentStream, lineText, fontNormal)
+                contentStream.setFont(font, cellSize)
+                contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, cellLeft, cellW, style), textY)
+                safeShowText(contentStream, lineText, font)
                 contentStream.endText()
-                textY -= lineHeight
+                textY -= cellLeading
             }
             contentStream.restoreGraphicsState()
         }
+    }
+
+    private fun drawRotatedSpreadsheetText(stream: PDPageContentStream, left: Float, top: Float,
+        width: Float, height: Float, lines: List<String>, font: PDFont, size: Float,
+        lineHeight: Float, style: XlsxCellStyle) {
+        val block = XlsxRotatedText.measureLines(lines, style.textRotation, font, size, lineHeight)
+        require(block.width <= width - 8f + 0.05f && block.height <= height - 8f + 0.05f) {
+            "Rotated cell text does not fit its visible rectangle; increase tile dimensions"
+        }
+        val xSpare = (width - 8f - block.width).coerceAtLeast(0f)
+        val ySpare = (height - 8f - block.height).coerceAtLeast(0f)
+        val x = left + 4f + when (style.horizontal) { "center" -> xSpare / 2f; "right" -> xSpare; else -> 0f }
+        val y = top - 4f - block.height - when (style.vertical) { "center" -> ySpare / 2f; "bottom" -> ySpare; else -> 0f }
+        stream.saveGraphicsState()
+        try {
+            stream.transform(Matrix(block.cosine, block.sine, -block.sine, block.cosine,
+                x - block.minX, y - block.minY))
+            setSpreadsheetTextColor(stream, style)
+            var baseline = block.unrotatedHeight - size
+            for (line in lines) {
+                stream.beginText()
+                stream.setFont(font, size)
+                stream.newLineAtOffset(spreadsheetTextX(line, font, size, -4f, block.unrotatedWidth + 8f, style), baseline)
+                safeShowText(stream, line, font)
+                stream.endText()
+                baseline -= lineHeight
+            }
+        } finally { stream.restoreGraphicsState() }
+    }
+
+    /** Overlay shared edges only after all fills/text for this page are complete. */
+    private fun renderSpreadsheetEdges(
+        stream: PDPageContentStream, layout: SheetLayout, mergeIndex: SpreadsheetMergeIndex,
+        rows: Iterable<Int>, cols: List<Int>, top: (Int) -> Float, bottom: (Int) -> Float,
+        left: (Int) -> Float, startsRow: Boolean, endsRow: Boolean, checkpoint: () -> Unit
+    ) {
+        val visibleRows = rows.toList()
+        if (visibleRows.isEmpty() || cols.isEmpty()) return
+        val resolver = SpreadsheetBorderResolver(layout, mergeIndex)
+        var previous: XlsxBorderLine? = null
+        stream.saveGraphicsState()
+        try {
+            fun segment(line: XlsxBorderLine?, x1: Float, y1: Float, x2: Float, y2: Float) {
+                if (line == null) return
+                if (previous != line) {
+                    stream.setStrokingColor(line.rgb ushr 16 and 255, line.rgb ushr 8 and 255, line.rgb and 255)
+                    stream.setLineWidth(if (line.kind == "double") 0.75f else line.width)
+                    stream.setLineDashPattern(line.dash(), 0f)
+                    previous = line
+                }
+                if (line.kind == "double") {
+                    val dx = if (x1 == x2) 0.85f else 0f
+                    val dy = if (y1 == y2) 0.85f else 0f
+                    stream.moveTo(x1 - dx, y1 - dy); stream.lineTo(x2 - dx, y2 - dy)
+                    stream.moveTo(x1 + dx, y1 + dy); stream.lineTo(x2 + dx, y2 + dy)
+                } else {
+                    stream.moveTo(x1, y1); stream.lineTo(x2, y2)
+                }
+                stream.stroke()
+            }
+            // Each horizontal boundary is emitted once (top of each row;
+            // bottom of the final row). Split text-row fragments have no fake edges.
+            for ((rowIndex,r) in visibleRows.withIndex()) {
+                checkpoint()
+                if (rowIndex != 0 || startsRow) for (c in cols) {
+                    val prior = visibleRows.getOrNull(rowIndex - 1) ?: (r - 1)
+                    segment(resolver.horizontalBetween(prior, r, c), left(c), top(r),
+                        left(c) + layout.colWidths[c], top(r))
+                }
+                if (rowIndex == visibleRows.lastIndex && endsRow) for (c in cols) {
+                    segment(resolver.horizontal(r + 1, c), left(c), bottom(r),
+                        left(c) + layout.colWidths[c], bottom(r))
+                }
+                for ((i, c) in cols.withIndex()) {
+                    val prior = cols.getOrNull(i - 1) ?: (c - 1).takeIf { it >= 0 }
+                    segment(resolver.vertical(r, prior, c), left(c), top(r), left(c), bottom(r))
+                }
+                val final = cols.last()
+                val x = left(final) + layout.colWidths[final]
+                segment(resolver.vertical(r, final, (final + 1).takeIf { it < layout.colCount }),
+                    x, top(r), x, bottom(r))
+            }
+        } finally { stream.restoreGraphicsState() }
+    }
+
+    private fun fillSpreadsheetCell(stream: PDPageContentStream?, left: Float, top: Float,
+                                    width: Float, height: Float, style: XlsxCellStyle) {
+        if (stream == null) return
+        style.fillRgb?.let { rgb ->
+            stream.saveGraphicsState()
+            try {
+                stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+                stream.addRect(left, top - height, width, height)
+                stream.fill()
+            } finally { stream.restoreGraphicsState() }
+        }
+        style.dataBar?.let { bar ->
+            val available = (width - 8f).coerceAtLeast(0f)
+            val x1 = left + 4f + minOf(bar.start,bar.end)*available
+            val x2 = left + 4f + maxOf(bar.start,bar.end)*available
+            if (x2 > x1 && height > 6f) {
+                stream.saveGraphicsState()
+                try {
+                    stream.setNonStrokingColor(bar.rgb ushr 16 and 255,bar.rgb ushr 8 and 255,bar.rgb and 255)
+                    stream.addRect(x1, top-height+3f, x2-x1, height-6f)
+                    stream.fill()
+                } finally { stream.restoreGraphicsState() }
+            }
+        }
+        style.icon?.let { icon ->
+            if (width < 14f || height < 12f) return@let
+            val cx = left + 8f; val cy = top - height/2f; val radius = 4f
+            val k = radius * 0.55228475f
+            stream.saveGraphicsState()
+            try {
+                stream.setNonStrokingColor(icon.rgb ushr 16 and 255,icon.rgb ushr 8 and 255,icon.rgb and 255)
+                when (icon.shape) {
+                    "up" -> {
+                        stream.moveTo(cx-2f,cy-4f); stream.lineTo(cx+2f,cy-4f)
+                        stream.lineTo(cx+2f,cy); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy+4f); stream.lineTo(cx-4f,cy)
+                        stream.lineTo(cx-2f,cy)
+                    }
+                    "down" -> {
+                        stream.moveTo(cx-2f,cy+4f); stream.lineTo(cx+2f,cy+4f)
+                        stream.lineTo(cx+2f,cy); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy-4f); stream.lineTo(cx-4f,cy)
+                        stream.lineTo(cx-2f,cy)
+                    }
+                    "right" -> {
+                        stream.moveTo(cx-4f,cy-2f); stream.lineTo(cx,cy-2f)
+                        stream.lineTo(cx,cy-4f); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy+4f); stream.lineTo(cx,cy+2f)
+                        stream.lineTo(cx-4f,cy+2f)
+                    }
+                    "up-right", "down-right" -> {
+                        // Rotate a single arrow polygon; no raster emoji or
+                        // device-specific glyph fallback can change its shape.
+                        val angle = if (icon.shape == "up-right") Math.PI / 4 else 3 * Math.PI / 4
+                        val co = kotlin.math.cos(angle).toFloat()
+                        val si = kotlin.math.sin(angle).toFloat()
+                        val vertices = arrayOf(-2f to -4f,2f to -4f,2f to 0f,
+                            4f to 0f,0f to 4f,-4f to 0f,-2f to 0f)
+                        for ((index,vertex) in vertices.withIndex()) {
+                            val rx = cx + vertex.first*co + vertex.second*si
+                            val ry = cy - vertex.first*si + vertex.second*co
+                            if (index == 0) stream.moveTo(rx,ry) else stream.lineTo(rx,ry)
+                        }
+                    }
+                    else -> {
+                        stream.moveTo(cx+radius,cy)
+                        stream.curveTo(cx+radius,cy+k,cx+k,cy+radius,cx,cy+radius)
+                        stream.curveTo(cx-k,cy+radius,cx-radius,cy+k,cx-radius,cy)
+                        stream.curveTo(cx-radius,cy-k,cx-k,cy-radius,cx,cy-radius)
+                        stream.curveTo(cx+k,cy-radius,cx+radius,cy-k,cx+radius,cy)
+                    }
+                }
+                stream.closePath(); stream.fill()
+            } finally { stream.restoreGraphicsState() }
+        }
+    }
+
+    private fun setSpreadsheetTextColor(stream: PDPageContentStream?, style: XlsxCellStyle) {
+        val rgb = style.textRgb ?: 0
+        stream?.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
+    }
+
+    // Lay out the complete wrapped text block, preserving symmetric padding.
+    // Fragmented rows/merges deliberately remain top-aligned on each panel.
+    private fun spreadsheetFirstBaseline(top: Float, height: Float, size: Float,
+                                         lineHeight: Float, lines: Int, vertical: String): Float {
+        val textHeight = size + (lines - 1).coerceAtLeast(0) * lineHeight
+        val spare = (height - 8f - textHeight).coerceAtLeast(0f)
+        val offset = when (vertical) {
+            "center" -> spare / 2f
+            "bottom" -> spare
+            else -> 0f
+        }
+        return top - 4f - size - offset
+    }
+
+    private fun spreadsheetTextX(text: String, font: PDFont, size: Float, left: Float,
+                                 width: Float, style: XlsxCellStyle): Float {
+        if (style.horizontal == "left") return left + if (style.icon != null) 17f else 4f
+        val textWidth = try { font.getStringWidth(text) / 1000f * size }
+            catch (_: Exception) { return left + 4f }
+        val offset = if (style.horizontal == "center") (width - textWidth) / 2f
+            else width - textWidth - 4f
+        return left + offset.coerceAtLeast(4f)
     }
 
     data class PicCrop(val l: Float = 0f, val t: Float = 0f, val r: Float = 0f, val b: Float = 0f)
@@ -1646,12 +2256,22 @@ class OfficeConverter {
      * Renders a PowerPoint PPTX file to high-resolution bitmaps with full layout, image, and typography fidelity.
      * Returns a list of Bitmaps, one per slide.
      */
-    suspend fun renderPptxToBitmaps(pptxFile: File, targetWidth: Int = 1920): List<Bitmap> = withContext(Dispatchers.IO) {
+    suspend fun renderPptxToBitmaps(pptxFile: File, targetWidth: Int = 1920): List<Bitmap> =
+        renderPptxSlides(pptxFile, targetWidth, null)
+
+    // The conversion path consumes each owned bitmap synchronously and never retains a slide-sized batch.
+    private suspend fun renderPptxSlides(
+        pptxFile: File,
+        targetWidth: Int,
+        consume: ((Bitmap) -> Unit)?
+    ): List<Bitmap> = withContext(Dispatchers.IO) {
         var pptxStream: FileInputStream? = null
         var ppt: XMLSlideShow? = null
         val bitmaps = mutableListOf<Bitmap>()
+        var pending: Bitmap? = null
 
         try {
+            require(targetWidth in 1..4096) { "Invalid slide raster width" }
             pptxStream = FileInputStream(pptxFile)
             ppt = XMLSlideShow(pptxStream)
 
@@ -1660,7 +2280,18 @@ class OfficeConverter {
             val slideHeightEmu = slideDimEmu.second
 
             // Calculate target height maintaining exact aspect ratio
-            val targetHeight = if (slideWidthEmu > 0) (targetWidth * slideHeightEmu / slideWidthEmu).toInt() else (targetWidth * 9 / 16)
+            val targetHeightLong = if (slideWidthEmu > 0 && slideHeightEmu > 0)
+                targetWidth.toDouble() * slideHeightEmu / slideWidthEmu else targetWidth * 9.0 / 16
+            require(targetHeightLong.isFinite() && targetHeightLong in 1.0..8192.0) { "Slide dimensions exceed raster limits" }
+            val targetHeight = targetHeightLong.toInt()
+            val pixels = targetWidth.toLong() * targetHeight
+            require(pixels <= 16_777_216L) { "Slide raster exceeds pixel budget" }
+            require(ppt.slides.isNotEmpty()) { "Presentation contains no slides" }
+            if (consume == null) {
+                require(ppt.slides.size.toLong() * pixels <= 32_000_000L) {
+                    "Slide batch exceeds bitmap memory budget; export PDF instead"
+                }
+            }
             val slideWidthPt = if (slideWidthEmu > 0) (slideWidthEmu / 12700f) else 720f
             val fontScale = targetWidth.toFloat() / slideWidthPt
 
@@ -1686,8 +2317,9 @@ class OfficeConverter {
             }
 
             for ((slideIndex, slide) in ppt.slides.withIndex()) {
+                currentCoroutineContext().ensureActive()
                 val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-                if (bitmap.isRecycled) continue
+                pending = bitmap
                 val canvas = android.graphics.Canvas(bitmap) // isRecycled checked above
                 canvas.drawColor(android.graphics.Color.WHITE)
 
@@ -1846,10 +2478,19 @@ class OfficeConverter {
                         }
                     }
                 }
-                bitmaps.add(bitmap)
+                currentCoroutineContext().ensureActive()
+                if (consume == null) {
+                    bitmaps.add(bitmap)
+                } else {
+                    consume(bitmap)
+                    bitmap.recycle()
+                }
+                pending = null
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (failure: Throwable) {
+            pending?.takeUnless { it.isRecycled }?.recycle()
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            throw failure
         } finally {
             try { ppt?.close() } catch (e: Exception) {}
             try { pptxStream?.close() } catch (e: Exception) {}
@@ -1866,9 +2507,8 @@ class OfficeConverter {
         var pdf: PDDocument? = null
         try {
             pdf = PDDocument()
-            val bitmaps = renderPptxToBitmaps(pptxFile, targetWidth = 1920)
-
-            for (bitmap in bitmaps) {
+            val document = pdf
+            renderPptxSlides(pptxFile, targetWidth = 1920) { bitmap ->
                 // Calculate page bounds matching the slide aspect ratio
                 val aspect = if (bitmap.height > 0) bitmap.width.toFloat() / bitmap.height.toFloat() else (16f / 9f)
                 val pageWidth = 842f // A4 landscape width points
@@ -1876,18 +2516,15 @@ class OfficeConverter {
                 val pageBounds = PDRectangle(pageWidth, pageHeight)
 
                 val page = PDPage(pageBounds)
-                pdf.addPage(page)
+                document.addPage(page)
 
-                PDPageContentStream(pdf, page).use { contentStream ->
-                    val pdImage = LosslessFactory.createFromImage(pdf, bitmap)
+                PDPageContentStream(document, page).use { contentStream ->
+                    val pdImage = LosslessFactory.createFromImage(document, bitmap)
                     contentStream.drawImage(pdImage, 0f, 0f, pageWidth, pageHeight)
                 }
-                bitmap.recycle()
             }
 
-            FileOutputStream(pdfFile).use { out ->
-                pdf.save(out)
-            }
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { pdf?.close() } catch (e: Exception) { e.printStackTrace() }
         }
@@ -2735,7 +3372,7 @@ class OfficeConverter {
 
             contentStream?.close()
             contentStream = null
-            pdf.save(pdfFile)
+            publishOfficePdf(pdf, pdfFile)
         } finally {
             try { contentStream?.close() } catch (_: Exception) {}
             try { pdf?.close() } catch (_: Exception) {}

@@ -52,5 +52,13 @@ data class ToolSessionState(
     var consoleLogs: String = "[SYS] Ready for execution.",
     var sliderValue: Float = 95f,
     var bundleFullDepth: Boolean = true,
-    var bundleCustomDepth: Int = 3
+    var bundleCustomDepth: Int = 3,
+    var targetRevision: Long = 0L
 )
+
+/** Captures the identity and revision of the selected target; even a re-pick of the same URI invalidates it. */
+internal class ToolTargetOwner(private val state: ToolSessionState) {
+    private val revision = state.targetRevision
+    fun owns(current: ToolSessionState): Boolean =
+        state === current && current.targetRevision == revision
+}

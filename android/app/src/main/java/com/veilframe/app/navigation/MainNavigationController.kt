@@ -42,6 +42,19 @@ class MainNavigationController(
     private val screenBackStack = java.util.ArrayDeque<ScreenState>()
 
     private var isNavigatingBack = false
+    private var transitionEpoch = 0L
+    private var handledExitScreen: ScreenState? = null
+
+    private fun proceedAfterExitAction(screen: ScreenState, action: () -> Unit, onProceed: () -> Unit) {
+        val previous = handledExitScreen
+        handledExitScreen = screen
+        try {
+            action()
+            onProceed()
+        } finally {
+            handledExitScreen = previous
+        }
+    }
 
     fun isRootScreen(screen: ScreenState): Boolean {
         return screen == ScreenState.HOME ||
@@ -490,7 +503,8 @@ class MainNavigationController(
         if (mainAct?.handleToolBackPressed(currentScreen) == true) {
             return
         }
-        val contract = mainAct?.getActiveToolWorkContract(currentScreen)
+        val promptScreen = currentScreen
+        val contract = mainAct?.getActiveToolWorkContract(promptScreen)
         val isRootScreen = currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY
 
         if (!isRootScreen && contract != null) {
@@ -503,13 +517,15 @@ class MainNavigationController(
                         .setMessage("Processing is currently active. Would you like to let it finish in the background, or cancel and discard now?")
                         .setPositiveButton("Work in Background") { _, _ ->
                             isHandlingWorkStatePrompt = false
-                            contract.moveToBackground()
-                            onProceed()
+                            if (currentScreen == promptScreen) {
+                                proceedAfterExitAction(promptScreen, contract::moveToBackground, onProceed)
+                            }
                         }
                         .setNeutralButton("Leave & Discard") { _, _ ->
                             isHandlingWorkStatePrompt = false
-                            contract.discardAndReleaseAllResources()
-                            onProceed()
+                            if (currentScreen == promptScreen) {
+                                proceedAfterExitAction(promptScreen, contract::discardAndReleaseAllResources, onProceed)
+                            }
                         }
                         .setNegativeButton("Stay") { _, _ ->
                             isHandlingWorkStatePrompt = false
@@ -527,8 +543,9 @@ class MainNavigationController(
                         .setMessage("A task is currently running. Leaving now will cancel the process immediately and discard unsaved results.")
                         .setPositiveButton("Leave & Discard") { _, _ ->
                             isHandlingWorkStatePrompt = false
-                            contract.discardAndReleaseAllResources()
-                            onProceed()
+                            if (currentScreen == promptScreen) {
+                                proceedAfterExitAction(promptScreen, contract::discardAndReleaseAllResources, onProceed)
+                            }
                         }
                         .setNegativeButton("Stay") { _, _ ->
                             isHandlingWorkStatePrompt = false
@@ -547,8 +564,9 @@ class MainNavigationController(
                     .setMessage("You have unsaved changes or media loaded in this tool. Are you sure you want to leave?")
                     .setPositiveButton("Leave & Discard") { _, _ ->
                         isHandlingWorkStatePrompt = false
-                        contract.discardAndReleaseAllResources()
-                        onProceed()
+                        if (currentScreen == promptScreen) {
+                            proceedAfterExitAction(promptScreen, contract::discardAndReleaseAllResources, onProceed)
+                        }
                     }
                     .setNegativeButton("Stay") { _, _ ->
                         isHandlingWorkStatePrompt = false
@@ -576,24 +594,24 @@ class MainNavigationController(
     }
 
     private fun cleanupOutgoingWorkspace(closingScreen: ScreenState) {
-        if (isRootScreen(closingScreen)) return
+        if (isRootScreen(closingScreen) || handledExitScreen == closingScreen) return
         val mainAct = activity as? MainActivity ?: return
         val closingContract = mainAct.getActiveToolWorkContract(closingScreen)
         if (closingContract != null && (!closingContract.supportsBackgroundExecution || !closingContract.isProcessing)) {
             closingContract.discardAndReleaseAllResources()
         }
-        if (closingScreen == ScreenState.QR_STUDIO && mainAct.isQrStudioControllerInitialized) {
-            mainAct.qrStudioController.discardAndReleaseAllResources()
-        }
-    }
+     }
 
     private fun popWorkspaceAndNavigate() {
         val closingScreen = currentScreen
-        cleanupOutgoingWorkspace(closingScreen)
         val destination = if (screenBackStack.isNotEmpty()) {
             screenBackStack.removeLast()
         } else {
             workspaceOriginScreen
+        }
+        // Root destinations perform their own cleanup; do not discard twice.
+        if (destination !in setOf(ScreenState.HOME, ScreenState.TOOLS, ScreenState.LIBRARY)) {
+            cleanupOutgoingWorkspace(closingScreen)
         }
         isNavigatingBack = true
         try {
@@ -704,66 +722,21 @@ class MainNavigationController(
         if (activeView != binding.layoutMarkdownViewer.layoutMarkdownRoot && preserveView != binding.layoutMarkdownViewer.layoutMarkdownRoot) {
             resetAndHideToolView(binding.layoutMarkdownViewer.layoutMarkdownRoot)
         }
-        workspaceHost.imageUpscalerRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.qrStudioRoot?.let { view ->
-            if (activeView != view && preserveView != view) {
-                resetAndHideToolView(view)
-                workspaceHost.deactivate(SecondaryWorkspace.QR_STUDIO)
-            }
-        }
+        workspaceHost.hideInactive(activeView, preserveView)
         if (activeView != binding.layoutToolsCatalogue.scrollToolsCatalogue && preserveView != binding.layoutToolsCatalogue.scrollToolsCatalogue) {
             resetAndHideToolView(binding.layoutToolsCatalogue.scrollToolsCatalogue)
         }
         if (activeView != binding.layoutLibrary.scrollLibrary && preserveView != binding.layoutLibrary.scrollLibrary) {
             resetAndHideToolView(binding.layoutLibrary.scrollLibrary)
         }
-        workspaceHost.docScannerRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.backgroundRemoverRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
         if (activeView != binding.layoutImageQuality.layoutImageQualityRoot && preserveView != binding.layoutImageQuality.layoutImageQualityRoot) {
             resetAndHideToolView(binding.layoutImageQuality.layoutImageQualityRoot)
         }
-        workspaceHost.motionLabRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.provenanceRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfSignatureRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfUnlockRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfStudioRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfWatermarkRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfExtractTextRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfExtractPagesRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfFlattenRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfImpositionRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
-        workspaceHost.pdfQuickToolRoot?.let { view ->
-            if (activeView != view && preserveView != view) resetAndHideToolView(view)
-        }
+
     }
 
     fun showHomeScreen() {
+        val epoch = ++transitionEpoch
         val closingScreen = currentScreen
         cleanupOutgoingWorkspace(closingScreen)
         onPauseVideoPlayback()
@@ -808,7 +781,7 @@ class MainNavigationController(
                 bottomNav = navView,
                 popStart = popStart
             ) {
-                if (currentScreen == ScreenState.HOME) {
+                if (currentScreen == ScreenState.HOME && epoch == transitionEpoch) {
                     hideAllToolViewsExcept(null)
                     binding.appBarLayout.visibility = View.VISIBLE
                     binding.toolbarHome.visibility = View.VISIBLE
@@ -824,20 +797,14 @@ class MainNavigationController(
             binding.scrollHome.alpha = 1.0f
             binding.scrollHome.translationX = 0f
             hideAllToolViewsExcept(null)
-            if (previousScreen == ScreenState.QR_STUDIO) {
-                (activity as? MainActivity)?.let { act ->
-                    if (act.isQrStudioControllerInitialized) {
-                        act.qrStudioController.discardAndReleaseAllResources()
-                    }
-                }
-            }
-        }
+         }
 
         onHomeScreenEntered()
         updateBackCallbackState()
     }
 
     fun showToolsScreen() {
+        val epoch = ++transitionEpoch
         (activity as? MainActivity)?.clearHomeFileIntake()
         val closingScreen = currentScreen
         cleanupOutgoingWorkspace(closingScreen)
@@ -883,7 +850,7 @@ class MainNavigationController(
                 bottomNav = navView,
                 popStart = popStart
             ) {
-                if (currentScreen == ScreenState.TOOLS) {
+                if (currentScreen == ScreenState.TOOLS && epoch == transitionEpoch) {
                     hideAllToolViewsExcept(toolsView)
                     binding.appBarLayout.visibility = View.VISIBLE
                     binding.toolbarHome.visibility = View.VISIBLE
@@ -904,6 +871,7 @@ class MainNavigationController(
     }
 
     fun showLibraryScreen() {
+        val epoch = ++transitionEpoch
         val closingScreen = currentScreen
         cleanupOutgoingWorkspace(closingScreen)
         onPauseVideoPlayback()
@@ -947,7 +915,7 @@ class MainNavigationController(
                 bottomNav = navView,
                 popStart = popStart
             ) {
-                if (currentScreen == ScreenState.LIBRARY) {
+                if (currentScreen == ScreenState.LIBRARY && epoch == transitionEpoch) {
                     hideAllToolViewsExcept(libraryView)
                     binding.appBarLayout.visibility = View.VISIBLE
                     binding.toolbarHome.visibility = View.VISIBLE
@@ -974,6 +942,8 @@ class MainNavigationController(
         @Suppress("UNUSED_PARAMETER") wasHome: Boolean,
         onPrepare: () -> Unit = {}
     ) {
+        val epoch = ++transitionEpoch
+        val targetScreen = currentScreen
         val isStandardTool = (targetView == binding.scrollTool)
         val fromView = getRootOrWorkspaceView(previousScreen)
         val popStart = pendingPopStart
@@ -999,6 +969,7 @@ class MainNavigationController(
                     bottomNav = null,
                     popStart = popStart
                 ) {
+                    if (epoch != transitionEpoch || currentScreen != targetScreen) return@hideTool
                     hideAllToolViewsExcept(targetView)
                     if (fromView !== binding.scrollHome) {
                         binding.scrollHome.visibility = View.GONE
@@ -1017,6 +988,7 @@ class MainNavigationController(
                     toolbarHome = binding.toolbarHome,
                     bottomNav = navView
                 ) {
+                    if (epoch != transitionEpoch || currentScreen != targetScreen) return@showTool
                     hideAllToolViewsExcept(targetView)
                     if (fromView !== binding.scrollHome) {
                         binding.scrollHome.visibility = View.GONE

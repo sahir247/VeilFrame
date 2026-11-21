@@ -9,14 +9,12 @@ import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.TensorBuffer
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.core.LiteRtEnvironment
-import com.veilframe.app.cv.core.LiteRtModelStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import java.io.File
 import java.util.concurrent.Executors
@@ -39,6 +37,7 @@ object ColorOsMattingPlugin {
 
     @Volatile
     private var compiledModel: CompiledModel? = null
+    private var modelSnapshot: RembgModelRepository.VerifiedSnapshot? = null
     private var inputBuffers: List<TensorBuffer> = emptyList()
     private var outputBuffers: List<TensorBuffer> = emptyList()
 
@@ -74,87 +73,98 @@ object ColorOsMattingPlugin {
         }
     }
 
-    private fun getOrInitCompiledModelLocked(context: Context): CompiledModel {
+    private fun getOrInitCompiledModelLocked(context: Context, checkpoint: () -> Unit): CompiledModel {
         compiledModel?.let { return it }
         val appContext = context.applicationContext
-        val candidates = listOf(
-            File(appContext.filesDir, "models/rembg/image_matting_mobile.tflite"),
-            File(appContext.filesDir, "models/lift_shift/image_matting_mobile.tflite")
-        )
-        val modelFile = candidates.firstOrNull { it.isFile && it.length() >= 8_000_000L }
+        val repository = RembgModelRepository(appContext)
+        val expected = RembgModel.COLOROS_LIFT_SHIFT
         val environment = LiteRtEnvironment.get(appContext)
         val gpuAvailable = runCatching {
             environment.getAvailableAccelerators().contains(Accelerator.GPU)
         }.getOrDefault(false)
         val cpuThreads = minOf(4, maxOf(2, Runtime.getRuntime().availableProcessors() / 2))
 
-        // Downloaded models already have file paths; stage only the bundled fallback.
-        val modelPath = modelFile?.absolutePath ?: LiteRtModelStorage.stageBundled(
-            appContext, MODEL_ASSET_PATH, "coloros-liftshift"
-        ).absolutePath
-        fun create(options: CompiledModel.Options): CompiledModel =
-            CompiledModel.create(modelPath, options, environment)
+        // Keep the validated exact bytes private and alive for any lazy/mapped
+        // accesses until the compiled model and its tensor buffers are closed.
+        val snapshot = repository.openVerifiedSnapshot(expected, checkpoint, MODEL_ASSET_PATH)
+        var adopted = false
+        try {
+            val modelPath = snapshot.weights.absolutePath
+            fun create(options: CompiledModel.Options): CompiledModel =
+                CompiledModel.create(modelPath, options, environment)
 
-        data class ReadyModel(
-            val model: CompiledModel,
-            val inputs: List<TensorBuffer>,
-            val outputs: List<TensorBuffer>,
-            val gpu: Boolean
-        )
+            data class ReadyModel(
+                val model: CompiledModel,
+                val inputs: List<TensorBuffer>,
+                val outputs: List<TensorBuffer>,
+                val gpu: Boolean
+            )
 
-        fun createAndWarm(options: CompiledModel.Options, gpu: Boolean): ReadyModel {
-            var model: CompiledModel? = null
-            var inputs: List<TensorBuffer> = emptyList()
-            var outputs: List<TensorBuffer> = emptyList()
-            try {
-                model = create(options)
-                inputs = model.createInputBuffers()
-                outputs = model.createOutputBuffers()
-                check(inputs.isNotEmpty() && outputs.isNotEmpty()) {
-                    "ColorOS matting model must expose input and output tensors"
+            fun createAndWarm(options: CompiledModel.Options, gpu: Boolean): ReadyModel {
+                var model: CompiledModel? = null
+                var inputs: List<TensorBuffer> = emptyList()
+                var outputs: List<TensorBuffer> = emptyList()
+                try {
+                    model = create(options)
+                    inputs = model.createInputBuffers()
+                    outputs = model.createOutputBuffers()
+                    check(inputs.isNotEmpty() && outputs.isNotEmpty()) {
+                        "ColorOS matting model must expose input and output tensors"
+                    }
+                    inputValues.fill(0f)
+                    inputs[0].writeFloat(inputValues)
+                    model.run(inputs, outputs)
+                    val warmOutput = outputs[0].readFloat() // Wait for GPU completion.
+                    check(warmOutput.size == OUTPUT_FLOAT_COUNT && warmOutput.all { it.isFinite() }) {
+                        "Invalid warm-up alpha output"
+                    }
+                    checkpoint()
+                    return ReadyModel(model, inputs, outputs, gpu)
+                } catch (error: Throwable) {
+                    outputs.forEach { runCatching { it.close() } }
+                    inputs.forEach { runCatching { it.close() } }
+                    runCatching { model?.close() }
+                    throw error
                 }
-                inputValues.fill(0f)
-                inputs[0].writeFloat(inputValues)
-                model.run(inputs, outputs)
-                outputs[0].readFloat() // Wait for GPU completion and pay shader compilation up front.
-                return ReadyModel(model, inputs, outputs, gpu)
-            } catch (error: Throwable) {
-                outputs.forEach { runCatching { it.close() } }
-                inputs.forEach { runCatching { it.close() } }
-                runCatching { model?.close() }
-                throw error
             }
-        }
 
-        val ready = if (gpuAvailable) {
-            try {
-                val gpuOptions = CompiledModel.Options(Accelerator.GPU, Accelerator.CPU).apply {
-                    cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+            val ready = if (gpuAvailable) {
+                try {
+                    val gpuOptions = CompiledModel.Options(Accelerator.GPU, Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(gpuOptions, gpu = true)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (gpuError: Exception) {
+                    checkpoint()
+                    Log.w(TAG, "LiteRT GPU setup failed; falling back to CPU", gpuError)
+                    val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
+                        cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
+                    }
+                    createAndWarm(cpuOptions, gpu = false)
                 }
-                createAndWarm(gpuOptions, gpu = true)
-            } catch (gpuError: Throwable) {
-                Log.w(TAG, "LiteRT GPU setup failed; falling back to CPU", gpuError)
+            } else {
                 val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
                     cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
                 }
                 createAndWarm(cpuOptions, gpu = false)
             }
-        } else {
-            val cpuOptions = CompiledModel.Options(Accelerator.CPU).apply {
-                cpuOptions = CompiledModel.CpuOptions(numThreads = cpuThreads, xnnPackFlags = 0x23)
-            }
-            createAndWarm(cpuOptions, gpu = false)
-        }
 
-        compiledModel = ready.model
-        inputBuffers = ready.inputs
-        outputBuffers = ready.outputs
-        isGpuAccelerated = ready.gpu
-        Log.i(
-            TAG,
-            "ColorOS Lift & Shift CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
-        )
-        return ready.model
+            compiledModel = ready.model
+            inputBuffers = ready.inputs
+            outputBuffers = ready.outputs
+            isGpuAccelerated = ready.gpu
+            modelSnapshot = snapshot
+            adopted = true
+            Log.i(
+                TAG,
+                "ColorOS Lift & Shift CompiledModel ready (backend=${if (isGpuAccelerated) "GPU with CPU fallback" else "CPU"}, threads=$cpuThreads)"
+            )
+            return ready.model
+        } finally {
+            if (!adopted) snapshot.close()
+        }
     }
 
     private fun closeLocked() {
@@ -164,6 +174,8 @@ object ColorOsMattingPlugin {
         inputBuffers = emptyList()
         runCatching { compiledModel?.close() }
         compiledModel = null
+        modelSnapshot?.close()
+        modelSnapshot = null
         isGpuAccelerated = false
     }
 
@@ -178,10 +190,17 @@ object ColorOsMattingPlugin {
         imageBytes: ByteArray,
         trim: Boolean = false,
         onProgress: suspend (RembgProgress) -> Unit = {}
+    ): RembgResult = process(context, RembgImageSource.Bytes(imageBytes), trim, onProgress)
+
+    internal suspend fun process(
+        context: Context,
+        imageSource: RembgImageSource,
+        trim: Boolean = false,
+        onProgress: suspend (RembgProgress) -> Unit = {}
     ): RembgResult = withContext(Dispatchers.Default) {
         ensureActive()
         CvRuntime.requireAvailable()
-        val sourceInfo = analyzeSource(imageBytes)
+        val sourceInfo = RembgImageUtils.sourceInfo(imageSource)
         val warnings = sourceInfo.warnings.toMutableList()
 
         onProgress(RembgProgress(15, "Initializing Neural Matting Engine…"))
@@ -190,14 +209,14 @@ object ColorOsMattingPlugin {
         ensureActive()
 
         val sourceBitmap = RembgImageUtils.decodeOrientedBitmap(
-            imageBytes,
+            imageSource,
             maxDimension = RembgImageUtils.MAX_MATTING_DIMENSION,
             inMutable = true
         )
         var cutoutBitmap: Bitmap? = null
+        var compositeSource: Bitmap? = null
+        var alphaBitmap: Bitmap? = null
         try {
-            val srcW = sourceBitmap.width
-            val srcH = sourceBitmap.height
 
             onProgress(RembgProgress(50, "Running Neural Subject Matting…"))
             ensureActive()
@@ -205,8 +224,9 @@ object ColorOsMattingPlugin {
             // Reuse one input tensor and its backing buffers; model work stays on mattingDispatcher.
             val alphaValues = withContext(mattingDispatcher) {
                 ensureActive()
+                val modelContext = kotlin.coroutines.coroutineContext
                 modelLock.withLock {
-                    val model = getOrInitCompiledModelLocked(context)
+                    val model = getOrInitCompiledModelLocked(context) { modelContext.ensureActive() }
                     val scaledBitmap = Bitmap.createScaledBitmap(
                         sourceBitmap, TENSOR_WIDTH, TENSOR_HEIGHT, true
                     )
@@ -253,18 +273,19 @@ object ColorOsMattingPlugin {
             val binaryBytes = ByteArray(OUTPUT_FLOAT_COUNT)
             val threshold = 5.0f / 255.0f
             for (i in 0 until OUTPUT_FLOAT_COUNT) {
+                check(alphaValues[i].isFinite()) { "ColorOS model returned non-finite alpha" }
                 val alpha = alphaValues[i].coerceIn(0f, 1f)
                 rawAlphaBytes[i] = (alpha * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
                 binaryBytes[i] = if (alpha >= threshold) 255.toByte() else 0.toByte()
             }
 
-            val fullMaskBytes = ByteArray(srcW * srcH)
+            val cleanMaskBytes = ByteArray(OUTPUT_FLOAT_COUNT)
             val rawMaskMat = Mat(TENSOR_HEIGHT, TENSOR_WIDTH, CvType.CV_8UC1)
             val labels = Mat()
             val stats = Mat()
             val centroids = Mat()
             val cleanMaskMat = Mat.zeros(TENSOR_HEIGHT, TENSOR_WIDTH, CvType.CV_8UC1)
-            val fullMaskMat = Mat()
+ 
             try {
                 rawMaskMat.put(0, 0, binaryBytes)
                 val numComponents = Imgproc.connectedComponentsWithStats(rawMaskMat, labels, stats, centroids)
@@ -301,48 +322,57 @@ object ColorOsMattingPlugin {
                     cleanMaskMat.put(0, 0, rawAlphaBytes)
                 }
 
-                onProgress(RembgProgress(90, "Compositing 4K Cutout…"))
-                ensureActive()
-                Imgproc.resize(
-                    cleanMaskMat, fullMaskMat, Size(srcW.toDouble(), srcH.toDouble()),
-                    0.0, 0.0, Imgproc.INTER_LINEAR
-                )
-                fullMaskMat.get(0, 0, fullMaskBytes)
+                cleanMaskMat.get(0, 0, cleanMaskBytes)
             } finally {
                 rawMaskMat.release()
                 labels.release()
                 stats.release()
                 centroids.release()
                 cleanMaskMat.release()
-                fullMaskMat.release()
+ 
             }
 
-            // Full-resolution alpha composite; keep source RGB unchanged.
-            cutoutBitmap = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888)
-            val sourceRow = IntArray(srcW)
-            val outputRow = IntArray(srcW)
-            for (y in 0 until srcH) {
-                sourceBitmap.getPixels(sourceRow, 0, srcW, 0, y, srcW, 1)
-                val rowOffset = y * srcW
-                for (x in 0 until srcW) {
-                    val alpha = fullMaskBytes[rowOffset + x].toInt() and 0xFF
-                    outputRow[x] = (alpha shl 24) or (sourceRow[x] and 0x00FFFFFF)
+            onProgress(RembgProgress(90, "Compositing cutout…"))
+            ensureActive()
+            val mask = Bitmap.createBitmap(TENSOR_WIDTH, TENSOR_HEIGHT, Bitmap.Config.ARGB_8888)
+            alphaBitmap = mask
+            val maskRow = IntArray(TENSOR_WIDTH)
+            for (y in 0 until TENSOR_HEIGHT) {
+                for (x in 0 until TENSOR_WIDTH) {
+                    maskRow[x] = ((cleanMaskBytes[y * TENSOR_WIDTH + x].toInt() and 255) shl 24) or 0x00FFFFFF
                 }
-                cutoutBitmap.setPixels(outputRow, 0, srcW, 0, y, srcW, 1)
+                mask.setPixels(maskRow, 0, TENSOR_WIDTH, 0, y, TENSOR_WIDTH, 1)
             }
+            val colors = RembgImageUtils.decodeCompositeSource(imageSource, sourceBitmap, sourceInfo, warnings)
+            compositeSource = colors
+            val cc = kotlin.coroutines.coroutineContext
+            val originalMatte = if (imageSource is RembgImageSource.Staged && !trim &&
+                OriginalResolutionCutout.supports(sourceInfo) &&
+                (colors.width != sourceInfo.width || colors.height != sourceInfo.height)) {
+                RembgAlphaMatte.fromAlpha(TENSOR_WIDTH, TENSOR_HEIGHT, cleanMaskBytes)
+            } else null
+            cutoutBitmap = CelBackgroundRemover.applyFullResolutionColors(colors, mask) { cc.ensureActive() }
+            if (originalMatte != null) warnings.add(0, "Memory-limited preview. Original-resolution PNG/JPEG is available in More options.")
+            if (colors !== sourceBitmap) colors.recycle()
+            compositeSource = null
 
             val finalCutout = if (trim) {
-                val trimmed = MaskPostprocessor.trimTransparent(cutoutBitmap)
+                val trimmed = MaskPostprocessor.trimTransparent(cutoutBitmap) { cc.ensureActive() }
                 if (trimmed !== cutoutBitmap && !cutoutBitmap.isRecycled) cutoutBitmap.recycle()
                 trimmed
             } else {
                 cutoutBitmap
             }
-            cutoutBitmap = null
+            cutoutBitmap = finalCutout
             onProgress(RembgProgress(100, "Done"))
-            RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings)
+            ensureActive()
+            val result = RembgResult(finalCutout, sourceInfo, RembgModel.COLOROS_LIFT_SHIFT, warnings, originalMatte)
+            cutoutBitmap = null
+            result
         } finally {
             if (cutoutBitmap != null && !cutoutBitmap.isRecycled) cutoutBitmap.recycle()
+            alphaBitmap?.recycle()
+            compositeSource?.takeUnless { it === sourceBitmap || it.isRecycled }?.recycle()
             if (!sourceBitmap.isRecycled) sourceBitmap.recycle()
         }
     }
@@ -364,14 +394,4 @@ object ColorOsMattingPlugin {
         return "image/jpeg"
     }
 
-    private fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {
-        val (width, height) = RembgImageUtils.orientedDimensions(imageBytes)
-        return RembgSourceInfo(
-            width = width,
-            height = height,
-            format = detectMimeFormat(imageBytes),
-            fileSize = imageBytes.size.toLong(),
-            warnings = emptyList()
-        )
-    }
 }

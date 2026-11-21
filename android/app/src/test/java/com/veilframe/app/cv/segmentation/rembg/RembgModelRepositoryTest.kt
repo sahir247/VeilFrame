@@ -23,6 +23,19 @@ class RembgModelRepositoryTest {
     }
 
     @Test
+    fun pinnedArtifactRequiresExactDigestEvenForSameSizeReplacement() {
+        val file = File(repository.modelsDir, "artifact-test")
+        try {
+            file.writeText("abc")
+            val digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            assertTrue(repository.matchesPinnedArtifact(file, digest, 3, 3))
+            file.writeText("abd")
+            assertFalse(repository.matchesPinnedArtifact(file, digest, 3, 3))
+            assertFalse(repository.matchesPinnedArtifact(file, "", 3, 3))
+        } finally { file.delete() }
+    }
+
+    @Test
     fun testBundledModelIsAlwaysReady() {
         assertTrue(repository.isModelReady(RembgModel.U2NETP))
         assertFalse(repository.deleteModel(RembgModel.U2NETP))
@@ -48,6 +61,8 @@ class RembgModelRepositoryTest {
             raf.setLength(model.minBytes + 1024)
         }
         assertTrue(repository.isModelReady(model))
+        // Presence and size alone must not authorize native loading or cached success.
+        org.junit.Assert.assertNull(repository.verifiedModelFile(model))
 
         // Test deletion
         assertTrue(repository.deleteModel(model))

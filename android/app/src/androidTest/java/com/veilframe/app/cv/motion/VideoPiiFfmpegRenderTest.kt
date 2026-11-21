@@ -9,6 +9,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiRedactionStyle
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -22,6 +23,53 @@ import kotlin.math.pow
  */
 @RunWith(AndroidJUnit4::class)
 class VideoPiiFfmpegRenderTest {
+
+    @Test
+    fun sequentialDecoderPreservesEveryVariableRateFrameWithoutSpool() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_seq_test").toFile()
+        val source = File(dir, "vfr.mp4")
+        try {
+            val creation = FFmpegKit.executeWithArguments(arrayOf("-y", "-f", "lavfi", "-i",
+                "testsrc2=size=320x240:rate=10:duration=1", "-vf",
+                "select='not(mod(n,3))+eq(n,1)'", "-vsync", "0", "-an", "-c:v", "mpeg4", source.absolutePath))
+            assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
+            val seen = mutableListOf<Long>()
+            val count = SequentialVideoFrameDecoder.decode(context, source, 320, 240, { false }) {
+                    bitmap, pts, _, _, _ ->
+                assertTrue(bitmap.width == 320 && bitmap.height == 240)
+                seen.add(pts)
+            }
+            org.junit.Assert.assertEquals(listOf(0L, 100_000L, 300_000L, 600_000L, 900_000L), seen)
+            org.junit.Assert.assertEquals(5, count)
+            assertTrue(dir.listFiles()!!.none { it.extension == "rgb" })
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test
+    fun continuousDecoderExceedsOldFrameCeilingAndCanCancelThenRetry() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_continuous").toFile()
+        val source = File(dir, "long.mp4")
+        try {
+            val creation = FFmpegKit.executeWithArguments(arrayOf("-y", "-f", "lavfi", "-i",
+                "testsrc2=size=32x24:rate=60:duration=31", "-an", "-c:v", "mpeg4", source.absolutePath))
+            assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
+            var seen = 0
+            org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+                SequentialVideoFrameDecoder.decode(context, source, 32, 24, { seen >= 12 }) { _, _, _, _, _ ->
+                    seen++
+                }
+            }
+            var previous = -1L
+            val count = SequentialVideoFrameDecoder.decode(context, source, 32, 24, { false }) { _, pts, next, _, _ ->
+                assertTrue(pts > previous)
+                assertTrue(next == null || next > pts)
+                previous = pts
+            }
+            org.junit.Assert.assertEquals(1860, count)
+        } finally { dir.deleteRecursively() }
+    }
 
     @Test
     fun allRedactionStylesRenderAndModifyTheTargetRegion() {

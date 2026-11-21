@@ -11,7 +11,6 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.os.Build
-import java.io.FileInputStream
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -53,6 +52,7 @@ import com.veilframe.app.pdf.operations.MergeItem
 import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.OfficeConverter
+import com.veilframe.app.pdf.operations.OfficeSourceFormat
 import com.veilframe.app.pdf.operations.PageRange
 import com.veilframe.app.pdf.operations.PdfCompressor
 import com.veilframe.app.pdf.operations.PdfFormFiller
@@ -100,18 +100,18 @@ class PdfQuickToolController(
     enum class QuickMode(val title: String, val subtitle: String, val buttonText: String) {
         MERGE("Merge PDF", "Combine multiple documents into one", "Merge & Export PDF"),
         SPLIT("Split PDF", "Extract pages into separate documents", "Split & Export"),
-        COMPRESS("Compress PDF", "Dual-engine smart size reduction", "Compress & Export PDF"),
+        COMPRESS("Compress PDF", "Preserve document structure, or explicitly choose image-only output", "Compress & Export PDF"),
         ROTATE("Rotate Pages", "Modulo 90°, 180°, 270° orientation fix", "Rotate & Export PDF"),
         REORDER("Reorder Pages", "Rearrange page sequence order", "Reorder & Export PDF"),
         DELETE("Delete Pages", "Purge unwanted sheets from document", "Delete Pages & Export"),
         LOCK("Lock PDF", "256-bit AES encryption & permissions", "Encrypt & Save PDF"),
-        SIGN("Sign PDF", "Touch Bézier canvas signature stamping", "Stamp Signature & Export"),
+        SIGN("Add Visual Signature", "Drawn signature overlay; not cryptographically signed", "Stamp Signature & Export"),
         FILL_FORMS("Fill Forms", "Interactive AcroForm values editing", "Apply Form Values & Export"),
         HTML_TO_PDF("HTML to PDF", "Convert HTML code to PDF document", "Convert HTML to PDF"),
         DOC_TO_PDF("DOC to PDF", "Offline DOCX & XLSX conversion", "Convert Office to PDF"),
         PDF_TO_IMAGE("PDF to Image", "Batch export pages to WebP/PNG/JPG", "Export Page Images"),
         IMAGE_TO_PDF("Image to PDF", "Compile gallery photos into PDF", "Compile PDF"),
-        METADATA("PDF Metadata", "Audit & scrub hidden XMP/Info tags", "Sanitize & Save PDF")
+        METADATA("PDF Metadata", "Inspect Info; remove explicit PDF metadata and private application tags", "Save PDF Metadata")
     }
 
     private var activeMode: QuickMode = QuickMode.MERGE
@@ -124,6 +124,13 @@ class PdfQuickToolController(
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
     private var pendingSaveGeneration: Long? = null
+    private var officePreviewBitmap: Bitmap? = null
+
+    private fun clearOfficePreview() {
+        binding.ivDocVisualPreview.setImageDrawable(null)
+        officePreviewBitmap?.recycle()
+        officePreviewBitmap = null
+    }
 
     /** The document picker is not a save: only a completed SAF copy may mark the output saved. */
     fun onSaveResult(success: Boolean) {
@@ -137,8 +144,16 @@ class PdfQuickToolController(
     }
     private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
 
-    private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
-        val job = scope.launch(Dispatchers.IO, block = block)
+    private class ExecutionGeneration(val value: Long) :
+        kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+        companion object Key : kotlin.coroutines.CoroutineContext.Key<ExecutionGeneration>
+    }
+
+    private fun launchTransient(
+        owner: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
+        block: suspend CoroutineScope.() -> Unit
+    ): Job {
+        val job = scope.launch(Dispatchers.IO + owner, block = block)
         transientJobs.add(job)
         job.invokeOnCompletion { transientJobs.remove(job) }
         return job
@@ -211,7 +226,7 @@ class PdfQuickToolController(
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.panelParamDocPreview.visibility = View.GONE
         binding.cardDocVisualPreview.visibility = View.GONE
-        binding.ivDocVisualPreview.setImageDrawable(null)
+        clearOfficePreview()
         binding.pbDocVisualLoading.visibility = View.GONE
         binding.tvDocPreviewSummary.text = ""
         binding.tvDocPreviewContent.text = ""
@@ -282,6 +297,7 @@ class PdfQuickToolController(
             QuickMode.COMPRESS -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Compress"
                 binding.panelParamCompress.visibility = View.VISIBLE
+                binding.chipGroupCompressEngine.check(R.id.chipCompressImages)
             }
             QuickMode.LOCK -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Encrypt"
@@ -864,13 +880,13 @@ class PdfQuickToolController(
             binding.tvQuickToolDocName.text = primaryDocName
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
+                isSourceReady = false
+                binding.btnQuickToolExecute.isEnabled = false
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
                 binding.pbDocVisualLoading.visibility = View.VISIBLE
-                binding.ivDocVisualPreview.setImageDrawable(null)
+                clearOfficePreview()
                 inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
@@ -933,177 +949,148 @@ class PdfQuickToolController(
     private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
         val selectedName = primaryDocName
         launchTransient {
-            val lower = selectedName.lowercase()
-            var summary = "Office Document"
-            var previewText = ""
-            var metaText = "Ready to convert"
             var previewBitmap: Bitmap? = null
-
+            var adopted = false
+            var previewFile: File? = null
             try {
-                when {
-                    lower.endsWith(".docx") || lower.endsWith(".doc") -> {
-                        metaText = "Word Document (${lower.substringAfterLast('.')})"
-                        val paragraphs = mutableListOf<String>()
-                        var tablesCount = 0
-
-                        val tempDoc = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.docx")
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempDoc.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            if (tempDoc.exists() && tempDoc.length() > 0) {
-                                try {
-                                    FileInputStream(tempDoc).use { stream ->
-                                        val doc = XWPFDocument(stream)
-                                        for (p in doc.paragraphs) {
-                                            val t = p.text?.trim()
-                                            if (!t.isNullOrBlank()) {
-                                                paragraphs.add(t)
-                                            }
-                                        }
-                                        tablesCount = doc.tables.size
-                                    }
-                                } catch (t: Throwable) {
-                                    Log.w(TAG, "POI DOCX preview extraction failed: ${t.message}; using zip extractor", t)
-                                    val text = officeConverter.extractDocxTextViaZip(tempDoc)
-                                    if (text.isNotBlank()) {
-                                        paragraphs.addAll(text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() })
-                                    }
-                                }
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "Failed to copy DOCX for preview: ${t.message}", t)
-                        } finally {
-                            tempDoc.delete()
+                val format = OfficeSourceFormat.fromName(selectedName)
+                val source = File.createTempFile("office_preview_", format.suffix, activity.cacheDir)
+                previewFile = source
+                val input = activity.contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("Cannot open selected document")
+                input.use { stream ->
+                    source.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytes = 0L
+                        while (true) {
+                            ensureActive()
+                            val n = stream.read(buffer)
+                            if (n < 0) break
+                            bytes += n
+                            if (bytes > 128L * 1024 * 1024) throw java.io.IOException("Document exceeds 128 MiB preview limit")
+                            output.write(buffer, 0, n)
                         }
-
-                        if (paragraphs.isNotEmpty()) {
-                            summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
-                            previewText = paragraphs.take(15).joinToString("\n\n")
-                        } else {
-                            summary = "Word Document ($selectedName)"
-                            previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("DOCX", selectedName, paragraphs, tablesCount, null, null)
                     }
-                    lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
-                        metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
-                        val sheetGrid = mutableListOf<List<String>>()
+                }
+                ensureActive()
+                require(source.length() > 0) { "Selected document is empty" }
+                val paragraphs = mutableListOf<String>()
+                val grid = mutableListOf<List<String>>()
+                val slides = mutableListOf<String>()
+                var tables = 0
+                var summary = format.label
+                val previewText = when (format) {
+                    OfficeSourceFormat.DOCX -> {
                         try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val tempFile = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.xlsx")
-                                val wb = try {
-                                    tempFile.outputStream().use { output -> stream.copyTo(output) }
-                                    OpenXmlDocumentParser.parseXlsx(tempFile)
-                                } finally {
-                                    tempFile.delete()
-                                }
-                                val sheetCount = wb.sheets.size
-                                val sheetNames = wb.sheets.joinToString(", ") { it.name }
-                                summary = "Excel Workbook • $sheetCount sheet(s) ($sheetNames)"
-                                val firstSheet = wb.sheets.firstOrNull()
-                                val previewSb = StringBuilder()
-                                if (firstSheet != null) {
-                                    previewSb.append("Sheet: ${firstSheet.name}\n")
-                                    val rowCount = minOf(firstSheet.rows.size, 15)
-                                    for (r in 0 until rowCount) {
-                                        val row = firstSheet.rows[r]
-                                        val cells = row.take(6).filter { it.isNotBlank() }
-                                        if (cells.isNotEmpty()) {
-                                            sheetGrid.add(cells)
-                                            previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
-                                        }
+                            source.inputStream().use { stream ->
+                                XWPFDocument(stream).use { doc ->
+                                    tables = doc.tables.size
+                                    summary = "Word • ${doc.paragraphs.size} paragraphs, $tables tables"
+                                    for (paragraph in doc.paragraphs.asSequence().take(40)) {
+                                        ensureActive()
+                                        paragraph.text?.trim()?.take(800)?.takeIf { it.isNotBlank() }?.let { paragraphs.add(it) }
                                     }
                                 }
-                                previewText = previewSb.toString().trim()
                             }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "XLSX preview failed: ${t.message}", t)
-                            summary = "Excel Spreadsheet ($selectedName)"
-                            previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (unsupported: LinkageError) {
+                            // Android may lack POI desktop rendering classes. The fallback
+                            // parser is also used by the converter, not a binary text decoder.
+                            val doc = OpenXmlDocumentParser.parseDocx(source)
+                            require(doc.nodes.isNotEmpty()) { "Cannot inspect Word document" }
+                            tables = doc.tables.size
+                            summary = "Word • extracted content (fallback parser)"
+                            paragraphs.addAll(doc.paragraphs.take(40).map { it.fullText.take(800) })
                         }
-                        previewBitmap = renderOfficePreviewBitmap("XLSX", selectedName, emptyList(), 1, sheetGrid, null)
+                        paragraphs.take(15).joinToString("\n\n")
                     }
-                    lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
-                        metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
-                        val slideTexts = mutableListOf<String>()
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val ppt = XMLSlideShow(stream)
-                                val slideCount = ppt.slides.size
-                                summary = "PowerPoint Presentation • $slideCount slide(s)"
-                                val previewSb = StringBuilder()
+                    OfficeSourceFormat.XLSX -> {
+                        val workbook = OpenXmlDocumentParser.parseXlsx(source)
+                        require(workbook.sheets.isNotEmpty()) { "Workbook has no sheets" }
+                        val sheet = workbook.sheets.first()
+                        summary = "Excel • ${workbook.sheets.size} sheets; first sheet: ${sheet.name.take(120)}"
+                        for (row in sheet.rows.take(15)) {
+                            ensureActive()
+                            // Retain empty cells; filtering them shifts later columns.
+                            grid.add(row.take(6).map { it.take(120) })
+                        }
+                        grid.joinToString("\n") { it.joinToString(" | ", "[ ", " ]") }
+                    }
+                    OfficeSourceFormat.PPTX -> {
+                        source.inputStream().use { stream ->
+                            XMLSlideShow(stream).use { ppt ->
+                                require(ppt.slides.isNotEmpty()) { "Presentation has no slides" }
+                                summary = "PowerPoint • ${ppt.slides.size} slides"
                                 for ((idx, slide) in ppt.slides.take(4).withIndex()) {
-                                    previewSb.append("Slide ${idx + 1}:\n")
-                                    for (shape in slide.shapes) {
-                                        if (shape is XSLFTextShape && shape.text.isNotBlank()) {
-                                            val t = shape.text.trim().replace("\n", " ")
-                                            slideTexts.add(t)
-                                            previewSb.append("  • ").append(t).append("\n")
-                                        }
+                                    ensureActive()
+                                    slides.add("Slide ${idx + 1}")
+                                    for (shape in slide.shapes.asSequence().filterIsInstance<XSLFTextShape>().take(12)) {
+                                        ensureActive()
+                                        shape.text.trim().replace('\n', ' ').take(300).takeIf { it.isNotBlank() }?.let { slides.add(it) }
                                     }
-                                    previewSb.append("\n")
                                 }
-                                previewText = previewSb.toString().trim()
+                                slides.joinToString("\n")
                             }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
-                            summary = "PowerPoint Presentation ($selectedName)"
-                            previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
                         }
-                        previewBitmap = renderOfficePreviewBitmap("PPTX", selectedName, emptyList(), 0, null, slideTexts)
                     }
-                    lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
-                        metaText = "Text Document (${lower.substringAfterLast('.')})"
-                        val lines = mutableListOf<String>()
-                        activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                            var count = 0
-                            reader.forEachLine { line ->
-                                count++
-                                if (lines.size < 40 && line.isNotBlank()) {
-                                    lines.add(line)
-                                }
-                            }
-                            summary = "Text Document • $count lines"
-                            previewText = lines.take(20).joinToString("\n")
+                    OfficeSourceFormat.TEXT -> {
+                        // Bounded sample, not readLine() over an arbitrarily long line.
+                        val decoder = Charsets.UTF_8.newDecoder()
+                            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                        java.io.InputStreamReader(source.inputStream(), decoder).use { reader ->
+                            val chars = CharArray(8192)
+                            val size = reader.read(chars)
+                            if (size <= 0) throw java.io.IOException("Empty text document")
+                            val sample = String(chars, 0, size)
+                            require(!sample.contains('\u0000')) { "Not a plain text document" }
+                            paragraphs.addAll(sample.lines().take(40).map { it.take(800) })
+                            summary = "Plain text • first characters"
+                            paragraphs.take(20).joinToString("\n")
                         }
-                        previewBitmap = renderOfficePreviewBitmap("TXT", selectedName, lines, 0, null, null)
-                    }
-                    else -> {
-                        metaText = "Office Document"
-                        summary = "Document Selected • $selectedName"
-                        previewText = "Document loaded and ready for conversion to PDF."
-                        previewBitmap = renderOfficePreviewBitmap("DOC", selectedName, listOf("Office document loaded", selectedName), 0, null, null)
                     }
                 }
-            } catch (t: Throwable) {
-                Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
-                summary = "Document Selected"
-                previewText = "Ready to convert: $selectedName"
-            }
-
-            if (previewText.isBlank()) {
-                previewText = "Preview not available for this document structure. Ready to convert."
-            }
-
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    previewBitmap?.recycle()
-                    return@withContext
-                }
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
-                binding.tvQuickToolDocMeta.text = metaText
-                binding.panelParamDocPreview.visibility = View.VISIBLE
-                binding.tvDocPreviewSummary.text = summary
-                binding.tvDocPreviewContent.text = previewText
-                if (previewBitmap != null) {
+                ensureActive()
+                previewBitmap = renderOfficePreviewBitmap(
+                    format.name, selectedName.take(120), paragraphs, tables,
+                    if (format == OfficeSourceFormat.XLSX) grid else null,
+                    if (format == OfficeSourceFormat.PPTX) slides else null
+                )
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                    isSourceReady = true
+                    binding.btnQuickToolExecute.isEnabled = true
+                    binding.tvQuickToolDocMeta.text = "${format.label} • content inspected"
+                    binding.panelParamDocPreview.visibility = View.VISIBLE
+                    binding.tvDocPreviewSummary.text = "$summary — content sample, not PDF layout"
+                    binding.tvDocPreviewContent.text = previewText.ifBlank { "No text in this sample; conversion may contain graphical content." }
+                    clearOfficePreview()
+                    officePreviewBitmap = previewBitmap
                     binding.ivDocVisualPreview.setImageBitmap(previewBitmap)
-                    binding.cardDocVisualPreview.visibility = View.VISIBLE
-                } else {
-                    binding.cardDocVisualPreview.visibility = View.GONE
+                    binding.cardDocVisualPreview.visibility = if (previewBitmap != null) View.VISIBLE else View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
+                    adopted = true
                 }
-                binding.pbDocVisualLoading.visibility = View.GONE
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                if (failure !is Exception && failure !is LinkageError) throw failure
+                Log.w(TAG, "Office source inspection failed", failure)
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
+                    isSourceReady = false
+                    binding.btnQuickToolExecute.isEnabled = false
+                    binding.tvQuickToolDocMeta.text = "Document inspection failed"
+                    binding.tvDocPreviewSummary.text = "Cannot convert this selection"
+                    binding.tvDocPreviewContent.text = failure.message ?: "Unreadable or unsupported document."
+                    clearOfficePreview()
+                    binding.cardDocVisualPreview.visibility = View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
+                }
+            } finally {
+                if (!adopted) previewBitmap?.recycle()
+                previewFile?.delete()
             }
         }
     }
@@ -1116,10 +1103,12 @@ class PdfQuickToolController(
         sheetGrid: List<List<String>>?,
         slideElements: List<String>?
     ): Bitmap? {
+        var allocated: Bitmap? = null
         return try {
             val width = 720
             val height = if (docType == "PPTX") 480 else 1018
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            allocated = bitmap
             val canvas = Canvas(bitmap)
 
             // Clean white paper
@@ -1324,12 +1313,14 @@ class PdfQuickToolController(
                 color = Color.parseColor("#9CA3AF")
                 textSize = 16f
             }
-            val footerText = "— Page 1 —"
+            val footerText = "— Schematic content sample —"
             val footerWidth = footerPaint.measureText(footerText)
             canvas.drawText(footerText, (width - footerWidth) / 2f, height - marginY / 2f, footerPaint)
 
             bitmap
         } catch (t: Throwable) {
+            allocated?.recycle()
+            if (t !is Exception) throw t
             Log.e(TAG, "renderOfficePreviewBitmap failed: ${t.message}", t)
             null
         }
@@ -1344,6 +1335,13 @@ class PdfQuickToolController(
     }
 
     private fun setupCompressControls() {
+        binding.chipGroupCompressEngine.setOnCheckedStateChangeListener { _, checked ->
+            binding.tvCompressionScope.text = if (R.id.chipCompressFullRender in checked) {
+                "Image-only output: text, vectors, forms, links, attachments and other interactive content are lost. Confirmation required."
+            } else {
+                "Optimizes eligible images; retains page drawing commands and document structure. Size reduction is not guaranteed."
+            }
+        }
         binding.sliderCompressQuality.addOnChangeListener { _, value, _ ->
             val label = when {
                 value <= 35f -> "Maximum Compression (${value.toInt()}%)"
@@ -2029,9 +2027,10 @@ class PdfQuickToolController(
         binding.btnSignCanvasSave.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
 
-        activeJob = launchTransient {
+        val generation = selectionGeneration
+        val base = primaryDocName.removeSuffix(".pdf")
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
-                val base = primaryDocName.removeSuffix(".pdf")
                 finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
                     val result = pdfSigner.signPdfWithItems(
                         inputUri = uri,
@@ -2039,6 +2038,7 @@ class PdfQuickToolController(
                         items = placements
                     )
                     withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                         binding.btnSignCanvasSave.isEnabled = true
                         if (result.success) {
                             binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -2048,8 +2048,11 @@ class PdfQuickToolController(
                     }
                     result.success
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                     binding.btnSignCanvasSave.isEnabled = true
                     isExecuting = false
                     Toast.makeText(activity, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -2092,7 +2095,7 @@ class PdfQuickToolController(
                                 }
                                 markExportPending()
                             } else {
-                                Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "Failed to remove PDF metadata", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -2112,7 +2115,7 @@ class PdfQuickToolController(
         }
     }
 
-    private fun executeActiveOperation() {
+    private fun executeActiveOperation(rasterConfirmed: Boolean = false, xlsxPrintLayout: Boolean? = null) {
         if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
             Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
             return
@@ -2127,6 +2130,40 @@ class PdfQuickToolController(
         }
 
         if (isExecuting) return
+        if (activeMode == QuickMode.DOC_TO_PDF && OfficeSourceFormat.fromName(primaryDocName) == OfficeSourceFormat.XLSX && xlsxPrintLayout == null) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Spreadsheet PDF layout")
+                .setMessage("Full worksheet preserves wide columns and all stored cells. Saved print layout uses the workbook print area, paper, margins and scaling where supported; cells outside the saved print area are omitted. Excel-specific headers, hidden cells, titles, charts and other features may differ.")
+                .setPositiveButton("Full worksheet") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = false)
+                }
+                .setNeutralButton("Saved print layout") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = true)
+                }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
+        val rasterSelected = activeMode == QuickMode.COMPRESS && binding.chipCompressFullRender.isChecked
+        if (rasterSelected && !rasterConfirmed) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Create an image-only PDF?")
+                .setMessage("Every page will be rendered to a JPEG at the selected quality. Searchable and selectable text, vector graphics, editable forms, links, attachments, signatures and other PDF objects will not be preserved. Fine details can blur. The original file is unchanged. Signed or encrypted sources are refused.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create image-only PDF") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.COMPRESS &&
+                        selectedUris.firstOrNull() == source && binding.chipCompressFullRender.isChecked) {
+                        executeActiveOperation(rasterConfirmed = true)
+                    }
+                }.show()
+            return
+        }
+        val quality = if (activeMode == QuickMode.COMPRESS) binding.sliderCompressQuality.value.toInt() else 65
         isExecuting = true
         binding.btnQuickToolExecute.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
@@ -2140,29 +2177,69 @@ class PdfQuickToolController(
         val operationUris = selectedUris.toList()
         val operationFileName = primaryDocName
         val operationBase = primaryDocName.removeSuffix(".pdf")
+        val generation = selectionGeneration
+        val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            (mergePageAdapter?.itemCount ?: 0) > 0
+        val mergePlan = if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty() else emptyList()
+        val deletePages = if (operationMode == QuickMode.DELETE) rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty() else emptySet()
+        val rotatePages = if (operationMode == QuickMode.ROTATE) rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty() else emptySet()
+        val rotateAngle = when (binding.chipGroupRotateAngle.checkedChipId) {
+            R.id.chipRotate180 -> RotationAngle.ROTATE_180
+            R.id.chipRotate270 -> RotationAngle.ROTATE_270
+            else -> RotationAngle.ROTATE_90
+        }
+        val reorderPages = if (operationMode == QuickMode.REORDER)
+            rotateThumbnailAdapter?.getPageOrder()?.toList() ?: (1..primaryDocPages).toList() else emptyList()
+        val lockOptions = if (operationMode == QuickMode.LOCK) PdfSecurityOptions(
+            password = binding.etLockPassword.text?.toString().orEmpty(),
+            allowPrinting = binding.cbLockAllowPrint.isChecked,
+            allowCopying = binding.cbLockAllowCopy.isChecked,
+            allowModifying = binding.cbLockAllowFillForms.isChecked,
+            allowAnnotations = binding.cbLockAllowAnnotate.isChecked
+        ) else null
+        val htmlInput = if (operationMode == QuickMode.HTML_TO_PDF) binding.etSourceInput.text?.toString()?.trim().orEmpty() else ""
+        val signatureItems = if (operationMode == QuickMode.SIGN) binding.pdfSignCanvasView.getAllPlacements().toList() else emptyList()
 
-        activeJob = launchTransient {
+        val signatureInput = if (operationMode == QuickMode.SIGN && signatureItems.isEmpty()) {
+            val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+            val bitmap = binding.viewSignaturePad.getSignatureBitmap(
+                targetColor = selectedSignColor, opacity = opacity
+            )
+            val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
+            val pages = when {
+                binding.chipSignPageFirst.isChecked -> listOf(0)
+                binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
+                binding.chipSignPageCustom.isChecked -> {
+                    val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
+                    listOf((requested - 1).coerceIn(0, lastPage))
+                }
+                else -> listOf(lastPage)
+            }
+            val width = 180f * signScaleFactor
+            val height = 60f * signScaleFactor
+            val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+            val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+            bitmap to pages.map { page ->
+                SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
+            }
+        } else null
+
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
                 val base = operationBase
 
                 when (operationMode) {
                     QuickMode.MERGE -> {
-                        val plan = withContext(Dispatchers.Main) {
-                            val interleaved = binding.chipMergeModePages.isChecked &&
-                                (mergePageAdapter?.itemCount ?: 0) > 0
-                            interleaved to if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty()
-                                else emptyList()
-                        }
                         finishPdfOutputOnDisk("merged_document.pdf", origText) { output ->
-                            if (plan.first) {
-                                pdfMerger.mergePageItems(activity, plan.second, output).isSuccess
+                            if (interleaved) {
+                                pdfMerger.mergePageItems(activity, mergePlan, output).isSuccess
                             } else {
                                 pdfMerger.mergePdfs(activity, operationUris, output).isSuccess
                             }
                         }
                     }
                     QuickMode.SPLIT -> {
-                        val uri = selectedUris.first()
+                        val uri = operationUris.first()
                         val workJob = coroutineContext[Job]
                         if (splitAllPages) {
                             // Stream each produced PDF directly into ZIP: no O(page count)
@@ -2195,6 +2272,7 @@ class PdfQuickToolController(
                         } else if (splitSelectedMode) {
                             if (splitSelectedPages.isEmpty()) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2227,6 +2305,7 @@ class PdfQuickToolController(
                             val ranges = parsePageRanges(splitRangeText)
                             if (ranges.isEmpty()) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2289,11 +2368,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.DELETE -> {
-                        val pagesToDelete = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty()
-                        }
+                        val pagesToDelete = deletePages
                         if (pagesToDelete.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2311,14 +2389,8 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.ROTATE -> {
-                        val (angle, selectedPages) = withContext(Dispatchers.Main) {
-                            val rotation = when (binding.chipGroupRotateAngle.checkedChipId) {
-                                R.id.chipRotate180 -> RotationAngle.ROTATE_180
-                                R.id.chipRotate270 -> RotationAngle.ROTATE_270
-                                else -> RotationAngle.ROTATE_90
-                            }
-                            rotation to rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty()
-                        }
+                        val angle = rotateAngle
+                        val selectedPages = rotatePages
                         finishPdfOutputOnDisk("${base}_rotated.pdf", origText) { output ->
                             if (selectedPages.isNotEmpty()) {
                                 val rotations = selectedPages.associateWith { angle }
@@ -2333,10 +2405,7 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.REORDER -> {
-                        val pageOrder = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getPageOrder()?.toList()
-                                ?: (1..primaryDocPages).toList()
-                        }
+                        val pageOrder = reorderPages
                         finishPdfOutputOnDisk("${base}_reordered.pdf", origText) { output ->
                             pdfOrganizer.reorderPages(
                                 activity, operationUris.first(), output, pageOrder
@@ -2349,30 +2418,26 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.COMPRESS -> {
-                        val quality = withContext(Dispatchers.Main) {
-                            binding.sliderCompressQuality.value.toInt()
-                        }
-                        finishPdfOutputOnDisk("${base}_compressed.pdf", origText) { output ->
-                            pdfCompressor.compressPdf(
-                                context = activity,
-                                inputUri = operationUris.first(),
-                                outputStream = output,
-                                qualityPercent = quality
-                            ).isSuccess
+                        val suffix = if (rasterSelected && rasterConfirmed) "image_only" else "compressed"
+                        finishPdfOutputOnDisk("${base}_$suffix.pdf", origText) { output ->
+                            if (rasterSelected && rasterConfirmed) {
+                                pdfCompressor.compressPdfRasterized(activity, operationUris.first(), output, quality).getOrThrow()
+                            } else {
+                                pdfCompressor.compressPdf(
+                                    context = activity,
+                                    inputUri = operationUris.first(),
+                                    outputStream = output,
+                                    qualityPercent = com.veilframe.app.pdf.operations.qualitySliderToCompressionPercent(quality)
+                                ).getOrThrow()
+                            }
+                            true
                         }
                     }
                     QuickMode.LOCK -> {
-                        val options = withContext(Dispatchers.Main) {
-                            PdfSecurityOptions(
-                                password = binding.etLockPassword.text?.toString().orEmpty(),
-                                allowPrinting = binding.cbLockAllowPrint.isChecked,
-                                allowCopying = binding.cbLockAllowCopy.isChecked,
-                                allowModifying = binding.cbLockAllowFillForms.isChecked,
-                                allowAnnotations = binding.cbLockAllowAnnotate.isChecked
-                            )
-                        }
+                        val options = requireNotNull(lockOptions)
                         if (options.password.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2390,9 +2455,7 @@ class PdfQuickToolController(
                     }
                     QuickMode.SIGN -> {
                         val uri = operationUris.first()
-                        val canvasPlacements = withContext(Dispatchers.Main) {
-                            binding.pdfSignCanvasView.getAllPlacements().toList()
-                        }
+                        val canvasPlacements = signatureItems
                         if (canvasPlacements.isNotEmpty()) {
                             finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
                                 pdfSigner.signPdfWithItems(
@@ -2401,32 +2464,11 @@ class PdfQuickToolController(
                             }
                         } else {
                             // Read all view controls on Main before invoking PDFBox on IO.
-                            val inputs = withContext(Dispatchers.Main) {
-                                val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-                                val bitmap = binding.viewSignaturePad.getSignatureBitmap(
-                                    targetColor = selectedSignColor, opacity = opacity
-                                )
-                                val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
-                                val pages = when {
-                                    binding.chipSignPageFirst.isChecked -> listOf(0)
-                                    binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
-                                    binding.chipSignPageCustom.isChecked -> {
-                                        val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                                        listOf((requested - 1).coerceIn(0, lastPage))
-                                    }
-                                    else -> listOf(lastPage)
-                                }
-                                val width = 180f * signScaleFactor
-                                val height = 60f * signScaleFactor
-                                val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                bitmap to pages.map { page ->
-                                    SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
-                                }
-                            }
+                            val inputs = requireNotNull(signatureInput)
                             val bitmap = inputs.first
                             if (bitmap == null) {
                                 withContext(Dispatchers.Main) {
+                                    if (generation != selectionGeneration) return@withContext
                                     isExecuting = false
                                     binding.btnQuickToolExecute.isEnabled = true
                                     binding.btnQuickToolExecute.text = origText
@@ -2443,11 +2485,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.HTML_TO_PDF -> {
-                        val input = withContext(Dispatchers.Main) {
-                            binding.etSourceInput.text?.toString()?.trim().orEmpty()
-                        }
+                        val input = htmlInput
                         if (input.isEmpty()) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2468,48 +2509,31 @@ class PdfQuickToolController(
                     }
                     QuickMode.DOC_TO_PDF -> {
                         val uri = operationUris.first()
-                        val lowerName = operationFileName.lowercase()
-                        val ext = when {
-                            lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") -> ".xlsx"
-                            lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt") -> ".pptx"
-                            lowerName.endsWith(".txt") || lowerName.endsWith(".rtf") || lowerName.endsWith(".log") -> ".txt"
-                            else -> ".docx"
-                        }
-
-                        val tempInput = File(activity.cacheDir, "temp_doc_${System.currentTimeMillis()}$ext")
-                        val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
+                        val format = OfficeSourceFormat.fromName(operationFileName)
+                        val tempInput = File.createTempFile("office_input_", format.suffix, activity.cacheDir)
+                        val tempPdf = File(activity.cacheDir, "office_output_${java.util.UUID.randomUUID()}.pdf")
                         var conversionError: String? = null
                         var success = false
                         var handedOff = false
                         try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempInput.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            when (ext) {
-                                ".xlsx" -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
-                                ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
-                                ".txt" -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                else -> {
-                                    try {
-                                        officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (t: Exception) {
-                                        Log.w(TAG, "DOCX conversion failed: ${t.message}; using fallback text extractor", t)
-                                        val extracted = officeConverter.extractDocxTextViaZip(tempInput)
-                                        if (extracted.isNotBlank()) {
-                                            val tempText = File(activity.cacheDir, "temp_docx_text_${System.currentTimeMillis()}.txt")
-                                            try {
-                                                tempText.writeText(extracted)
-                                                officeConverter.convertTextToPdf(tempText, tempPdf, activity)
-                                            } finally {
-                                                tempText.delete()
-                                            }
-                                        } else {
-                                            officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                        }
+                            val source = activity.contentResolver.openInputStream(uri)
+                                ?: throw java.io.IOException("Cannot open selected document")
+                            source.use { input ->
+                                tempInput.outputStream().use { output ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    while (true) {
+                                        ensureActive()
+                                        val n = input.read(buffer)
+                                        if (n < 0) break
+                                        output.write(buffer, 0, n)
                                     }
                                 }
+                            }
+                            when (format) {
+                                OfficeSourceFormat.XLSX -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity, savedPrintLayout = xlsxPrintLayout == true)
+                                OfficeSourceFormat.PPTX -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
+                                OfficeSourceFormat.TEXT -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
+                                OfficeSourceFormat.DOCX -> officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
                             }
                             success = tempPdf.exists() && tempPdf.length() > 0
                             if (success) {
@@ -2526,6 +2550,7 @@ class PdfQuickToolController(
                         }
                         if (!success) {
                             withContext(Dispatchers.Main) {
+                                if (generation != selectionGeneration) return@withContext
                                 isExecuting = false
                                 binding.btnQuickToolExecute.isEnabled = true
                                 binding.btnQuickToolExecute.text = origText
@@ -2534,7 +2559,7 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.PDF_TO_IMAGE -> {
-                        val uri = selectedUris.first()
+                        val uri = operationUris.first()
                         val workJob = coroutineContext[Job]
                         val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
                         var handedOff = false
@@ -2568,6 +2593,7 @@ class PdfQuickToolController(
                     }
                     else -> {
                         withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration) return@withContext
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
                             binding.btnQuickToolExecute.text = origText
@@ -2578,13 +2604,14 @@ class PdfQuickToolController(
                 throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration) return@withContext
                     isExecuting = false
                     binding.btnQuickToolExecute.isEnabled = true
                     binding.btnQuickToolExecute.text = origText
                     Toast.makeText(activity, "Operation failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
-        }
+        }.also { job -> job.invokeOnCompletion { signatureInput?.first?.recycle() } }
     }
 
     /**
@@ -2606,10 +2633,10 @@ class PdfQuickToolController(
         activeJob = launchTransient {
             val analysis = pdfFormFiller.analyzeForm(activity, uri)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 isExecuting = false
                 binding.btnQuickToolExecute.isEnabled = true
                 binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 if (analysis.errorMessage != null) {
                     Toast.makeText(activity, analysis.errorMessage, Toast.LENGTH_LONG).show()
                     return@withContext
@@ -2831,6 +2858,7 @@ class PdfQuickToolController(
                     dialog.dismiss()
                     return@setOnClickListener
                 }
+                if (isExecuting) return@setOnClickListener
                 val values = readers.mapValues { it.value.invoke() }
                 isExecuting = true
                 binding.btnQuickToolExecute.isEnabled = false
@@ -2854,6 +2882,7 @@ class PdfQuickToolController(
                         val legacyBytes = if (result.success && file.length() > 0L &&
                             onSaveFileFromDiskRequest == null) file.readBytes() else null
                         withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
                             binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
@@ -2951,9 +2980,11 @@ class PdfQuickToolController(
     private suspend fun finishDiskExecution(
         success: Boolean, file: File, fileName: String, origBtnText: String
     ): Boolean {
+        val owner = requireNotNull(kotlin.coroutines.coroutineContext[ExecutionGeneration])
         val complete = success && file.isFile && file.length() > 0L
         val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) file.readBytes() else null
         return withContext(Dispatchers.Main) {
+            if (owner.value != selectionGeneration) return@withContext false
             isExecuting = false
             binding.btnQuickToolExecute.isEnabled = true
             binding.btnQuickToolExecute.text = origBtnText
@@ -2993,14 +3024,9 @@ class PdfQuickToolController(
 
         val DOC_MIME_TYPES = arrayOf(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-powerpoint",
-            "text/plain",
-            "application/rtf",
-            "text/rtf"
+            "text/plain"
         )
 
         /**

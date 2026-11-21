@@ -12,6 +12,7 @@ import android.graphics.RectF
 import android.util.Log
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative
+import com.veilframe.app.cv.segmentation.rembg.NcnnMattingTransactions
 import com.veilframe.app.media.ImageBlurType
 import org.opencv.android.Utils
 import org.opencv.core.CvType
@@ -288,7 +289,10 @@ object ImageBlurEngine {
      * Runs Vulkan GPU / OpenMP accelerated inference, returning a genuine sharp ARGB_8888
      * subject cutout with original RGB colors and transparent background (zero white masks).
      */
-    fun extractSubjectMask(context: Context, src: Bitmap): Bitmap? {
+    fun extractSubjectMask(context: Context, src: Bitmap): Bitmap? =
+        NcnnMattingTransactions.run { extractSubjectMaskOwned(context, src) }
+
+    private fun extractSubjectMaskOwned(context: Context, src: Bitmap): Bitmap? {
         val modelType = NcnnMattingNative.MODEL_TYPE_U2NETP
         try {
             if (!NcnnMattingNative.isModelLoaded(modelType)) {
@@ -326,11 +330,11 @@ object ImageBlurEngine {
                 Bitmap.createScaledBitmap(src, (src.width * scale).toInt().coerceAtLeast(1), (src.height * scale).toInt().coerceAtLeast(1), true)
             } else src
 
-            val maskBitmap = NcnnMattingNative.nativeProcess(processBmp, modelType, true, letterbox = true)
-                ?: NcnnMattingNative.nativeProcess(processBmp, modelType, false, letterbox = true)
-
-            if (processBmp != src) {
-                processBmp.recycle()
+            val maskBitmap = try {
+                NcnnMattingNative.nativeProcess(processBmp, modelType, true, letterbox = true)
+                    ?: NcnnMattingNative.nativeProcess(processBmp, modelType, false, letterbox = true)
+            } finally {
+                if (processBmp !== src) processBmp.recycle()
             }
 
             if (maskBitmap == null) return null

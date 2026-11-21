@@ -533,7 +533,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Dual engine size reducer"
+                                android:text="Reduce size; retain page structure"
                                 android:textSize="11sp"
                                 android:lines="2"
                                 android:maxLines="2"
@@ -1033,7 +1033,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Sign PDF"
+                                android:text="Visual Signature"
                                 android:textStyle="bold"
                                 android:textSize="14sp"
                                 android:maxLines="1"
@@ -1044,7 +1044,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Touch Bézier canvas stamping"
+                                android:text="Drawn stamp, not digital signing"
                                 android:textSize="11sp"
                                 android:lines="2"
                                 android:maxLines="2"
@@ -1156,7 +1156,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="View, edit &amp; strip traces"
+                                android:text="View, edit &amp; remove PDF tags"
                                 android:textSize="11sp"
                                 android:lines="2"
                                 android:maxLines="2"
@@ -1336,7 +1336,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Cryptographic PKIX &amp; authentic Adobe checkmark stamping"
+                                android:text="Inspect digital signatures and certificate trust"
                                 android:textSize="12sp"
                                 android:textColor="@color/vf_text_secondary"
                                 android:layout_marginTop="2dp" />

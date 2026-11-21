@@ -1,6 +1,6 @@
 package com.veilframe.app.pdf
 
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,24 +11,18 @@ import org.junit.Test
 class DocToPdfScopeAndPreviewTest {
 
     @Test
-    fun docMimeTypes_strictlyScopedToOfficeAndTextDocuments() {
+    fun docMimeTypes_matchImplementedOfficeAndPlainTextFormatsExactly() {
+        // Legacy DOC/XLS/PPT and RTF are deliberately unsupported; the picker
+        // must not advertise conversions the engine cannot perform.
+        val expected = setOf(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain"
+        )
         val types = PdfQuickToolController.DOC_MIME_TYPES
-
-        // Must include DOCX, DOC, XLSX, XLS, PPTX, PPT, TXT, RTF
-        assertTrue("Must include docx", types.contains("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
-        assertTrue("Must include doc", types.contains("application/msword"))
-        assertTrue("Must include xlsx", types.contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        assertTrue("Must include xls", types.contains("application/vnd.ms-excel"))
-        assertTrue("Must include pptx", types.contains("application/vnd.openxmlformats-officedocument.presentationml.presentation"))
-        assertTrue("Must include ppt", types.contains("application/vnd.ms-powerpoint"))
-        assertTrue("Must include txt", types.contains("text/plain"))
-        assertTrue("Must include rtf", types.contains("application/rtf") || types.contains("text/rtf"))
-
-        // Must NOT include wildcard */*, video/*, image/*, or pdf
-        assertFalse("Must not include wildcard */*", types.contains("*/*"))
-        assertFalse("Must not include video wildcard", types.any { it.startsWith("video/") })
-        assertFalse("Must not include image wildcard", types.any { it.startsWith("image/") })
-        assertFalse("Must not include application/pdf", types.contains("application/pdf"))
+        assertEquals("Picker must expose exactly the implemented formats", expected, types.toSet())
+        assertEquals("Picker MIME types must not contain duplicates", expected.size, types.size)
     }
 
     @Test

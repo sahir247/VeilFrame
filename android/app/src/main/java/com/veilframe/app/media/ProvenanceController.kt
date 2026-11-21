@@ -12,6 +12,10 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutProvenanceBinding
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.ui.motion.VeilFrameInteraction
+import com.veilframe.app.navigation.ToolWorkStateContract
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,9 +35,17 @@ class ProvenanceController(
     private val scope: CoroutineScope,
     private val onPickFileRequest: () -> Unit,
     private val onNavigateBack: () -> Unit
-) {
+) : ToolWorkStateContract {
     private var currentSha256: String = ""
     var currentSourceUri: Uri? = null
+        private set
+    private var auditJob: Job? = null
+    private var generation = 0L
+
+    override fun hasPickedMedia(): Boolean = currentSourceUri != null
+    override fun hasUnsavedWork(): Boolean = false
+    override val isProcessing: Boolean get() = auditJob?.isActive == true
+    override fun discardAndReleaseAllResources() = reset()
 
     fun init() {
         binding.toolbarProvenance.setNavigationOnClickListener {
@@ -59,6 +71,9 @@ class ProvenanceController(
     }
 
     fun reset() {
+        generation++
+        auditJob?.cancel()
+        auditJob = null
         currentSha256 = ""
         currentSourceUri = null
         binding.btnProvenanceCopyHash.isEnabled = false
@@ -76,6 +91,8 @@ class ProvenanceController(
     }
 
     fun handleFileSelected(uri: Uri) {
+        reset()
+        val gen = generation
         currentSourceUri = uri
         val name = safStorageManager.getDisplayName(uri)
         val sizeBytes = safStorageManager.queryFileSize(uri)
@@ -87,7 +104,7 @@ class ProvenanceController(
         binding.tvProvenanceEd25519Status.text = "Auditing manifest structure..."
         binding.tvProvenanceEd25519Details.text = "Scanning artifact headers for cryptographic envelope..."
 
-        scope.launch(Dispatchers.IO) {
+        auditJob = scope.launch(Dispatchers.IO) {
             val hash = try {
                 val stream = activity.contentResolver.openInputStream(uri)
                     ?: throw java.io.FileNotFoundException("Cannot open stream for URI: $uri")
@@ -97,6 +114,7 @@ class ProvenanceController(
                     val buffer = ByteArray(8192)
                     var read: Int
                     while (s.read(buffer).also { read = it } > 0) {
+                        ensureActive()
                         digest.update(buffer, 0, read)
                         totalBytesRead += read
                     }
@@ -105,6 +123,8 @@ class ProvenanceController(
                     throw java.io.IOException("Artifact is empty (0 bytes read)")
                 }
                 digest.digest().joinToString("") { "%02x".format(it) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 "Error computing checksum: ${e.message}"
             }
@@ -118,35 +138,54 @@ class ProvenanceController(
             var manifestHasSignature = false
             var manifestSignatureValid: Boolean? = null
 
+            var archiveInspectionError: String? = null
             if (isVeilFrameArchive && isSuccess) {
                 try {
-                    activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        java.util.zip.ZipInputStream(stream).use { zis ->
-                            var entry = zis.nextEntry
-                            while (entry != null) {
-                                if (entry.name.equals("manifest.json", ignoreCase = true) ||
-                                    entry.name.endsWith("/manifest.json", ignoreCase = true)
-                                ) {
-                                    manifestFound = true
-                                    val text = zis.bufferedReader().readText()
-                                    val json = org.json.JSONObject(text)
-                                    val sig = json.optString("signature", "")
-                                    if (sig.isNotBlank()) {
-                                        manifestHasSignature = true
-                                        manifestSignatureValid = com.veilframe.app.updates.AppUpdateManager.verifyManifestSignature(json)
-                                    }
-                                    break
+                    val input = activity.contentResolver.openInputStream(uri)
+                        ?: throw java.io.IOException("Cannot reopen archive")
+                    java.util.zip.ZipInputStream(input).use { zis ->
+                        val buffer = ByteArray(8192)
+                        var totalInflated = 0L
+                        var entries = 0
+                        while (true) {
+                            ensureActive()
+                            val entry = zis.nextEntry ?: break
+                            if (++entries > 4096) throw java.io.IOException("Archive entry limit reached")
+                            val isManifest = !entry.isDirectory && (entry.name.equals("manifest.json", ignoreCase = true) ||
+                                entry.name.endsWith("/manifest.json", ignoreCase = true))
+                            val manifest = if (isManifest) java.io.ByteArrayOutputStream() else null
+                            while (true) {
+                                ensureActive()
+                                val read = zis.read(buffer)
+                                if (read < 0) break
+                                totalInflated += read
+                                if (totalInflated > 32L * 1024 * 1024) throw java.io.IOException("Archive inspection byte limit reached")
+                                if (manifest != null) {
+                                    if (manifest.size() + read > 1024 * 1024) throw java.io.IOException("Manifest exceeds 1 MiB")
+                                    manifest.write(buffer, 0, read)
                                 }
-                                entry = zis.nextEntry
+                            }
+                            if (manifest != null) {
+                                manifestFound = true
+                                val json = org.json.JSONObject(manifest.toString("UTF-8"))
+                                manifestHasSignature = json.optString("signature", "").isNotBlank()
+                                if (manifestHasSignature) {
+                                    manifestSignatureValid = com.veilframe.app.updates.AppUpdateManager.verifyManifestSignature(json)
+                                }
+                                break
                             }
                         }
+                        if (entries == 0) throw java.io.IOException("No readable ZIP entries")
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
-                    manifestFound = false
+                    archiveInspectionError = e.message ?: "Archive inspection failed"
                 }
             }
 
             withContext(Dispatchers.Main) {
+                if (generation != gen || currentSourceUri != uri) return@withContext
                 if (isSuccess) {
                     currentSha256 = hash
                     binding.tvProvenanceSha256.text = hash
@@ -160,13 +199,16 @@ class ProvenanceController(
                     binding.tvProvenanceStatusDesc.text = "SHA-256 digest computed across bitstream. Copy hash to compare against trusted publisher checksum."
 
                     if (isVeilFrameArchive) {
-                        if (manifestFound && manifestHasSignature) {
+                        if (archiveInspectionError != null) {
+                            binding.tvProvenanceEd25519Status.text = "Archive Inspection Incomplete"
+                            binding.tvProvenanceEd25519Details.text = archiveInspectionError
+                        } else if (manifestFound && manifestHasSignature) {
                             if (manifestSignatureValid == true) {
-                                binding.tvProvenanceEd25519Status.text = "Ed25519 Signature Verified"
-                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: Valid Ed25519 digital signature verified against embedded public key."
+                                binding.tvProvenanceEd25519Status.text = "Manifest Signature Valid (App-Pinned Key)"
+                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: valid against VeilFrame's app-pinned update key.\nArchive payload, signer identity beyond that key and media authenticity are not verified."
                             } else {
-                                binding.tvProvenanceEd25519Status.text = "Ed25519 Signature INVALID"
-                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature: FAILED verification! Manifest may have been tampered with or signed by an unknown key."
+                                binding.tvProvenanceEd25519Status.text = "Manifest Signature Not Verified"
+                                binding.tvProvenanceEd25519Details.text = "Manifest: manifest.json detected\nSignature was not verified against the app-pinned key. The key or algorithm may be unsupported, or the signature invalid."
                                 binding.ivProvenanceStatusIcon.setImageResource(R.drawable.ic_info_outline)
                                 binding.ivProvenanceStatusIcon.imageTintList = ColorStateList.valueOf(
                                     ContextCompat.getColor(activity, R.color.vf_accent_red)
@@ -181,8 +223,8 @@ class ProvenanceController(
                             binding.tvProvenanceEd25519Details.text = "Inspected archive entries: No manifest.json or cryptographic signature envelope found in archive.\nStatus: Unsigned Archive"
                         }
                     } else {
-                        binding.tvProvenanceEd25519Status.text = "Standalone Artifact (Unsigned)"
-                        binding.tvProvenanceEd25519Details.text = "Raw media file: Standalone media does not carry an embedded provenance envelope.\nUse SHA-256 to verify file integrity against publisher records."
+                        binding.tvProvenanceEd25519Status.text = "Standalone Artifact (Not Inspected for Signatures)"
+                        binding.tvProvenanceEd25519Details.text = "Only the file hash was computed. Embedded signatures or provenance formats were not inspected.\nCompare SHA-256 against a trusted publisher checksum."
                     }
                 } else {
                     binding.tvProvenanceSha256.text = hash

@@ -24,6 +24,17 @@ import com.veilframe.app.cv.segmentation.rembg.RembgProgress
 import com.veilframe.app.cv.segmentation.rembg.RembgSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
 import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
+import com.veilframe.app.cv.segmentation.rembg.RembgImageSource
+import com.veilframe.app.cv.segmentation.rembg.RembgResult
+import com.veilframe.app.cv.segmentation.rembg.RembgAlphaMatte
+import com.veilframe.app.media.refine.BrushReplayJournal
+import com.veilframe.app.media.refine.CutoutStroke
+import com.veilframe.app.cv.segmentation.rembg.RembgSourceInfo
+import com.veilframe.app.cv.segmentation.rembg.OriginalResolutionCutout
+import com.veilframe.app.ui.dialogs.M3ExpressiveProgressDialog
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import java.util.concurrent.atomic.AtomicReference
 import com.veilframe.app.cv.segmentation.rembg.RembgModel
 import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
 import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
@@ -68,20 +79,62 @@ class BackgroundRemoverController(
     private val binding: LayoutBackgroundRemoverBinding,
     private val scope: CoroutineScope,
     private val onPickImageRequest: () -> Unit,
-    private val onExportPngRequest: (File) -> Unit,
+    private val onExportPngRequest: (File, Boolean) -> Boolean,
     private val onNavigateBack: () -> Unit
 ) : com.veilframe.app.navigation.ToolWorkStateContract {
     private var processingJob: Job? = null
-    private var sourceBytes: ByteArray? = null
+    private var sourceLoadJob: Job? = null
+    private var sourceGeneration = 0L
+
+    private fun invalidateSourceLoad() {
+        sourceGeneration++
+        originalExportJob?.cancel()
+        originalExportJob = null
+        sourceLoadJob?.cancel()
+        sourceLoadJob = null
+    }
+    private var sourceImage: RembgImageSource.Staged? = null
+    private val sourceLeases = ResourceLeases<RembgImageSource.Staged> { it.file.delete() }
+    private var removalGeneration = 0L
+    private var originalMatte: RembgAlphaMatte? = null
+    private var originalInfo: RembgSourceInfo? = null
+    private var originalStrokes: List<CutoutStroke> = emptyList()
+    private var originalExportJob: Job? = null
+
+    private fun invalidateOriginalExport() {
+        originalExportJob?.cancel()
+        originalExportJob = null
+        originalMatte = null
+        originalInfo = null
+        originalStrokes = emptyList()
+    }
+
+    private fun releaseSourceImage() {
+        sourceImage?.let(sourceLeases::retire)
+        sourceImage = null
+    }
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
     private var rawCutoutBitmap: Bitmap? = null
+    private val cutoutLeases = ResourceLeases<Bitmap> { if (!it.isRecycled) it.recycle() }
+
+    // Acquire before scheduling: even a queued encoder owns its pixels until completion.
+    private fun launchCutoutExport(bitmap: Bitmap, block: suspend CoroutineScope.() -> Unit) {
+        val release = cutoutLeases.acquire(bitmap)
+        try {
+            scope.launch(Dispatchers.IO, block = block).invokeOnCompletion { release() }
+        } catch (failure: Throwable) {
+            release()
+            throw failure
+        }
+    }
 
     private fun releaseCutoutBitmaps() {
+        invalidateOriginalExport()
         if (resultBitmap !== rawCutoutBitmap) {
-            resultBitmap?.recycle()
+            resultBitmap?.let(cutoutLeases::retire)
         }
-        rawCutoutBitmap?.recycle()
+        rawCutoutBitmap?.let(cutoutLeases::retire)
         resultBitmap = null
         rawCutoutBitmap = null
     }
@@ -154,7 +207,7 @@ class BackgroundRemoverController(
                 currentMode = when (checkedId) {
                     binding.btnModeSelectLiftAndShift.id -> {
                         currentModel = RembgModel.COLOROS_LIFT_SHIFT
-                        if (sourceBytes == null && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
+                        if (sourceImage == null && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
                             showRequiredModelDownloadDialog(
                                 title = "Download ColorOS Lift & Shift?",
                                 message = "ColorOS Lift & Shift (8.4 MB) provides Snapdragon 8 Gen 5 hardware-accelerated subject separation.\n\nWould you like to download Lift & Shift now, or proceed with the bundled engine?",
@@ -184,7 +237,7 @@ class BackgroundRemoverController(
                     }
                 }
                 updateActiveModelBadge()
-                if (sourceBytes != null) {
+                if (sourceImage != null) {
                     executeRemoval()
                 }
             }
@@ -243,7 +296,7 @@ class BackgroundRemoverController(
                     raw
                 }
                 if (prev !== resultBitmap && prev !== raw) {
-                    prev?.recycle()
+                    prev?.let(cutoutLeases::retire)
                 }
                 binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 updateUi()
@@ -310,6 +363,8 @@ class BackgroundRemoverController(
     }
 
     fun cleanup() {
+        invalidateSourceLoad()
+        cancelProcessing()
         try {
             binding.refineBrushCanvas.cleanup()
             com.veilframe.app.cv.segmentation.rembg.ColorOsMattingPlugin.close()
@@ -318,57 +373,64 @@ class BackgroundRemoverController(
             sourceBitmap?.recycle()
             sourceBitmap = null
             releaseCutoutBitmaps()
-            sourceBytes = null
+            releaseSourceImage()
             currentSourceUri = null
         } catch (ignored: Throwable) {}
     }
 
     fun handleImageSelected(uri: Uri) {
-        currentSourceUri = uri
-        scope.launch(Dispatchers.IO) {
-            val bytes = try {
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.readBytes()
+        if (processingJob?.isActive == true) {
+            Toast.makeText(activity, "Finish or cancel the current removal first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        invalidateSourceLoad()
+        val generation = sourceGeneration
+        sourceLoadJob = scope.launch(Dispatchers.Main) {
+            var pendingBitmap: Bitmap? = null
+            var pendingSource: RembgImageSource.Staged? = null
+            try {
+                // Stage first: no unbounded compressed ByteArray lives on the Java heap.
+                withContext(Dispatchers.IO) {
+                    val cc = kotlin.coroutines.coroutineContext
+                    activity.contentResolver.openInputStream(uri)?.use { input ->
+                        pendingSource = RembgImageSource.stage(input, activity.cacheDir) { cc.ensureActive() }
+                    } ?: throw java.io.IOException("Could not open selected image")
+                    pendingBitmap = RembgImageUtils.decodeOrientedBitmap(
+                        checkNotNull(pendingSource), maxDimension = RembgImageUtils.MAX_DISPLAY_PX
+                    )
                 }
+                if (generation != sourceGeneration) return@launch
+                val decoded = checkNotNull(pendingBitmap)
+                val oldSrc = sourceBitmap
+                releaseSourceImage()
+                sourceImage = checkNotNull(pendingSource)
+                pendingSource = null
+                sourceBitmap = decoded
+                currentSourceUri = uri
+                pendingBitmap = null // ownership transferred to the accepted source
+                releaseCutoutBitmaps()
+                oldSrc?.recycle()
+                lastFailure = null
+                val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
+                sourceFileName = rawName.substringBeforeLast('.', rawName)
+                updateUi()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                Log.e(TAG, "Failed reading image stream", e)
-                null
-            }
-
-            if (bytes == null || bytes.isEmpty()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Could not open selected image", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "Image import failed", e)
+                if (generation == sourceGeneration) {
+                    Toast.makeText(activity, "Could not open selected image: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
-                return@launch
-            }
-
-            val decoded = try {
-                RembgImageUtils.decodeOrientedBitmap(bytes, maxDimension = RembgImageUtils.MAX_DISPLAY_PX)
-            } catch (e: Exception) {
-                Log.e(TAG, "Decoding oriented bitmap failed", e)
-                null
-            }
-
-            withContext(Dispatchers.Main) {
-                if (decoded != null) {
-                    val oldSrc = sourceBitmap
-                    sourceBytes = bytes
-                    sourceBitmap = decoded
-                    releaseCutoutBitmaps()
-                    oldSrc?.recycle()
-                    lastFailure = null
-                    val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
-                    sourceFileName = rawName.substringBeforeLast('.', rawName)
-                    updateUi()
-                } else {
-                    Toast.makeText(activity, "Could not decode image", Toast.LENGTH_SHORT).show()
-                }
+            } finally {
+                pendingBitmap?.recycle()
+                pendingSource?.file?.delete()
             }
         }
     }
 
     private fun executeRemoval() {
-        val bytes = sourceBytes ?: return
+        if (sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
+        val source = sourceImage ?: return
 
         if (currentMode == RembgMode.LIFT_AND_SHIFT && !repository.isModelReady(RembgModel.COLOROS_LIFT_SHIFT)) {
             showRequiredModelDownloadDialog(
@@ -381,7 +443,7 @@ class BackgroundRemoverController(
                     currentModel = RembgModel.U2NETP
                     binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
                     updateActiveModelBadge()
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
@@ -398,7 +460,7 @@ class BackgroundRemoverController(
                     currentModel = RembgModel.U2NETP
                     binding.toggleGroupMattingMode.check(binding.btnModeSelectU2Net.id)
                     updateActiveModelBadge()
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
@@ -411,13 +473,13 @@ class BackgroundRemoverController(
                 targetModel = RembgModel.MODNET,
                 originView = binding.btnBgExecuteRemoval,
                 onProceedWithBundled = {
-                    runRemovalPipeline(bytes)
+                    runRemovalPipeline(source)
                 }
             )
             return
         }
 
-        runRemovalPipeline(bytes)
+        runRemovalPipeline(source)
     }
 
     private fun showRequiredModelDownloadDialog(
@@ -437,6 +499,8 @@ class BackgroundRemoverController(
         dialogBinding.tvModelReqMessage.text = message
         dialogBinding.btnModelReqDownload.text = "Download & Process"
         dialogBinding.btnModelReqUseLanczos.text = "Use Bundled U²-Net-P"
+        val intendedSource = sourceImage
+        val intendedGeneration = sourceGeneration
 
         dialogBinding.btnModelReqClose.setOnClickListener {
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
@@ -478,13 +542,15 @@ class BackgroundRemoverController(
                 if (modelId != targetModel.id) return
                 ModelDownloadBackgroundService.removeListener(this)
                 activity.runOnUiThread {
+                    val stillIntended = dialog.isShowing && intendedSource != null &&
+                        intendedSource === sourceImage && intendedGeneration == sourceGeneration
                     if (dialog.isShowing) {
                         MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
                     }
                     updateActiveModelBadge()
-                    Toast.makeText(activity, "${targetModel.displayName} ready! Starting removal…", Toast.LENGTH_SHORT).show()
-                    sourceBytes?.let { bytes ->
-                        runRemovalPipeline(bytes)
+                    if (stillIntended) {
+                        Toast.makeText(activity, "${targetModel.displayName} ready! Starting removal…", Toast.LENGTH_SHORT).show()
+                        runRemovalPipeline(checkNotNull(intendedSource))
                     }
                 }
             }
@@ -539,8 +605,14 @@ class BackgroundRemoverController(
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
-    private fun runRemovalPipeline(bytes: ByteArray) {
-        val effectiveModel = when (currentMode) {
+    private fun runRemovalPipeline(source: RembgImageSource.Staged) {
+        // Dialog/download callbacks must not process an obsolete source.
+        if (source !== sourceImage || sourceLoadJob?.isActive == true || processingJob?.isActive == true) return
+        val mode = currentMode
+        val generation = ++removalGeneration
+        fun ownsResult(): Boolean = generation == removalGeneration && source === sourceImage &&
+            !activity.isFinishing && !activity.isDestroyed
+        val effectiveModel = when (mode) {
             RembgMode.LIFT_AND_SHIFT -> RembgModel.COLOROS_LIFT_SHIFT
             RembgMode.U2NETP -> RembgModel.U2NETP
             RembgMode.MODNET -> RembgModel.MODNET
@@ -563,99 +635,106 @@ class BackgroundRemoverController(
             else -> "Loading ${effectiveModel.displayName}…"
         }
 
-        val trim = binding.switchTrimTransparent.isChecked
-        val tighten = false
-        val feather = false
-
         // Governed execution: INTERACTIVE lane + memory admission check via CvRuntime.
         val srcBmp = sourceBitmap
         val w = srcBmp?.width ?: 1024
         val h = srcBmp?.height ?: 1024
         val estimate = CvRuntime.estimateBytes(w, h, 4)
 
-        processingJob = scope.launch {
-            val job = CvRuntime.engine.submit(
-                name = "background-removal",
-                priority = CvPriority.INTERACTIVE,
-                memoryEstimate = estimate,
-                timeoutMs = 60_000L,
-            ) { ctx ->
-                // Cooperative cancellation check
-                ctx.ensureActive()
-
-                if (currentMode == RembgMode.LIFT_AND_SHIFT) {
-                    ColorOsMattingPlugin.process(
-                        context = activity,
-                        imageBytes = bytes,
-                        trim = false,
-                        onProgress = { progress ->
+        val releaseSource = sourceLeases.acquire(source)
+        try {
+            processingJob = scope.launch {
+                val pending = AtomicReference<RembgResult?>(null)
+                var worker: com.veilframe.app.cv.core.CvJob<RembgResult>? = null
+                try {
+                    val job = CvRuntime.engine.submit(
+                        name = "background-removal",
+                        priority = CvPriority.INTERACTIVE,
+                        memoryEstimate = estimate,
+                        timeoutMs = 60_000L,
+                    ) { ctx ->
+                        ctx.ensureActive()
+                        val progress: suspend (RembgProgress) -> Unit = { update ->
                             ctx.ensureActive()
-                            ctx.reportProgress(progress.percent / 100f)
+                            ctx.reportProgress(update.percent / 100f)
                             withContext(Dispatchers.Main) {
-                                binding.progressBgInference.progress = progress.percent
-                                binding.tvBgProgressPercent.text = "${progress.percent}%"
-                                binding.tvBgProgressMessage.text = progress.message
+                                if (!ownsResult()) throw kotlinx.coroutines.CancellationException("Obsolete removal")
+                                binding.progressBgInference.progress = update.percent
+                                binding.tvBgProgressPercent.text = "${update.percent}%"
+                                binding.tvBgProgressMessage.text = update.message
                             }
                         }
-                    )
-                } else {
-                    remover.removeBackground(
-                        imageBytes = bytes,
-                        model = effectiveModel,
-                        trim = false,
-                        tightenEdges = tighten,
-                        featherEdges = feather,
-                        onProgress = { progress ->
-                            ctx.ensureActive()
-                            ctx.reportProgress(progress.percent / 100f)
-                            withContext(Dispatchers.Main) {
-                                binding.progressBgInference.progress = progress.percent
-                                binding.tvBgProgressPercent.text = "${progress.percent}%"
-                                binding.tvBgProgressMessage.text = progress.message
-                            }
-                        }
-                    )
-                }
-            }
-
-            val outcome = job.await()
-            withContext(Dispatchers.Main) {
-                binding.cardBgProcessingOverlay.visibility = View.GONE
-                outcome.fold(
-                    onOk = { result ->
-                        val prevRaw = rawCutoutBitmap
-                        val prevRes = resultBitmap
-                        rawCutoutBitmap = result.cutoutBitmap
-                        resultBitmap = if (binding.switchTrimTransparent.isChecked) {
-                            com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(result.cutoutBitmap)
+                        val result = if (mode == RembgMode.LIFT_AND_SHIFT) {
+                            ColorOsMattingPlugin.process(activity, source, trim = false, onProgress = progress)
                         } else {
-                            result.cutoutBitmap
+                            remover.removeBackground(source, effectiveModel, trim = false, onProgress = progress)
                         }
-                        if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
-                            prevRaw?.recycle()
-                        }
-                        if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
-                            prevRes?.recycle()
-                        }
-                        lastFailure = null
-                        updateUi()
-
-                        if (result.warnings.isNotEmpty()) {
-                            Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onErr = { err ->
-                        Log.e(TAG, "Background removal failed: [${err.code}] ${err.message}")
-                        lastFailure = err.message
-                        Toast.makeText(
-                            activity,
-                            "Removal failed: ${err.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        // Retain ownership even if the worker's deferred is cancelled
+                        // after native inference returns but before the UI can receive it.
+                        pending.set(result)
+                        result
+                    }
+                    worker = job
+                    val outcome = job.await()
+                    withContext(Dispatchers.Main) {
+                        if (!ownsResult()) return@withContext
+                        binding.cardBgProcessingOverlay.visibility = View.GONE
+                        outcome.fold(
+                            onOk = { result ->
+                                val newRaw = result.cutoutBitmap
+                                val newResult = if (binding.switchTrimTransparent.isChecked) {
+                                    com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(newRaw)
+                                } else newRaw
+                                val prevRaw = rawCutoutBitmap
+                                val prevRes = resultBitmap
+                                invalidateOriginalExport()
+                                rawCutoutBitmap = newRaw
+                                resultBitmap = newResult
+                                originalMatte = result.originalMatte
+                                originalInfo = result.sourceInfo.takeIf { result.originalMatte != null }
+                                pending.compareAndSet(result, null)
+                                if (prevRaw !== newRaw && prevRaw !== newResult) prevRaw?.let(cutoutLeases::retire)
+                                if (prevRes !== newResult && prevRes !== newRaw && prevRes !== prevRaw) prevRes?.let(cutoutLeases::retire)
+                                lastFailure = null
+                                updateUi()
+                                if (result.warnings.isNotEmpty()) {
+                                    Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onErr = { err ->
+                                lastFailure = err.message
+                                Log.e(TAG, "Background removal failed: [${err.code}] ${err.message}")
+                                Toast.makeText(activity, "Removal failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                updateUi()
+                            }
+                        )
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    worker?.cancel("Background removal cancelled")
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (ownsResult()) {
+                        lastFailure = failure.message
+                        binding.cardBgProcessingOverlay.visibility = View.GONE
+                        Toast.makeText(activity, "Removal failed: ${failure.message}", Toast.LENGTH_LONG).show()
                         updateUi()
                     }
-                )
-            }
+                } finally {
+                    // The governed dispatcher owns a separate coroutine scope. UI cancellation
+                    // alone is not worker cancellation. Join it before retiring any resources.
+                    withContext(NonCancellable) {
+                        worker?.let {
+                            if (it.isActive) it.cancel("Removal owner left")
+                            it.joinWorker()
+                        }
+                        pending.getAndSet(null)?.cutoutBitmap?.takeUnless { it.isRecycled }?.recycle()
+                    }
+                }
+            }.also { it.invokeOnCompletion { releaseSource() } }
+        } catch (failure: Throwable) {
+            releaseSource()
+            binding.cardBgProcessingOverlay.visibility = View.GONE
+            throw failure
         }
     }
 
@@ -1004,7 +1083,13 @@ class BackgroundRemoverController(
 
     fun enterRefineMode() {
         val src = sourceBitmap ?: return
-        val res = resultBitmap ?: return
+        // Trim is an export/display option, never the coordinate system of a brush.
+        val res = rawCutoutBitmap ?: return
+        if (!binding.refineBrushCanvas.canEdit(res)) {
+            Toast.makeText(activity, "Cutout exceeds the safe manual-refinement memory budget.", Toast.LENGTH_LONG).show()
+            return
+        }
+        binding.refineBrushCanvas.setBitmaps(src, res)
 
         isRefineMode = true
         binding.splitViewBgCompare.visibility = View.GONE
@@ -1014,7 +1099,6 @@ class BackgroundRemoverController(
         binding.refineBrushCanvas.visibility = View.VISIBLE
         binding.cardBgRefineDock.visibility = View.VISIBLE
 
-        binding.refineBrushCanvas.setBitmaps(src, res)
         binding.toolbarBgRemover.title = "Refine Cutout"
         binding.toolbarBgRemover.subtitle = "Erase residue or restore details"
         (activity as? com.veilframe.app.MainActivity)?.navigationController?.updateBackCallbackState()
@@ -1022,10 +1106,21 @@ class BackgroundRemoverController(
 
     fun exitRefineMode(applyEdits: Boolean) {
         if (applyEdits) {
-            val edited = binding.refineBrushCanvas.getRefinedBitmap()
+            val edited = if (binding.refineBrushCanvas.hasEdits) binding.refineBrushCanvas.getRefinedBitmap() else null
             if (edited != null) {
                 val prevRaw = rawCutoutBitmap
                 val prevRes = resultBitmap
+                val edits = binding.refineBrushCanvas.replaySnapshot()
+                originalExportJob?.cancel()
+                originalExportJob = null
+                if (originalMatte != null) {
+                    if (edits != null && edits.size <= BrushReplayJournal.MAX_SEGMENTS - originalStrokes.size) {
+                        originalStrokes = originalStrokes + edits
+                    } else {
+                        invalidateOriginalExport()
+                        Toast.makeText(activity, "Brush replay limit reached; regular-resolution export remains available.", Toast.LENGTH_LONG).show()
+                    }
+                }
                 rawCutoutBitmap = edited
                 resultBitmap = if (binding.switchTrimTransparent.isChecked) {
                     com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(edited)
@@ -1033,16 +1128,17 @@ class BackgroundRemoverController(
                     edited
                 }
                 if (prevRaw !== rawCutoutBitmap && prevRaw !== resultBitmap) {
-                    prevRaw?.recycle()
+                    prevRaw?.let(cutoutLeases::retire)
                 }
                 if (prevRes !== resultBitmap && prevRes !== rawCutoutBitmap) {
-                    prevRes?.recycle()
+                    prevRes?.let(cutoutLeases::retire)
                 }
                 binding.splitViewBgCompare.setBitmaps(sourceBitmap, resultBitmap)
                 Toast.makeText(activity, "Refinement applied successfully", Toast.LENGTH_SHORT).show()
             }
         }
 
+        binding.refineBrushCanvas.cleanup()
         isRefineMode = false
         binding.cardBgRefineDock.translationY = 0f
         binding.refineBrushCanvas.alpha = 1f
@@ -1177,6 +1273,10 @@ class BackgroundRemoverController(
         popup.menu.add(0, 2, 1, "Copy Image").setIcon(R.drawable.ic_action_copy)
         popup.menu.add(0, 3, 2, "Share").setIcon(R.drawable.ic_action_share)
         popup.menu.add(0, 4, 3, "Re-process").setIcon(R.drawable.ic_reset)
+        if (originalMatte != null && originalInfo != null) {
+            popup.menu.add(0, 5, 4, "Save original-resolution image").setIcon(R.drawable.ic_action_save)
+                .isEnabled = originalExportJob?.isActive != true && processingJob?.isActive != true
+        }
 
         try {
             val fieldMPopup = PopupMenu::class.java.getDeclaredField("mPopup")
@@ -1191,10 +1291,93 @@ class BackgroundRemoverController(
                 2 -> copyImageToClipboard()
                 3 -> shareCutoutImage()
                 4 -> executeRemoval()
+                5 -> confirmOriginalResolutionExport()
             }
             true
         }
         popup.show()
+    }
+
+    private fun confirmOriginalResolutionExport() {
+        val source = sourceImage ?: return
+        val matte = originalMatte ?: return
+        val info = originalInfo ?: return
+        val generation = sourceGeneration
+        val strokes = originalStrokes
+        val jpeg = binding.chipFormatJpg.isChecked
+        val trim = binding.switchTrimTransparent.isChecked
+        val backdrop = when (binding.splitViewBgCompare.backgroundMode) {
+            BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
+            BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.BLACK
+            else -> if (jpeg) com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE
+                else com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.TRANSPARENT
+        }
+        val backgroundLabel = when (backdrop) {
+            com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.WHITE -> "White backdrop."
+            com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop.BLACK -> "Black backdrop."
+            else -> "Transparent backdrop."
+        }
+        val dimensionsLabel = if (trim) "Transparent borders are cropped before backdrop compositing."
+            else "Full image dimensions are preserved."
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(if (jpeg) "Original-resolution JPEG" else "Original-resolution PNG")
+            .setMessage("Export original colors from ${info.width}×${info.height} with the neural matte" +
+                (if (strokes.isNotEmpty()) " and recorded brush edits (edges rendered at original resolution)." else ".") +
+                " $dimensionsLabel $backgroundLabel")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Export") { _, _ ->
+                if (source === sourceImage && matte === originalMatte && strokes === originalStrokes && generation == sourceGeneration) {
+                    exportOriginalResolution(source, info, matte, generation, trim, backdrop, strokes, jpeg)
+                }
+            }.show()
+    }
+
+    private fun exportOriginalResolution(
+        source: RembgImageSource.Staged, info: RembgSourceInfo,
+        matte: RembgAlphaMatte, generation: Long, trim: Boolean,
+        backdrop: com.veilframe.app.cv.segmentation.rembg.CutoutBackdrop,
+        strokes: List<CutoutStroke>, jpeg: Boolean
+    ) {
+        if (originalExportJob?.isActive == true || processingJob?.isActive == true) return
+        val release = sourceLeases.acquire(source)
+        val progress = M3ExpressiveProgressDialog(activity)
+        try {
+            progress.show(title = "Original-resolution export",
+                initialStatus = if (trim) "Finding original-pixel alpha bounds and encoding…"
+                    else "Decoding original pixels in strips and encoding…",
+                isIndeterminate = true, cancelable = true, onCancel = { originalExportJob?.cancel() })
+            originalExportJob = scope.launch(Dispatchers.Main) {
+                var destination: File? = null
+                var handedOff = false
+                try {
+                    withContext(Dispatchers.IO) {
+                        val cc = kotlin.coroutines.coroutineContext
+                        val dir = File(activity.cacheDir, "cutout_transfers").apply { mkdirs() }
+                        val out = File.createTempFile("cutout_original_", if (jpeg) ".jpg" else ".png", dir)
+                        destination = out
+                        OriginalResolutionCutout.export(source, info, matte, out, trim = trim, backdrop = backdrop,
+                            strokes = strokes, jpeg = jpeg) { cc.ensureActive() }
+                    }
+                    if (generation != sourceGeneration || source !== sourceImage ||
+                        matte !== originalMatte || strokes !== originalStrokes || activity.isFinishing || activity.isDestroyed) return@launch
+                    progress.dismiss()
+                    handedOff = onExportPngRequest(checkNotNull(destination), true)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (generation == sourceGeneration && source === sourceImage) {
+                        Toast.makeText(activity, "Original-resolution export failed: ${failure.message}", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    progress.dismiss()
+                    if (!handedOff) destination?.delete()
+                }
+            }.also { it.invokeOnCompletion { release() } }
+        } catch (failure: Throwable) {
+            release()
+            progress.dismiss()
+            throw failure
+        }
     }
 
     private fun saveAsSticker() {
@@ -1202,7 +1385,8 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedName = sourceFileName
+        launchCutoutExport(bmp) {
             val trimmed = com.veilframe.app.cv.segmentation.rembg.MaskPostprocessor.trimTransparent(bmp)
             val resolver = activity.contentResolver
             val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -1210,7 +1394,7 @@ class BackgroundRemoverController(
             } else {
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             }
-            val fileName = "${sourceFileName}_STICKER_${System.currentTimeMillis()}.png"
+            val fileName = "${capturedName}_STICKER_${System.currentTimeMillis()}.png"
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -1233,7 +1417,7 @@ class BackgroundRemoverController(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(target, values, null, null)
+                    check(resolver.update(target, values, null, null) > 0) { "Could not publish sticker" }
                 }
                 success = true
             } catch (e: Exception) {
@@ -1260,10 +1444,11 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             try {
                 val cacheDir = File(activity.cacheDir, "clipboard").apply { mkdirs() }
-                val cacheFile = File(cacheDir, "cutout_clipboard.png")
+                val cacheFile = File(cacheDir, "cutout_${java.util.UUID.randomUUID()}.png")
                 FileOutputStream(cacheFile).use { fos ->
                     if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
                         throw java.io.IOException("Cutout PNG encoding failed")
@@ -1276,6 +1461,7 @@ class BackgroundRemoverController(
                 )
                 val clip = ClipData.newUri(activity.contentResolver, "VeilFrame Cutout", uri)
                 withContext(Dispatchers.Main) {
+                    if (capturedGeneration != sourceGeneration) return@withContext
                     val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(clip)
                     Toast.makeText(activity, "Cutout copied to clipboard", Toast.LENGTH_SHORT).show()
@@ -1294,10 +1480,12 @@ class BackgroundRemoverController(
             Toast.makeText(activity, "No cutout available", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch(Dispatchers.IO) {
+        val capturedName = sourceFileName
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             try {
                 val cacheDir = File(activity.cacheDir, "shares").apply { mkdirs() }
-                val cacheFile = File(cacheDir, "${sourceFileName}_cutout.png")
+                val cacheFile = File(cacheDir, "${capturedName}_${java.util.UUID.randomUUID()}_cutout.png")
                 FileOutputStream(cacheFile).use { fos ->
                     if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
                         throw java.io.IOException("Cutout PNG encoding failed")
@@ -1309,6 +1497,7 @@ class BackgroundRemoverController(
                     cacheFile
                 )
                 withContext(Dispatchers.Main) {
+                    if (capturedGeneration != sourceGeneration) return@withContext
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/png"
                         putExtra(Intent.EXTRA_STREAM, uri)
@@ -1344,7 +1533,8 @@ class BackgroundRemoverController(
         // View state is owned by the main thread; never inspect it in the encoder worker.
         val backgroundMode = binding.splitViewBgCompare.backgroundMode
         val exportBaseName = sourceFileName
-        scope.launch(Dispatchers.IO) {
+        val capturedGeneration = sourceGeneration
+        launchCutoutExport(bmp) {
             val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
             val ext = if (isJpg) "jpg" else "png"
             val mimeType = if (isJpg) "image/jpeg" else "image/png"
@@ -1419,7 +1609,7 @@ class BackgroundRemoverController(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(savedUri, values, null, null)
+                    check(resolver.update(savedUri, values, null, null) > 0) { "Could not publish gallery image" }
                 }
                 savedToGallery = true
             } catch (e: Exception) {
@@ -1434,6 +1624,10 @@ class BackgroundRemoverController(
             }
 
             withContext(Dispatchers.Main) {
+                if (capturedGeneration != sourceGeneration) {
+                    outFile.delete()
+                    return@withContext
+                }
                 if (savedToGallery) {
                     Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
                     currentSaveCutoutState = SaveCutoutState.SAVED
@@ -1444,14 +1638,10 @@ class BackgroundRemoverController(
                         updateSaveCutoutButton()
                     }
                 } else if (outFile.exists() && outFile.length() > 0) {
-                    onExportPngRequest(outFile)
-                    currentSaveCutoutState = SaveCutoutState.SAVED
+                    // Launching a destination chooser is not a completed save.
+                    onExportPngRequest(outFile, false)
+                    currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
                     updateSaveCutoutButton()
-                    saveStateJob = scope.launch {
-                        delay(2000)
-                        currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
-                        updateSaveCutoutButton()
-                    }
                 } else {
                     Toast.makeText(activity, "Save failed: ${saveErrorMessage ?: "Unknown error"}", Toast.LENGTH_SHORT).show()
                     currentSaveCutoutState = SaveCutoutState.SAVE_AGAIN
@@ -1488,13 +1678,15 @@ class BackgroundRemoverController(
         }
     }
 
-    override fun hasPickedMedia(): Boolean = currentSourceUri != null || sourceBitmap != null
-    override fun hasUnsavedWork(): Boolean = currentSourceUri != null || resultBitmap != null
+    override fun hasPickedMedia(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || sourceBitmap != null
+    override fun hasUnsavedWork(): Boolean = sourceLoadJob?.isActive == true || currentSourceUri != null || resultBitmap != null
     override val isProcessing: Boolean
-        get() = processingJob?.isActive == true || binding.cardBgProcessingOverlay.visibility == View.VISIBLE
+        get() = processingJob?.isActive == true || originalExportJob?.isActive == true ||
+            binding.cardBgProcessingOverlay.visibility == View.VISIBLE
     override val supportsBackgroundExecution: Boolean get() = false
 
     override fun discardAndReleaseAllResources() {
+        invalidateSourceLoad()
         cancelProcessing()
         binding.splitViewBgCompare.setBitmaps(null, null)
         binding.refineBrushCanvas.cleanup()
@@ -1504,12 +1696,15 @@ class BackgroundRemoverController(
         sourceBitmap?.recycle()
         sourceBitmap = null
         releaseCutoutBitmaps()
-        sourceBytes = null
+        releaseSourceImage()
         currentSourceUri = null
         updateUi()
     }
 
     fun cancelProcessing() {
+        removalGeneration++
+        originalExportJob?.cancel()
+        originalExportJob = null
         processingJob?.cancel()
         processingJob = null
         binding.cardBgProcessingOverlay.visibility = View.GONE

@@ -14,6 +14,8 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 @RunWith(RobolectricTestRunner::class)
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+@org.robolectric.annotation.Config(sdk = [34])
 class PrnuSanitizerEngineTest {
 
     @Test
@@ -105,6 +107,7 @@ class PrnuSanitizerEngineTest {
             onMilestone = { milestones.add(it) }
         )
 
+        assertFalse(result)
         assertTrue(milestones.any { it.contains("metadata scrub") })
         dummyInput.delete()
         dummyOutput.delete()
@@ -167,16 +170,18 @@ class PrnuSanitizerEngineTest {
         dummyInput.writeBytes(ByteArray(128))
         val dummyOutput = File(context.cacheDir, "test_output_detailed.jpg")
 
+        dummyOutput.writeText("previous artifact")
         val res = PrnuSanitizerEngine.sanitizeImageFileDetailed(
             context = context,
             inputFile = dummyInput,
             outputFile = dummyOutput,
             mode = PrnuSanitizerEngine.DefenseMode.METADATA_ONLY
         )
-        assertTrue(res.isSuccess)
+        assertFalse(res.isSuccess)
         assertFalse(res.neuralStageExecuted)
         assertFalse(res.geometricStageExecuted)
-        assertNotNull(res.outputFile)
+        assertEquals(null, res.outputFile)
+        assertEquals("previous artifact", dummyOutput.readText())
 
         dummyInput.delete()
         dummyOutput.delete()

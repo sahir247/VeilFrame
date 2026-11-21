@@ -1,6 +1,8 @@
 package com.veilframe.app.ui.views
 
 import android.animation.ValueAnimator
+import com.veilframe.app.media.refine.BrushReplayJournal
+import com.veilframe.app.media.refine.CutoutStroke
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -31,7 +33,7 @@ import kotlin.math.min
  * Interactive Picsart-style Brush & Eraser Refinement Canvas:
  * - Direct unconditional pixel editing:
  *   - ERASE: sets alpha = 0 (removes leftover background residue unconditionally).
- *   - RESTORE: restores original pixel RGB and sets alpha = 255 from original source bitmap unconditionally.
+ *   - RESTORE: replaces the affected pixel with aligned source-preview color and source alpha.
  * - Zero neural inference overhead: runs at 60 FPS, 0 ms model latency, 0 extra model heap.
  * - Pixel-perfect zoom & pan up to 10x using 2-finger pinch/pan or pan mode.
  * - Real-time brush size preview overlay with inner & outer circles showing exact stroke thickness with zero flicker.
@@ -45,7 +47,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
 
     enum class BrushMode {
         ERASE,   // Remove unwanted background residue (sets alpha = 0)
-        RESTORE  // Restore original subject pixels from source photo (sets alpha = 255)
+        RESTORE  // Restore aligned source pixels, including source alpha
     }
 
     var brushMode: BrushMode = BrushMode.ERASE
@@ -108,12 +110,12 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC)
     }
 
     private val restoreCirclePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         style = Paint.Style.FILL
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC)
     }
 
     private val checkerboardPaint = Paint().apply {
@@ -152,6 +154,24 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     private val undoStack = mutableListOf<Bitmap>()
     private val redoStack = mutableListOf<Bitmap>()
     private val MAX_HISTORY_STEPS = 6
+    private var historyLimit = MAX_HISTORY_STEPS
+    private var committedEdits = 0
+    private var droppedEdits = 0
+    private var strokeChanged = false
+    private val replayJournal = BrushReplayJournal()
+    internal fun replaySnapshot(): List<CutoutStroke>? = replayJournal.snapshot()
+    val hasEdits: Boolean get() = committedEdits > 0 || strokeChanged
+
+    // At most 64 MiB of owned brush working/history/result allocations, with
+    // at least one undo step. Existing controller/source bitmaps are separate.
+    fun canEdit(cutout: Bitmap): Boolean = historyCapacity(cutout.width, cutout.height) >= 2
+
+    internal fun historyCapacity(width: Int, height: Int): Int {
+        if (width <= 0 || height <= 0) return 0
+        val bytes = width.toLong() * height * 4
+        val heapBudget = minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 4)
+        return (heapBudget / bytes - 2L).coerceIn(0L, MAX_HISTORY_STEPS.toLong()).toInt()
+    }
 
     var onHistoryChangedListener: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
 
@@ -226,19 +246,25 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     }
 
     fun setBitmaps(source: Bitmap, cutout: Bitmap) {
+        require(canEdit(cutout)) { "Cutout exceeds brush history memory budget" }
+        cleanup()
         sourceBitmap = source
-        val copy = cutout.copy(Bitmap.Config.ARGB_8888, true)
+        historyLimit = historyCapacity(cutout.width, cutout.height)
+        val copy = checkNotNull(cutout.copy(Bitmap.Config.ARGB_8888, true))
         workingCutoutBitmap = copy
         workingCanvas = Canvas(copy)
 
-        // Setup Restore Shader so restore strokes directly replicate original photo pixels
+        // Map the entire untrimmed result to the entire source, including the
+        // common case where the display preview has lower resolution.
         val shader = BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        shader.setLocalMatrix(Matrix().apply {
+            setScale(cutout.width.toFloat() / source.width, cutout.height.toFloat() / source.height)
+        })
         restorePaint.shader = shader
         restoreCirclePaint.shader = shader
 
-        // Clear history
-        clearHistory()
-        saveUndoState()
+        undoStack.add(checkNotNull(copy.copy(Bitmap.Config.ARGB_8888, false)))
+        notifyHistoryChanged()
 
         resetView()
         invalidate()
@@ -365,6 +391,7 @@ class RefineBrushCanvasView @JvmOverloads constructor(
 
         if (event.pointerCount >= 2 || event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
             // Two or more fingers present: strictly pan/zoom, completely suppress eraser or restore actions
+            if (strokeChanged) saveUndoState()
             isDrawing = false
             hasPendingDot = false
             strokePath.reset()
@@ -448,13 +475,11 @@ class RefineBrushCanvasView @JvmOverloads constructor(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
                 if (!isMultiTouch) {
-                    if (hasPendingDot && isDrawing) {
-                        // User performed a genuine single-finger tap dot
+                    if (hasPendingDot && isDrawing && event.actionMasked == MotionEvent.ACTION_UP) {
+                        // A cancelled tap must not unexpectedly erase a pixel.
                         applyStrokeSegment(pendingDotX, pendingDotY, pendingDotX, pendingDotY)
-                        saveUndoState()
-                    } else if (isDrawing) {
-                        saveUndoState()
                     }
+                    if (strokeChanged) saveUndoState()
                 }
                 strokePath.reset()
                 isDrawing = false
@@ -471,6 +496,11 @@ class RefineBrushCanvasView @JvmOverloads constructor(
 
     private fun applyStrokeSegment(x1: Float, y1: Float, x2: Float, y2: Float) {
         val canvas = workingCanvas ?: return
+        if (!listOf(x1, y1, x2, y2).all { it.isFinite() }) return
+        strokeChanged = true
+        val bitmap = workingCutoutBitmap ?: return
+        replayJournal.append(CutoutStroke(bitmap.width, bitmap.height, x1, y1, x2, y2,
+            brushRadiusPx, brushMode == BrushMode.RESTORE))
 
         if (x1 == x2 && y1 == y2) {
             // Draw circle dot at single tap
@@ -596,24 +626,38 @@ class RefineBrushCanvasView @JvmOverloads constructor(
 
     private fun saveUndoState() {
         val current = workingCutoutBitmap ?: return
-        val snapshot = current.copy(Bitmap.Config.ARGB_8888, false)
-        undoStack.add(snapshot)
-        if (undoStack.size > MAX_HISTORY_STEPS) {
-            val oldest = undoStack.removeAt(0)
-            oldest.recycle()
-        }
-        // New action clears redo stack
+        if (!strokeChanged) return
+        // Release redo and the evicted snapshot before allocating the new one.
         clearRedoStack()
+        if (undoStack.size >= historyLimit) {
+            undoStack.removeAt(0).recycle()
+            droppedEdits++
+        }
+        undoStack.add(checkNotNull(current.copy(Bitmap.Config.ARGB_8888, false)))
+        committedEdits++
+        replayJournal.commit()
+        strokeChanged = false
         notifyHistoryChanged()
     }
 
     fun canUndo(): Boolean = undoStack.size > 1
     fun canRedo(): Boolean = redoStack.isNotEmpty()
 
+    private fun finishBrushBeforeHistoryChange() {
+        if (strokeChanged) saveUndoState()
+        isDrawing = false
+        hasPendingDot = false
+        strokePath.reset()
+        showCursor = false
+    }
+
     fun undo() {
+        finishBrushBeforeHistoryChange()
         if (!canUndo()) return
         val current = undoStack.removeAt(undoStack.lastIndex)
         redoStack.add(current)
+        committedEdits = maxOf(droppedEdits, committedEdits - 1)
+        replayJournal.undo()
 
         val previous = undoStack.last()
         workingCutoutBitmap?.recycle()
@@ -626,9 +670,12 @@ class RefineBrushCanvasView @JvmOverloads constructor(
     }
 
     fun redo() {
+        finishBrushBeforeHistoryChange()
         if (!canRedo()) return
         val next = redoStack.removeAt(redoStack.lastIndex)
         undoStack.add(next)
+        committedEdits++
+        replayJournal.redo()
 
         workingCutoutBitmap?.recycle()
         val restored = next.copy(Bitmap.Config.ARGB_8888, true)
@@ -661,6 +708,19 @@ class RefineBrushCanvasView @JvmOverloads constructor(
         workingCutoutBitmap = null
         workingCanvas = null
         sourceBitmap = null
+        restorePaint.shader = null
+        restoreCirclePaint.shader = null
+        hudHandler.removeCallbacks(hideHudRunnable)
+        committedEdits = 0
+        droppedEdits = 0
+        replayJournal.clear()
+        strokeChanged = false
+        isDrawing = false
+        hasPendingDot = false
+        isMultiTouch = false
+        hasMultiTouchMid = false
+        showCursor = false
+        invalidate()
     }
 
     private fun createCheckerboardShader(): Shader {

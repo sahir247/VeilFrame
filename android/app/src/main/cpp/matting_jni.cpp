@@ -66,13 +66,15 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeInit(
             return JNI_FALSE;
         }
 
+        // Declare the lease first: on an early return or exception, destroy the
+        // partially loaded Net (including Vulkan pipelines) before its GPU lease.
+        veilframe::GpuInstanceLease local_lease;
         std::unique_ptr<ncnn::Net> net = std::make_unique<ncnn::Net>();
         net->opt.lightmode = true;
         net->opt.num_threads = 4;
         net->opt.blob_allocator = &g_matting_blob_allocator;
         net->opt.workspace_allocator = &g_matting_workspace_allocator;
 
-        veilframe::GpuInstanceLease local_lease;
         if (useGpu) {
             if (local_lease.acquire() && ncnn::get_gpu_count() > 0) {
                 net->opt.use_vulkan_compute = true;
@@ -148,6 +150,18 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_isModelLoaded(
     } catch (...) {
         return JNI_FALSE;
     }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_isModelGpu(
+    JNIEnv* env, jclass clazz, jint modelType
+) {
+    try {
+        if (modelType != MODEL_U2NETP && modelType != MODEL_MODNET) return JNI_FALSE;
+        std::lock_guard<std::mutex> lock(g_matting_mutex);
+        ncnn::Net* net = (modelType == MODEL_U2NETP) ? g_u2netp_net : g_modnet_net;
+        return net && net->opt.use_vulkan_compute ? JNI_TRUE : JNI_FALSE;
+    } catch (...) { return JNI_FALSE; }
 }
 
 JNIEXPORT jobject JNICALL
@@ -231,6 +245,8 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         );
 
         src_scope.unlock();
+        if (in_scaled.empty() || in_scaled.w != scaled_w || in_scaled.h != scaled_h ||
+            in_scaled.c != 3) return nullptr;
 
         if (modelType == MODEL_U2NETP) {
             // ImageNet mean/std
@@ -262,10 +278,17 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
         const char* in_blob = (modelType == MODEL_U2NETP) ? "in0" : "input";
         const char* out_blob = (modelType == MODEL_U2NETP) ? "out0" : "output";
 
-        ex.input(in_blob, in);
+        if (in.empty() || in.w != target || in.h != target || ex.input(in_blob, in) != 0) {
+            LOGE("Matting input tensor rejected");
+            return nullptr;
+        }
         ncnn::Mat out;
         int ret_extract = ex.extract(out_blob, out);
-        if (ret_extract != 0 || out.empty() || out.dims < 2 || out.c < 1 || out.w <= 0 || out.h <= 0) {
+        // Our two supported graphs expose a single, unpacked float probability
+        // plane at the model input resolution. Never reinterpret half/packed data.
+        if (ret_extract != 0 || out.empty() || (out.dims != 2 && out.dims != 3) ||
+            out.c != 1 || out.elempack != 1 || out.elemsize != sizeof(float) ||
+            out.w != target || out.h != target) {
             LOGE("NCNN extract failed (code %d, empty=%d, dims=%d, c=%d, w=%d, h=%d)",
                  ret_extract, out.empty(), out.dims, out.c, out.w, out.h);
             return nullptr;
@@ -282,50 +305,40 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
             out_unpadded = out;
         }
 
-        if (out_unpadded.empty() || out_unpadded.dims < 2 || out_unpadded.c < 1 ||
-            out_unpadded.w <= 0 || out_unpadded.h <= 0) {
+        if (out_unpadded.empty() || out_unpadded.c != 1 ||
+            out_unpadded.elempack != 1 || out_unpadded.elemsize != sizeof(float) ||
+            out_unpadded.w != scaled_w || out_unpadded.h != scaled_h) {
             LOGE("Unpadded matting tensor is invalid (empty=%d, dims=%d, c=%d, w=%d, h=%d)",
                  out_unpadded.empty(), out_unpadded.dims, out_unpadded.c, out_unpadded.w, out_unpadded.h);
             return nullptr;
         }
 
-        // Activation & Normalization handling:
-        if (modelType == MODEL_U2NETP) {
-            // For U2-Net-P: Saliency networks output uncalibrated relative energy scores.
-            // We apply sigmoid and official U2-Net dynamic range normalization (normPRED from Qin et al. 2020)
-            // so that secondary subjects and thin extremities (legs, limbs) are scaled into visible alpha.
-            float* ptr = out_unpadded.channel(0);
-            if (!ptr) {
-                LOGE("Failed to get channel 0 pointer for U2NETP");
+        // The bundled U2-Net-P graph ends in convsigmoid_112 producing out0
+        // (NCNN convolution activation parameter 9=4 == sigmoid). Both models
+        // therefore return values in [0,1], not logits. Never activate twice.
+        float* ptr = reinterpret_cast<float*>(out_unpadded.data);
+        if (!ptr) return nullptr;
+        const int size = out_unpadded.w * out_unpadded.h;
+        float min_val = 1.f;
+        float max_val = 0.f;
+        for (int i = 0; i < size; i++) {
+            if (!std::isfinite(ptr[i]) || ptr[i] < -0.02f || ptr[i] > 1.02f) {
+                LOGE("Matting output violates probability contract");
                 return nullptr;
             }
-            float min_val = 1e9f;
-            float max_val = -1e9f;
-            const int size = out_unpadded.w * out_unpadded.h;
-            for (int i = 0; i < size; i++) {
-                float s = 1.0f / (1.0f + expf(-ptr[i]));
-                ptr[i] = s;
-                if (s < min_val) min_val = s;
-                if (s > max_val) max_val = s;
-            }
-            float range = max_val - min_val;
+            ptr[i] = std::max(0.f, std::min(1.f, ptr[i]));
+            min_val = std::min(min_val, ptr[i]);
+            max_val = std::max(max_val, ptr[i]);
+        }
+        if (modelType == MODEL_U2NETP) {
+            // Retain the upstream saliency normPRED convention for compatibility.
+            // Flat outputs retain their original probability rather than dividing
+            // by a near-zero range. This is saliency, not calibrated opacity.
+            const float range = max_val - min_val;
             if (range > 1e-4f) {
                 for (int i = 0; i < size; i++) {
                     ptr[i] = (ptr[i] - min_val) / range;
                 }
-            }
-        } else {
-            // MODNet already outputs continuous alpha matte in [0.0, 1.0]
-            float* ptr = out_unpadded.channel(0);
-            if (!ptr) {
-                LOGE("Failed to get channel 0 pointer for MODNet");
-                return nullptr;
-            }
-            const int size = out_unpadded.w * out_unpadded.h;
-            #pragma omp parallel for
-            for (int i = 0; i < size; i++) {
-                if (ptr[i] < 0.0f) ptr[i] = 0.0f;
-                if (ptr[i] > 1.0f) ptr[i] = 1.0f;
             }
         }
 
@@ -389,9 +402,11 @@ Java_com_veilframe_app_cv_segmentation_ncnn_NcnnMattingNative_nativeProcess(
                 if (val > 1.0f) val = 1.0f;
                 const unsigned char a = static_cast<unsigned char>(val * 255.0f);
 
-                out_row[x * 4 + 0] = 255; // R
-                out_row[x * 4 + 1] = 255; // G
-                out_row[x * 4 + 2] = 255; // B
+                // Android ARGB_8888 is premultiplied by default. A white
+                // mask with alpha A has stored RGB=A, not RGB=255.
+                out_row[x * 4 + 0] = a;
+                out_row[x * 4 + 1] = a;
+                out_row[x * 4 + 2] = a;
                 out_row[x * 4 + 3] = a;   // Alpha
             }
         }

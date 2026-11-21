@@ -39,7 +39,8 @@ object VideoEisDialog {
         isCurrentlyEnabled: Boolean,
         videoFile: File? = null,
         onApply: (VideoEisConfig) -> Unit,
-        onDisable: () -> Unit
+        onDisable: () -> Unit,
+        canDisable: Boolean = true
     ) {
         val density = context.resources.displayMetrics.density
         val padH = (22 * density).toInt()
@@ -56,7 +57,8 @@ object VideoEisDialog {
         }
 
         val subtitleView = TextView(context).apply {
-            text = "Two-pass FFmpeg libvidstab analyzes camera trajectories first, then solves a smooth stabilized path with sharpness restoration."
+            text = "Two-pass FFmpeg libvidstab estimates camera motion and smooths the path. Review the result: scene cuts, moving subjects and low-texture footage can reduce tracking quality." +
+                if (!canDisable) " Stabilization is already baked into this video; another pass processes that result. Reopen the original to undo it." else ""
             textSize = 12.5f
             alpha = 0.78f
             setPadding(0, 0, 0, gapMd)
@@ -401,7 +403,7 @@ object VideoEisDialog {
                 previewPlayer?.release()
             }
 
-        if (isCurrentlyEnabled) {
+        if (isCurrentlyEnabled && canDisable) {
             builder.setNeutralButton("Turn Off EIS") { _, _ ->
                 previewPlayer?.release()
                 onDisable()

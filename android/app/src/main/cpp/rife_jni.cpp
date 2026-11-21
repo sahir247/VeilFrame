@@ -53,8 +53,12 @@ static jboolean do_rife_native_init(
     jboolean useGpu,
     jint padding
 ) {
+    // Keep exclusive ownership through exception cleanup. A lock scoped only
+    // to try released before catch, allowing an unrelated successful init to be
+    // overwritten by this failing invocation.
+    std::unique_lock<std::mutex> lock(g_rife_mutex, std::defer_lock);
     try {
-        std::lock_guard<std::mutex> lock(g_rife_mutex);
+        lock.lock();
 
         if (g_rife != nullptr) {
             delete g_rife;
@@ -204,6 +208,8 @@ static jboolean do_rife_native_init(
              g_rife_gpuid, cpu_threads, loadedPadding);
         return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
+        if (!lock.owns_lock()) return JNI_FALSE;
+        delete g_rife;
         g_rife = nullptr;
         g_rife_gpuid = -1;
         g_rife_gpu_lease.reset();
@@ -211,6 +217,8 @@ static jboolean do_rife_native_init(
         LOGE("Out of memory in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (const std::exception& e) {
+        if (!lock.owns_lock()) return JNI_FALSE;
+        delete g_rife;
         g_rife = nullptr;
         g_rife_gpuid = -1;
         g_rife_gpu_lease.reset();
@@ -218,6 +226,8 @@ static jboolean do_rife_native_init(
         LOGE("Exception in RIFE nativeInit: %s", e.what());
         return JNI_FALSE;
     } catch (...) {
+        if (!lock.owns_lock()) return JNI_FALSE;
+        delete g_rife;
         g_rife = nullptr;
         g_rife_gpuid = -1;
         g_rife_gpu_lease.reset();

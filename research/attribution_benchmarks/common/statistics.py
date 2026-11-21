@@ -180,14 +180,15 @@ def compute_roc_and_auc(
     if not higher_is_match:
         y_score = -y_score
 
-    order = np.argsort(y_score)[::-1]
+    if not np.isfinite(y_score).all():
+        raise ValueError("ROC scores must be finite")
+    order = np.argsort(-y_score, kind="stable")
     sorted_y = y_true[order]
-
-    tpr = np.cumsum(sorted_y) / float(n_pos)
-    fpr = np.cumsum(1 - sorted_y) / float(n_neg)
-
-    tpr = np.insert(tpr, 0, 0.0)
-    fpr = np.insert(fpr, 0, 0.0)
+    sorted_scores = y_score[order]
+    # All equal scores form one threshold, independent of label ordering.
+    ends = np.r_[np.flatnonzero(sorted_scores[:-1] != sorted_scores[1:]), len(sorted_y) - 1]
+    tpr = np.insert(np.cumsum(sorted_y)[ends] / float(n_pos), 0, 0.0)
+    fpr = np.insert(np.cumsum(1 - sorted_y)[ends] / float(n_neg), 0, 0.0)
 
     auc = float(np.trapezoid(tpr, fpr))
     roc_points = [(float(f), float(t)) for f, t in zip(fpr, tpr)]

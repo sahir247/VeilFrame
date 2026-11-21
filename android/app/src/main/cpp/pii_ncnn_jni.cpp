@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <mutex>
 #include <limits>
+#include <memory>
 
 #define TAG "VeilFrame.PiiNcnn"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -28,6 +29,7 @@ struct BBox {
 static std::mutex g_pii_mutex;
 static ncnn::Net* g_ultraface_net = nullptr;
 static ncnn::Net* g_yolov8_net = nullptr;
+static size_t g_pii_owners = 0;
 
 static const int ULTRA_IN_W = 320;
 static const int ULTRA_IN_H = 240;
@@ -126,39 +128,34 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeInit(
             generate_ultra_priors();
         }
 
-        // Load UltraFace RFB-320
-        if (g_ultraface_net == nullptr) {
-            g_ultraface_net = new ncnn::Net();
-            g_ultraface_net->opt.lightmode = true;
-            g_ultraface_net->opt.num_threads = 4;
-            int r0 = g_ultraface_net->load_param(mgr, "models/pii/RFB-320.param");
-            int r1 = g_ultraface_net->load_model(mgr, "models/pii/RFB-320.bin");
-            if (r0 != 0 || r1 != 0) {
-                LOGE("Failed to load UltraFace: %d, %d", r0, r1);
-                delete g_ultraface_net;
-                g_ultraface_net = nullptr;
-            } else {
-                LOGI("UltraFace RFB-320 loaded successfully");
-            }
+        if (g_pii_owners > 0) {
+            if (g_pii_owners == std::numeric_limits<size_t>::max()) return JNI_FALSE;
+            ++g_pii_owners;
+            return JNI_TRUE;
         }
 
-        // Load YOLOv8n
-        if (g_yolov8_net == nullptr) {
-            g_yolov8_net = new ncnn::Net();
-            g_yolov8_net->opt.lightmode = true;
-            g_yolov8_net->opt.num_threads = 4;
-            int r0 = g_yolov8_net->load_param(mgr, "models/pii/yolov8n.ncnn.param");
-            int r1 = g_yolov8_net->load_model(mgr, "models/pii/yolov8n.ncnn.bin");
-            if (r0 != 0 || r1 != 0) {
-                LOGE("Failed to load YOLOv8n: %d, %d", r0, r1);
-                delete g_yolov8_net;
-                g_yolov8_net = nullptr;
-            } else {
-                LOGI("YOLOv8n-NCNN loaded successfully");
-            }
+        // Publish only a complete pair. Partial model initialization is not a
+        // successful privacy scan, and failed native construction is rolled back.
+        auto face = std::make_unique<ncnn::Net>();
+        face->opt.lightmode = true;
+        face->opt.num_threads = 4;
+        if (face->load_param(mgr, "models/pii/RFB-320.param") != 0 ||
+            face->load_model(mgr, "models/pii/RFB-320.bin") != 0) {
+            LOGE("Failed to load UltraFace model");
+            return JNI_FALSE;
         }
-
-        return (g_ultraface_net != nullptr || g_yolov8_net != nullptr) ? JNI_TRUE : JNI_FALSE;
+        auto objects = std::make_unique<ncnn::Net>();
+        objects->opt.lightmode = true;
+        objects->opt.num_threads = 4;
+        if (objects->load_param(mgr, "models/pii/yolov8n.ncnn.param") != 0 ||
+            objects->load_model(mgr, "models/pii/yolov8n.ncnn.bin") != 0) {
+            LOGE("Failed to load YOLOv8n model");
+            return JNI_FALSE;
+        }
+        g_ultraface_net = face.release();
+        g_yolov8_net = objects.release();
+        g_pii_owners = 1;
+        return JNI_TRUE;
     } catch (const std::bad_alloc& e) {
         LOGE("Out of memory in PII nativeInit: %s", e.what());
         return JNI_FALSE;
@@ -579,6 +576,7 @@ Java_com_veilframe_app_privacy_ncnn_PiiNcnnNative_nativeRelease(
 ) {
     try {
         std::lock_guard<std::mutex> lock(g_pii_mutex);
+        if (g_pii_owners == 0 || --g_pii_owners > 0) return;
         if (g_ultraface_net) {
             delete g_ultraface_net;
             g_ultraface_net = nullptr;

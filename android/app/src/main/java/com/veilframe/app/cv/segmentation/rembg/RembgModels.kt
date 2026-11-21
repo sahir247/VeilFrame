@@ -20,6 +20,7 @@ data class RembgResult(
     val sourceInfo: RembgSourceInfo,
     val model: RembgModel,
     val warnings: List<String> = emptyList(),
+    val originalMatte: RembgAlphaMatte? = null,
 )
 
 enum class RembgExportFormat {

@@ -2457,6 +2457,8 @@ class VideoStudioController(
             return
         }
 
+        val dialogGeneration = activeGeneration
+        val baked = editState.isStabilizationBaked
         Log.d(TAG, "Opening Pro 2-Pass EIS dialog (FFmpeg libvidstab)")
 
         VideoEisDialog.show(
@@ -2465,17 +2467,21 @@ class VideoStudioController(
             isCurrentlyEnabled = editState.isStabilized,
             videoFile = item.file,
             onApply = { config ->
-                executeImmediateStabilization(item, config)
+                if (activeGeneration == dialogGeneration && currentItem === item) {
+                    executeImmediateStabilization(item, config)
+                }
             },
             onDisable = {
-                editState.isStabilized = false
-                editState.isStabilizationBaked = false
-                currentItem?.editState?.copyFrom(editState)
-                updateStabilizeButtonState()
-                refreshStats()
-                updateEditSummary()
-                Toast.makeText(activity, "Stabilization disabled", Toast.LENGTH_SHORT).show()
-            }
+                if (activeGeneration == dialogGeneration && currentItem === item && !editState.isStabilizationBaked) {
+                    editState.isStabilized = false
+                    currentItem?.editState?.copyFrom(editState)
+                    updateStabilizeButtonState()
+                    refreshStats()
+                    updateEditSummary()
+                    Toast.makeText(activity, "Stabilization disabled", Toast.LENGTH_SHORT).show()
+                }
+            },
+            canDisable = !baked
         )
     }
 
@@ -2504,13 +2510,14 @@ class VideoStudioController(
             }
         )
 
-        val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${System.currentTimeMillis()}.mp4")
+        val tempStabilizedFile = File(activity.cacheDir, "vf_stabilized_${java.util.UUID.randomUUID()}.mp4")
 
         stabilizationJob = scope.launch(Dispatchers.IO) {
             var outputHandedToComparison = false
             val ownerJob = requireNotNull(kotlin.coroutines.coroutineContext[Job])
             ownerJob.invokeOnCompletion { videoSessionRegistry.forget(ownerJob) }
             try {
+                if (item.copyJob?.isActive == true) item.copyJob?.join()
                 if (!item.file.exists() || item.file.length() == 0L) {
                     copyUriToFile(item.uri, item.file)
                 }
@@ -2532,7 +2539,7 @@ class VideoStudioController(
 
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
-                    if (activeGeneration != gen) return@withContext
+                    if (activeGeneration != gen || currentItem !== item) return@withContext
 
                     if (result.success && tempStabilizedFile.exists() && tempStabilizedFile.length() > 0L) {
                         VideoEisComparisonDialog.show(
@@ -2596,6 +2603,9 @@ class VideoStudioController(
                 }
             } finally {
                 if (!outputHandedToComparison) tempStabilizedFile.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (progressDialog.isShowing) progressDialog.dismiss()
+                }
             }
         }
     }
@@ -2625,11 +2635,41 @@ class VideoStudioController(
             return
         }
 
+        val generation = activeGeneration
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Video PII scan coverage")
+            .setItems(arrayOf("Standard — sampled frames", "Dense — more samples",
+                "Every decoded frame — short clips, slower")) { _, index ->
+                if (generation == activeGeneration && currentItem === item) {
+                    val mode = when (index) {
+                        0 -> VideoPiiRedactionEngine.ScanDensity.STANDARD
+                        1 -> VideoPiiRedactionEngine.ScanDensity.DENSE
+                        else -> VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME
+                    }
+                    MaterialAlertDialogBuilder(activity)
+                        .setTitle("Scan coverage")
+                        .setMessage(if (mode == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
+                            "Sequentially streams every decoded frame without a full-video raster spool. Up to 216,000 frames and a bounded region budget; crowded or longer clips may need splitting. Detection can still miss targets; audio is not scanned."
+                            else "Samples frames rather than decoding every frame. Brief targets and detector failures can still be missed; audio is not scanned.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Scan") { _, _ ->
+                            if (generation == activeGeneration && currentItem === item) startVideoPiiScan(mode)
+                        }.show()
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun startVideoPiiScan(density: VideoPiiRedactionEngine.ScanDensity) {
+        val item = currentItem ?: return
+        if (piiScanJob?.isActive == true) return
         val gen = activeGeneration
         val scanProgressDialog = M3ExpressiveProgressDialog(activity)
         scanProgressDialog.show(
             title = "AI Video PII Scanning",
-            initialStatus = "Scanning video keyframes for faces, text, screens, plates & barcodes…",
+            initialStatus = if (density == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
+                "Sequentially decoding the full source video…" else
+                "Scanning the full source video for faces, text, screens, plates & barcodes…",
             isIndeterminate = false,
             cancelable = true,
             onCancel = {
@@ -2645,36 +2685,50 @@ class VideoStudioController(
                     copyUriToFile(item.uri, item.file)
                 }
 
+                MediaProcessor.video.requireSingleVideoTrack(item.file)
                 val retriever = MediaMetadataRetriever()
                 val scanResult = try {
                     retriever.setDataSource(item.file.absolutePath)
-                    val trimEnd = editState.trimEndMs.takeIf { it > editState.trimStartMs } ?: item.durationMs
-                    VideoPiiRedactionEngine.scanVideo(
-                        context = activity,
-                        retriever = retriever,
-                        piiEngine = getOrInitPiiEngine(),
-                        trimStartMs = editState.trimStartMs,
-                        trimEndMs = trimEnd,
-                        fallbackWidth = item.width,
-                        fallbackHeight = item.height,
-                        includeOcrText = true,
-                        isCancelled = { activeGeneration != gen || !isActive },
-                        onProgress = { sampled, total ->
-                            scope.launch(Dispatchers.Main) {
-                                if (activeGeneration == gen && scanProgressDialog.isShowing) {
-                                    val pct = if (total > 0) ((sampled.toFloat() / total) * 100).toInt().coerceIn(0, 100) else 0
-                                    scanProgressDialog.updateProgress(pct, "Scanning keyframe $sampled of $total ($pct%)")
-                                }
+                    // Standalone rendering bakes masks into the entire source, not the trim.
+                    // Scan that exact timeline; applying trim-relative times to it leaks targets.
+                    val sourceDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull()?.takeIf { it > 0L }
+                        ?: throw IllegalStateException("Could not determine source video duration")
+                    val scanContext = kotlin.coroutines.coroutineContext
+                    val cancelled = { activeGeneration != gen || !scanContext.isActive }
+                    val progress: (Int, Int) -> Unit = { sampled, total ->
+                        scope.launch(Dispatchers.Main) {
+                            if (!cancelled() && scanProgressDialog.isShowing) {
+                                val pct = if (total > 0) ((sampled.toFloat() / total) * 100).toInt().coerceIn(0, 100) else 0
+                                val unit = if (density == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME) "frame" else "sample"
+                                if (total > 0) scanProgressDialog.updateProgress(pct, "Scanning $unit $sampled of $total ($pct%)")
+                                else scanProgressDialog.updateProgress(0, "Scanned $sampled frames (total unknown until decode completes)")
                             }
                         }
-                    )
+                    }
+                    val engine = getOrInitPiiEngine()
+                    if (density == VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME) {
+                        val encodedW = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: item.width
+                        val encodedH = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: item.height
+                        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                        val (width, height) = VideoPiiRedactionEngine.displayDimensions(encodedW, encodedH, rotation)
+                        VideoPiiRedactionEngine.scanEveryDecodedFrame(activity, item.file, engine,
+                            sourceDuration, width, height, isCancelled = cancelled, onProgress = progress)
+                    } else {
+                        VideoPiiRedactionEngine.scanVideo(
+                            context = activity, retriever = retriever, piiEngine = engine,
+                            trimStartMs = 0L, trimEndMs = sourceDuration, fallbackWidth = item.width,
+                            fallbackHeight = item.height, includeOcrText = true, density = density,
+                            isCancelled = cancelled, onProgress = progress
+                        )
+                    }
                 } finally {
                     retriever.release()
                 }
 
                 withContext(Dispatchers.Main) {
                     scanProgressDialog.dismiss()
-                    if (activeGeneration != gen) return@withContext
+                    if (activeGeneration != gen || currentItem !== item) return@withContext
 
                     if (scanResult.isCancelled) {
                         Toast.makeText(activity, "Video PII scan cancelled. Results are incomplete; existing redactions were kept.", Toast.LENGTH_LONG).show()
@@ -2689,19 +2743,9 @@ class VideoStudioController(
                             val decodeInfo = if (scanResult.failedFrameExtractions > 0) " (${scanResult.failedFrameExtractions} frames failed decode)" else ""
                             val samplingInfo = if (scanResult.isSamplingCapped) " (sparse sampling: ~${scanResult.actualSampleIntervalMs} ms interval)" else ""
                             Toast.makeText(activity, "Video PII scan incomplete$failedList$decodeInfo$samplingInfo. 0 targets confirmed; existing redactions were kept.", Toast.LENGTH_LONG).show()
-                        } else if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
-                            editState.piiRedactionFilter = null
-                            editState.piiRedactionSummary = ""
-                            editState.isPiiBaked = false
-                            currentItem?.editState?.copyFrom(editState)
-                            updatePiiButtonState()
-                            refreshStats()
-                            updateEditSummary()
-                            Toast.makeText(activity, "No PII targets detected; cleared prior video redactions", Toast.LENGTH_SHORT).show()
-                        } else if (scanResult.isSamplingCapped) {
-                            Toast.makeText(activity, "Sparse sampling (~${scanResult.actualSampleIntervalMs}ms step). No PII detected across ${scanResult.sampledFrames} keyframes.", Toast.LENGTH_LONG).show()
                         } else {
-                            Toast.makeText(activity, "No PII detected across ${scanResult.sampledFrames} keyframes", Toast.LENGTH_SHORT).show()
+                            val coverage = if (scanResult.isEveryFrameScan) "decoded frames" else "sampled frames"
+                            Toast.makeText(activity, "No PII detected in $coverage. Existing edits were kept; review the full video.", Toast.LENGTH_LONG).show()
                         }
                         return@withContext
                     }
@@ -2713,7 +2757,7 @@ class VideoStudioController(
                             piiClass = region.piiClass,
                             label = region.label,
                             subtext = "$timeSpan • Box: [${region.rect.left.toInt()}, ${region.rect.top.toInt()}, ${region.rect.right.toInt()}, ${region.rect.bottom.toInt()}]",
-                            defaultChecked = (region.piiClass != PiiClass.PERSON)
+                            defaultChecked = true
                         )
                     }
 
@@ -2724,19 +2768,24 @@ class VideoStudioController(
                             if (scanResult.failedEngines.isNotEmpty()) add("detectors unavailable: ${scanResult.failedEngines.keys.joinToString(", ")}")
                         }
                         if (scanResult.isSamplingCapped) {
-                            add("sparse sampling: ~${scanResult.actualSampleIntervalMs} ms between keyframes")
+                            add("sparse sampling: ~${scanResult.actualSampleIntervalMs} ms between samples")
                         }
                     }
                     val scanSubtitle = buildString {
-                        append("Scanned ${scanResult.sampledFrames}/${scanResult.attemptedFrames} keyframes. ")
-                        append("Short-lived PII between sampled frames may be missed. ")
-                        append("Select detected targets to redact.")
+                        if (scanResult.isEveryFrameScan) {
+                            append("Scanned all ${scanResult.sampledFrames} admitted decoded frames of the full source video. Detection can still miss PII. ")
+                        } else {
+                            append("Scanned ${scanResult.sampledFrames}/${scanResult.attemptedFrames} samples of the full source video. ")
+                            append("Short-lived PII between sampled frames may be missed. ")
+                        }
+                        append("Audio is unchanged. Solid masks are safer than blur or pixelation. Selected masks are baked into the working video and cannot be cleared here. Review the full output before sharing.")
                         if (scanCaveats.isNotEmpty()) append(" WARNING: ${scanCaveats.joinToString("; ")}.")
                     }
 
                     PiiRedactionDialog.showItemSelectionDialog(
                         context = activity,
-                        title = "Detected Video PII (${scanResult.trackCount} tracks)",
+                        title = if (scanResult.isEveryFrameScan) "Detected Video PII (${scanResult.regions.size} regions)"
+                            else "Detected Video PII (${scanResult.trackCount} tracks)",
                         subtitle = scanSubtitle,
                         items = items,
                         availableStyles = listOf(
@@ -2746,19 +2795,25 @@ class VideoStudioController(
                             PiiRedactionStyle.PIXELATE
                         ),
                         initialStyle = PiiRedactionStyle.SOLID_BLACK,
-                        hasActiveRedactions = !editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked,
+                        hasActiveRedactions = !editState.isPiiBaked && !editState.piiRedactionFilter.isNullOrBlank(),
                         onApply = { chosenIds, chosenStyle ->
+                            if (activeGeneration != gen || currentItem !== item) return@showItemSelectionDialog
                             val selectedRegions = scanResult.regions.filterIndexed { idx, _ -> "vid_pii_$idx" in chosenIds }
                             if (selectedRegions.isEmpty()) {
                                 Toast.makeText(activity, "No targets selected for redaction", Toast.LENGTH_SHORT).show()
                                 return@showItemSelectionDialog
                             }
-                            val filterChain = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
-                                regions = selectedRegions,
-                                frameW = scanResult.frameWidth,
-                                frameH = scanResult.frameHeight,
-                                style = chosenStyle
-                            )
+                            val filterChain = try {
+                                VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+                                    regions = selectedRegions,
+                                    frameW = scanResult.frameWidth,
+                                    frameH = scanResult.frameHeight,
+                                    style = chosenStyle
+                                )
+                            } catch (e: IllegalArgumentException) {
+                                Toast.makeText(activity, "Cannot apply masks: ${e.message}", Toast.LENGTH_LONG).show()
+                                return@showItemSelectionDialog
+                            }
                             if (filterChain.isNullOrBlank()) {
                                 Toast.makeText(activity, "No valid temporal regions generated", Toast.LENGTH_SHORT).show()
                                 return@showItemSelectionDialog
@@ -2772,6 +2827,7 @@ class VideoStudioController(
                             )
                         },
                         onClear = {
+                            if (activeGeneration != gen || currentItem !== item || editState.isPiiBaked) return@showItemSelectionDialog
                             editState.piiRedactionFilter = null
                             editState.piiRedactionSummary = ""
                             editState.isPiiBaked = false
@@ -2783,11 +2839,18 @@ class VideoStudioController(
                         }
                     )
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.w(TAG, "Video PII scan failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
+                    if (activeGeneration == gen && currentItem === item) {
+                        Toast.makeText(activity, "Video PII scan failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
                     scanProgressDialog.dismiss()
-                    Toast.makeText(activity, "Video PII scan failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -2828,7 +2891,7 @@ class VideoStudioController(
             }
         )
 
-        val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${System.currentTimeMillis()}.mp4")
+        val tempRedactedFile = File(activity.cacheDir, "vf_redacted_${java.util.UUID.randomUUID()}.mp4")
 
         videoRedactionJob = scope.launch(Dispatchers.IO) {
             var outputHandedToWorkspace = false
@@ -2856,7 +2919,7 @@ class VideoStudioController(
 
                 withContext(Dispatchers.Main) {
                     progressDialog.dismiss()
-                    if (activeGeneration != gen) return@withContext
+                    if (activeGeneration != gen || currentItem !== item) return@withContext
 
                     if (result.success && tempRedactedFile.exists() && tempRedactedFile.length() > 0L) {
                         val updatedItem = item.copy(
@@ -2881,7 +2944,7 @@ class VideoStudioController(
                         if (::floatingDockController.isInitialized) {
                             floatingDockController.onEditApplied()
                         }
-                        Toast.makeText(activity, "Video redacted successfully! Preview updated.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(activity, "Selected masks applied. Review the full video before sharing; audio is unchanged.", Toast.LENGTH_LONG).show()
                     } else {
                         if (tempRedactedFile.exists()) tempRedactedFile.delete()
                         Toast.makeText(
@@ -2903,6 +2966,9 @@ class VideoStudioController(
                 }
             } finally {
                 if (!outputHandedToWorkspace) tempRedactedFile.delete()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    progressDialog.dismiss()
+                }
             }
         }
     }
@@ -2910,7 +2976,7 @@ class VideoStudioController(
     private fun updatePiiButtonState() {
         if (!editState.piiRedactionFilter.isNullOrBlank() || editState.isPiiBaked) {
             binding.btnVidPiiRedact.setIconResource(R.drawable.ic_check_circle)
-            binding.btnVidPiiRedact.text = "PII Redacted • Edit / Clear"
+            binding.btnVidPiiRedact.text = if (editState.isPiiBaked) "PII Masks Applied • Rescan" else "PII Masks • Edit / Clear"
         } else {
             binding.btnVidPiiRedact.setIconResource(R.drawable.ic_shield_video)
             binding.btnVidPiiRedact.text = "Auto-Redact PII (AI)"
