@@ -706,4 +706,19 @@ class OpenXmlDocumentParserTest {
             assertEquals(0, parsed.unsupportedConditionalRules)
         } finally { input.delete() }
     }
+    @Test
+    fun blankConditionalRangesHaveBoundedEvaluationCost() {
+        val wb = """<workbook><sheets><sheet name="CFBudget" sheetId="1"/></sheets></workbook>"""
+        val manyRules = (1..160).joinToString("") { priority ->
+            """<cfRule type="expression" priority="$priority"><formula>MOD(ROW(),2)=0</formula></cfRule>"""
+        }
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="100"><c r="CV100"><v>2</v></c></row></sheetData><conditionalFormatting sqref="A1:CV100">$manyRules</conditionalFormatting></worksheet>"""
+        val input = createZipFile(mapOf("xl/workbook.xml" to wb, "xl/worksheets/sheet1.xml" to sheet))
+        try {
+            val error = org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                OpenXmlDocumentParser.parseXlsx(input)
+            }
+            assertTrue(error.message.orEmpty().contains("blank-cell evaluation exceeds budget"))
+        } finally { input.delete() }
+    }
 }

@@ -707,3 +707,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - CI regression 44845773881: `numericConditionalFormattingUsesRawValuesAndGlobalPriority` expected the previously unsupported `C1>0` rule count to remain 1. Since the bounded same-cell expression now deliberately evaluates C1, the correct contract is zero unsupported rules plus priority-composed bold and red fill on C1. Updated the test with those stronger assertions rather than skipping it. Full suite rerun pending.
 
 - Admission hardening: precharge the entire scanned blank-cell range area times conditional predicate/range cost, not only the matches, so large repeated expression regions cannot bypass the eight-million-check budget. Require both column and line groups to have data in combination charts, avoiding a zero-width bar denominator. Zero changed behavior for admitted ordinary workbooks. CI pending.
+
+- Added adversarial regression: 160 conditional row-expression rules spanning a 100×100 visible grid must be rejected by work budgeting, not iterate all cross-products. Confirms the bound is enforced for blank cells and not just matched cells. CI pending.
