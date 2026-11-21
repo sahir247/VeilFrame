@@ -10,7 +10,7 @@ buildscript {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
         constraints {
             classpath("io.netty:netty-codec-http2:4.2.20.Final")
-            classpath("io.netty:netty-codec-http:4.2.20.Final")
+            classpath("io.netty:netty-codec-http:4.2.21.Final")
             classpath("io.netty:netty-handler:4.2.20.Final")
             classpath("io.netty:netty-codec:4.2.20.Final")
             classpath("io.netty:netty-common:4.2.20.Final")
