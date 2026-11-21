@@ -8,5 +8,5 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     val printsWithSheet: Boolean = true) {
     data class Series(val name: String, val values: List<Double?>,
         val xValues: List<Double?> = emptyList(), val chartKind: String? = null,
-        val rgb: Int? = null)
+        val rgb: Int? = null, val strokeWidthPt: Float? = null)
 }

@@ -576,7 +576,7 @@ object OpenXmlDocumentParser {
                     totalTextChars <= SpreadsheetGeometry.MAX_WORKBOOK_TEXT_CHARS) {
                     "Workbook exceeds aggregate worksheet layout budget"
                 }
-                val (charts, unsupportedDrawings) = readWorksheetCharts(zip, budget, part.path, metadata.drawingIds)
+                val (charts, unsupportedDrawings) = readWorksheetCharts(zip, budget, part.path, metadata.drawingIds, theme)
                 require(sheets.sumOf { it.charts.size } + charts.size <= 64) { "Workbook chart count exceeds budget" }
                 val localNames = definedNames.filter { it.getAttribute("localSheetId").toIntOrNull() == sheetIndex }
                 val printAreas = localNames.filter { it.getAttribute("name") == "_xlnm.Print_Area" }
@@ -611,7 +611,7 @@ object OpenXmlDocumentParser {
     }
 
     private fun readWorksheetCharts(zip: ZipFile, budget: XmlReadBudget, sheet: String,
-        drawingIds: List<String>): Pair<List<XlsxCachedChart>, Int> {
+        drawingIds: List<String>, theme: Map<String, Int>): Pair<List<XlsxCachedChart>, Int> {
         if (drawingIds.isEmpty()) return emptyList<XlsxCachedChart>() to 0
         require(drawingIds.size <= 16 && drawingIds.distinct().size == drawingIds.size) { "Ambiguous worksheet drawings" }
         val sheetRels = partRelationships(zip, budget, sheet).orEmpty()
@@ -632,7 +632,7 @@ object OpenXmlDocumentParser {
                 val chartRel = drawingRels[relationshipId(ref)] ?: throw IOException("Missing drawing chart relationship")
                 require(chartRel.type.endsWith("/chart")) { "Invalid drawing chart relationship type" }
                 val chartEntry = zip.getEntry(chartRel.path) ?: throw IOException("Missing chart part")
-                val chart = parseCachedChart(parseXml(budget.read(zip, chartEntry)).documentElement)
+                val chart = parseCachedChart(parseXml(budget.read(zip, chartEntry)).documentElement, theme)
                 if (chart == null) unsupported++ else {
                     val anchor = chartSourceAnchor(ref)
                     charts.add(chart.copy(sourceAnchor = anchor.description,
@@ -687,7 +687,7 @@ object OpenXmlDocumentParser {
         return ChartAnchor(null, false)
     }
 
-    private fun parseCachedChart(root: Element): XlsxCachedChart? {
+    private fun parseCachedChart(root: Element, theme: Map<String, Int>): XlsxCachedChart? {
         require(root.localName() == "chartSpace") { "Invalid spreadsheet chart root" }
         val chart = root.childElements("chart").singleOrNull() ?: return null
         val plot = chart.childElements("plotArea").singleOrNull() ?: return null
@@ -743,8 +743,29 @@ object OpenXmlDocumentParser {
             val solid = sp.childElements("solidFill").singleOrNull()
                 ?: sp.childElements("ln").singleOrNull()?.childElements("solidFill")?.singleOrNull()
                 ?: return null
-            val color = solid.childElements("srgbClr").singleOrNull()?.getAttribute("val") ?: return null
-            return if (color.matches(Regex("[0-9A-Fa-f]{6}"))) color.toInt(16) else null
+            val srgb = solid.childElements("srgbClr")
+            val scheme = solid.childElements("schemeClr")
+            if (srgb.size + scheme.size != 1) return null
+            val pigment = (srgb + scheme).single()
+            // Luminosity/alpha transforms need complete DrawingML color math.
+            // Do not claim the untransformed theme color is the saved result.
+            if ((0 until pigment.childNodes.length).any {
+                    pigment.childNodes.item(it).nodeType == Node.ELEMENT_NODE
+                }) return null
+            return if (srgb.isNotEmpty()) {
+                srgb.single().getAttribute("val").takeIf { it.matches(Regex("[0-9A-Fa-f]{6}")) }
+                    ?.toInt(16)
+            } else theme[scheme.single().getAttribute("val")]
+        }
+        fun seriesStrokeWidth(ser: Element): Float? {
+            val line = ser.childElements("spPr").singleOrNull()?.childElements("ln")?.singleOrNull()
+                ?: return null
+            val raw = line.getAttribute("w")
+            if (raw.isEmpty()) return null
+            val emu = raw.toLongOrNull() ?: return null
+            // DrawingML line widths are EMUs (1 pt = 12700 EMUs).
+            val points = emu / 12_700f
+            return points.takeIf { it.isFinite() && it in 0.25f..8f }
         }
 
         fun cache(parent: Element?, numeric: Boolean): List<String?>? {
@@ -796,7 +817,7 @@ object OpenXmlDocumentParser {
                 longest = maxOf(longest, xValues.size)
                 parsedScatter.add(XlsxCachedChart.Series(
                     text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
-                    yValues, xValues, rgb = seriesRgb(ser)))
+                    yValues, xValues, rgb = seriesRgb(ser), strokeWidthPt = seriesStrokeWidth(ser)))
             }
             // An all-empty cache is an unsupported drawing, not a chart that
             // can be assigned invented axes and subsequently abort the PDF.
@@ -819,7 +840,8 @@ object OpenXmlDocumentParser {
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
-                values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser)))
+                values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser),
+                strokeWidthPt = seriesStrokeWidth(ser)))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
             grouping ?: "clustered")

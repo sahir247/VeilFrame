@@ -2238,4 +2238,34 @@ class OfficeConverterFidelityTest {
             assertTrue(second.contains("odd 11 of 2") && second.contains("minus 8"))
         }
     }
+
+    @Test
+    fun cachedLineChartUsesDirectThemeRgbAndSavedLineWidth() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Theme" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>4</v></c></row></sheetData><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:wsDr>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/theme.xml"/></Relationships>"""
+        val theme = """<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="Office"><a:accent1><a:srgbClr val="16AA44"/></a:accent1></a:clrScheme></a:themeElements></a:theme>"""
+        val chart = """<c:chartSpace><c:chart><c:plotArea><c:lineChart><c:grouping val="standard"/><c:ser><c:spPr><a:ln w="31750"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln></c:spPr><c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>One</c:v></c:pt><c:pt idx="1"><c:v>Two</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>3</c:v></c:pt></c:numLit></c:val></c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>"""
+        fun input(chartPart: String) = createZip(mapOf("xl/workbook.xml" to workbook,
+            "xl/theme/theme1.xml" to theme, "xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to drawing, "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/theme.xml" to chartPart))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input(chart)).sheets.single().charts.single().series.single()
+        assertEquals(0x16AA44, parsed.rgb)
+        assertEquals(2.5f, parsed.strokeWidthPt!!, 0.0001f)
+        val modified = chart.replace("<a:schemeClr val=" + '"' + "accent1" + '"' + "/>",
+            "<a:schemeClr val=" + '"' + "accent1" + '"' + "><a:lumMod val=" + '"' + "50000" + '"' + "/></a:schemeClr>")
+        assertEquals(null,OpenXmlDocumentParser.parseXlsx(input(modified)).sheets.single()
+            .charts.single().series.single().rgb) // transformed color uses disclosed fallback
+        val output = File(tempFolder.root,"chart-theme-line.pdf")
+        OfficeConverter().convertXlsxToPdf(input(chart),output,context)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val operators = pdf.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(operators.contains("2.5 w"))
+        }
+    }
 }

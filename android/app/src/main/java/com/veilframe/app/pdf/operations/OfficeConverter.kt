@@ -1294,7 +1294,7 @@ class OfficeConverter {
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
                         if (chart.kind == "line" || (combo && series.chartKind == "line")) {
                             val y = bottom + fraction(v)*height
-                            stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(1.4f)
+                            stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
                             color(series.rgb ?: palette[seriesIndex]); stream.addRect(position-2f,y-2f,4f,4f); stream.fill()
                             previous = position to y
@@ -1386,7 +1386,7 @@ class OfficeConverter {
                     val rgb = series.rgb ?: palette[seriesIndex%palette.size]
                     stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
-                    stream.setLineWidth(1.3f)
+                    stream.setLineWidth(series.strokeWidthPt ?: 1.3f)
                     var prev: Pair<Float,Float>? = null
                     for (index in indices) {
                         checkpoint()
