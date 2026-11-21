@@ -13,7 +13,7 @@ buildscript {
             classpath("io.netty:netty-codec-http:4.2.20.Final")
             classpath("io.netty:netty-handler:4.2.20.Final")
             classpath("io.netty:netty-codec:4.2.20.Final")
-            classpath("io.netty:netty-common:4.2.20.Final")
+            classpath("io.netty:netty-common:4.2.21.Final")
             classpath("io.netty:netty-buffer:4.2.20.Final")
             classpath("io.netty:netty-transport:4.2.20.Final")
             classpath("io.netty:netty-handler-proxy:4.2.20.Final")
