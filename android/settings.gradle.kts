@@ -21,7 +21,7 @@ buildscript {
             classpath("io.netty:netty-buffer:4.2.20.Final")
             classpath("io.netty:netty-transport:4.2.20.Final")
             classpath("io.netty:netty-handler-proxy:4.2.20.Final")
-            classpath("org.bouncycastle:bcprov-jdk18on:1.86")
+            classpath("org.bouncycastle:bcprov-jdk18on:1.87")
             classpath("org.bouncycastle:bcpkix-jdk18on:1.86")
             classpath("org.bouncycastle:bcutil-jdk18on:1.86")
             classpath("com.google.protobuf:protobuf-java:4.36.2")
