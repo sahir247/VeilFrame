@@ -2268,7 +2268,7 @@ class OfficeConverterFidelityTest {
         PDDocument.load(withMarker).use { doc ->
             assertEquals(2,doc.numberOfPages)
             val stream=doc.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
-            assertTrue(Regex("""(?m)\\bf\\s*$""").containsMatchIn(stream))
+            assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(stream))
         }
         PDDocument.load(withoutMarker).use { doc -> assertEquals(2,doc.numberOfPages) }
         val invalid = chart("star",7)
