@@ -2309,4 +2309,45 @@ class OfficeConverterFidelityTest {
         }
         assertTrue(!invalid.exists())
     }
+
+    @Test
+    fun fourAndFiveArrowSetsResolveThresholdsReverseAndPdfVectors() = runBlocking {
+        val values = listOf(0,25,50,75,100)
+        val stops = values.map {
+            XlsxConditionalFormatting.ScaleStop("percent",java.math.BigDecimal(it),0)
+        }
+        val extent = XlsxConditionalFormatting.NumericExtent(
+            java.math.BigDecimal.ZERO,java.math.BigDecimal("100"))
+        val five = XlsxConditionalFormatting.IconSet(stops,false,false,"5Arrows")
+        assertEquals(listOf("down","down-right","right","up-right","up"),
+            values.map { five.visual(java.math.BigDecimal(it),extent)!!.shape })
+        val reversed = five.copy(reverse=true)
+        assertEquals("up",reversed.visual(java.math.BigDecimal.ZERO,extent)!!.shape)
+        assertEquals("down",reversed.visual(java.math.BigDecimal("100"),extent)!!.shape)
+        val four = XlsxConditionalFormatting.IconSet(
+            listOf(0,33,67,100).map {
+                XlsxConditionalFormatting.ScaleStop("percent",java.math.BigDecimal(it),0)
+            },false,true,"4ArrowsGray")
+        assertEquals("up-right",four.visual(java.math.BigDecimal("70"),extent)!!.shape)
+        assertEquals(0x858585,four.visual(java.math.BigDecimal("70"),extent)!!.rgb)
+
+        val wb = """<workbook><sheets><sheet name="Indicators" sheetId="1"/></sheets></workbook>"""
+        val body = values.mapIndexed { i,v ->
+            """<row r="${i+1}"><c r="A${i+1}"><v>$v</v></c></row>"""
+        }.joinToString("")
+        val tags = values.joinToString("") { """<cfvo type="percent" val="$it"/>""" }
+        val sheet = """<worksheet><sheetData>$body</sheetData><conditionalFormatting sqref="A1:A5"><cfRule type="iconSet" priority="1"><iconSet iconSet="5Arrows" showValue="0">$tags</iconSet></cfRule></conditionalFormatting></worksheet>"""
+        val file=createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed=OpenXmlDocumentParser.parseXlsx(file).sheets.single()
+        assertEquals(0,parsed.unsupportedConditionalRules)
+        assertEquals("down-right",parsed.styles.at(1,0).icon!!.shape)
+        assertEquals("up-right",parsed.styles.at(3,0).icon!!.shape)
+        val output=File(tempFolder.root,"five-arrow-icons.pdf")
+        OfficeConverter().convertXlsxToPdf(file,output,context)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            val operators=pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(operators))
+        }
+    }
 }

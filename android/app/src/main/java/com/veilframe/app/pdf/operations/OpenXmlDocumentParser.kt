@@ -1295,10 +1295,16 @@ object OpenXmlDocumentParser {
     private fun parseConditionalIconSet(rule: Element): XlsxConditionalFormatting.IconSet? {
         val icons = rule.childElements("iconSet").singleOrNull() ?: return null
         if (icons.getAttribute("iconSet") !in setOf("","3TrafficLights1","3TrafficLights2",
-                "3Arrows","3ArrowsGray") ||
+                "3Arrows","3ArrowsGray","4Arrows","4ArrowsGray","5Arrows","5ArrowsGray") ||
             icons.childElements("cfIcon").isNotEmpty() || icons.getAttribute("custom") in setOf("1","true")) return null
         val stops = conditionalStops(icons.childElements("cfvo")) ?: return null
-        if (stops.size != 3) return null
+        val kind = icons.getAttribute("iconSet").ifEmpty { "3TrafficLights1" }
+        val count = when {
+            kind.startsWith("4") -> 4
+            kind.startsWith("5") -> 5
+            else -> 3
+        }
+        if (stops.size != count) return null
         fun flag(key: String, default: Boolean): Boolean? = when (icons.getAttribute(key)) {
             "" -> default
             "0","false" -> false
@@ -1308,8 +1314,7 @@ object OpenXmlDocumentParser {
         val reverse = flag("reverse",false) ?: return null
         val show = flag("showValue",true) ?: return null
         if (flag("percent",true) != true) return null
-        return XlsxConditionalFormatting.IconSet(stops,reverse,show,
-            icons.getAttribute("iconSet").ifEmpty { "3TrafficLights1" })
+        return XlsxConditionalFormatting.IconSet(stops,reverse,show,kind)
     }
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {

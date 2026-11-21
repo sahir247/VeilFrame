@@ -108,17 +108,28 @@ internal object XlsxConditionalFormatting {
     data class IconSet(val stops: List<ScaleStop>, val reverse: Boolean, val showValue: Boolean,
         val kind: String = "3TrafficLights1") {
         fun visual(raw: BigDecimal, extent: NumericExtent): XlsxIconVisual? {
-            if (stops.size != 3) return null
+            val count = if (kind.startsWith("4")) 4 else if (kind.startsWith("5")) 5 else 3
+            if (stops.size != count) return null
             val values = stops.map { threshold(it.type,it.value,extent) ?: return null }
             if (values.zipWithNext().any { (left,right) -> left > right }) return null
             fun passed(index: Int): Boolean = if (stops[index].inclusive) raw >= values[index]
                 else raw > values[index]
-            val tier = when { passed(2) -> 2; passed(1) -> 1; else -> 0 }
-            val selected = if (reverse) 2-tier else tier
-            val palette = intArrayOf(0xD94A3A,0xE0B63C,0x48A65E)
-            val arrows = kind in setOf("3Arrows","3ArrowsGray")
-            return XlsxIconVisual(if (kind == "3ArrowsGray") 0x858585 else palette[selected],
-                showValue, if (arrows) listOf("down","right","up")[selected] else "circle")
+            var tier = 0
+            for (index in 1 until count) if (passed(index)) tier = index
+            val selected = if (reverse) count - 1 - tier else tier
+            val palette = when (count) {
+                4 -> intArrayOf(0xD94A3A,0xE0B63C,0xE0B63C,0x48A65E)
+                5 -> intArrayOf(0xD94A3A,0xE28A44,0xE0B63C,0x98C45C,0x48A65E)
+                else -> intArrayOf(0xD94A3A,0xE0B63C,0x48A65E)
+            }
+            val arrows = "Arrows" in kind
+            val shape = when (count) {
+                4 -> listOf("down","right","up-right","up")[selected]
+                5 -> listOf("down","down-right","right","up-right","up")[selected]
+                else -> listOf("down","right","up")[selected]
+            }
+            return XlsxIconVisual(if (kind.endsWith("Gray")) 0x858585 else palette[selected],
+                showValue, if (arrows) shape else "circle")
         }
     }
 

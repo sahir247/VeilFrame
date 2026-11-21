@@ -1964,6 +1964,20 @@ class OfficeConverter {
                         stream.lineTo(cx,cy+4f); stream.lineTo(cx,cy+2f)
                         stream.lineTo(cx-4f,cy+2f)
                     }
+                    "up-right", "down-right" -> {
+                        // Rotate a single arrow polygon; no raster emoji or
+                        // device-specific glyph fallback can change its shape.
+                        val angle = if (icon.shape == "up-right") Math.PI / 4 else 3 * Math.PI / 4
+                        val co = kotlin.math.cos(angle).toFloat()
+                        val si = kotlin.math.sin(angle).toFloat()
+                        val vertices = arrayOf(-2f to -4f,2f to -4f,2f to 0f,
+                            4f to 0f,0f to 4f,-4f to 0f,-2f to 0f)
+                        for ((index,vertex) in vertices.withIndex()) {
+                            val rx = cx + vertex.first*co + vertex.second*si
+                            val ry = cy - vertex.first*si + vertex.second*co
+                            if (index == 0) stream.moveTo(rx,ry) else stream.lineTo(rx,ry)
+                        }
+                    }
                     else -> {
                         stream.moveTo(cx+radius,cy)
                         stream.curveTo(cx+radius,cy+k,cx+k,cy+radius,cx,cy+radius)
