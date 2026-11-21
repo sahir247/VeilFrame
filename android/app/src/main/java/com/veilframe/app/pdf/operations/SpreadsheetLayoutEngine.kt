@@ -192,9 +192,11 @@ object SpreadsheetLayoutEngine {
                 if (cellVal.isNotEmpty()) {
                     val style = sheet.styles.at(rowIndex, c)
                     val cellFont = style.font(fontNormal)
+                    val cellSize = style.fontSizePt ?: limits.fontSizeCell
+                    val cellLeading = limits.lineHeight * cellSize / limits.fontSizeCell
                     if (style.textRotation != 0) {
                         val block = XlsxRotatedText.measure(cellVal, style.textRotation, cellFont,
-                            limits.fontSizeCell, limits.lineHeight)
+                            cellSize, cellLeading)
                         require(block.width + 16f <= maxAllowedColWidth) {
                             "Rotated cell exceeds available tile width; use wider export settings"
                         }
@@ -204,9 +206,9 @@ object SpreadsheetLayoutEngine {
                     val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
                         val cleanLine = sanitizeForFontMetrics(line)
                         try {
-                            cellFont.getStringWidth(cleanLine) / 1000f * limits.fontSizeCell
+                            cellFont.getStringWidth(cleanLine) / 1000f * cellSize
                         } catch (_: Exception) {
-                            cleanLine.length * 5f
+                            cleanLine.length * 5f * cellSize / limits.fontSizeCell
                         }
                     } ?: 0f
                     val neededWidth = maxLineW + (if (style.icon != null) 13f else 0f)
@@ -235,7 +237,8 @@ object SpreadsheetLayoutEngine {
                 if (text.isNotBlank()) {
                     val style = sheet.styles.at(rIdx, c)
                     if (style.textRotation != 0) XlsxRotatedText.lines(text, style.textRotation)
-                    else wrapCellText(text, style.font(fontNormal), limits.fontSizeCell, colWidths[c] - 8f)
+                    else wrapCellText(text, style.font(fontNormal), style.fontSizePt ?: limits.fontSizeCell,
+                        colWidths[c] - 8f - (if (style.icon != null) 13f else 0f))
                 } else {
                     emptyList()
                 }
@@ -248,9 +251,11 @@ object SpreadsheetLayoutEngine {
                 val lines = rowWrappedLines[rIdx][c]
                 if (lines.isEmpty()) continue
                 val style = sheet.styles.at(rIdx, c)
-                val height = if (style.textRotation == 0) lines.size * limits.lineHeight
+                val size = style.fontSizePt ?: limits.fontSizeCell
+                val leading = limits.lineHeight * size / limits.fontSizeCell
+                val height = if (style.textRotation == 0) lines.size * leading
                 else XlsxRotatedText.measureLines(lines, style.textRotation, style.font(fontNormal),
-                    limits.fontSizeCell, limits.lineHeight).height
+                    size, leading).height
                 required = maxOf(required, height + limits.paddingVertical)
             }
             maxOf(required, sheet.dimensions.rowMinPt(rIdx))
@@ -281,7 +286,8 @@ object SpreadsheetLayoutEngine {
             val mWrapped = if (mText.isNotBlank()) {
                 val style = sheet.styles.at(fRow, fCol)
                 if (style.textRotation != 0) XlsxRotatedText.lines(mText, style.textRotation)
-                else wrapCellText(mText, style.font(fontNormal), limits.fontSizeCell, (mWidth - 8f).coerceAtLeast(10f))
+                else wrapCellText(mText, style.font(fontNormal), style.fontSizePt ?: limits.fontSizeCell,
+                    (mWidth - 8f).coerceAtLeast(10f))
             } else {
                 emptyList()
             }
@@ -513,8 +519,10 @@ object SpreadsheetLayoutEngine {
 
             if (totalRowH > availHeight) {
                 require((0 until layout.colCount).none { c ->
-                    layout.cellStyles.at(rIdx, c).textRotation != 0 && layout.rowWrappedLines[rIdx][c].isNotEmpty()
-                }) { "Rotated text row exceeds available tile height; use taller export settings" }
+                    (layout.cellStyles.at(rIdx, c).textRotation != 0 ||
+                        layout.cellStyles.at(rIdx, c).fontSizePt?.let { it != limits.fontSizeCell } == true) &&
+                        layout.rowWrappedLines[rIdx][c].isNotEmpty()
+                }) { "Variable-size or rotated text row exceeds available tile height; use taller export settings" }
                 val contentHeight = maxOf(20f, totalLinesInRow * limits.lineHeight + limits.paddingVertical)
                 require(totalRowH <= contentHeight + 0.01f) {
                     "Declared row height exceeds available tile height; use taller export settings"

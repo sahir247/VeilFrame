@@ -850,7 +850,11 @@ object OpenXmlDocumentParser {
             else -> throw IOException("Invalid cell font Boolean")
         }
         val fonts = collection("fonts", "font").map {
-            XlsxCellStyle(bold = flag(one(it, "b")), italic = flag(one(it, "i")), textRgb = rgb(one(it, "color")))
+            XlsxCellStyle(bold = flag(one(it, "b")), italic = flag(one(it, "i")),
+                textRgb = rgb(one(it, "color")), fontSizePt = one(it, "sz")?.getAttribute("val")?.let { raw ->
+                    raw.toFloatOrNull()?.takeIf { size -> size.isFinite() && size in 1f..144f }
+                        ?: throw IOException("Invalid or unsupported worksheet font size")
+                })
         }.ifEmpty { listOf(XlsxCellStyle()) }
         val fills = collection("fills", "fill").map {
             val pattern = one(it, "patternFill")

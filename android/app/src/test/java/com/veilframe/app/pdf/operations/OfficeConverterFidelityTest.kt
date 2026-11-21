@@ -1872,4 +1872,29 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(input,pdf,context)
         PDDocument.load(pdf).use { doc -> assertTrue(PDFTextStripper().getText(doc).contains("13")) }
     }
+    @Test
+    fun savedFontPointSizeControlsPdfTextAndMeasuredRowHeight() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Fonts" sheetId="1"/></sheets></workbook>"""
+        val styles = """<styleSheet><fonts><font/><font><sz val="20"/><b/></font></fonts><cellXfs><xf/><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>SMALL</t></is></c></row><row r="2"><c r="A2" s="1" t="inlineStr"><is><t>LARGE</t></is></c></row></sheetData></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/styles.xml" to styles,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(20f, parsed.styles.at(1,0).fontSizePt!!, 0.01f)
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,
+            com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,LayoutLimits())
+        assertTrue(layout.rowHeights[1] > layout.rowHeights[0])
+        val pdf = File(tempFolder.root,"font-size.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context)
+        PDDocument.load(pdf).use { doc ->
+            val sizes = mutableMapOf<String,Float>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(position: com.tom_roush.pdfbox.text.TextPosition) {
+                    if (position.unicode in setOf("S","L")) sizes[position.unicode] = position.fontSizeInPt
+                    super.processTextPosition(position)
+                }
+            }
+            stripper.getText(doc)
+            assertTrue(sizes.getValue("L") > sizes.getValue("S") * 1.8f)
+        }
+    }
 }

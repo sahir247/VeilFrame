@@ -1629,6 +1629,8 @@ class OfficeConverter {
                     val sliceHeight = sliceTop - sliceBottom
                     val style = layout.cellStyles.at(geom.firstRow, geom.firstCol)
                     val font = style.font(fontNormal)
+                    val cellSize = style.fontSizePt ?: limits.fontSizeCell
+                    val cellLeading = limits.lineHeight * cellSize / limits.fontSizeCell
                     fillSpreadsheetCell(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight, style)
 
                     val isLeftTrueEdge = (visCols.first() == geom.firstCol)
@@ -1643,9 +1645,9 @@ class OfficeConverter {
                         // Wrapping across the entire merge is invalid on a narrower
                         // anchor tile. Rewrap inside its actual visible rectangle.
                         val anchorLines = SpreadsheetLayoutEngine.wrapCellText(geom.text,
-                            font, limits.fontSizeCell, (sliceWidth - 8f).coerceAtLeast(1f))
-                        val requiredHeight = 4f + limits.fontSizeCell +
-                            (anchorLines.size - 1).coerceAtLeast(0) * limits.lineHeight
+                            font, cellSize, (sliceWidth - 8f - (if (style.icon != null) 13f else 0f)).coerceAtLeast(1f))
+                        val requiredHeight = 4f + cellSize +
+                            (anchorLines.size - 1).coerceAtLeast(0) * cellLeading
                         require(requiredHeight <= sliceHeight - 1f) {
                             "Merged cell text does not fit its anchor tile; increase tile dimensions"
                         }
@@ -1661,15 +1663,15 @@ class OfficeConverter {
                         setSpreadsheetTextColor(contentStream, style)
                         val completeMerge = visRows.size == geom.lastRow - geom.firstRow + 1 &&
                             visCols.size == geom.lastCol - geom.firstCol + 1 && tile.rowGroup.linesInStartRow == -1
-                        var textY = spreadsheetFirstBaseline(sliceTop, sliceHeight, limits.fontSizeCell,
-                            limits.lineHeight, anchorLines.size, if (completeMerge) style.vertical else "top")
+                        var textY = spreadsheetFirstBaseline(sliceTop, sliceHeight, cellSize,
+                            cellLeading, anchorLines.size, if (completeMerge) style.vertical else "top")
                         for (lineText in anchorLines) {
                             contentStream.beginText()
-                            contentStream.setFont(font, limits.fontSizeCell)
-                            contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, limits.fontSizeCell, sliceLeft, sliceWidth, style), textY)
+                            contentStream.setFont(font, cellSize)
+                            contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, sliceLeft, sliceWidth, style), textY)
                             safeShowText(contentStream, lineText, font)
                             contentStream.endText()
-                            textY -= limits.lineHeight
+                            textY -= cellLeading
                         }
                         contentStream.restoreGraphicsState()
                     }
@@ -1702,13 +1704,15 @@ class OfficeConverter {
     ) {
         if (contentStream == null) return
         val font = style.font(fontNormal)
+        val cellSize = style.fontSizePt ?: fontSizeCell
+        val cellLeading = lineHeight * cellSize / fontSizeCell
         fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
         if (style.dataBar?.showValue == false || style.icon?.showValue == false) return
         if (style.textRotation != 0 && chunkLines.isNotEmpty()) {
             require(completeCell) { "Cannot split rotated cell text across row fragments" }
             drawRotatedSpreadsheetText(contentStream, cellLeft, cellTop, cellW, cellH,
-                chunkLines, font, fontSizeCell, lineHeight, style)
+                chunkLines, font, cellSize, cellLeading, style)
             return
         }
 
@@ -1724,15 +1728,15 @@ class OfficeConverter {
             contentStream.clip()
 
             setSpreadsheetTextColor(contentStream, style)
-            var textY = spreadsheetFirstBaseline(cellTop, cellH, fontSizeCell, lineHeight,
+            var textY = spreadsheetFirstBaseline(cellTop, cellH, cellSize, cellLeading,
                 chunkLines.size, if (completeCell) style.vertical else "top")
             for (lineText in chunkLines) {
                 contentStream.beginText()
-                contentStream.setFont(font, fontSizeCell)
-                contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, fontSizeCell, cellLeft, cellW, style), textY)
+                contentStream.setFont(font, cellSize)
+                contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, cellLeft, cellW, style), textY)
                 safeShowText(contentStream, lineText, font)
                 contentStream.endText()
-                textY -= lineHeight
+                textY -= cellLeading
             }
             contentStream.restoreGraphicsState()
         }
