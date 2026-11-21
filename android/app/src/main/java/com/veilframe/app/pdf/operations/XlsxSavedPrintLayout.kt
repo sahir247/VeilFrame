@@ -150,7 +150,35 @@ internal object XlsxSavedPrintLayout {
     fun plan(layout: SheetLayout, area: OpenXmlDocumentParser.CellRangeAddress, settings: XlsxSavedPrintSettings,
         titles: Titles = Titles()): Plan {
         fun mm(v: Float) = v * 72f / 25.4f
-        val portrait = when (settings.setup["paperSize"] ?: "1") {
+        // ST_PositiveUniversalMeasure: numeric value followed by unit, not an
+        // arbitrary locale/OS printer setting. Convert once into PDF points.
+        fun customPaper(key: String): Float? {
+            val raw = settings.setup[key] ?: return null
+            val m = Regex("""([0-9]{1,5}(?:\.[0-9]{1,5})?)(mm|cm|in|pt|pc)""")
+                .matchEntire(raw) ?: throw IllegalArgumentException("Malformed saved custom paper $key")
+            val number = m.groupValues[1].toFloatOrNull()
+            require(number != null && number.isFinite()) { "Invalid saved custom paper dimension" }
+            val factor = when (m.groupValues[2]) {
+                "mm" -> 72f / 25.4f
+                "cm" -> 72f / 2.54f
+                "in" -> 72f
+                "pt" -> 1f
+                "pc" -> 12f
+                else -> error("Unreachable validated paper unit")
+            }
+            return (number * factor).also {
+                require(it.isFinite() && it in 72f..14_400f) {
+                    "Saved custom paper size outside bounded PDF geometry"
+                }
+            }
+        }
+        val customWidth = customPaper("paperWidth")
+        val customHeight = customPaper("paperHeight")
+        require((customWidth == null) == (customHeight == null)) {
+            "Saved custom paper requires both physical dimensions"
+        }
+        val portrait = if (customWidth != null && customHeight != null)
+            customWidth to customHeight else when (settings.setup["paperSize"] ?: "1") {
             "1" -> 612f to 792f
             "3" -> 792f to 1224f
             "5" -> 612f to 1008f

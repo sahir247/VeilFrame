@@ -2388,6 +2388,41 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun customSavedPaperDimensionsOverridePaperSizeAndRejectHalfSpecified() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Custom" sheetId="1"/></sheets></workbook>"""
+        val body = """<sheetData><row r="1"><c r="A1"><v>23</v></c></row></sheetData>"""
+        fun sheet(pageSetup: String) = """<worksheet>$body<pageSetup $pageSetup/></worksheet>"""
+        fun convert(attrs: String, name: String): File {
+            val input=createZip(mapOf("xl/workbook.xml" to wb,
+                "xl/worksheets/sheet1.xml" to sheet(attrs)))
+            val pdf=File(tempFolder.root,name)
+            kotlinx.coroutines.runBlocking { OfficeConverter().convertXlsxToPdf(input,pdf,context,savedPrintLayout=true) }
+            return pdf
+        }
+        PDDocument.load(convert("""paperSize="1" paperWidth="210mm" paperHeight="297mm" """,
+            "custom-a4.pdf")).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            assertEquals(595.28f,pdf.getPage(0).mediaBox.width,0.1f)
+            assertEquals(841.89f,pdf.getPage(0).mediaBox.height,0.1f)
+        }
+        PDDocument.load(convert("""paperSize="1" orientation="landscape" paperWidth="21cm" paperHeight="29.7cm" """,
+            "custom-landscape.pdf")).use { pdf ->
+            assertEquals(841.89f,pdf.getPage(0).mediaBox.width,0.1f)
+            assertEquals(595.28f,pdf.getPage(0).mediaBox.height,0.1f)
+        }
+        val broken=File(tempFolder.root,"partial-custom.pdf")
+        val invalid=createZip(mapOf("xl/workbook.xml" to wb,
+            "xl/worksheets/sheet1.xml" to sheet("""paperWidth="210mm" """)))
+        try {
+            OfficeConverter().convertXlsxToPdf(invalid,broken,context,savedPrintLayout=true)
+            org.junit.Assert.fail("Expected rejection of partial custom paper geometry")
+        } catch (expected:IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("both physical dimensions"))
+        }
+        assertTrue(!broken.exists())
+    }
+
+    @Test
     fun headerScaleWithDocumentTracksPrintScaleAndRejectsUnalignedMargins() = runBlocking {
         val wb = """<workbook><sheets><sheet name="Paper" sheetId="1"/></sheets></workbook>"""
         val base = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><pageSetup scale="50"/><headerFooter scaleWithDoc="1" alignWithMargins="1"><oddHeader>&amp;CSCALED</oddHeader></headerFooter></worksheet>"""
