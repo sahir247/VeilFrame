@@ -23,7 +23,7 @@ buildscript {
             classpath("io.netty:netty-handler-proxy:4.2.20.Final")
             classpath("org.bouncycastle:bcprov-jdk18on:1.86")
             classpath("org.bouncycastle:bcpkix-jdk18on:1.86")
-            classpath("org.bouncycastle:bcutil-jdk18on:1.86")
+            classpath("org.bouncycastle:bcutil-jdk18on:1.87")
             classpath("com.google.protobuf:protobuf-java:4.36.2")
             classpath("org.jdom:jdom2:2.0.6.1")
             classpath("commons-io:commons-io:2.22.0")

@@ -230,7 +230,7 @@ dependencies {
     }
     implementation("org.bouncycastle:bcprov-jdk18on:1.86")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
-    implementation("org.bouncycastle:bcutil-jdk18on:1.86")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.87")
 
     // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
