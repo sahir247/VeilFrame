@@ -1959,4 +1959,37 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(ops))
         }
     }
+    @Test
+    fun savedPrintHeadingsReserveSpaceAndUseRealCellAddresses() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Grid" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>FIRST</t></is></c><c r="B1" t="inlineStr"><is><t>SECOND</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>THIRD</t></is></c></row></sheetData><printOptions headings="1"/><rowBreaks><brk id="1" man="1"/></rowBreaks><pageSetup scale="100"/></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook,
+            "xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertTrue(parsed.printSettings.printHeadings)
+        assertTrue(!parsed.printSettings.unsupportedFeatures)
+        val layout = SpreadsheetLayoutEngine.buildSheetLayout(parsed,0,
+            com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, LayoutLimits())
+        val area = XlsxSavedPrintLayout.areas(parsed.name,parsed.printSettings,parsed.rows,parsed.mergedRegions).single()
+        val plan = XlsxSavedPrintLayout.plan(layout,area,parsed.printSettings)
+        assertEquals(40f,plan.headingLeft,0.01f)
+        assertEquals(18f,plan.headingTop,0.01f)
+        val output = File(tempFolder.root,"headings.pdf")
+        OfficeConverter().convertXlsxToPdf(input,output,context,savedPrintLayout=true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val first = PDFTextStripper().apply { startPage = 1; endPage = 1 }.getText(pdf)
+            val second = PDFTextStripper().apply { startPage = 2; endPage = 2 }.getText(pdf)
+            assertTrue(first.contains("FIRST") && first.contains("SECOND"))
+            assertTrue(second.contains("THIRD"))
+            assertTrue(first.contains("A") && first.contains("B") && first.contains("1"))
+            assertTrue(second.contains("A") && second.contains("2"))
+        }
+        val full = File(tempFolder.root,"headings-full.pdf")
+        OfficeConverter().convertXlsxToPdf(input,full,context)
+        PDDocument.load(full).use { pdf ->
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("FIRST") && text.contains("THIRD"))
+        }
+    }
 }

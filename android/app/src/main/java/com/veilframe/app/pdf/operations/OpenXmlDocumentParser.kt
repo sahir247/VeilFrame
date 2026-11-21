@@ -1040,6 +1040,11 @@ object OpenXmlDocumentParser {
         val setup = attrs(one("pageSetup"))
         val props = attrs(one("sheetPr")?.childElements("pageSetUpPr")?.singleOrNull())
         val options = attrs(one("printOptions"))
+        val headings = when (options["headings"]) {
+            null, "", "0", "false" -> false
+            "1", "true" -> true
+            else -> throw IOException("Invalid saved print-heading flag")
+        }
         var partialBreaks = false
         fun breaks(name: String, fullExtent: Int): List<String> {
             val result = mutableListOf<String>()
@@ -1098,9 +1103,10 @@ object OpenXmlDocumentParser {
             fitToPage = props["fitToPage"] in setOf("1", "true"), gridLines = options["gridLines"] in setOf("1", "true"),
             centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
             centerVertical = options["verticalCentered"] in setOf("1", "true"),
+            printHeadings = headings,
             rowBreaks = rowBreaks, colBreaks = colBreaks, hiddenRows = hiddenRows, hiddenColumns = hiddenColumns,
             headerFooter = headerFooter,
-            unsupportedFeatures = partialBreaks || options["headings"] in setOf("1", "true") ||
+            unsupportedFeatures = partialBreaks ||
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
     }
 

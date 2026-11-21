@@ -717,3 +717,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Negative data-bar magnitude and arrow icon threshold fidelity
 
 - Correct all-negative range length: the largest negative magnitude now extends farthest left rather than appearing shortest. Preserve positive/mixed sign behavior. Admit OOXML `gte=false` strict threshold boundaries for three-value indicators, plus standard colored or gray `3Arrows` via finite vector arrow shapes. Keep icon ordering and reverse semantics; custom pictures and other icon families remain unsupported. Added pure signed magnitude, threshold boundary, package parse and PDF arrow regression. CI pending.
+
+### A28 — Saved print row and column headings
+
+- Support explicitly saved `printOptions headings=1` in saved-print mode only. Reserve a 40pt row-number gutter and 18pt column-title gutter before fit-to-page and manual-break planning, then render actual zero-based sheet column labels (A..XFD) and one-based row indices as PDF text at a physical 8pt size independent of scaling. Respect hidden rows/columns and repeated print-title cells. Default full-content export remains unchanged. Added two-page XLSX-to-PDF fixture and physical gutter assertions. Printer-specific heading fonts and grid geometry remain approximate; CI pending.

@@ -5,6 +5,7 @@ data class XlsxSavedPrintSettings(
     val setup: Map<String, String> = emptyMap(), val margins: Map<String, String> = emptyMap(),
     val fitToPage: Boolean = false, val gridLines: Boolean = false,
     val centerHorizontal: Boolean = false, val centerVertical: Boolean = false,
+    val printHeadings: Boolean = false,
     val rowBreaks: List<String> = emptyList(), val colBreaks: List<String> = emptyList(),
     val area: String? = null, val ambiguousArea: Boolean = false, val unsupportedFeatures: Boolean = false,
     val titles: String? = null, val ambiguousTitles: Boolean = false,
@@ -15,7 +16,8 @@ data class XlsxSavedPrintSettings(
 internal object XlsxSavedPrintLayout {
     data class Plan(val width: Float, val height: Float, val left: Float, val top: Float,
         val bottom: Float, val contentWidth: Float, val contentHeight: Float, val scale: Float,
-        val tiles: List<Pair<List<Int>, List<Int>>>)
+        val tiles: List<Pair<List<Int>, List<Int>>>,
+        val headingLeft: Float = 0f, val headingTop: Float = 0f)
 
     data class Titles(val rows: IntRange? = null, val columns: IntRange? = null)
 
@@ -139,8 +141,12 @@ internal object XlsxSavedPrintLayout {
         }
         val left = margin("left",0.7f); val right = margin("right",0.7f)
         val top = margin("top",0.75f); val bottom = margin("bottom",0.75f)
-        val w = width-left-right; val h = height-top-bottom
-        require(w > 0f && h > 0f) { "Saved margins leave no printable area" }
+        // Excel row/column headings occupy physical space outside the cells.
+        // Reserve the gutter *before* calculating fit-to-page/pagination.
+        val headingLeft = if (settings.printHeadings) 40f else 0f
+        val headingTop = if (settings.printHeadings) 18f else 0f
+        val w = width-left-right-headingLeft; val h = height-top-bottom-headingTop
+        require(w > 0f && h > 0f) { "Saved margins/headings leave no printable area" }
         fun breaks(raw: List<String>, max: Int): Set<Int> = raw.map {
             val n = it.toIntOrNull()
             require(n != null && n in 1..max) { "Invalid manual print break" }; n
@@ -201,7 +207,8 @@ internal object XlsxSavedPrintLayout {
                 null, "", "downThenOver" -> cs.flatMap { col -> rs.map { row -> row to col } }
                 else -> throw IllegalArgumentException("Unsupported saved print page order")
             }
-            return Plan(width,height,left,top,bottom,w,h,scale,tiles)
+            return Plan(width,height,left+headingLeft,top+headingTop,bottom,w,h,scale,tiles,
+                headingLeft,headingTop)
         }
         throw IllegalArgumentException("Saved print geometry cannot fit without clipping; use full worksheet export")
     }

@@ -1104,6 +1104,32 @@ class OfficeConverter {
                     }
                     renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
+                    if (settings.printHeadings) {
+                        // Inverse font scaling keeps heading glyphs 8 pt even
+                        // when cells use an explicitly saved 10-400% print scale.
+                        val titleSize = 8f / plan.scale
+                        val topY = 6f / plan.scale
+                        stream.setNonStrokingColor(65,70,76)
+                        for (c in colRange) {
+                            checkpoint()
+                            val label = SpreadsheetLayoutEngine.colIndexToRef(c)
+                            val width = font.getStringWidth(label) * titleSize / 1000f
+                            val cx = x(c) + (layout.colWidths[c] - width)/2f
+                            stream.beginText(); stream.setFont(font, titleSize)
+                            stream.newLineAtOffset(cx, topY)
+                            safeShowText(stream,label,font); stream.endText()
+                        }
+                        for (r in rowRange) {
+                            checkpoint()
+                            val label = (r+1).toString()
+                            val width = font.getStringWidth(label) * titleSize / 1000f
+                            val rightEdge = -5f/plan.scale
+                            val baseline = y(r) - layout.rowHeights[r]/2f - titleSize/3f
+                            stream.beginText(); stream.setFont(font, titleSize)
+                            stream.newLineAtOffset(rightEdge-width,baseline)
+                            safeShowText(stream,label,font); stream.endText()
+                        }
+                    }
                 } finally { stream.restoreGraphicsState() }
                 drawSavedPrintHeaderFooter(stream, settings, plan, sheet.name, sheetPageNumber, sheetPages)
                 if (plan.bottom >= 12f) {
@@ -1127,7 +1153,7 @@ class OfficeConverter {
             val marginInches = settings.margins[edge]?.toFloatOrNull() ?: 0.3f
             require(marginInches.isFinite() && marginInches in 0f..20f) { "Invalid saved $edge margin" }
             val y = if (header) plan.height - marginInches*72f - 9f else marginInches*72f
-            require(if (header) y >= plan.height - plan.top + 4f
+            require(if (header) y >= plan.height - (plan.top - plan.headingTop) + 4f
                     else y + 11f <= plan.bottom) {
                 "Saved $edge collides with worksheet content; use full worksheet export"
             }
