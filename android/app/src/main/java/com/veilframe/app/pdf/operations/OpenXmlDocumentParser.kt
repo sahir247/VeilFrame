@@ -763,6 +763,9 @@ object OpenXmlDocumentParser {
                     text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
                     yValues, xValues, rgb = seriesRgb(ser)))
             }
+            // An all-empty cache is an unsupported drawing, not a chart that
+            // can be assigned invented axes and subsequently abort the PDF.
+            if (parsedScatter.none { series -> series.xValues.zip(series.values).any { (x,y) -> x != null && y != null } }) return null
             return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
                 "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style)
         }

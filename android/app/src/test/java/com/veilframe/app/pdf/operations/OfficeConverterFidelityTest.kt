@@ -1619,13 +1619,14 @@ class OfficeConverterFidelityTest {
         val sheetRels = """<Relationships><Relationship Id="draw" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing9.xml"/></Relationships>"""
         val drawing = """<xdr:wsDr><xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row></xdr:from><xdr:to><xdr:col>3</xdr:col><xdr:row>7</xdr:row></xdr:to><xdr:graphicFrame><a:graphic><a:graphicData><c:chart r:id="chart"/></a:graphicData></a:graphic></xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>"""
         val drawingRels = """<Relationships><Relationship Id="chart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/custom.xml"/></Relationships>"""
-        val chart = """<c:chartSpace><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:tx><c:v>Revenue</c:v></c:tx><c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>Jan</c:v></c:pt><c:pt idx="1"><c:v>Feb</c:v></c:pt><c:pt idx="2"><c:v>Mar</c:v></c:pt></c:strLit></c:cat><c:val><c:numRef><c:f>Sales!A1:A3</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="2"><c:v>-2</c:v></c:pt><c:pt idx="0"><c:v>5</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>"""
+        val chart = """<c:chartSpace><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:tx><c:v>Revenue</c:v></c:tx><c:spPr><a:solidFill><a:srgbClr val="22AA44"/></a:solidFill></c:spPr><c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>Jan</c:v></c:pt><c:pt idx="1"><c:v>Feb</c:v></c:pt><c:pt idx="2"><c:v>Mar</c:v></c:pt></c:strLit></c:cat><c:val><c:numRef><c:f>Sales!A1:A3</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="2"><c:v>-2</c:v></c:pt><c:pt idx="0"><c:v>5</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>"""
         val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet,
             "xl/worksheets/_rels/sheet1.xml.rels" to sheetRels, "xl/drawings/drawing9.xml" to drawing,
             "xl/drawings/_rels/drawing9.xml.rels" to drawingRels, "xl/charts/custom.xml" to chart))
         val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single().charts.single()
         assertEquals(listOf(5.0, null, -2.0), parsed.series.single().values)
         assertEquals("B3:D8", parsed.sourceAnchor)
+        assertEquals(0x22AA44,parsed.series.single().rgb)
         val output = File(tempFolder.root, "chart.pdf")
         OfficeConverter().convertXlsxToPdf(input, output, context)
         PDDocument.load(output).use { pdf ->

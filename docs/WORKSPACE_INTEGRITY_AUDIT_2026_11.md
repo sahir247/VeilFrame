@@ -697,3 +697,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Chart source-anchor provenance and solid series RGB
 
 - Preserve validated worksheet chart from/to cell anchors as source-provenance labels on reconstructed appendix charts (not an assertion of original drawing placement or saved EMU offsets). Read explicit srgbClr from chart series solid fill / stroke and apply these colors to supported line/bar/scatter rendering and legend. Unsupported theme, gradient, patterned, per-point and source font/chart styling continue to use a disclosed reconstructed palette. Added anchored chart package assertion. Exact in-sheet charts are not claimed. CI pending.
+
+- Regression follow-up: an XY chart whose cached x/y series have no complete numeric point is now treated as an unsupported drawing instead of inventing axes or aborting an otherwise valid workbook. Existing chart fixture now verifies explicitly saved per-series RGB color alongside its source cell anchor.
