@@ -1279,8 +1279,15 @@ class OfficeConverter {
         checkpoint: () -> Unit) {
         val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715)
         require(chart.series.size in 1..6 && chart.scatterStyle in setOf("marker","line","lineMarker"))
-        val xAxis = XlsxScatterGeometry.axis(chart.series.flatMap { it.xValues })
-        val yAxis = XlsxScatterGeometry.axis(chart.series.flatMap { it.values })
+        val pairs = chart.series.flatMap { series ->
+            series.xValues.zip(series.values).mapNotNull { (x, y) ->
+                if (x == null || y == null) null else x to y
+            }
+        }
+        // Only drawable complete (x,y) pairs determine axes. An unmatched
+        // large value must not flatten the actually plotted data.
+        val xAxis = XlsxScatterGeometry.axis(pairs.map { it.first })
+        val yAxis = XlsxScatterGeometry.axis(pairs.map { it.second })
         val segments = chart.categories.indices.chunked(12)
         for ((panel, indices) in segments.withIndex()) {
             checkpoint()

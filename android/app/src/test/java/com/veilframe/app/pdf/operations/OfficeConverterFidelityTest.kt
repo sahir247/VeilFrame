@@ -1795,6 +1795,9 @@ class OfficeConverterFidelityTest {
         assertEquals("scatter",parsed.kind)
         assertEquals(listOf(-4.0,0.0,40.0),parsed.series.single().xValues)
         assertEquals(listOf(10.0,null,30.0),parsed.series.single().values)
+        val drawablePairs = parsed.series.single().xValues.zip(parsed.series.single().values)
+            .filter { it.first != null && it.second != null }
+        assertEquals(2,drawablePairs.size)
         val out = File(tempFolder.root,"xy.pdf")
         OfficeConverter().convertXlsxToPdf(input,out,context)
         PDDocument.load(out).use { pdf ->

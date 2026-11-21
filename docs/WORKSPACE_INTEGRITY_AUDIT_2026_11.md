@@ -701,3 +701,5 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - Regression follow-up: an XY chart whose cached x/y series have no complete numeric point is now treated as an unsupported drawing instead of inventing axes or aborting an otherwise valid workbook. Existing chart fixture now verifies explicitly saved per-series RGB color alongside its source cell anchor.
 
 - Explicitly render formula-derived formatting on absent/blank cells within the actual saved worksheet rectangle, subject to existing 2M visible-cell and 8M predicate budgets. Do not allocate styles for out-of-range whole-column/whole-row formatting. Preserve priority and unsupported-rule conservatism; added blank B2 row-band regression. This does not recalculate arbitrary formulas or infer cells outside the saved layout.
+
+- Scatter axis correctness follow-up: compute numeric bounds exclusively from complete saved (X,Y) pairs that are actually drawn, avoiding misleading axis compression from an unpaired extreme. Preserve missing points in the audit table. No invented interpolation.
