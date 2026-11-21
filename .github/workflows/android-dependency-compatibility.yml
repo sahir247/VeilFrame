@@ -44,7 +44,7 @@ jobs:
           chmod +x ./gradlew
           for attempt in 1 2 3 4; do
             logfile="$(mktemp)"
-            if ./gradlew :app:verifyDependencyResolution --no-daemon --max-workers=2 --refresh-dependencies --stacktrace >"$logfile" 2>&1; then
+            if ./gradlew :app:verifyDependencyResolution --no-daemon --max-workers=2 --stacktrace >"$logfile" 2>&1; then
               cat "$logfile"
               rm -f "$logfile"
               exit 0
