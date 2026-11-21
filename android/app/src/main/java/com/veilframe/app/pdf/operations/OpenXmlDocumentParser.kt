@@ -635,9 +635,10 @@ object OpenXmlDocumentParser {
     private fun chartSourceAnchor(ref: Element): String? {
         var node: Node? = ref.parentNode
         while (node is Element) {
-            if (node.localName() in setOf("twoCellAnchor", "oneCellAnchor")) {
+            val anchor = node
+            if (anchor.localName() in setOf("twoCellAnchor", "oneCellAnchor")) {
                 fun cell(name: String): String? {
-                    val marker = node.childElements(name).singleOrNull() ?: return null
+                    val marker = anchor.childElements(name).singleOrNull() ?: return null
                     val row = marker.childElements("row").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     val col = marker.childElements("col").singleOrNull()?.textContent?.toIntOrNull() ?: return null
                     require(row in 0 until 1_048_576 && col in 0 until 16_384) { "Invalid chart cell anchor" }
