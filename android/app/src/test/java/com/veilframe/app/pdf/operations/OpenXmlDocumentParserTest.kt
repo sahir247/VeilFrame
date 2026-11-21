@@ -671,7 +671,8 @@ class OpenXmlDocumentParserTest {
             assertEquals(null, parsed.styles.at(0, 0).fillRgb)
             assertEquals(null, parsed.styles.at(0, 1).fillRgb)
             assertEquals(0xFF0000, parsed.styles.at(0, 2).fillRgb)
-            assertEquals(1, parsed.unsupportedConditionalRules)
+            assertTrue(parsed.styles.at(0, 2).bold) // Supported C1>0 expression complements the earlier fill
+            assertEquals(0, parsed.unsupportedConditionalRules)
         } finally { input.delete() }
     }
     @Test
