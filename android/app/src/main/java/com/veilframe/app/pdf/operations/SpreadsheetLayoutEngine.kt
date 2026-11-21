@@ -209,8 +209,8 @@ object SpreadsheetLayoutEngine {
                             cleanLine.length * 5f
                         }
                     } ?: 0f
-                    if (maxLineW + if (style.icon != null) 13f else 0f > maxW)
-                        maxW = maxLineW + if (style.icon != null) 13f else 0f
+                    val neededWidth = maxLineW + (if (style.icon != null) 13f else 0f)
+                    if (neededWidth > maxW) maxW = neededWidth
                 }
             }
             // Strict ceiling: individual column width cannot exceed maximum tile table width budget
