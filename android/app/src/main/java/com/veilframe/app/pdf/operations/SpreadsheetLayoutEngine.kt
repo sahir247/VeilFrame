@@ -188,7 +188,10 @@ object SpreadsheetLayoutEngine {
 
         val colWidths = FloatArray(maxCol) { c ->
             var maxW = 32f
-            for ((rowIndex, r) in rows.withIndex()) {
+            // Only lossless full-content export needs an expensive AutoFit scan.
+            // Saved-print uses fixed source widths and must never silently
+            // expand them based on text or approximate font metrics.
+            if (!respectSavedDimensions) for ((rowIndex, r) in rows.withIndex()) {
                 val cellVal = r.getOrNull(c) ?: ""
                 if (cellVal.isNotEmpty()) {
                     val style = sheet.styles.at(rowIndex, c)
