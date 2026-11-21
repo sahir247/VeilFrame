@@ -1058,7 +1058,10 @@ class OfficeConverter {
             "Saved print areas exceed PDF page budget"
         }
         val merges = SpreadsheetMergeIndex(layout.rowCount, layout.colCount, layout.mergedRegions)
+        val sheetPages = plans.sumOf { it.tiles.size }
+        var sheetPageNumber = 0
         for (plan in plans) for (tile in plan.tiles) {
+            sheetPageNumber++
             checkpoint()
             require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
             val rowRange = tile.first
@@ -1102,6 +1105,7 @@ class OfficeConverter {
                     renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
                 } finally { stream.restoreGraphicsState() }
+                drawSavedPrintHeaderFooter(stream, settings, plan, sheet.name, sheetPageNumber, sheetPages)
                 if (plan.bottom >= 12f) {
                     stream.beginText(); stream.setFont(font, 8f); stream.newLineAtOffset(plan.left, 5f)
                     val note = if (settings.unsupportedFeatures || sheet.unsupportedConditionalRules > 0 ||
@@ -1110,6 +1114,44 @@ class OfficeConverter {
                 }
             }
         }
+    }
+
+    private fun drawSavedPrintHeaderFooter(stream: PDPageContentStream, settings: XlsxSavedPrintSettings,
+        plan: XlsxSavedPrintLayout.Plan, sheet: String, page: Int, pages: Int) {
+        val print = settings.headerFooter
+        val font = PDType1Font.HELVETICA
+        fun draw(raw: String, header: Boolean) {
+            if (raw.isEmpty()) return
+            val sections = XlsxPrintHeaderFooter.expand(raw, sheet, page, pages)
+            val edge = if (header) "header" else "footer"
+            val marginInches = settings.margins[edge]?.toFloatOrNull() ?: 0.3f
+            require(marginInches.isFinite() && marginInches in 0f..20f) { "Invalid saved $edge margin" }
+            val y = if (header) plan.height - marginInches*72f - 9f else marginInches*72f
+            require(if (header) y >= plan.height - plan.top + 4f
+                    else y + 11f <= plan.bottom) {
+                "Saved $edge collides with worksheet content; use full worksheet export"
+            }
+            val zone = plan.contentWidth / 3f
+            for ((i,value) in listOf(sections.left, sections.center, sections.right).withIndex()) {
+                if (value.isEmpty()) continue
+                val width = try { font.getStringWidth(sanitizeText(value)) * 9f / 1000f }
+                    catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
+                require(width <= zone - 8f) { "Saved $edge text exceeds its page section" }
+                val x = plan.left + i*zone + when (i) {
+                    0 -> 4f
+                    1 -> (zone - width) / 2f
+                    else -> zone - width - 4f
+                }
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText()
+                stream.setFont(font,9f)
+                stream.newLineAtOffset(x,y)
+                safeShowText(stream,value,font)
+                stream.endText()
+            }
+        }
+        draw(print.headerFor(page), true)
+        draw(print.footerFor(page), false)
     }
 
     /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */

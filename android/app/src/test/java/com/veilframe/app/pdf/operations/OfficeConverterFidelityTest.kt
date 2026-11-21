@@ -1755,4 +1755,23 @@ class OfficeConverterFidelityTest {
         assertEquals(-0.4,percent[0][1]!!.end,0.000001)
         assertEquals(0.6,percent[2][1]!!.end,0.000001)
     }
+    @Test
+    fun savedHeadersAndFootersExpandAcrossPrintedPages() = runBlocking {
+        assertEquals(XlsxPrintHeaderFooter.Sections("Left &","Page 2 of 3","Print"),
+            XlsxPrintHeaderFooter.expand("&LLeft &&&CPage &P of &N&R&A", "Print", 2, 3))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            XlsxPrintHeaderFooter.expand("&D", "Print", 1, 1)
+        }
+        val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row></sheetData><pageMargins top="0.8" bottom="0.8" header="0.3" footer="0.3"/><rowBreaks><brk id="1" man="1"/></rowBreaks><headerFooter differentOddEven="1"><oddHeader>&amp;CPage &amp;P of &amp;N</oddHeader><evenHeader>&amp;CSecond &amp;A</evenHeader><oddFooter>&amp;RFoot &amp;P</oddFooter><evenFooter>&amp;RFoot &amp;P</evenFooter></headerFooter></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
+        val output = File(tempFolder.root,"headers.pdf")
+        OfficeConverter().convertXlsxToPdf(input,output,context,savedPrintLayout=true)
+        PDDocument.load(output).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("Page 1 of 2") && text.contains("Second Print"))
+            assertTrue(text.contains("Foot 1") && text.contains("Foot 2"))
+        }
+    }
 }

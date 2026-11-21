@@ -964,7 +964,19 @@ object OpenXmlDocumentParser {
         }
         val rowBreaks = breaks("rowBreaks", 16383)
         val colBreaks = breaks("colBreaks", 1048575)
-        val headers = one("headerFooter")?.textContent?.isNotBlank() == true
+        val headerFooter = XlsxPrintHeaderFooter.parse(one("headerFooter")?.let { element ->
+            fun part(name: String): String {
+                val nodes = element.childElements(name)
+                require(nodes.size <= 1) { "Duplicate worksheet $name" }
+                return nodes.singleOrNull()?.textContent.orEmpty()
+            }
+            val raw = mutableMapOf<String,String>()
+            for (name in listOf("oddHeader","oddFooter","evenHeader","evenFooter","firstHeader","firstFooter"))
+                raw[name] = part(name)
+            raw["differentOddEven"] = element.getAttribute("differentOddEven")
+            raw["differentFirst"] = element.getAttribute("differentFirst")
+            raw
+        })
         fun hiddenFlag(element: Element): Boolean? = when (element.getAttribute("hidden")) {
             "" -> null
             "1", "true" -> true
@@ -998,7 +1010,8 @@ object OpenXmlDocumentParser {
             centerHorizontal = options["horizontalCentered"] in setOf("1", "true"),
             centerVertical = options["verticalCentered"] in setOf("1", "true"),
             rowBreaks = rowBreaks, colBreaks = colBreaks, hiddenRows = hiddenRows, hiddenColumns = hiddenColumns,
-            unsupportedFeatures = partialBreaks || headers || options["headings"] in setOf("1", "true") ||
+            headerFooter = headerFooter,
+            unsupportedFeatures = partialBreaks || options["headings"] in setOf("1", "true") ||
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
     }
 

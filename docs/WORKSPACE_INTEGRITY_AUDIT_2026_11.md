@@ -669,3 +669,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - Recognize standard and 100% stacked bar/column grouping and render cumulative positive/negative vector segments from saved cached values. Normalize before summing to avoid overflow at very large magnitudes; use absolute-magnitude denominators for signed percentage stacks, retain missing points and keep raw values in the cache table. Existing clustered/line/pie paths remain separate. Source chart styling, saved anchors and renderer parity with Excel for mixed-sign 100% stacks are not claimed. Added numeric geometry regression. CI pending.
 
 - Follow-up: use category-local magnitude normalization for percentage stacks, preserving smaller categories beside near-Double.MAX_VALUE categories. Extend chart package/PDF integration fixture to stacked grouping and assert mixed-sign percentages. CI pending.
+
+### A28 — Bounded saved print header/footer fields
+
+- Parse odd/even/first header-footer variants and explicit parity flags. Resolve deterministic &, P/N page counters and sheet name tokens and left/center/right sections, with physical margin checks, finite section width and overlap rejection before drawing vector PDF text. Unsupported time/date, fonts, pictures and other Excel field escapes fail saved-print export rather than silently strip content; full worksheet mode remains independent. Added pure expansion and two-page PDF fixture. CI/device validation pending; font matching and printer parity remain open.

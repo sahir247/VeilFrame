@@ -8,7 +8,8 @@ data class XlsxSavedPrintSettings(
     val rowBreaks: List<String> = emptyList(), val colBreaks: List<String> = emptyList(),
     val area: String? = null, val ambiguousArea: Boolean = false, val unsupportedFeatures: Boolean = false,
     val titles: String? = null, val ambiguousTitles: Boolean = false,
-    val hiddenRows: Set<Int> = emptySet(), val hiddenColumns: Set<Int> = emptySet()
+    val hiddenRows: Set<Int> = emptySet(), val hiddenColumns: Set<Int> = emptySet(),
+    val headerFooter: XlsxPrintHeaderFooter = XlsxPrintHeaderFooter()
 )
 
 internal object XlsxSavedPrintLayout {
