@@ -5,5 +5,5 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     val series: List<Series>, val grouping: String = "clustered",
     val scatterStyle: String = "marker") {
     data class Series(val name: String, val values: List<Double?>,
-        val xValues: List<Double?> = emptyList())
+        val xValues: List<Double?> = emptyList(), val chartKind: String? = null)
 }

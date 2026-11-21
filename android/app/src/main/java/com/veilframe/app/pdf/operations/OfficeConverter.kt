@@ -1165,6 +1165,8 @@ class OfficeConverter {
             return
         }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
+        val combo = chart.kind == "combo"
+        val comboBarCount = if (combo) chart.series.count { it.chartKind == "column" } else 0
         val stacked = chart.kind in setOf("bar", "column") && chart.grouping in setOf("stacked", "percentStacked")
         val percentStacked = stacked && chart.grouping == "percentStacked"
         val maxAbs = chart.series.flatMap { it.values }.filterNotNull().maxOfOrNull { kotlin.math.abs(it) }
@@ -1196,7 +1198,8 @@ class OfficeConverter {
                     stream.moveTo(x1,y1); stream.lineTo(x2,y2); stream.stroke()
                 }
                 label(sheet.take(70) + " / Cached chart " + (panel + 1), 30f, 565f, 11f, true)
-                label(chart.title.take(86) + if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
+                label(chart.title.take(80) + if (combo) " [column+line]" else
+                    if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
                 label("Saved chart cache; reconstructed appearance, not recalculated", 30f, 529f)
                 val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
                 val horizontal = chart.kind == "bar"
@@ -1218,12 +1221,12 @@ class OfficeConverter {
                 for ((seriesIndex, series) in chart.series.withIndex()) {
                     checkpoint()
                     var previous: Pair<Float,Float>? = null
-                    val bar = slot * 0.8f / (if (stacked) 1 else chart.series.size)
+                    val bar = slot * 0.8f / (if (stacked) 1 else if (combo) comboBarCount else chart.series.size)
                     for ((local, index) in indices.withIndex()) {
                         val v = series.values[index]
                         if (v == null) { previous = null; continue }
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
-                        if (chart.kind == "line") {
+                        if (chart.kind == "line" || (combo && series.chartKind == "line")) {
                             val y = bottom + fraction(v)*height
                             stroke(palette[seriesIndex]); stream.setLineWidth(1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
@@ -1231,7 +1234,8 @@ class OfficeConverter {
                             previous = position to y
                         } else {
                             color(palette[seriesIndex])
-                            val offset = position - slot*0.4f + (if (stacked) 0 else seriesIndex)*bar
+                            val ordinal = if (combo) chart.series.take(seriesIndex).count { it.chartKind == "column" } else seriesIndex
+                            val offset = position - slot*0.4f + (if (stacked) 0 else ordinal)*bar
                             val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
                                 XlsxStackedChart.Segment(0.0, v / maxAbs)
                             val start = normalizedFraction(segment.start)

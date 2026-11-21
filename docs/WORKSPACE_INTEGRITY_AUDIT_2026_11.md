@@ -677,3 +677,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Numeric cached XY scatter reconstruction
 
 - Parse scatter xVal/yVal numeric OOXML caches with explicit point indices and missing points, refuse invalid/NaN pairs and unsupported smoothing. Draw separate real numeric XY axes and marker/line/lineMarker vectors with overflow-safe normalization, gap-aware segments and a paired-coordinate audit table. Retain bounded cache sizes, original source file untouched and no formula execution. No claim of preserved original chart anchors, Excel axis units, secondary axes or per-series marker styling. Added geometry and ZIP-to-PDF fixture. CI pending.
+
+### A28 — Primary-axis cached column+line combination charts
+
+- Recognize exactly one clustered-column plus one standard-line chart within the same plot area only when both reference the same two nonblank axis identifiers. Parse each group's series caches with shared category order, render bars and connecting lines on one actual numeric scale and preserve missing points. Secondary axes, mixed horizontal orientation, stacked combo and multi-type charts are explicitly unsupported and reported rather than silently flattened. Added same-axis and secondary-axis ZIP/PDF fixtures. Per-series formatting and saved anchor placement still open; CI pending.

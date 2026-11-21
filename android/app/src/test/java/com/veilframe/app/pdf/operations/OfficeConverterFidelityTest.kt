@@ -1801,4 +1801,30 @@ class OfficeConverterFidelityTest {
             assertTrue(text.contains("XY scatter") && text.contains("(missing)"))
         }
     }
+    @Test
+    fun primaryAxisComboChartRendersLinesAndColumnsAndRejectsSecondaryAxes() = runBlocking {
+        val wb = """<workbook><sheets><sheet name="Combo" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:wsDr>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/combo.xml"/></Relationships>"""
+        val cat = """<c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>Jan</c:v></c:pt><c:pt idx="1"><c:v>Feb</c:v></c:pt></c:strLit></c:cat>"""
+        val barSeries = """<c:ser><c:tx><c:v>Volume</c:v></c:tx>$cat<c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>5</c:v></c:pt><c:pt idx="1"><c:v>8</c:v></c:pt></c:numLit></c:val></c:ser>"""
+        val lineSeries = """<c:ser><c:tx><c:v>Price</c:v></c:tx>$cat<c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>3</c:v></c:pt><c:pt idx="1"><c:v>7</c:v></c:pt></c:numLit></c:val></c:ser>"""
+        fun chart(secondary: Boolean): String = """<c:chartSpace><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/>$barSeries<c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:grouping val="standard"/>$lineSeries<c:axId val="1"/><c:axId val="${if (secondary) 3 else 2}"/></c:lineChart></c:plotArea></c:chart></c:chartSpace>"""
+        fun input(secondary: Boolean) = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,"xl/drawings/d.xml" to drawing,
+            "xl/drawings/_rels/d.xml.rels" to drawingRel,"xl/charts/combo.xml" to chart(secondary)))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input(false)).sheets.single().charts.single()
+        assertEquals("combo",parsed.kind)
+        assertEquals(listOf("column","line"),parsed.series.map { it.chartKind })
+        assertEquals(1,OpenXmlDocumentParser.parseXlsx(input(true)).sheets.single().unsupportedDrawings)
+        val out = File(tempFolder.root,"combo.pdf")
+        OfficeConverter().convertXlsxToPdf(input(false),out,context)
+        PDDocument.load(out).use { pdf ->
+            assertEquals(2,pdf.numberOfPages)
+            val text = PDFTextStripper().getText(pdf)
+            assertTrue(text.contains("[column+line]") && text.contains("Volume") && text.contains("Price"))
+        }
+    }
 }

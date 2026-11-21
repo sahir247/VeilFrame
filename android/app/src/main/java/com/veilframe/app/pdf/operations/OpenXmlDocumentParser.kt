@@ -638,9 +638,23 @@ object OpenXmlDocumentParser {
         val plot = chart.childElements("plotArea").singleOrNull() ?: return null
         val chartTypes = (0 until plot.childNodes.length).mapNotNull { plot.childNodes.item(it) as? Element }
             .filter { it.localName().endsWith("Chart") }
-        val type = chartTypes.singleOrNull() ?: return null
+        val combo = chartTypes.size == 2 &&
+            chartTypes.map { it.localName() }.toSet() == setOf("barChart", "lineChart")
+        if (combo) {
+            val bar = chartTypes.first { it.localName() == "barChart" }
+            val line = chartTypes.first { it.localName() == "lineChart" }
+            if (bar.childElements("barDir").singleOrNull()?.getAttribute("val") != "col" ||
+                bar.childElements("grouping").singleOrNull()?.getAttribute("val") != "clustered" ||
+                line.childElements("grouping").singleOrNull()?.getAttribute("val") !in setOf(null, "standard")) return null
+            fun axes(type: Element) = type.childElements("axId").map { it.getAttribute("val") }
+            val barAxes = axes(bar); val lineAxes = axes(line)
+            // Secondary-axis charts cannot be mapped to one value scale.
+            if (barAxes.size != 2 || barAxes.any { it.isBlank() } || barAxes.distinct().size != 2 ||
+                barAxes.toSet() != lineAxes.toSet()) return null
+        } else if (chartTypes.size != 1) return null
+        val type = chartTypes.firstOrNull() ?: return null
         val grouping = type.childElements("grouping").singleOrNull()?.getAttribute("val")
-        val kind = when (type.localName()) {
+        val kind = if (combo) "combo" else when (type.localName()) {
             "barChart" -> {
                 if (grouping !in setOf("clustered", "stacked", "percentStacked")) return null
                 when (type.childElements("barDir").singleOrNull()?.getAttribute("val")) {
@@ -689,7 +703,11 @@ object OpenXmlDocumentParser {
             }
             return points
         }
-        val series = type.childElements("ser")
+        val seriesTypes = if (combo) chartTypes else listOf(type)
+        val series = seriesTypes.flatMap { it.childElements("ser") }
+        val seriesKinds = seriesTypes.flatMap { t ->
+            t.childElements("ser").map { if (t.localName() == "lineChart") "line" else "column" }
+        }
         if (series.isEmpty() || series.size > 6 || (kind == "pie" && series.size != 1)) return null
         if (kind == "scatter") {
             val style = type.childElements("scatterStyle").singleOrNull()?.getAttribute("val").orEmpty().ifEmpty { "marker" }
@@ -732,7 +750,8 @@ object OpenXmlDocumentParser {
                 else cache(cat, false) ?: return null
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
-            parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1), values))
+            parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
+                values, chartKind = if (combo) seriesKinds[index] else null))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
             grouping ?: "clustered")
