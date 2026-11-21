@@ -3,7 +3,8 @@ package com.veilframe.app.pdf.operations
 /** Last-saved chart cache, not recalculated worksheet data. */
 data class XlsxCachedChart(val title: String, val kind: String, val categories: List<String?>,
     val series: List<Series>, val grouping: String = "clustered",
-    val scatterStyle: String = "marker") {
+    val scatterStyle: String = "marker", val sourceAnchor: String? = null) {
     data class Series(val name: String, val values: List<Double?>,
-        val xValues: List<Double?> = emptyList(), val chartKind: String? = null)
+        val xValues: List<Double?> = emptyList(), val chartKind: String? = null,
+        val rgb: Int? = null)
 }

@@ -626,10 +626,30 @@ object OpenXmlDocumentParser {
                 require(chartRel.type.endsWith("/chart")) { "Invalid drawing chart relationship type" }
                 val chartEntry = zip.getEntry(chartRel.path) ?: throw IOException("Missing chart part")
                 val chart = parseCachedChart(parseXml(budget.read(zip, chartEntry)).documentElement)
-                if (chart == null) unsupported++ else charts.add(chart)
+                if (chart == null) unsupported++ else charts.add(chart.copy(sourceAnchor = chartSourceAnchor(ref)))
             }
         }
         return charts to unsupported
+    }
+
+    private fun chartSourceAnchor(ref: Element): String? {
+        var node: Node? = ref.parentNode
+        while (node is Element) {
+            if (node.localName() in setOf("twoCellAnchor", "oneCellAnchor")) {
+                fun cell(name: String): String? {
+                    val marker = node.childElements(name).singleOrNull() ?: return null
+                    val row = marker.childElements("row").singleOrNull()?.textContent?.toIntOrNull() ?: return null
+                    val col = marker.childElements("col").singleOrNull()?.textContent?.toIntOrNull() ?: return null
+                    require(row in 0 until 1_048_576 && col in 0 until 16_384) { "Invalid chart cell anchor" }
+                    return SpreadsheetLayoutEngine.colIndexToRef(col) + (row + 1)
+                }
+                val first = cell("from") ?: return null
+                val last = cell("to")
+                return if (last == null) first else "$first:$last"
+            }
+            node = node.parentNode
+        }
+        return null
     }
 
     private fun parseCachedChart(root: Element): XlsxCachedChart? {
@@ -682,6 +702,15 @@ object OpenXmlDocumentParser {
             require(str.length <= 1024) { "Chart label exceeds budget" }
             return str.takeIf { it.isNotBlank() }
         }
+        fun seriesRgb(ser: Element): Int? {
+            val sp = ser.childElements("spPr").singleOrNull() ?: return null
+            val solid = sp.childElements("solidFill").singleOrNull()
+                ?: sp.childElements("ln").singleOrNull()?.childElements("solidFill")?.singleOrNull()
+                ?: return null
+            val color = solid.childElements("srgbClr").singleOrNull()?.getAttribute("val") ?: return null
+            return if (color.matches(Regex("[0-9A-Fa-f]{6}"))) color.toInt(16) else null
+        }
+
         fun cache(parent: Element?, numeric: Boolean): List<String?>? {
             if (parent == null) return null
             val names = if (numeric) setOf("numCache", "numLit") else setOf("strCache", "strLit", "numCache", "numLit")
@@ -731,7 +760,7 @@ object OpenXmlDocumentParser {
                 longest = maxOf(longest, xValues.size)
                 parsedScatter.add(XlsxCachedChart.Series(
                     text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
-                    yValues, xValues))
+                    yValues, xValues, rgb = seriesRgb(ser)))
             }
             return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
                 "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style)
@@ -751,7 +780,7 @@ object OpenXmlDocumentParser {
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
-                values, chartKind = if (combo) seriesKinds[index] else null))
+                values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser)))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
             grouping ?: "clustered")

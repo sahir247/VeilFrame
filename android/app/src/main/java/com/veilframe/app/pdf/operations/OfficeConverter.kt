@@ -1200,7 +1200,8 @@ class OfficeConverter {
                 label(sheet.take(70) + " / Cached chart " + (panel + 1), 30f, 565f, 11f, true)
                 label(chart.title.take(80) + if (combo) " [column+line]" else
                     if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
-                label("Saved chart cache; reconstructed appearance, not recalculated", 30f, 529f)
+                label("Saved chart cache; reconstructed appearance, not recalculated" +
+                    (chart.sourceAnchor?.let { " / cells $it" } ?: ""), 30f, 529f)
                 val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
                 val horizontal = chart.kind == "bar"
                 val slot = (if (horizontal) height else width) / indices.size
@@ -1228,12 +1229,12 @@ class OfficeConverter {
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
                         if (chart.kind == "line" || (combo && series.chartKind == "line")) {
                             val y = bottom + fraction(v)*height
-                            stroke(palette[seriesIndex]); stream.setLineWidth(1.4f)
+                            stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
-                            color(palette[seriesIndex]); stream.addRect(position-2f,y-2f,4f,4f); stream.fill()
+                            color(series.rgb ?: palette[seriesIndex]); stream.addRect(position-2f,y-2f,4f,4f); stream.fill()
                             previous = position to y
                         } else {
-                            color(palette[seriesIndex])
+                            color(series.rgb ?: palette[seriesIndex])
                             val ordinal = if (combo) chart.series.take(seriesIndex).count { it.chartKind == "column" } else seriesIndex
                             val offset = position - slot*0.4f + (if (stacked) 0 else ordinal)*bar
                             val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
@@ -1259,7 +1260,7 @@ class OfficeConverter {
                 // category order auditable independently from the simplified chart graphics.
                 val column = 570f / chart.series.size
                 for ((i,series) in chart.series.withIndex()) {
-                    color(palette[i]); stream.addRect(230f+i*column,231f,8f,8f); stream.fill()
+                    color(series.rgb ?: palette[i]); stream.addRect(230f+i*column,231f,8f,8f); stream.fill()
                     label(series.name.take(14),241f+i*column,231f,8f)
                 }
                 for ((local,index) in indices.withIndex()) {
@@ -1295,7 +1296,8 @@ class OfficeConverter {
                 }
                 textAt(sheet.take(70) + " / XY scatter (cached) " + (panel+1),30f,565f,11f)
                 textAt(chart.title.take(95),30f,545f,13f)
-                textAt("Numeric XY coordinates; cached data only, not recalculated",30f,529f)
+                textAt("Numeric XY coordinates; cached data only, not recalculated" +
+                    (chart.sourceAnchor?.let { " / cells $it" } ?: ""),30f,529f)
                 val left = 98f; val bottom = 272f; val width = 672f; val height = 234f
                 stream.setStrokingColor(210,210,210); stream.setLineWidth(0.6f)
                 for (tick in 0..4) {
@@ -1309,7 +1311,7 @@ class OfficeConverter {
                 for ((seriesIndex,series) in chart.series.withIndex()) {
                     checkpoint()
                     require(series.xValues.size == series.values.size)
-                    val rgb = palette[seriesIndex%palette.size]
+                    val rgb = series.rgb ?: palette[seriesIndex%palette.size]
                     stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setLineWidth(1.3f)

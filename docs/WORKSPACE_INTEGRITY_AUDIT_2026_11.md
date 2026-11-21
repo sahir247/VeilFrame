@@ -693,3 +693,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Saved point sizes through XLSX layout and PDF rendering
 
 - Parse and validate explicit font sz point sizes (1–144 pt) via cell style inheritance; retain the existing 9pt fallback for unspecified fonts. Measure column width, wrapped lines and row geometry with each cell's actual point size and leading, and emit matching PDF font-size operators across natural, saved-print and tiled/merged paths. Refuse oversized row fragmentation when variable point sizes could cause loss or overlap. Helvetica family substitution remains approximate: true workbook font-face metrics and Unicode embedding require separately licensed/available fonts and device validation. Added real PDF text-size/row-height regression. CI pending.
+
+### A28 — Chart source-anchor provenance and solid series RGB
+
+- Preserve validated worksheet chart from/to cell anchors as source-provenance labels on reconstructed appendix charts (not an assertion of original drawing placement or saved EMU offsets). Read explicit srgbClr from chart series solid fill / stroke and apply these colors to supported line/bar/scatter rendering and legend. Unsupported theme, gradient, patterned, per-point and source font/chart styling continue to use a disclosed reconstructed palette. Added anchored chart package assertion. Exact in-sheet charts are not claimed. CI pending.
