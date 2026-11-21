@@ -713,3 +713,7 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A28 — Bounded inclusive percentile color-scale and indicator thresholds
 
 - Resolve `cfvo type=percentile` from the complete saved numeric distribution of each rule's ranges, retain duplicates, sort only after all cells are read, and use inclusive (N−1) rank interpolation. Apply identical threshold semantics to color scales, classic data bars and three-light sets. Strict 0–100 threshold admission, existing conditional work budget and a further 200,000 total percentile-sample cap prevent unbounded sorting/materialization. No external references or formula execution. Added pure percentile and five-row ZIP/PDF fixture; CI and device parity pending.
+
+### A28 — Negative data-bar magnitude and arrow icon threshold fidelity
+
+- Correct all-negative range length: the largest negative magnitude now extends farthest left rather than appearing shortest. Preserve positive/mixed sign behavior. Admit OOXML `gte=false` strict threshold boundaries for three-value indicators, plus standard colored or gray `3Arrows` via finite vector arrow shapes. Keep icon ordering and reverse semantics; custom pictures and other icon families remain unsupported. Added pure signed magnitude, threshold boundary, package parse and PDF arrow regression. CI pending.

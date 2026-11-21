@@ -1865,11 +1865,33 @@ class OfficeConverter {
             stream.saveGraphicsState()
             try {
                 stream.setNonStrokingColor(icon.rgb ushr 16 and 255,icon.rgb ushr 8 and 255,icon.rgb and 255)
-                stream.moveTo(cx+radius,cy)
-                stream.curveTo(cx+radius,cy+k,cx+k,cy+radius,cx,cy+radius)
-                stream.curveTo(cx-k,cy+radius,cx-radius,cy+k,cx-radius,cy)
-                stream.curveTo(cx-radius,cy-k,cx-k,cy-radius,cx,cy-radius)
-                stream.curveTo(cx+k,cy-radius,cx+radius,cy-k,cx+radius,cy)
+                when (icon.shape) {
+                    "up" -> {
+                        stream.moveTo(cx-2f,cy-4f); stream.lineTo(cx+2f,cy-4f)
+                        stream.lineTo(cx+2f,cy); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy+4f); stream.lineTo(cx-4f,cy)
+                        stream.lineTo(cx-2f,cy)
+                    }
+                    "down" -> {
+                        stream.moveTo(cx-2f,cy+4f); stream.lineTo(cx+2f,cy+4f)
+                        stream.lineTo(cx+2f,cy); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy-4f); stream.lineTo(cx-4f,cy)
+                        stream.lineTo(cx-2f,cy)
+                    }
+                    "right" -> {
+                        stream.moveTo(cx-4f,cy-2f); stream.lineTo(cx,cy-2f)
+                        stream.lineTo(cx,cy-4f); stream.lineTo(cx+4f,cy)
+                        stream.lineTo(cx,cy+4f); stream.lineTo(cx,cy+2f)
+                        stream.lineTo(cx-4f,cy+2f)
+                    }
+                    else -> {
+                        stream.moveTo(cx+radius,cy)
+                        stream.curveTo(cx+radius,cy+k,cx+k,cy+radius,cx,cy+radius)
+                        stream.curveTo(cx-k,cy+radius,cx-radius,cy+k,cx-radius,cy)
+                        stream.curveTo(cx-radius,cy-k,cx-k,cy-radius,cx,cy-radius)
+                        stream.curveTo(cx+k,cy-radius,cx+radius,cy-k,cx+radius,cy)
+                    }
+                }
                 stream.closePath(); stream.fill()
             } finally { stream.restoreGraphicsState() }
         }

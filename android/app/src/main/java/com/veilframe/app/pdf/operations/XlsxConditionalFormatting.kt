@@ -11,7 +11,8 @@ internal object XlsxConditionalFormatting {
         val scale: ColorScale? = null,
         val bar: DataBar? = null, val icons: IconSet? = null,
         val expression: Expression? = null)
-    data class ScaleStop(val type: String, val value: BigDecimal?, val rgb: Int)
+    data class ScaleStop(val type: String, val value: BigDecimal?, val rgb: Int,
+        val inclusive: Boolean = true)
     data class NumericExtent(val minimum: BigDecimal, val maximum: BigDecimal,
         val percentileSamples: List<BigDecimal> = emptyList()) {
         fun include(value: BigDecimal) = NumericExtent(minOf(minimum, value), maxOf(maximum, value))
@@ -89,7 +90,8 @@ internal object XlsxConditionalFormatting {
             val start: Float
             val end: Float
             if (lower >= BigDecimal.ZERO || upper <= BigDecimal.ZERO) {
-                val fraction = ratio(bounded.subtract(lower))
+                val fraction = if (upper <= BigDecimal.ZERO) ratio(upper.subtract(bounded))
+                    else ratio(bounded.subtract(lower))
                 val length = (minimumLength + (maximumLength - minimumLength)*fraction) / 100f
                 start = if (upper <= BigDecimal.ZERO) 1f else 0f
                 end = if (upper <= BigDecimal.ZERO) 1f-length else length
@@ -103,15 +105,20 @@ internal object XlsxConditionalFormatting {
         }
     }
 
-    data class IconSet(val stops: List<ScaleStop>, val reverse: Boolean, val showValue: Boolean) {
+    data class IconSet(val stops: List<ScaleStop>, val reverse: Boolean, val showValue: Boolean,
+        val kind: String = "3TrafficLights1") {
         fun visual(raw: BigDecimal, extent: NumericExtent): XlsxIconVisual? {
             if (stops.size != 3) return null
             val values = stops.map { threshold(it.type,it.value,extent) ?: return null }
             if (values.zipWithNext().any { (left,right) -> left > right }) return null
-            val tier = when { raw >= values[2] -> 2; raw >= values[1] -> 1; else -> 0 }
+            fun passed(index: Int): Boolean = if (stops[index].inclusive) raw >= values[index]
+                else raw > values[index]
+            val tier = when { passed(2) -> 2; passed(1) -> 1; else -> 0 }
             val selected = if (reverse) 2-tier else tier
             val palette = intArrayOf(0xD94A3A,0xE0B63C,0x48A65E)
-            return XlsxIconVisual(palette[selected],showValue)
+            val arrows = kind in setOf("3Arrows","3ArrowsGray")
+            return XlsxIconVisual(if (kind == "3ArrowsGray") 0x858585 else palette[selected],
+                showValue, if (arrows) listOf("down","right","up")[selected] else "circle")
         }
     }
 

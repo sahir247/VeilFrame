@@ -1925,4 +1925,38 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(input,pdf,context)
         PDDocument.load(pdf).use { doc -> assertTrue(PDFTextStripper().getText(doc).contains("100")) }
     }
+    @Test
+    fun negativeDataBarsAndInclusiveArrowIconsUseSavedThresholds() = runBlocking {
+        val zero = java.math.BigDecimal.ZERO
+        val extent = XlsxConditionalFormatting.NumericExtent(java.math.BigDecimal("-100"),java.math.BigDecimal("-10"))
+        val bar = XlsxConditionalFormatting.DataBar(
+            XlsxConditionalFormatting.ScaleStop("min",null,0),
+            XlsxConditionalFormatting.ScaleStop("max",null,0),true,10,90,0x224488)
+        val strong = bar.visual(java.math.BigDecimal("-100"),extent)!!
+        val weak = bar.visual(java.math.BigDecimal("-10"),extent)!!
+        assertTrue(kotlin.math.abs(strong.end-strong.start) > kotlin.math.abs(weak.end-weak.start))
+        assertEquals(1f,strong.start,0.0001f)
+        val stops = listOf(
+            XlsxConditionalFormatting.ScaleStop("percent",zero,0),
+            XlsxConditionalFormatting.ScaleStop("percent",java.math.BigDecimal("50"),0,inclusive=false),
+            XlsxConditionalFormatting.ScaleStop("percent",java.math.BigDecimal("90"),0))
+        val icons = XlsxConditionalFormatting.IconSet(stops,false,true,"3Arrows")
+        val positive = XlsxConditionalFormatting.NumericExtent(zero,java.math.BigDecimal("100"))
+        assertEquals("down",icons.visual(java.math.BigDecimal("50"),positive)!!.shape)
+        assertEquals("right",icons.visual(java.math.BigDecimal("51"),positive)!!.shape)
+        assertEquals("up",icons.visual(java.math.BigDecimal("90"),positive)!!.shape)
+        val wb = """<workbook><sheets><sheet name="Indicators" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>0</v></c></row><row r="2"><c r="A2"><v>50</v></c></row><row r="3"><c r="A3"><v>100</v></c></row></sheetData><conditionalFormatting sqref="A1:A3"><cfRule type="iconSet" priority="1"><iconSet iconSet="3ArrowsGray" showValue="0"><cfvo type="percent" val="0"/><cfvo type="percent" val="50" gte="0"/><cfvo type="percent" val="90"/></iconSet></cfRule></conditionalFormatting></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals("down",parsed.styles.at(0,0).icon!!.shape)
+        assertEquals("down",parsed.styles.at(1,0).icon!!.shape)
+        assertEquals("up",parsed.styles.at(2,0).icon!!.shape)
+        val pdf = File(tempFolder.root,"arrows.pdf")
+        OfficeConverter().convertXlsxToPdf(input,pdf,context)
+        PDDocument.load(pdf).use { doc ->
+            val ops = doc.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(ops))
+        }
+    }
 }

@@ -1192,8 +1192,12 @@ object OpenXmlDocumentParser {
                 XlsxConditionalFormatting.number(element.getAttribute("val")) ?: return null else null
             if (type in setOf("percent","percentile") && (number == null ||
                 number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal("100"))) return null
-            if (element.hasAttribute("gte") && element.getAttribute("gte") !in setOf("1","true")) return null
-            XlsxConditionalFormatting.ScaleStop(type,number,0)
+            val inclusive = when (element.getAttribute("gte")) {
+                "", "1", "true" -> true
+                "0", "false" -> false
+                else -> return null
+            }
+            XlsxConditionalFormatting.ScaleStop(type,number,0,inclusive)
         }
     }
 
@@ -1219,7 +1223,8 @@ object OpenXmlDocumentParser {
 
     private fun parseConditionalIconSet(rule: Element): XlsxConditionalFormatting.IconSet? {
         val icons = rule.childElements("iconSet").singleOrNull() ?: return null
-        if (icons.getAttribute("iconSet") !in setOf("","3TrafficLights1","3TrafficLights2") ||
+        if (icons.getAttribute("iconSet") !in setOf("","3TrafficLights1","3TrafficLights2",
+                "3Arrows","3ArrowsGray") ||
             icons.childElements("cfIcon").isNotEmpty() || icons.getAttribute("custom") in setOf("1","true")) return null
         val stops = conditionalStops(icons.childElements("cfvo")) ?: return null
         if (stops.size != 3) return null
@@ -1232,7 +1237,8 @@ object OpenXmlDocumentParser {
         val reverse = flag("reverse",false) ?: return null
         val show = flag("showValue",true) ?: return null
         if (flag("percent",true) != true) return null
-        return XlsxConditionalFormatting.IconSet(stops,reverse,show)
+        return XlsxConditionalFormatting.IconSet(stops,reverse,show,
+            icons.getAttribute("iconSet").ifEmpty { "3TrafficLights1" })
     }
 
     private fun optionalDimension(element: Element, name: String, maximum: Float): Float? {
