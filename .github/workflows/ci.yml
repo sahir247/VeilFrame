@@ -422,6 +422,16 @@ jobs:
           set -Eeuo pipefail
           ./gradlew :app:testDebugUnitTest --stacktrace
 
+      # Compile instrumented Office and native device regressions in PR CI.
+      # No emulator/hardware is available on this runner: this is compilation,
+      # never claim physical-device acceptance from this step.
+      - name: Compile Android device regression tests (no device execution)
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:compileDebugAndroidTestKotlin --stacktrace
+
       - name: Assemble ARM64 debug APK
         working-directory: android
         shell: bash
