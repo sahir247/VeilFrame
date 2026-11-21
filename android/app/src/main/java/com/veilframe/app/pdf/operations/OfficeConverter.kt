@@ -1321,7 +1321,8 @@ class OfficeConverter {
                             val y = bottom + fraction(v)*height
                             stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
-                            color(series.rgb ?: palette[seriesIndex]); stream.addRect(position-2f,y-2f,4f,4f); stream.fill()
+                            color(series.rgb ?: palette[seriesIndex])
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,position,y,4f)
                             previous = position to y
                         } else {
                             color(series.rgb ?: palette[seriesIndex])
@@ -1424,7 +1425,7 @@ class OfficeConverter {
                             stream.moveTo(it.first,it.second); stream.lineTo(px,py); stream.stroke()
                         }
                         if (chart.scatterStyle != "line") {
-                            stream.addRect(px-2f,py-2f,4f,4f); stream.fill()
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,px,py,4f)
                         }
                         prev = px to py
                     }

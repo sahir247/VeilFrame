@@ -775,6 +775,32 @@ object OpenXmlDocumentParser {
             return points.takeIf { it.isFinite() && it in 0.25f..8f }
         }
 
+        fun seriesMarker(ser: Element): Pair<String?, Float?>? {
+            val nodes = ser.childElements("marker")
+            if (nodes.isEmpty()) return null to null
+            if (nodes.size != 1) return null
+            val marker = nodes.single()
+            // Per-marker fills, strokes and effects are not reconstructed.
+            if (marker.childElements("spPr").isNotEmpty() || marker.childElements("extLst").isNotEmpty()) return null
+            val symbol = marker.childElements("symbol").singleOrNull()?.getAttribute("val") ?: return null
+            if (symbol !in setOf("none","circle","square","diamond","triangle")) return null
+            val rawSize = marker.childElements("size")
+            if (rawSize.size > 1) return null
+            val size = rawSize.singleOrNull()?.getAttribute("val")?.toFloatOrNull()
+            if (rawSize.isNotEmpty() && (size == null || !size.isFinite() || size !in 2f..72f)) return null
+            return symbol to size
+        }
+        fun chartDisablesMarkers(element: Element): Boolean? {
+            val nodes = element.childElements("marker")
+            if (nodes.isEmpty()) return false
+            if (nodes.size != 1) return null
+            return when (nodes.single().getAttribute("val")) {
+                "", "1", "true" -> false
+                "0", "false" -> true
+                else -> null
+            }
+        }
+
         fun cache(parent: Element?, numeric: Boolean): List<String?>? {
             if (parent == null) return null
             val names = if (numeric) setOf("numCache", "numLit") else setOf("strCache", "strLit", "numCache", "numLit")
@@ -821,10 +847,12 @@ object OpenXmlDocumentParser {
                 }
                 val xValues = numeric(xs) ?: return null
                 val yValues = numeric(ys) ?: return null
+                val marker = seriesMarker(ser) ?: return null
                 longest = maxOf(longest, xValues.size)
                 parsedScatter.add(XlsxCachedChart.Series(
                     text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
-                    yValues, xValues, rgb = seriesRgb(ser), strokeWidthPt = seriesStrokeWidth(ser)))
+                    yValues, xValues, rgb = seriesRgb(ser), strokeWidthPt = seriesStrokeWidth(ser),
+                    markerSymbol = marker.first, markerSizePt = marker.second))
             }
             // An all-empty cache is an unsupported drawing, not a chart that
             // can be assigned invented axes and subsequently abort the PDF.
@@ -834,6 +862,9 @@ object OpenXmlDocumentParser {
         }
         var labels: List<String?>? = null
         val parsed = mutableListOf<XlsxCachedChart.Series>()
+        val lineChart = if (combo) seriesTypes.first { it.localName() == "lineChart" }
+            else if (kind == "line") type else null
+        val lineMarkersDisabled = lineChart?.let { chartDisablesMarkers(it) ?: return null } ?: false
         for ((index, ser) in series.withIndex()) {
             val raw = cache(ser.childElements("val").singleOrNull(), true) ?: return null
             val values = raw.map { value ->
@@ -846,9 +877,13 @@ object OpenXmlDocumentParser {
                 else cache(cat, false) ?: return null
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
+            val marker = if (kind == "line" || (combo && seriesKinds[index] == "line"))
+                seriesMarker(ser) ?: return null else null to null
+            val markerSymbol = if (lineMarkersDisabled && marker.first == null) "none" else marker.first
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
                 values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser),
-                strokeWidthPt = seriesStrokeWidth(ser)))
+                strokeWidthPt = seriesStrokeWidth(ser), markerSymbol = markerSymbol,
+                markerSizePt = marker.second))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
             grouping ?: "clustered")

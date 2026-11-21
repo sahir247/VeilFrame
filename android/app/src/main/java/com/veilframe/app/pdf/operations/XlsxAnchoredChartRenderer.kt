@@ -115,7 +115,7 @@ internal object XlsxAnchoredChartRenderer {
                         val sx=x0+ax.fraction(x)*w; val sy=y0+ay.fraction(y)*h
                         if(chart.scatterStyle != "marker") previous?.let { line(it.first,it.second,sx,sy) }
                         if(chart.scatterStyle != "line"){
-                            stream.addRect(sx-1.4f,sy-1.4f,2.8f,2.8f);stream.fill()
+                            XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,sx,sy,2.8f)
                         }
                         previous=sx to sy
                     }
@@ -149,7 +149,7 @@ internal object XlsxAnchoredChartRenderer {
                             val sy=y0+fraction(raw/maxAbs)*h
                             stream.setLineWidth(s.strokeWidthPt ?: 1.2f)
                             previous?.let { line(it.first,it.second,position,sy) }
-                            stream.addRect(position-1.3f,sy-1.3f,2.6f,2.6f);stream.fill()
+                            XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,position,sy,2.6f)
                             previous=position to sy
                         }else{
                             val ordinal=if(chart.kind=="combo") chart.series.take(i).count { it.chartKind=="column" } else i

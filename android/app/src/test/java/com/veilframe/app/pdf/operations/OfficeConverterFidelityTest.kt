@@ -2240,6 +2240,42 @@ class OfficeConverterFidelityTest {
     }
 
     @Test
+    fun savedChartMarkerSymbolsAreParsedAndDrawnAsVectors() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="Markers" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><drawing r:id="d"/></worksheet>"""
+        val sheetRel = """<Relationships><Relationship Id="d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/d.xml"/></Relationships>"""
+        val drawing = """<xdr:wsDr><xdr:graphicFrame><c:chart r:id="c"/></xdr:graphicFrame></xdr:wsDr>"""
+        val drawingRel = """<Relationships><Relationship Id="c" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/markers.xml"/></Relationships>"""
+        val values = """<c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>2</c:v></c:pt><c:pt idx="1"><c:v>4</c:v></c:pt></c:numLit></c:val>"""
+        fun chart(symbol: String, size: Int) = """<c:chartSpace><c:chart><c:plotArea><c:lineChart><c:grouping val="standard"/><c:ser><c:marker><c:symbol val="$symbol"/><c:size val="$size"/></c:marker>$values</c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>"""
+        fun source(xml: String)=createZip(mapOf("xl/workbook.xml" to workbook,
+            "xl/worksheets/sheet1.xml" to sheet,
+            "xl/worksheets/_rels/sheet1.xml.rels" to sheetRel,
+            "xl/drawings/d.xml" to drawing,
+            "xl/drawings/_rels/d.xml.rels" to drawingRel,
+            "xl/charts/markers.xml" to xml))
+        val diamond = source(chart("diamond",7))
+        val series = OpenXmlDocumentParser.parseXlsx(diamond).sheets.single().charts.single().series.single()
+        assertEquals("diamond", series.markerSymbol)
+        assertEquals(7f, series.markerSizePt!!,0.0001f)
+        val withMarker=File(tempFolder.root,"diamond-markers.pdf")
+        OfficeConverter().convertXlsxToPdf(diamond,withMarker,context)
+        val noMarker = source(chart("none",7))
+        assertEquals("none",OpenXmlDocumentParser.parseXlsx(noMarker).sheets.single()
+            .charts.single().series.single().markerSymbol)
+        val withoutMarker=File(tempFolder.root,"none-markers.pdf")
+        OfficeConverter().convertXlsxToPdf(noMarker,withoutMarker,context)
+        PDDocument.load(withMarker).use { doc ->
+            assertEquals(2,doc.numberOfPages)
+            val stream=doc.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\\bf\\s*$""").containsMatchIn(stream))
+        }
+        PDDocument.load(withoutMarker).use { doc -> assertEquals(2,doc.numberOfPages) }
+        val invalid = chart("star",7)
+        assertTrue(OpenXmlDocumentParser.parseXlsx(source(invalid)).sheets.single().charts.isEmpty())
+    }
+
+    @Test
     fun cachedLineChartUsesDirectThemeRgbAndSavedLineWidth() = runBlocking {
         val workbook = """<workbook><sheets><sheet name="Theme" sheetId="1"/></sheets></workbook>"""
         val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>4</v></c></row></sheetData><drawing r:id="d"/></worksheet>"""

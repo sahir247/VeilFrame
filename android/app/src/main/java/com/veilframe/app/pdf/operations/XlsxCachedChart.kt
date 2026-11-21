@@ -13,5 +13,6 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     }
     data class Series(val name: String, val values: List<Double?>,
         val xValues: List<Double?> = emptyList(), val chartKind: String? = null,
-        val rgb: Int? = null, val strokeWidthPt: Float? = null)
+        val rgb: Int? = null, val strokeWidthPt: Float? = null,
+        val markerSymbol: String? = null, val markerSizePt: Float? = null)
 }
