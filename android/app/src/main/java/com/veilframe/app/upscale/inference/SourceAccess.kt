@@ -76,13 +76,13 @@ class UriRegionSource(
     private var closed = false
 
     override val hasAlpha: Boolean by lazy {
+        // A failed probe is an unreadable source, not evidence of an alpha channel.
+        // Never swallow VM Errors or cancellation and then attempt inference.
+        val probe = region(0, 0, 1, 1)
         try {
-            val probe = region(0, 0, 1.coerceAtMost(width), 1.coerceAtMost(height))
-            val alpha = probe.hasAlpha()
+            probe.hasAlpha()
+        } finally {
             probe.recycle()
-            alpha
-        } catch (_: Throwable) {
-            true
         }
     }
 
@@ -115,6 +115,11 @@ class UriRegionSource(
     }
 
     override fun region(x: Int, y: Int, width: Int, height: Int): Bitmap {
+        require(x >= 0 && y >= 0 && width > 0 && height > 0 &&
+            x.toLong() + width <= this.width.toLong() &&
+            y.toLong() + height <= this.height.toLong()) {
+            "Region lies outside the declared source image"
+        }
         synchronized(decoderLock) {
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -122,10 +127,19 @@ class UriRegionSource(
             val rect = Rect(x, y, x + width, y + height)
             return try {
                 obtainDecoderLocked().decodeRegion(rect, options)
-            } catch (_: Throwable) {
-                // Reset decoder once if underlying stream invalidated
+            } catch (failure: Exception) {
+                // Permission, argument and cancellation errors must not trigger retry.
+                // VM Errors, including OutOfMemoryError, must escape immediately.
+                if (failure is SecurityException ||
+                    failure is IllegalArgumentException ||
+                    failure is java.util.concurrent.CancellationException) throw failure
                 resetDecoderLocked()
-                obtainDecoderLocked().decodeRegion(rect, options)
+                try {
+                    obtainDecoderLocked().decodeRegion(rect, options)
+                } catch (retry: Exception) {
+                    retry.addSuppressed(failure)
+                    throw retry
+                }
             } ?: throw TileIOException("region decode returned null (${x},${y} ${width}x${height})")
         }
     }
