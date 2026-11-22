@@ -109,6 +109,14 @@ class UriRegionSource(
             runCatching { stream.close() }
             throw TileIOException("BitmapRegionDecoder could not open $uri")
         }
+        // Bounds were obtained before this stream opened. A SAF provider can
+        // replace an image between selection and inference; never composite
+        // using dimensions from one version and pixels from another.
+        if (decoder.width != width || decoder.height != height) {
+            runCatching { decoder.recycle() }
+            runCatching { stream.close() }
+            throw TileIOException("Decoded source dimensions changed since image selection")
+        }
         cachedStream = stream
         cachedDecoder = decoder
         return decoder

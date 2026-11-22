@@ -149,6 +149,8 @@ class NcnnRealPhotoBenchmarkTest {
         Log.i(TAG, "=================================================================")
 
         val fw = FileWriter(csvFile, true)
+        var completedCases = 0
+        var unexpectedResourceRefusals = 0
 
         try {
             for ((idx, fileName) in REAL_PHOTO_FILES.withIndex()) {
@@ -163,7 +165,6 @@ class NcnnRealPhotoBenchmarkTest {
                 assertTrue("Invalid image bounds for $fileName: ${inW}x${inH}", inW > 0 && inH > 0)
                 // Mirror production region decoding; do not allocate the full 4K source
                 // before the engine has a chance to enforce its memory contract.
-                val source = UriRegionSource(context, Uri.fromFile(inputFile), inW, inH)
 
                 var tilesCount = 0
                 val inputHash = sha256(inputFile)
@@ -171,6 +172,7 @@ class NcnnRealPhotoBenchmarkTest {
                 val pssBefore = Debug.getPss()
                 val t0 = System.nanoTime()
                 var ownedOutput: UpscaleOutput.Streamed? = null
+                val source = UriRegionSource(context, Uri.fromFile(inputFile), inW, inH)
 
                 try {
                     val output = engine.upscale(
@@ -211,6 +213,7 @@ class NcnnRealPhotoBenchmarkTest {
 
                     fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,${output.width},${output.height},${model.nativeScale},$elapsedMs,$pssDelta,$tilesCount,SUCCESS,$backend,$inputHash,${sha256(outDest)},$thermalBefore,$thermalAfter,$pssBefore,$pssAfter,URI_REGION_SOURCE\n")
                     fw.flush()
+                    completedCases++
                 } catch (e: ResourceLimitExceededException) {
                     val t1 = System.nanoTime()
                     val elapsedMs = (t1 - t0) / 1_000_000
@@ -220,7 +223,20 @@ class NcnnRealPhotoBenchmarkTest {
                             .format(idx + 1, model.id, fileName, inW, inH, e.message, elapsedMs)
                     )
                     val after = Debug.getPss()
-                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,0,0,${model.nativeScale},$elapsedMs,${after - pssBefore},0,SAFETY_CAP_EXCEEDED,none,$inputHash,,$thermalBefore,${thermalStatus()},$pssBefore,$after,URI_REGION_SOURCE\n")
+                    val scale = model.nativeScale.toLong()
+                    // Safety refusals are expected only when a photo exceeds the fixed
+                    // advertised pixel/dimension contract. A model or runtime OOM for
+                    // a source inside that contract is NOT a successful benchmark.
+                    val hardLimitExpected =
+                        inW.toLong() > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SOURCE_DIMENSION ||
+                        inH.toLong() > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SOURCE_DIMENSION ||
+                        inW.toLong() * scale > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        inH.toLong() * scale > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        inW.toLong() * inH.toLong() >
+                        com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS / (scale * scale)
+                    val status = if (hardLimitExpected) "EXPECTED_HARD_CAP" else "UNEXPECTED_RESOURCE_REFUSAL"
+                    if (!hardLimitExpected) unexpectedResourceRefusals++
+                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,0,0,${model.nativeScale},$elapsedMs,${after - pssBefore},0,$status,none,$inputHash,,$thermalBefore,${thermalStatus()},$pssBefore,$after,URI_REGION_SOURCE\n")
                     fw.flush()
                 } catch (failure: Throwable) {
                     val after = Debug.getPss()
@@ -233,6 +249,9 @@ class NcnnRealPhotoBenchmarkTest {
                     source.close()
                 }
             }
+            assertTrue("No real photo produced a verified native output", completedCases > 0)
+            assertEquals("Resource refusal for an advertised supported workload is not acceptance",
+                0, unexpectedResourceRefusals)
         } finally {
             fw.close()
         }

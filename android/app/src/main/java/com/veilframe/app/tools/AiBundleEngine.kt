@@ -124,7 +124,8 @@ object AiBundleEngine {
     private const val MAX_BUNDLE_BYTES = 32L * 1024 * 1024
     private const val MAX_PATH_CHARS = 4096
     private class InputTooLarge : IOException("File exceeds 500 KiB input limit")
-    internal data class BundleInput(val uri: String, val path: String, val size: Long, val directory: Boolean)
+    internal data class BundleInput(val uri: String, val path: String, val size: Long, val directory: Boolean,
+        val lastModified: Long = -1L)
 
     internal data class BundleInventory(val entries: List<BundleInput>, val fingerprint: String) {
         val files: List<String> get() = entries.filterNot { it.directory }.map { it.path }
@@ -139,6 +140,7 @@ object AiBundleEngine {
         }
         for (entry in entries) {
             field(entry.path); field(entry.uri); field(entry.size.toString()); field(entry.directory.toString())
+            field(entry.lastModified.toString())
         }
         return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 255) }
     }
@@ -173,11 +175,14 @@ object AiBundleEngine {
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_MIME_TYPE,
-                DocumentsContract.Document.COLUMN_SIZE), null, null, null)
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)
                 ?: throw IOException("Provider returned no directory listing")
             val children = ArrayList<BundleInput>()
             val names = HashSet<String>()
             cursor.use {
+                // Providers may return null or omit this metadata; treat unknown as -1.
+                val modifiedColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 if (it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) ||
                     !it.extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()) {
                     throw IOException("Provider returned incomplete directory listing")
@@ -196,8 +201,10 @@ object AiBundleEngine {
                     if (relative.length > MAX_PATH_CHARS) throw IOException("Bundle path exceeds supported length")
                     inventoryChars += relative.length.toLong() + uri.length
                     if (inventoryChars > 8L * 1024 * 1024) throw IOException("Directory metadata exceeds bundle inspection budget")
+                    val modifiedAt = if (modifiedColumn >= 0 && !it.isNull(modifiedColumn))
+                        it.getLong(modifiedColumn) else -1L
                     children.add(BundleInput(uri, relative, if (it.isNull(3)) -1L else it.getLong(3),
-                        mime == DocumentsContract.Document.MIME_TYPE_DIR))
+                        mime == DocumentsContract.Document.MIME_TYPE_DIR, modifiedAt))
                 }
             }
             for (child in children.sortedWith(compareBy({ it.path }, { it.uri }))) {

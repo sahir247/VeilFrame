@@ -83,4 +83,30 @@ class UriRegionSourceDeviceTest {
             fixture.delete()
         }
     }
+
+    @Test
+    fun declaredDimensionsMustMatchTheActualRegionDecoder() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val fixture = File(context.cacheDir, "mismatch_source_" + System.nanoTime() + ".png")
+        val image = Bitmap.createBitmap(9, 7, Bitmap.Config.ARGB_8888)
+        try {
+            fixture.outputStream().use { out ->
+                assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, out))
+            }
+            val source = UriRegionSource(context, Uri.fromFile(fixture), 10, 7)
+            try {
+                try {
+                    source.region(0, 0, 1, 1)
+                    fail("Stale source dimensions must not be accepted")
+                } catch (e: com.veilframe.app.upscale.inference.TileIOException) {
+                    assertTrue(e.message?.contains("dimensions changed") == true)
+                }
+            } finally {
+                source.close()
+            }
+        } finally {
+            image.recycle()
+            fixture.delete()
+        }
+    }
 }

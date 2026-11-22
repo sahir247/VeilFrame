@@ -5,12 +5,13 @@ import org.junit.Test
 
 class BundleInventoryFingerprintTest {
     @Test fun detectsIdentityPathSizeAndDirectoryChangesBeforeTransfer() {
-        val file = AiBundleEngine.BundleInput("content://provider/1", "src/a.kt", 120, false)
+        val file = AiBundleEngine.BundleInput("content://provider/1", "src/a.kt", 120, false, 1732200000000L)
         val sibling = AiBundleEngine.BundleInput("content://provider/2", "src/b.kt", 120, false)
         val baseline = AiBundleEngine.inventoryFingerprint(listOf(file))
         assertEquals(baseline, AiBundleEngine.inventoryFingerprint(listOf(file.copy())))
         for (changed in listOf(file.copy(uri = sibling.uri), file.copy(path = sibling.path),
-            file.copy(size = 121), file.copy(directory = true))) {
+            file.copy(size = 121), file.copy(directory = true),
+            file.copy(lastModified = 1732200000001L), file.copy(lastModified = -1L))) {
             assertNotEquals(baseline, AiBundleEngine.inventoryFingerprint(listOf(changed)))
         }
         assertNotEquals(baseline, AiBundleEngine.inventoryFingerprint(listOf(file, sibling)))

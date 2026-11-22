@@ -239,7 +239,8 @@ class UpscaleInferenceEngine(
                 ModelType.AI_NCNN -> "NCNN"
                 ModelType.ALGORITHMIC -> "ALGORITHMIC"
             }
-            com.veilframe.app.cv.core.CvTelemetry.record(
+            // Failure reporting must survive telemetry disk/provider errors.
+            runCatching { com.veilframe.app.cv.core.CvTelemetry.record(
                 linkedMapOf(
                     "ts" to System.currentTimeMillis(), "job" to "upscale",
                     "model" to model.id, "scale" to targetScale,
@@ -249,7 +250,7 @@ class UpscaleInferenceEngine(
                     "ms" to (System.currentTimeMillis() - t0), "outcome" to "err",
                     "error" to (e.message ?: e.javaClass.simpleName)
                 )
-            )
+            ) }
             Result.failure(e)
         }
     }
