@@ -25,8 +25,8 @@ class OcrWrapOwnershipTest {
         val second = allocateOcrWrapFile(directory)
         try {
             assertNotEquals(first.absolutePath, second.absolutePath)
-            assertEquals(directory.canonicalFile, first.parentFile.canonicalFile)
-            assertEquals(directory.canonicalFile, second.parentFile.canonicalFile)
+            assertEquals(directory.canonicalFile, checkNotNull(first.parentFile).canonicalFile)
+            assertEquals(directory.canonicalFile, checkNotNull(second.parentFile).canonicalFile)
             first.writeText("first")
             second.writeText("second")
             first.delete()

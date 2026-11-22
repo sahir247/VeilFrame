@@ -155,32 +155,101 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(0)
             
             // Create a temp file to avoid loading everything into memory
-            var ownedTemp: File? = null
-            var completed = false
-            try {
-                // A clock-derived filename can collide across concurrent OCR jobs.
-                // Retain unique ownership until the caller takes the completed file.
-                val out = allocateOcrWrapFile(File(context.cacheDir, "ocr_cache"))
-                ownedTemp = out
-                PDDocument().use { doc ->
-                    val wPt = (oriented.width * 72f / 200f).coerceIn(72f, 3000f)
-                    val hPt = (oriented.height * 72f / 200f).coerceIn(72f, 3000f)
-                    val page = PDPage(PDRectangle(wPt, hPt))
-                    doc.addPage(page)
-                    val image = LosslessFactory.createFromImage(doc, oriented)
-                    PDPageContentStream(doc, page).use { cs ->
-                        cs.drawImage(image, 0f, 0f, wPt, hPt)
-                    }
-                    FileOutputStream(out).use { fos -> doc.save(fos); fos.flush() }
+            val cacheDir = File(context.cacheDir, "ocr_cache")
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            tempFile = File(cacheDir, "temp_ocr_${System.currentTimeMillis()}.pdf")
+            
+            context.contentResolver.openInputStream(pdfUri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
                 }
+            } ?: return@withContext OcrResult(
+                success = false,
+                pages = emptyList(),
+                fullText = "",
+                errorMessage = "Cannot open PDF file"
+            )
+
+            // Use MemoryUsageSetting to enable temp file buffering instead of full memory load
+            document = PDDocument.load(tempFile, MemoryUsageSetting.setupTempFileOnly())
+            
+            val totalPages = document.numberOfPages
+            val pagesToProcess = pageRange ?: (0 until totalPages)
+            val validPages = pagesToProcess.filter { it in 0 until totalPages }
+            
+            progressCallback(10)
+            
+            val renderer = PDFRenderer(document)
+            val pageResults = mutableListOf<OcrPageResult>()
+            val fullTextBuilder = StringBuilder()
+            val fullMarkdownBuilder = StringBuilder()
+            
+            for ((index, pageIndex) in validPages.withIndex()) {
                 ensureActive()
-                if (out.length() == 0L) throw IOException("Wrapped OCR PDF is empty")
-                completed = true
-                out
-            } finally {
-                if (!oriented.isRecycled) oriented.recycle()
-                if (!completed) ownedTemp?.delete()
+
+                // Render page to image
+                val page = document.getPage(pageIndex)
+                val dpi = getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
+                val pageImage = renderer.renderImageWithDPI(pageIndex, dpi)
+                
+                try {
+                    ensureActive()
+                    val words = performOcrOnBitmap(pageImage)
+
+                    if (words.isNotEmpty()) {
+                        val pageText = words.joinToString(" ") { it.text }
+                        val pageMarkdown = buildMarkdownFromWords(words)
+                        val blocks = listOf(
+                            OcrTextBlock(
+                                text = pageText,
+                                boundingBox = null,
+                                lines = listOf(
+                                    OcrTextLine(
+                                        text = pageText,
+                                        boundingBox = null,
+                                        words = words
+                                    )
+                                )
+                            )
+                        )
+                        val pageResult = OcrPageResult(
+                            pageNumber = pageIndex + 1,
+                            text = pageText,
+                            markdownText = pageMarkdown,
+                            blocks = blocks,
+                            confidence = pageOcrConfidence(words)
+                        )
+                        pageResults.add(pageResult)
+
+                        if (fullTextBuilder.isNotEmpty()) {
+                            fullTextBuilder.append("\n\n--- Page ${pageIndex + 1} ---\n\n")
+                            fullMarkdownBuilder.append("\n\n---\n\n### Page ${pageIndex + 1}\n\n")
+                        } else {
+                            fullMarkdownBuilder.append("### Page ${pageIndex + 1}\n\n")
+                        }
+                        fullTextBuilder.append(pageText)
+                        fullMarkdownBuilder.append(pageMarkdown)
+                    }
+                } finally {
+                    pageImage.recycle()
+                }
+                
+                val progress = 10 + ((index + 1) * 85 / validPages.size)
+                progressCallback(progress)
+                if ((index + 1) % OCR_CHUNK_SIZE == 0) {
+                    yield()
+                }
             }
+            
+            document.close()
+            progressCallback(100)
+            
+            OcrResult(
+                success = true,
+                pages = pageResults,
+                fullText = fullTextBuilder.toString(),
+                markdownText = fullMarkdownBuilder.toString()
+            )
         } catch (e: CancellationException) {
             document?.close()
             throw e
@@ -355,10 +424,13 @@ class PdfOcrProcessor(private val context: Context) {
             } ?: return@withContext null
             val oriented = applyExifOrientation(imageUri, bitmap)
 
-            val cacheDir = File(context.cacheDir, "ocr_cache")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
-            val out = File(cacheDir, "img_wrap_${System.currentTimeMillis()}.pdf")
+            var ownedTemp: File? = null
+            var completed = false
             try {
+                // A clock-derived filename can collide across concurrent OCR jobs.
+                // Retain unique ownership until the caller takes the completed file.
+                val out = allocateOcrWrapFile(File(context.cacheDir, "ocr_cache"))
+                ownedTemp = out
                 PDDocument().use { doc ->
                     val wPt = (oriented.width * 72f / 200f).coerceIn(72f, 3000f)
                     val hPt = (oriented.height * 72f / 200f).coerceIn(72f, 3000f)
@@ -370,10 +442,14 @@ class PdfOcrProcessor(private val context: Context) {
                     }
                     FileOutputStream(out).use { fos -> doc.save(fos); fos.flush() }
                 }
+                ensureActive()
+                if (out.length() == 0L) throw IOException("Wrapped OCR PDF is empty")
+                completed = true
+                out
             } finally {
-                oriented.recycle()
+                if (!oriented.isRecycled) oriented.recycle()
+                if (!completed) ownedTemp?.delete()
             }
-            out
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
