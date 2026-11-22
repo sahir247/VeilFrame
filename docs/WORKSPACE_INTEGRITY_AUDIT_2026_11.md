@@ -8,12 +8,12 @@ This is the living record of the two fresh static audits: engineering integrity 
 
 - OPEN: uncorrected or requires investigation.
 - PARTIAL: a subset is implemented; remaining work explicit.
-- PATCHED: source fix committed, CI/device acceptance pending.
+- PATCHED: bounded source fix committed; finding-specific acceptance may still be pending even when general CI is green.
 - VERIFIED: record actual test evidence and scope before claiming verification.
 
 Code and ledger updates must be committed together. Never mark an issue verified without finding-specific acceptance evidence. A green unit/compile pipeline is recorded under CI evidence but must not be mistaken for complete user/device parity. Preserve main and release gates; no changes to signing secrets. Prioritize false success, privacy, fidelity, ownership, then benchmarks.
 
-## Findings — reconciled against PR #47 head (`a7f571f`, 2026-11-22)
+## Findings — reconciled against last CI-passing application revision (`a7f571f`, 2026-11-22)
 
 **Source status and verification are separate.** `PATCHED` means the bounded source fix is present on the PR branch, **not** that a device-level or independent acceptance criterion has passed. `PARTIAL` means material source-scope work or unproven behavior remains. The baseline locations below are historical finding pointers, not the exact current line numbers.
 
@@ -54,7 +54,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 ## Latest automated acceptance checkpoint (2026-11-22)
 
-**Audited branch head:** `a7f571f7eae19abd0d9267e90554da5d6e887c8c` on `fix/workspace-integrity-audit-2026-11` (draft PR #47, base `main`; not merged). Evidence belongs to **this exact commit** and must be refreshed after later changes. The following checks completed successfully on the head:
+**Last CI-passing application revision:** `a7f571f7eae19abd0d9267e90554da5d6e887c8c` on `fix/workspace-integrity-audit-2026-11` (draft PR #47, base `main`; not merged). The CI evidence belongs to **that exact tested code revision**. Later ledger-only commit(s) advance the Git branch SHA without changing application source, but their own exact-SHA CI may still be in progress. Any subsequent source or workflow edit needs new CI acceptance. These checks completed successfully for the tested revision:
 
 | Check | Evidence | What it establishes |
 |---|---|---|
@@ -69,7 +69,7 @@ Code and ledger updates must be committed together. Never mark an issue verified
 
 **Coverage boundary:** passing compilation, unit tests and packaging checks does not by itself validate SAF provider failure modes, device memory leaks, physical OCR layout, native GPU/CPU inference, encoded video PII recall, independent PRNU resistance, malicious PDF corpus, actual hardware QR scans, or Excel/printer pixel parity. No finding is labelled `VERIFIED` without matching issue-specific end-to-end evidence. There is no independent device run or release-signing evidence in this audit.
 
-**Status rollup at current head:** 32 findings total; P1 = **13 PATCHED, 9 PARTIAL**; P2 = **5 PATCHED, 5 PARTIAL**; **0 VERIFIED**. The 14 PARTIAL entries are not 14 proven live crashes: each represents unfinished source scope, a capability gap, or a defensibly unverified security/fidelity claim. The 18 PATCHED entries still require their listed acceptance checks before final closure.
+**Status rollup for the reviewed application source:** 32 findings total; P1 = **13 PATCHED, 9 PARTIAL**; P2 = **5 PATCHED, 5 PARTIAL**; **0 VERIFIED**. The 14 PARTIAL entries are not 14 proven live crashes: each represents unfinished source scope, a capability gap, or a defensibly unverified security/fidelity claim. The 18 PATCHED entries still require their listed acceptance checks before final closure.
 
 ## Remaining-work classification — source scope vs device/independent verification
 
