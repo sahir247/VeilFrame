@@ -155,102 +155,32 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(0)
             
             // Create a temp file to avoid loading everything into memory
-            val cacheDir = File(context.cacheDir, "ocr_cache")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_ocr_${System.currentTimeMillis()}.pdf")
-            
-            context.contentResolver.openInputStream(pdfUri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return@withContext OcrResult(
-                success = false,
-                pages = emptyList(),
-                fullText = "",
-                errorMessage = "Cannot open PDF file"
-            )
-
-            // Use MemoryUsageSetting to enable temp file buffering instead of full memory load
-            document = PDDocument.load(tempFile, MemoryUsageSetting.setupTempFileOnly())
-            
-            val totalPages = document.numberOfPages
-            val pagesToProcess = pageRange ?: (0 until totalPages)
-            val validPages = pagesToProcess.filter { it in 0 until totalPages }
-            
-            progressCallback(10)
-            
-            val renderer = PDFRenderer(document)
-            val pageResults = mutableListOf<OcrPageResult>()
-            val fullTextBuilder = StringBuilder()
-            val fullMarkdownBuilder = StringBuilder()
-            
-            for ((index, pageIndex) in validPages.withIndex()) {
-                ensureActive()
-
-                // Render page to image
-                val page = document.getPage(pageIndex)
-                val dpi = getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
-                val pageImage = renderer.renderImageWithDPI(pageIndex, dpi)
-                
-                try {
-                    ensureActive()
-                    val words = performOcrOnBitmap(pageImage)
-
-                    if (words.isNotEmpty()) {
-                        val pageText = words.joinToString(" ") { it.text }
-                        val pageMarkdown = buildMarkdownFromWords(words)
-                        val blocks = listOf(
-                            OcrTextBlock(
-                                text = pageText,
-                                boundingBox = null,
-                                lines = listOf(
-                                    OcrTextLine(
-                                        text = pageText,
-                                        boundingBox = null,
-                                        words = words
-                                    )
-                                )
-                            )
-                        )
-                        val pageResult = OcrPageResult(
-                            pageNumber = pageIndex + 1,
-                            text = pageText,
-                            markdownText = pageMarkdown,
-                            blocks = blocks,
-                            confidence = pageOcrConfidence(words)
-                        )
-                        pageResults.add(pageResult)
-
-                        if (fullTextBuilder.isNotEmpty()) {
-                            fullTextBuilder.append("\n\n--- Page ${pageIndex + 1} ---\n\n")
-                            fullMarkdownBuilder.append("\n\n---\n\n### Page ${pageIndex + 1}\n\n")
-                        } else {
-                            fullMarkdownBuilder.append("### Page ${pageIndex + 1}\n\n")
-                        }
-                        fullTextBuilder.append(pageText)
-                        fullMarkdownBuilder.append(pageMarkdown)
+            var ownedTemp: File? = null
+            var completed = false
+            try {
+                // A clock-derived filename can collide across concurrent OCR jobs.
+                // Retain unique ownership until the caller takes the completed file.
+                val out = allocateOcrWrapFile(File(context.cacheDir, "ocr_cache"))
+                ownedTemp = out
+                PDDocument().use { doc ->
+                    val wPt = (oriented.width * 72f / 200f).coerceIn(72f, 3000f)
+                    val hPt = (oriented.height * 72f / 200f).coerceIn(72f, 3000f)
+                    val page = PDPage(PDRectangle(wPt, hPt))
+                    doc.addPage(page)
+                    val image = LosslessFactory.createFromImage(doc, oriented)
+                    PDPageContentStream(doc, page).use { cs ->
+                        cs.drawImage(image, 0f, 0f, wPt, hPt)
                     }
-                } finally {
-                    pageImage.recycle()
+                    FileOutputStream(out).use { fos -> doc.save(fos); fos.flush() }
                 }
-                
-                val progress = 10 + ((index + 1) * 85 / validPages.size)
-                progressCallback(progress)
-                if ((index + 1) % OCR_CHUNK_SIZE == 0) {
-                    yield()
-                }
+                ensureActive()
+                if (out.length() == 0L) throw IOException("Wrapped OCR PDF is empty")
+                completed = true
+                out
+            } finally {
+                if (!oriented.isRecycled) oriented.recycle()
+                if (!completed) ownedTemp?.delete()
             }
-            
-            document.close()
-            progressCallback(100)
-            
-            OcrResult(
-                success = true,
-                pages = pageResults,
-                fullText = fullTextBuilder.toString(),
-                markdownText = fullMarkdownBuilder.toString()
-            )
-            
         } catch (e: CancellationException) {
             document?.close()
             throw e
@@ -601,23 +531,17 @@ class PdfOcrProcessor(private val context: Context) {
         return try {
             context.contentResolver.openInputStream(imageUri)?.use { input ->
                 val exif = androidx.exifinterface.media.ExifInterface(input)
-                val orientation = exif.getAttributeInt(
-                    androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
-                    androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
-                )
-                val matrix = android.graphics.Matrix()
-                when (orientation) {
-                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-                    else -> return bitmap
-                }
-                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                if (rotated != bitmap) bitmap.recycle()
-                rotated
+                // ExifInterface defines rotation after a horizontal flip, so
+                // both transforms must be applied in this order. This covers
+                // all eight standard orientation tags, including mirrored ones.
+                val matrix = exifOcrTransform(exif.rotationDegrees, exif.isFlipped)
+                    ?: return bitmap
+                val adjusted = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (adjusted !== bitmap) bitmap.recycle()
+                adjusted
             } ?: bitmap
         } catch (e: Exception) {
-            android.util.Log.w("PdfOcrProcessor", "EXIF rotation skipped: ${e.message}")
+            android.util.Log.w("PdfOcrProcessor", "Cannot apply EXIF orientation; raw bitmap used", e)
             bitmap
         }
     }
@@ -791,5 +715,27 @@ internal class SearchableOcrFonts(context: Context, document: PDDocument) {
             if (width.isFinite() && width > 0f) return font to width
         }
         throw IOException("Searchable PDF fonts cannot encode all recognized characters; no text was silently removed")
+    }
+}
+
+
+/** Temp files are never shared between concurrent OCR image imports. */
+internal fun allocateOcrWrapFile(directory: File): File {
+    if (!directory.isDirectory && !directory.mkdirs()) {
+        throw IOException("Cannot create OCR temporary directory")
+    }
+    return File.createTempFile("img_wrap_", ".pdf", directory)
+}
+
+/** AndroidX ExifInterface defines rotation after horizontal mirroring. */
+internal fun exifOcrTransform(rotationDegrees: Int, flipped: Boolean): android.graphics.Matrix? {
+    require(rotationDegrees == 0 || rotationDegrees == 90 ||
+        rotationDegrees == 180 || rotationDegrees == 270) {
+        "Unsupported EXIF rotation"
+    }
+    if (rotationDegrees == 0 && !flipped) return null
+    return android.graphics.Matrix().apply {
+        if (flipped) postScale(-1f, 1f)
+        if (rotationDegrees != 0) postRotate(rotationDegrees.toFloat())
     }
 }
