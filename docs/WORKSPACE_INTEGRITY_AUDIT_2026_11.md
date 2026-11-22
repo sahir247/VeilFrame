@@ -908,3 +908,9 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 - Metadata removal and post-save verification now independently bound reachable COS traversal to 250,000 nodes (including pending growth and large dictionary/array structures), analogous to the active-content guard. Added a synthetic-budget regression for a large reachable graph; the real default threshold has not been stress-benchmarked on a physical device. Objects intentionally outside the reachable catalog and opaque stream payload remain outside the promise.
 
 - Indirect-object references in active-content traversal also have a 1,024-hop dereference ceiling; a malformed non-cyclic chain cannot evade the object-graph budget through repeated nested pointer resolution.
+
+
+### A21 — Idempotent terminal retirement with weak ownership history (CI/device acceptance pending)
+
+- Found that ResourceLeases could dispose the same resource twice when retire was called again after the final lease released, and could then reacquire that retired object. Introduced weak retirement records with reference-queue cleanup, maintaining the existing identity-vs-value matching policy and retaining no strong references to disposed resources. The first retirement becomes terminal: later retirement is a no-op, while reacquisition is refused. The idempotent AtomicBoolean release callbacks and final-reader disposal remain unchanged.
+- JVM regressions cover concurrent-reader final retirement, repeated retirement after release, no-reader retirement, terminal acquisition refusal, and equal-but-distinct key behavior in both identity/value modes. This is a source-level lifecycle improvement, not proof of native GPU or Android device leakage fixes. A21 remains PARTIAL.
