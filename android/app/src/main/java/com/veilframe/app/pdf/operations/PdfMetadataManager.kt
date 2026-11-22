@@ -2,6 +2,7 @@ package com.veilframe.app.pdf.operations
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDDocumentInformation
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
@@ -18,6 +19,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
+import java.io.InputStream
+import java.io.IOException
 import com.veilframe.app.pdf.util.MemoryGuard
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -71,18 +74,35 @@ internal fun verifyStrippedPdfMetadata(document: PDDocument) {
     visitMetadata(document, false)
 }
 
-private fun visitMetadata(document: PDDocument, mutate: Boolean) {
+internal fun visitMetadata(
+    document: PDDocument,
+    mutate: Boolean,
+    maxVisitedNodes: Int = 250_000
+) {
+    require(maxVisitedNodes in 1..250_000) { "Invalid PDF metadata traversal budget" }
     val metadata = COSName.METADATA
     val pieceInfo = COSName.getPDFName("PieceInfo")
     val seen = Collections.newSetFromMap(IdentityHashMap<COSBase, Boolean>())
     val pending = ArrayDeque<COSBase>()
-    pending.add(document.documentCatalog.cosObject)
+    fun enqueue(value: COSBase) {
+        if (pending.size >= maxVisitedNodes) {
+            throw IOException("PDF metadata graph exceeds safe traversal budget")
+        }
+        pending.add(value)
+    }
+    enqueue(document.documentCatalog.cosObject)
     while (pending.isNotEmpty()) {
         val node = pending.removeLast()
         if (!seen.add(node)) continue
+        if (seen.size > maxVisitedNodes) {
+            throw IOException("PDF metadata graph exceeds safe traversal budget")
+        }
         when (node) {
-            is COSObject -> node.getObject()?.let { pending.add(it) }
+            is COSObject -> node.getObject()?.let { enqueue(it) }
             is COSDictionary -> {
+                if (node.keySet().size > maxVisitedNodes) {
+                    throw IOException("PDF metadata dictionary exceeds safe traversal budget")
+                }
                 if (mutate) {
                     node.removeItem(metadata)
                     node.removeItem(pieceInfo)
@@ -90,11 +110,16 @@ private fun visitMetadata(document: PDDocument, mutate: Boolean) {
                     throw java.io.IOException("Metadata remains after saving PDF")
                 }
                 for (key in node.keySet()) {
-                    node.getItem(key)?.let { pending.add(it) }
+                    node.getItem(key)?.let { enqueue(it) }
                 }
             }
-            is COSArray -> for (index in 0 until node.size()) {
-                node.get(index)?.let { pending.add(it) }
+            is COSArray -> {
+                if (node.size() > maxVisitedNodes) {
+                    throw IOException("PDF metadata array exceeds safe traversal budget")
+                }
+                for (index in 0 until node.size()) {
+                    node.get(index)?.let { enqueue(it) }
+                }
             }
         }
     }
@@ -140,7 +165,7 @@ class PdfMetadataManager {
                 creationDate = info.creationDate?.let { formatDate(it) },
                 modificationDate = info.modificationDate?.let { formatDate(it) },
                 pageCount = document.numberOfPages,
-                fileSize = getFileSize(context, uri),
+                fileSize = getFileSize(context, uri) { ensureActive() },
                 isEncrypted = document.isEncrypted,
                 pdfVersion = document.version.toString()
             )
@@ -203,11 +228,30 @@ class PdfMetadataManager {
             
             onProgress(0.7f)
             
-            // Save with updated metadata
+            // Stage and reopen the serialized PDF before handing bytes to the
+            // caller-owned destination stream. A save/serialization failure must
+            // not publish a partially written "successful" metadata update.
             ensureActive()
-            document.save(outputStream)
-            outputStream.flush()
-            
+            exportVerifiedPdf(context, document, document.numberOfPages, verify = { saved ->
+                val actual = saved.documentInformation
+                fun same(actualValue: String?, requested: String?): Boolean =
+                    sameSerializedPdfMetadata(actualValue, requested)
+                if (!same(actual.title, metadata.title) ||
+                    !same(actual.author, metadata.author) ||
+                    !same(actual.subject, metadata.subject) ||
+                    !same(actual.keywords, metadata.keywords) ||
+                    !same(actual.creator, metadata.creator) ||
+                    !same(actual.producer, metadata.producer)) {
+                    throw IOException("Updated PDF metadata failed serialized verification")
+                }
+            }) {
+                // Do not close a stream owned by the caller.
+                object : java.io.FilterOutputStream(outputStream) {
+                    override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
+                    override fun close() = flush()
+                }
+            }
+
             onProgress(1.0f)
             
             Result.success(Unit)
@@ -286,13 +330,52 @@ class PdfMetadataManager {
     /**
      * Get file size from URI.
      */
-    private fun getFileSize(context: Context, uri: Uri): Long {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                stream.available().toLong()
-            } ?: 0L
+    private fun getFileSize(context: Context, uri: Uri, checkpoint: () -> Unit): Long {
+        val resolver = context.contentResolver
+        // InputStream.available() is an estimate of nonblocking bytes, NOT file
+        // length. Prefer the provider's explicit length when it is known.
+        val reportedSize = try {
+            checkpoint()
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) {
+                    cursor.getLong(index).takeIf { it >= 0L }
+                } else null
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            0L
+            null
         }
+        checkpoint()
+        if (reportedSize != null) return reportedSize
+
+        // Unknown-size providers and file URIs may not return a size column.
+        // Count actual streamed bytes with bounded memory rather than invent
+        // 0 or depending on an unreliable available() implementation.
+        return try {
+            resolver.openInputStream(uri)?.use { countPdfSourceBytes(it, checkpoint) } ?: -1L
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            -1L // Unknown, not zero-sized.
+        }
+    }
+}
+
+/** Compare saved Info fields to their actual cleared-or-literal edit contract. */
+internal fun sameSerializedPdfMetadata(actual: String?, requested: String?): Boolean =
+    actual.orEmpty() == requested?.takeUnless { it.isBlank() }.orEmpty()
+
+/** Count a provider stream whose available() may be zero even when it has content. */
+internal fun countPdfSourceBytes(input: InputStream, checkpoint: () -> Unit = {}): Long {
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        checkpoint()
+        val read = input.read(buffer)
+        if (read == -1) return total
+        if (read == 0) throw IOException("PDF provider stream made no progress")
+        total = Math.addExact(total, read.toLong())
     }
 }

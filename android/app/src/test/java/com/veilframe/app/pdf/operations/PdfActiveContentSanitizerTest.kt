@@ -6,6 +6,7 @@ import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -69,6 +70,37 @@ class PdfActiveContentSanitizerTest {
             assertNull(aa.getItem(n("O")))
             val annotations = page.cosObject.getDictionaryObject(n("Annots")) as COSArray
             assertEquals(1, annotations.size())
+        }
+    }
+
+    @Test
+    fun maliciouslyLargeReachableCosGraphFailsClosedAtExplicitBudget() {
+        PDDocument().use { document ->
+            document.addPage(PDPage())
+            val entries = COSArray()
+            repeat(40) { index ->
+                entries.add(COSDictionary().apply {
+                    setString(n("Evidence"), "entry-$index")
+                })
+            }
+            document.documentCatalog.cosObject.setItem(n("AdversarialEntries"), entries)
+            try {
+                PdfActiveContentSanitizer.verify(document, javascript = true, attachments = false, maxVisitedNodes = 12)
+                fail("A bounded sanitizer must reject unsupported object graphs")
+            } catch (e: IOException) {
+                assertTrue(e.message?.contains("safety budget") == true)
+            }
+        }
+    }
+
+    @Test
+    fun selfReferentialCosDictionaryDoesNotLoopForever() {
+        PDDocument().use { document ->
+            document.addPage(PDPage())
+            val cyclic = COSDictionary()
+            cyclic.setItem(n("Self"), cyclic)
+            document.documentCatalog.cosObject.setItem(n("CyclicRef"), cyclic)
+            PdfActiveContentSanitizer.verify(document, javascript = true, attachments = false)
         }
     }
 }

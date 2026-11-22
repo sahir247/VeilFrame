@@ -889,3 +889,22 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
 ### A26 — No false-green real-photo benchmark acceptance (pending physical execution)
 
 - Improved NcnnRealPhotoBenchmarkTest so it distinguishes fixed-policy refusals (e.g. 4K 3840x2160 at 4x exceeding the 100 MP envelope) from dynamic resource rejection or native allocation failure for workloads that are inside the documented envelope. A 20-photo instrumentation test can no longer succeed if every output was rejected, or if any advertised supported case was rejected for resource reasons. CSV statuses are EXPECTED_HARD_CAP versus UNEXPECTED_RESOURCE_REFUSAL, retaining input hash, hardware/backend and timing data. No real-photo benchmark rerun is claimed; prior historical '20 passed' must not be interpreted as 20 completed files if fixed-cap refusals are recorded.
+
+
+### A05 — Stage and verify metadata edits; report source size correctly (latest source change; CI pending)
+
+- Discovered PDF Metadata Manager's file-size inspection incorrectly used InputStream.available() as the document size. This reports buffered/nonblocking bytes, not the total file length; fixed to prefer a nonnegative OpenableColumns.SIZE field, otherwise stream-count actual bytes with a bounded 64KiB buffer. Unknown/unreadable sizes are represented as -1, not falsely as a zero-byte file. Added pure JVM tests with available() forced to zero and a nonprogressing input stream.
+- Metadata editing previously wrote directly into a caller-owned output stream before serialized validation, unlike metadata stripping. It now stages, reloads, verifies its page count and each requested Info string, then copies the staged document while preserving caller ownership of the supplied stream. A remote SAF sink can still fail partway through transfer (and must report failure); callers owning an atomic destination are still responsible for rolling back that destination. Signed/encrypted rewrite refusal unchanged.
+- This is a bounded PDF correctness and export-path improvement, not a claim to erase arbitrary opaque metadata (A05 remains PARTIAL). Independent PDF parser, provider failure-injection, and physical-device UI checks remain pending. No release configuration change.
+
+- Verification refinement: empty/whitespace-only metadata requested for clearing is checked against the actual serialized empty field rather than falsely treated as a literal value. Unknown-size stream counting now checks coroutine cancellation between bounded reads; cancellation is propagated rather than hidden as an unknown size. Added regression tests for blank-field normalization and cancellation checkpoints.
+
+
+### A07 — Bounded reachable PDF active-content sanitization (source change; device/adversarial acceptance pending)
+
+- The JavaScript/attachment sanitizer previously traversed all reachable COS objects and could queue an arbitrarily large malformed object graph. Added a 250,000-distinct-node ceiling, bounded pending work, dictionary/array admission and name-tree bounds. Sanitization now fails closed rather than risking uncontrolled traversal and a misleading success. The limit is explicit capability scope: extremely large PDFs require another, separately validated processing path; it is not a reason to publish a partial result.
+- Added JVM regression cases for a synthetic oversized COS graph (injectable lower test budget) and a self-referential dictionary cycle. This is a bounded static-graph denial-of-service mitigation, **not** proof against malicious PDF parser bugs or stream-level active content. Independent adversarial files, full PDF renderer parity and physical-device provider failures remain A07 PARTIAL.
+
+- Metadata removal and post-save verification now independently bound reachable COS traversal to 250,000 nodes (including pending growth and large dictionary/array structures), analogous to the active-content guard. Added a synthetic-budget regression for a large reachable graph; the real default threshold has not been stress-benchmarked on a physical device. Objects intentionally outside the reachable catalog and opaque stream payload remain outside the promise.
+
+- Indirect-object references in active-content traversal also have a 1,024-hop dereference ceiling; a malformed non-cyclic chain cannot evade the object-graph budget through repeated nested pointer resolution.
