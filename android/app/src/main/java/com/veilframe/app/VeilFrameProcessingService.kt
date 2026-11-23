@@ -24,6 +24,7 @@ import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
 import com.veilframe.app.cv.motion.MotionLabSourceFrameStage
 import com.veilframe.app.cv.motion.MotionLabDiskBudget
+import com.veilframe.app.cv.motion.MotionLabAudioTimeline
 import com.veilframe.app.cv.motion.MotionLabFrameSampling
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
@@ -525,8 +526,9 @@ class VeilFrameProcessingService : Service() {
             // Audit source packet presentation timestamps before extracting any frames.
             // This JPEG-based backend deliberately rejects variable-rate/unsupported clips
             // rather than inventing CFR and silently drifting audio and video out of sync.
+            val sourceVideoPts = readMotionVideoPtsUs(inFile)
             val timing = MotionLabTimingContract.plan(
-                presentationUs = readMotionVideoPtsUs(inFile),
+                presentationUs = sourceVideoPts,
                 durationMs = durationMs,
                 target60Fps = isTarget60fps,
                 requestedMultiplier = multiplier
@@ -818,6 +820,15 @@ class VeilFrameProcessingService : Service() {
             check(kotlin.math.abs(outputDurationMs - durationMs) <= 200L) {
                 "Motion output duration $outputDurationMs ms disagrees with input $durationMs ms"
             }
+            // An apparently complete video is still a bad export if a source
+            // audio stream was dropped or shifted during stream-copy remuxing.
+            MotionLabAudioTimeline.verify(
+                source = readMotionAudioSpan(inFile),
+                output = readMotionAudioSpan(stage),
+                sourceVideoFirstUs = sourceVideoPts.minOrNull() ?: 0L,
+                outputVideoFirstUs = publishedPts.minOrNull() ?: 0L,
+                durationMs = durationMs
+            )
 
             kotlin.coroutines.coroutineContext.ensureActive()
             synchronized(this) {
@@ -868,6 +879,35 @@ class VeilFrameProcessingService : Service() {
             throw t
         } finally {
             rgba.release()
+        }
+    }
+
+    private fun readMotionAudioSpan(input: File): MotionLabAudioTimeline.AudioSpan? {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val audioTrack = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: return null
+            extractor.selectTrack(audioTrack)
+            var firstPts = -1L
+            var lastPts = -1L
+            var count = 0
+            while (true) {
+                val ptsUs = extractor.sampleTime
+                if (ptsUs < 0L) break
+                check(count < MotionLabAudioTimeline.MAX_AUDIO_SAMPLES) {
+                    "Audio track exceeds bounded verification budget"
+                }
+                if (firstPts < 0L) firstPts = ptsUs
+                if (ptsUs > lastPts) lastPts = ptsUs
+                count++
+                if (!extractor.advance()) break
+            }
+            check(count > 0 && firstPts >= 0L) { "Audio stream has no readable samples" }
+            return MotionLabAudioTimeline.AudioSpan(firstPts, lastPts, count)
+        } finally {
+            extractor.release()
         }
     }
 
