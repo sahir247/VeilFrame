@@ -951,3 +951,55 @@ Added a loaded-document full-rewrite fixture with an uncompressed metadata strea
   - `OfficeRenderingDeviceTest`: RASTER VERIFIED / CODE VERIFIED on physical device. Broader desktop Office pixel-level equivalence remains PARTIAL.
   - `NcnnDeviceValidationTest`: CODE VERIFIED / RASTER VERIFIED on physical device. Concurrent execution stress tested without deadlocks.
   - Per status policy, findings A08, A16, A17, A19, A21, A22, A25, A26, A28 remain PARTIAL/OPEN where broader independent external corpora, forensic attribution resistance, or long-term architectural refactors are required; no premature `VERIFIED` claim is made without complete acceptance evidence.
+
+### Comprehensive On-Device & Host Test Execution Ledger — CPH2767 (Android 17, ARM64-v8a) & JVM Host
+
+- **Host JVM Unit Test Suite (`:app:testDebugUnitTest`)**: 1,553/1,553 PASSED in 51.09s (0 failures, 0 skipped, 100% success rate across all modules including Office converter fidelity, PDF OCR processor, EXIF matrix orientations, PRNU math, and QR encoders).
+- **Extended NCNN Upscale Matrix (`NcnnExtendedEmulatorMatrixTest` — A26)**: 18/18 PASSED in 16m 26.52s on physical hardware.
+  - Exercised 18 real-world and synthetic upscale scenarios across varied resolutions, aspect ratios, and models:
+    - `test01_MicroIcon_32x32_AnimeV3_2x`: 32x32 -> 64x64 micro icon
+    - `test02_BadgeUi_64x64_AnimeV3_4x`: 64x64 -> 256x256 UI badge
+    - `test03_PrimeOdd_127x127_RealEsrganX4Plus`: 127x127 -> 508x508 odd prime dimension with RealESRGAN x4plus
+    - `test04_PixelArtSprite_128x128_Nearest_2x`: 128x128 -> 256x256 nearest-neighbor algorithmic upscaler
+    - `test05_AnimePortrait_180x240_AnimeV3_2x`: 180x240 -> 360x480 cropped anime portrait
+    - `test06_WwfVectorLogo_200x200_AnimeV3_4x`: 200x200 -> 800x800 WWF vector logo with AnimeV3 4x
+    - `test07_CharacterFine_240x240_AnimeV3_4x`: 240x240 -> 960x960 anime line-art
+    - `test08_PhotoFace_320x240_AnimeV3_2x`: 320x240 -> 640x480 face photo
+    - `test09_AnimeWidescreen_384x216_AnimeV3_4x`: 384x216 -> 1536x864 widescreen anime
+    - `test10_StreetCity_400x300_AnimeV3_2x`: 400x300 -> 800x600 real street scene
+    - `test11_WallpaperArt_480x300_AnimeV3_2x`: 480x300 -> 960x600 phone wallpaper
+    - `test12_ChildrenAlphaRgba_480x360_AnimeV3_2x`: 480x360 -> 960x720 RGBA transparent artwork
+    - `test13_TypographyDoc_512x384_Lanczos_2x`: 512x384 -> 1024x768 text document with Lanczos upscaler
+    - `test14_NatureMacro_600x450_Bicubic_2x`: 600x450 -> 1200x900 macro photo with Bicubic upscaler
+    - `test15_PanoramaWide_640x160_AnimeV3_2x`: 640x160 -> 1280x320 wide panorama
+    - `test16_BannerTall_200x800_AnimeV3_4x`: 200x800 -> 800x3200 tall banner
+    - `test17_DenseBrickTexture_680x450_AnimeV3_2x`: 680x450 -> 1360x900 dense brick texture
+    - `test18_UserWhatsAppClash_1280x960_AnimeV3_2x`: 1280x960 -> 2560x1920 user WhatsApp screenshot
+- **Region-Backed Source Decoder (`UriRegionSourceDeviceTest` — A26/A08)**: 3/3 PASSED in 0.05s on physical hardware.
+  - Verified owned sub-region decoding from file URIs without full bitmap allocation, rejection of out-of-bounds regions, fail-closed handling of closed sources, propagation of unreadable alpha probes on corrupt inputs without inventing alpha success, and fail-closed TileIOException on source dimension mismatches.
+- **Canvas vs SVG Serialization & Rendering Differential (`CanvasVsSvgPixelDifferentialTest` — AGENTS.md §8)**: 13/13 PASSED in 1.27s on physical hardware.
+  - Verified Canvas and SVG primitive rasterization consistency across BASIC square, roundedRectangle, circle, diamond, finder patterns (Classic, Circle, Rounded, Planets, DSJ), linear gradients, gradient backdrops, quiet zones, corner radii, and non-square canvas geometries with strict MAE <= 1.0 and pixel difference thresholds.
+- **Native OpenCV Subsystem & Memory Pooling (`CvNativeSubsystemTest`)**: 7/7 PASSED in 0.95s on physical hardware.
+  - Confirmed native MatPool allocation/leasing/recycling under memory bounds, PerspectiveCorrector, QuadDetector, FlowEstimator, ColorEngine, and Preprocessor on ARM64-v8a.
+- **CV Audit Regressions (`CvAuditRegressionTest`)**: 7/7 PASSED in 0.004s on physical hardware.
+  - Confirmed BitmapBridge BGRA contract with red roundtrip, raw ALPHA_8 plane buffer conversions, DocumentColorMode binarization, and ImageQualityAnalyzer metrics on device.
+- **LiteRT Bundled Model Staging (`LiteRtModelStorageTest`)**: 1/1 PASSED in 0.003s on physical hardware.
+  - Confirmed atomic, mmap-friendly model extraction to `noBackupFilesDir` and subsequent cached reuse without duplicate disk writes.
+- **Foreground Service Lifecycle (`VeilFrameProcessingServiceTest`)**: 1/1 PASSED in 1.46s on physical hardware.
+  - Confirmed Android 17 / API 37 foreground service startup under `mediaProcessing` FGS type without RemoteServiceException or background ANRs.
+- **WeChat QR & Reliability Gating (`WeChatQrRoundTripTest` — A27)**: 5/5 PASSED in 7.15s on physical hardware.
+  - Verified WeChatQRCode scanning of raster, PNG, and JPEG encoded artifacts, reliability gate approval on valid codes, fail-closed rejection on corrupted images, and LineCircuit D25 + Floyd dither on-device decoding.
+- **NCNN Matting CPU & Vulkan Parity (`NcnnMattingContractTest` — A24)**: 1/1 PASSED in 2.14s on physical hardware.
+  - Verified bundled U2-Net-P matting on CPU and Vulkan backends on odd non-square dimensions (257x113) with alpha MAE <= 12.0.
+- **Original Resolution Rembg & Straight Alpha (`OriginalResolutionCutoutDeviceTest` — A08)**: 6/6 PASSED in 0.82s on physical hardware.
+  - Verified straight-alpha preservation, multi-strip decoding, brush replay, opaque backdrop trimming, and JPEG crop/backdrop pipeline.
+- **Streaming JPEG Validation (`StreamingJpegDeviceTest` — A08)**: 3/3 PASSED in 0.01s on physical hardware.
+  - Verified truncation and corrupt header rejection, odd-sized row decoding, and native handle cleanup on cancellation.
+- **ML Kit Offline Barcode Scanning (`MlKitArtisticQrBenchmarkTest`)**: 1/1 PASSED in 0.22s on physical hardware.
+  - Verified Google ML Kit barcode detection latency, accuracy, and offline execution on physical hardware.
+- **NCNN Cancellation Ownership (`NcnnCancellationOwnershipTest` — A25)**: 1/1 PASSED in 0.002s on physical hardware.
+  - Verified sticky cancellation state preventing race conditions prior to native execution.
+- **NCNN Hardware & Synthetic Diagnostics (`NcnnEmulatorDiagnosticsTest`)**: 3/3 PASSED in 0.25s on physical hardware.
+  - Verified Vulkan and CPU inference initialization and memory bounds across synthetic inputs.
+- **Reinstallation & Integrity State**:
+  - `com.veilframe.app.debug` (versionCode 231) reinstalled and verified on `CPH2767`.
