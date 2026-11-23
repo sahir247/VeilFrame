@@ -668,9 +668,18 @@ class ToolSessionManager(
                     2 -> "Stealth"
                     else -> "None"
                 }
-                binding.tvPrivacyProfileBadge.text = "$noiseLevel DEFENSE".uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                // None is a user-selected disablement, not a passed privacy test.
+                val noiseEnabled = noiseLevel != "None"
+                binding.tvPrivacyProfileBadge.text = if (noiseEnabled) {
+                    "$noiseLevel NOISE TREATMENT".uppercase()
+                } else "NO NOISE TREATMENT"
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (noiseEnabled) activity.getColor(R.color.vf_accent_green)
+                    else role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (noiseEnabled) R.drawable.bg_badge_pass else R.drawable.bg_badge_neutral
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Camera EXIF, GPS coordinates & device serials purged" else "• EXIF & GPS retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Audio stream stripped completely" else "• Audio stream preserved (metadata tags scrubbed)"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked with temporal dithering & asymmetric scaling" else "• Stream remuxed without pixel alteration"
@@ -682,9 +691,17 @@ class ToolSessionManager(
                     2 -> "High Suppression"
                     else -> "Metadata Strip"
                 }
-                binding.tvPrivacyProfileBadge.text = "$mode PRNU Suppression".uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                val metadataOnly = getSelectedOptionIndex() == 3
+                binding.tvPrivacyProfileBadge.text = if (metadataOnly) {
+                    "METADATA ONLY"
+                } else "$mode IMAGE TREATMENT".uppercase()
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (metadataOnly) role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    else activity.getColor(R.color.vf_accent_green)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (metadataOnly) R.drawable.bg_badge_neutral else R.drawable.bg_badge_pass
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Neural/geometric image perturbation applied; camera PRNU not independently verified" else "• Neural/geometric perturbation skipped"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization re-encoding applied" else "• Container re-encode skipped"
@@ -700,6 +717,14 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Recursive directory traversal across all subprojects" else "• Top-level directory only"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• SHA-256 cryptographic hashing active" else "• SHA-256 calculation skipped (low CPU/battery)"
+                // All three rows share one view across four modes. Failing to
+                // update this row leaves unrelated cleaner/AI-bundle copy on
+                // Folder Analyzer when the user switches tools.
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) {
+                    "• Heuristic credential and token scan enabled (review matches)"
+                } else {
+                    "• Heuristic credential and token scan disabled"
+                }
             }
             ToolMode.IMAGE_COMPRESSOR,
             ToolMode.VIDEO_COMPRESSOR,
