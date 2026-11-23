@@ -51,6 +51,7 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
 
         <!-- Component defaults → VeilFrame expressive flavors -->
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.VeilFrame.MaterialAlertDialog</item>
@@ -130,6 +131,7 @@
         <item name="colorOnSurface">@color/vf_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
     <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
@@ -146,6 +148,7 @@
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
         <item name="colorOutlineVariant">#2C2C32</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="elevationOverlayEnabled">false</item>
         <item name="elevationOverlayColor">@android:color/transparent</item>
     </style>

@@ -93,4 +93,18 @@ class LegacyToolThemeContractTest {
         assertNotEquals(Color.MAGENTA, selected)
         assertNotEquals(Color.MAGENTA, unchecked)
     }
+    @Test
+    @Config(qualifiers = "night")
+    fun systemNightModeUsesLightSystemBarIcons() {
+        val context = themed()
+        assertTrue(ThemeSettingsManager.isDarkUi(context))
+    }
+
+    @Test
+    @Config(qualifiers = "notnight")
+    fun systemLightModeUsesDarkSystemBarIcons() {
+        val context = themed()
+        assertTrue(!ThemeSettingsManager.isDarkUi(context))
+    }
+
 }

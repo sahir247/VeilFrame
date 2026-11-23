@@ -180,6 +180,9 @@ class MainActivity : AppCompatActivity() {
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
         }
+        // Keep Android status/gesture-navigation icon contrast synchronized with
+        // effective System/Light/Dark/OLED configuration after re-inflation.
+        com.veilframe.app.settings.ThemeSettingsManager.applySystemBarAppearance(this)
 
         // Seamless settings theme restoration: immediately reveal container to eliminate 1-frame background reveal
         val wasSettingsOpen = (savedInstanceState?.getBoolean(KEY_SETTINGS_OPEN, false) == true) || pendingSeamlessSettingsRestore
