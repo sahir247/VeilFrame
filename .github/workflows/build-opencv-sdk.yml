@@ -205,8 +205,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm || true
           ls -la /dev/kvm || true
 
+      # This is a release gate, not informational telemetry. Previously
+      # continue-on-error let broken CV/preview instrumentation appear green.
       - name: Device Runtime Verification (WeChatQRCode + Native CV Subsystem on x86_64 Emulator)
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -224,6 +225,16 @@ jobs:
               adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
               exit 1
             }
+            # Full-source PII and slider memory correctness is also a device
+            # contract; the AndroidTest class is outside the CV package.
+            ./gradlew :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=com.veilframe.app.media.dialogs.CoalescingImagePreviewRendererDeviceTest \
+              --rerun-tasks || {
+                echo "=== Preview instrumentation failure logcat ==="
+                adb logcat -d -b crash || true
+                adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
+                exit 1
+              }
 
       - name: Upload Connected Android Test Reports
         if: always()
