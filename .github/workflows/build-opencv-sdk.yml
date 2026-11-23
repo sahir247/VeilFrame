@@ -219,18 +219,13 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             chmod +x ./gradlew
-            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv || {
-              echo "=== Dumping logcat crash log ==="
-              adb logcat -d -b crash || true
-              adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
-              exit 1
-            }
-            # Full-source PII and slider memory correctness is also a device
-            # contract; the AndroidTest class is outside the CV package.
+            # AndroidJUnitRunner accepts a comma-delimited package filter.
+            # One invocation covers existing native CV tests, the borrowed-flow
+            # regression, and Image Studio's async preview isolation test.
+            # Avoid a second --rerun-tasks, which rebuilds the whole app.
             ./gradlew :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=com.veilframe.app.media.dialogs.CoalescingImagePreviewRendererDeviceTest \
-              --rerun-tasks || {
-                echo "=== Preview instrumentation failure logcat ==="
+              -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs || {
+                echo "=== Dumping native CV/preview instrumentation logcat ==="
                 adb logcat -d -b crash || true
                 adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
                 exit 1
