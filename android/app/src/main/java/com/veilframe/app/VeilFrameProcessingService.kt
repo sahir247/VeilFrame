@@ -30,6 +30,8 @@ import kotlinx.coroutines.CancellationException
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.core.Mat
+import org.opencv.android.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -572,15 +574,12 @@ class VeilFrameProcessingService : Service() {
                 }
             }
 
-            val estimator = if (!useRife) {
-                val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
-                    FlowEstimator.Algorithm.FARNEBACK
-                } else {
-                    FlowEstimator.Algorithm.DIS
-                }
-                FlowEstimator(algorithm = flowAlgo)
-            } else null
-            val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
+            // A successful RIFE initialization must not disable the promised optical-flow
+            // fallback. Initialize one estimator for the whole job, not per frame.
+            val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
+                FlowEstimator.Algorithm.FARNEBACK
+            } else FlowEstimator.Algorithm.DIS
+            val synthOptions = FrameSynthesizer.Options(estimator = FlowEstimator(algorithm = flowAlgo))
 
             fun loadRifeBitmap(file: File): Bitmap? {
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -613,17 +612,15 @@ class VeilFrameProcessingService : Service() {
             }
 
             var outIdx = 0
-            var degradedFrameCount = 0
+            var opticalFlowFallbackFrames = 0
             var prevBmp: Bitmap? = if (useRife) loadRifeBitmap(frames[0]) else null
             var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
 
             if (useRife && prevBmp != null) {
                 val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                outFile.outputStream().use { fos ->
-                    prevBmp!!.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                }
+                saveMotionBitmap(prevBmp!!, outFile)
             } else if (prevMat != null && !prevMat.empty()) {
-                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), prevMat)
+                saveMotionMat(prevMat, File(outDir, "o_%05d.jpg".format(outIdx++)))
             } else {
                 throw IllegalStateException("Initial frame unreadable")
             }
@@ -633,19 +630,21 @@ class VeilFrameProcessingService : Service() {
                     kotlin.coroutines.coroutineContext.ensureActive()
 
                     var curBmp: Bitmap? = null
-                    var curMat: org.opencv.core.Mat? = null
+                    var curMat: Mat? = null
+                    var fallbackA: Mat? = null
+                    var fallbackB: Mat? = null
 
                     if (useRife) {
                         curBmp = loadRifeBitmap(frames[i])
                         if (curBmp == null || prevBmp == null) {
                             curBmp?.recycle()
-                            continue
+                            throw IllegalStateException("Video frame ${i + 1} could not be decoded; export aborted to preserve the timeline")
                         }
                     } else {
                         curMat = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
                         if (curMat == null || curMat.empty()) {
                             curMat?.release()
-                            continue
+                            throw IllegalStateException("Video frame ${i + 1} could not be decoded; export aborted to preserve the timeline")
                         }
                     }
 
@@ -664,56 +663,53 @@ class VeilFrameProcessingService : Service() {
                                 }
                                 if (synthBmp != null) {
                                     val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                                    outFile.outputStream().use { fos ->
-                                        synthBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                                    try {
+                                        saveMotionBitmap(synthBmp, outFile)
+                                        interpolatedSuccessfully = true
+                                    } finally {
+                                        synthBmp.recycle()
                                     }
-                                    synthBmp.recycle()
-                                    interpolatedSuccessfully = true
                                 } else {
                                     Log.w(TAG, "RIFE returned null for frame $i (t=$t); attempting optical flow fallback")
                                 }
                             }
 
-                            if (!interpolatedSuccessfully && synthOptions != null) {
-                                val matA = prevMat ?: prevBmp?.let { bmp ->
-                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
-                                }
-                                val matB = curMat ?: curBmp?.let { bmp ->
-                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
-                                }
-                                if (matA != null && matB != null && !matA.empty() && !matB.empty()) {
-                                    val result = FrameSynthesizer.synthesize(matA, matB, t, synthOptions)
-                                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), result.frame)
-                                    result.frame.release()
-                                    result.confidence.release()
-                                    result.fallbackMask.release()
-                                    interpolatedSuccessfully = true
-                                }
-                                if (prevMat == null) matA?.release()
-                                if (curMat == null) matB?.release()
-                            }
-
                             if (!interpolatedSuccessfully) {
-                                // Transparently record degraded fallback frame rather than claiming successful interpolation
-                                degradedFrameCount++
-                                Log.w(TAG, "Frame interpolation failed for frame $i at t=$t; writing degraded duplicate fallback")
-                                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                                outFile.outputStream().use { fos ->
-                                    prevBmp?.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                                        ?: prevMat?.let { m -> Imgcodecs.imwrite(outFile.absolutePath, m) }
+                                // Decode each bitmap to Mat at most once per input pair, even
+                                // if several RIFE subframes require optical-flow recovery.
+                                val matA = prevMat ?: fallbackA ?: Mat().also { m ->
+                                    fallbackA = m
+                                    Utils.bitmapToMat(prevBmp ?: error("Missing previous RIFE frame"), m)
+                                }
+                                val matB = curMat ?: fallbackB ?: Mat().also { m ->
+                                    fallbackB = m
+                                    Utils.bitmapToMat(curBmp ?: error("Missing current RIFE frame"), m)
+                                }
+                                if (matA.empty() || matB.empty()) {
+                                    throw IllegalStateException("Optical-flow fallback input unavailable for frame ${i + 1}")
+                                }
+                                val result = try {
+                                    FrameSynthesizer.synthesize(matA, matB, t, synthOptions)
+                                } catch (e: Exception) {
+                                    throw IllegalStateException("Both RIFE and optical flow failed at frame ${i + 1} (t=$t)", e)
+                                }
+                                try {
+                                    saveMotionMat(result.frame, File(outDir, "o_%05d.jpg".format(outIdx++)))
+                                    if (useRife) opticalFlowFallbackFrames++
+                                } finally {
+                                    result.release()
                                 }
                             }
                         }
                     } finally {
+                        fallbackA?.release()
+                        fallbackB?.release()
                         if (useRife && curBmp != null) {
-                            val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                            outFile.outputStream().use { fos ->
-                                curBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                            }
+                            saveMotionBitmap(curBmp, File(outDir, "o_%05d.jpg".format(outIdx++)))
                             prevBmp?.recycle()
                             prevBmp = curBmp
                         } else if (curMat != null) {
-                            Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), curMat)
+                            saveMotionMat(curMat, File(outDir, "o_%05d.jpg".format(outIdx++)))
                             prevMat?.release()
                             prevMat = curMat
                         }
@@ -732,8 +728,11 @@ class VeilFrameProcessingService : Service() {
                 }
             }
 
-            if (degradedFrameCount > 0) {
-                Log.w(TAG, "Frame synthesis completed with $degradedFrameCount degraded fallback frames")
+            // A full decode yields N originals and (N-1)*(multiplier-1) real
+            // intermediates. Never encode a shortened, duplicated or missing sequence.
+            requireMotionSequenceComplete(frames.size, effectiveMultiplier, outDir, outIdx)
+            if (opticalFlowFallbackFrames > 0) {
+                Log.w(TAG, "RIFE recovered $opticalFlowFallbackFrames intermediate frames with optical flow")
             }
 
             val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
@@ -782,12 +781,48 @@ class VeilFrameProcessingService : Service() {
                 stagedOutput = null
                 activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
             }
-            jobCallback?.onProgress(jobId, 100, "Complete")
+            val completion = if (opticalFlowFallbackFrames > 0) {
+                "Complete: $opticalFlowFallbackFrames RIFE frames recovered with optical flow"
+            } else "Complete: all interpolations succeeded"
+            jobCallback?.onProgress(jobId, 100, completion)
             jobCallback?.onCompleted(jobId, destFile.absolutePath)
-            showCompletionNotification("Motion Lab Finished", "Synthesized video ready")
+            showCompletionNotification("Motion Lab Finished", completion)
         } finally {
             stagedOutput?.delete()
             workDir.deleteRecursively()
+        }
+    }
+
+    private fun saveMotionBitmap(frame: Bitmap, output: File) {
+        val encoded = output.outputStream().use { out ->
+            frame.compress(Bitmap.CompressFormat.JPEG, 95, out)
+        }
+        check(encoded && output.isFile && output.length() > 0L) {
+            "Motion Lab could not encode frame ${output.name}"
+        }
+    }
+
+    private fun saveMotionMat(frame: Mat, output: File) {
+        check(!frame.empty() && Imgcodecs.imwrite(output.absolutePath, frame) &&
+            output.isFile && output.length() > 0L) {
+            "Motion Lab could not encode frame ${output.name}"
+        }
+    }
+
+    private fun requireMotionSequenceComplete(
+        sourceFrames: Int,
+        factor: Int,
+        directory: File,
+        outputFrames: Int
+    ) {
+        val expected = (sourceFrames - 1) * factor + 1
+        check(outputFrames == expected) {
+            "Motion Lab generated $outputFrames frames instead of $expected; refusing output"
+        }
+        val present = directory.listFiles { f -> f.name.matches(Regex("o_[0-9]{5}\\.jpg")) }
+            ?: throw IllegalStateException("Motion Lab output directory unreadable")
+        check(present.size == expected && present.all { it.isFile && it.length() > 0L }) {
+            "Motion Lab output contains missing or empty frames"
         }
     }
 
