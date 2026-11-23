@@ -23,6 +23,7 @@ import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
 import com.veilframe.app.cv.motion.MotionLabSourceFrameStage
+import com.veilframe.app.cv.motion.MotionLabFrameSampling
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
@@ -597,11 +598,7 @@ class VeilFrameProcessingService : Service() {
                 // For mobile GPU thermal & VRAM stability, clamp RIFE neural synthesis max dimension to 1920 (1080p).
                 // Videos at 1080p (1920x1080) or 720p run at 100% native resolution.
                 // 4K UHD (3840x2160) is scaled 2x to 1080p (1920x1080) via fast hardware DCT downsampling.
-                var sampleSize = 1
-                val maxDim = maxOf(origW, origH)
-                if (maxDim > 1920) {
-                    sampleSize = 2
-                }
+                val sampleSize = MotionLabFrameSampling.sampleSize(origW, origH)
 
                 val opts = BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -619,19 +616,23 @@ class VeilFrameProcessingService : Service() {
 
             var outIdx = 0
             var opticalFlowFallbackFrames = 0
-            var prevBmp: Bitmap? = if (useRife) loadRifeBitmap(frames[0]) else null
-            var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
-
-            if (useRife && prevBmp != null) {
-                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                stageMotionSourceFrame(frames[0], outFile, prevBmp)
-            } else if (prevMat != null && !prevMat.empty()) {
-                MotionLabSourceFrameStage.stage(frames[0], File(outDir, "o_%05d.jpg".format(outIdx++)))
-            } else {
-                throw IllegalStateException("Initial frame unreadable")
-            }
-
+            var prevBmp: Bitmap? = null
+            var prevMat: Mat? = null
+            // Native RIFE may already be initialized here. Start its guaranteed
+            // retirement scope BEFORE decoding or writing the first frame.
             try {
+                prevBmp = if (useRife) loadRifeBitmap(frames[0]) else null
+                prevMat = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
+
+                if (useRife && prevBmp != null) {
+                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                    stageMotionSourceFrame(frames[0], outFile, prevBmp)
+                } else if (prevMat != null && !prevMat.empty()) {
+                    MotionLabSourceFrameStage.stage(frames[0], File(outDir, "o_%05d.jpg".format(outIdx++)))
+                } else {
+                    throw IllegalStateException("Initial video frame unreadable")
+                }
+
                 for (i in 1 until frames.size) {
                     kotlin.coroutines.coroutineContext.ensureActive()
 
