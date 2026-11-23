@@ -21,6 +21,7 @@ import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
+import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
@@ -781,6 +782,25 @@ class VeilFrameProcessingService : Service() {
             if (!ReturnCode.isSuccess(encodeSession.returnCode) || !stage.isFile || stage.length() == 0L) {
                 throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
             }
+            // Inspect the actual serialized MP4, not just a successful FFmpeg exit.
+            // This also detects output-timeline truncation or extra CFR frames.
+            val publishedPts = readMotionVideoPtsUs(stage, timing.expectedOutputFrames)
+            MotionLabSequenceVerifier.verifyPresentation(
+                publishedPts,
+                expectedFrames = timing.expectedOutputFrames,
+                expectedFps = timing.outputFps
+            )
+            val outputRetriever = MediaMetadataRetriever()
+            val outputDurationMs = try {
+                outputRetriever.setDataSource(stage.absolutePath)
+                outputRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: throw IllegalStateException("Encoded MP4 has no readable duration")
+            } finally {
+                outputRetriever.release()
+            }
+            check(kotlin.math.abs(outputDurationMs - durationMs) <= 200L) {
+                "Motion output duration $outputDurationMs ms disagrees with input $durationMs ms"
+            }
 
             kotlin.coroutines.coroutineContext.ensureActive()
             synchronized(this) {
@@ -804,7 +824,10 @@ class VeilFrameProcessingService : Service() {
         }
     }
 
-    private fun readMotionVideoPtsUs(input: File): List<Long> {
+    private fun readMotionVideoPtsUs(
+        input: File,
+        maxFrames: Int = MotionLabTimingContract.MAX_SOURCE_FRAMES
+    ): List<Long> {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(input.absolutePath)
@@ -816,8 +839,8 @@ class VeilFrameProcessingService : Service() {
             while (true) {
                 val pts = extractor.sampleTime
                 if (pts < 0) break
-                if (timestamps.size >= MotionLabTimingContract.MAX_SOURCE_FRAMES) {
-                    throw IllegalStateException("Video exceeds the 1,800 frame limit; trim before interpolation")
+                if (timestamps.size >= maxFrames) {
+                    throw IllegalStateException("Video has more than $maxFrames frames; timing verification refused")
                 }
                 timestamps.add(pts)
                 if (!extractor.advance()) break
@@ -849,17 +872,7 @@ class VeilFrameProcessingService : Service() {
         factor: Int,
         directory: File,
         outputFrames: Int
-    ) {
-        val expected = sourceFrames * factor
-        check(outputFrames == expected) {
-            "Motion Lab generated $outputFrames frames instead of $expected; refusing output"
-        }
-        val present = directory.listFiles { f -> f.name.matches(Regex("o_[0-9]{5}\\.jpg")) }
-            ?: throw IllegalStateException("Motion Lab output directory unreadable")
-        check(present.size == expected && present.all { it.isFile && it.length() > 0L }) {
-            "Motion Lab output contains missing or empty frames"
-        }
-    }
+    ) = MotionLabSequenceVerifier.verify(directory, sourceFrames, factor, outputFrames)
 
     private suspend fun executeVideoStabilization(
         jobId: UUID,
