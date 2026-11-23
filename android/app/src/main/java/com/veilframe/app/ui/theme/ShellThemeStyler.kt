@@ -24,17 +24,31 @@ object ShellThemeStyler {
         )
     )
 
+    /** Real NavigationBarView binding; callable by visual Robolectric contracts. */
+    internal fun styleNavigation(context: Context, nav: NavigationBarView) {
+        nav.setBackgroundColor(MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.BLACK))
+        val tint = navigationItemTint(context)
+        nav.setItemIconTintList(tint)
+        nav.setItemTextColor(tint)
+        nav.setItemActiveIndicatorColor(ColorStateList.valueOf(
+            MaterialColors.getColor(context, R.attr.colorSecondaryContainer, Color.DKGRAY)
+        ))
+    }
+
     fun apply(activity: Activity, binding: ActivityMainBinding) {
         val canvas = MaterialColors.getColor(activity, R.attr.colorSurfaceContainerLowest, Color.BLACK)
         val onSurface = MaterialColors.getColor(activity, R.attr.colorOnSurface, Color.WHITE)
-        val indicator = MaterialColors.getColor(activity, R.attr.colorSecondaryContainer, Color.DKGRAY)
-        val tint = navigationItemTint(activity)
         for (nav: NavigationBarView in listOf(binding.bottomNavigation, binding.navigationRail)) {
-            nav.setBackgroundColor(canvas)
-            nav.setItemIconTintList(tint)
-            nav.setItemTextColor(tint)
-            nav.setItemActiveIndicatorColor(ColorStateList.valueOf(indicator))
+            styleNavigation(activity, nav)
         }
+        // Rebind both shell headers as well as the dedicated Settings header
+        // so neither navigation mode can show a raised/off-palette band.
+        binding.appBarLayout.setBackgroundColor(canvas)
+        binding.toolbarHome.setBackgroundColor(canvas)
+        binding.toolbarTool.setBackgroundColor(canvas)
+        binding.btnSettings.iconTint = ColorStateList.valueOf(onSurface)
+        binding.btnToolSettings.iconTint = ColorStateList.valueOf(onSurface)
+        binding.btnBackToHome.iconTint = ColorStateList.valueOf(onSurface)
         // The Settings sheet has its own canvas and header, including in OLED.
         binding.containerSettings.setBackgroundColor(canvas)
         binding.layoutSettingsPanel.root.setBackgroundColor(canvas)
