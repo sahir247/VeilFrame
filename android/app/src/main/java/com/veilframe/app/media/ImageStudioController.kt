@@ -811,31 +811,52 @@ class ImageStudioController(
                     progressDialog.dismiss()
                     if (activeGeneration != gen) return@withContext
 
+                    if (currentItem !== item) return@withContext
+                    if (summary.failedEngines.isNotEmpty()) {
+                        // Engine failures on even ONE source-resolution tile mean the
+                        // scan is incomplete. A short toast disappears too quickly
+                        // and can make partial PII coverage appear fully verified.
+                        // Require an explicit review decision, preserving any
+                        // existing redaction boxes unless the user edits them.
+                        val failedCount = summary.failedEngines.size
+                        val failedExamples = summary.failedEngines.keys.take(4).joinToString(", ")
+                        val remainder = if (failedCount > 4) " and ${failedCount - 4} more" else ""
+                        val message = if (detections.isEmpty()) {
+                            "No identifiers were confirmed, but $failedCount detector/tile " +
+                                "passes failed ($failedExamples$remainder). This is NOT a " +
+                                "clean scan. Existing redactions remain unchanged. " +
+                                "Retry or inspect the image manually."
+                        } else {
+                            "${detections.size} possible identifiers were found, but " +
+                                "$failedCount detector/tile passes failed " +
+                                "($failedExamples$remainder). Unscanned areas may still " +
+                                "contain private details. Review these boxes and inspect " +
+                                "the entire image before exporting."
+                        }
+                        val warning = MaterialAlertDialogBuilder(activity)
+                            .setTitle("PII scan incomplete")
+                            .setMessage(message)
+                            .setPositiveButton("OK", null)
+                        if (detections.isNotEmpty()) {
+                            warning.setPositiveButton("Review available boxes") { _, _ ->
+                                if (activeGeneration == gen && currentItem === item) {
+                                    showPiiRedactionSelectionDialog(detections, item)
+                                }
+                            }.setNegativeButton("Cancel", null)
+                        }
+                        warning.show()
+                        return@withContext
+                    }
+
                     if (detections.isEmpty()) {
-                        if (summary.failedEngines.isNotEmpty()) {
-                            val failedList = summary.failedEngines.keys.joinToString(", ")
-                            Toast.makeText(
-                                activity,
-                                "PII scan degraded: $failedList unavailable. 0 targets confirmed in active passes.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else if (editState.piiDetections.isNotEmpty()) {
+                        if (editState.piiDetections.isNotEmpty()) {
                             editState.piiDetections = emptyList()
                             refreshPreview()
                             Toast.makeText(activity, "No PII targets detected; cleared prior redactions", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(activity, "No PII detected (0 targets found across all engines)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "No PII detected (0 targets found across active engines)", Toast.LENGTH_SHORT).show()
                         }
                         return@withContext
-                    }
-
-                    if (summary.failedEngines.isNotEmpty()) {
-                        val failedList = summary.failedEngines.keys.joinToString(", ")
-                        Toast.makeText(
-                            activity,
-                            "Partial scan: $failedList failed. ${detections.size} targets found in active passes.",
-                            Toast.LENGTH_SHORT
-                        ).show()
                     }
 
                     showPiiRedactionSelectionDialog(detections, item)
