@@ -156,6 +156,15 @@ android {
     }
 }
 
+// Robolectric downloads its android-all-instrumented SDK jars at test runtime,
+// outside Gradle's ordinary dependency resolution. Its repo1.maven.org default
+// can fail transiently on shared CI hosts even after :app:assembleDebug passes.
+// Use the canonical Maven Central hostname for every forked JVM test process;
+// this changes TEST provisioning only, never production app dependencies.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2/")
+}
+
 // AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.
 kotlin {
     compilerOptions {

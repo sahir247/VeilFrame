@@ -158,7 +158,19 @@ jobs:
         working-directory: android
         run: |
           ./gradlew :app:assembleDebug --no-daemon
+          # Keep CV regression assertions strict. Robolectric runtime jars resolve
+          # through the canonical Maven Central URL configured for Gradle Test tasks.
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*" --no-daemon
+
+      - name: Upload focused CV JVM test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: opencv-cv-jvm-test-evidence
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: ignore
 
       - name: Ensure Gradle Wrapper Executable Permissions
         run: |
