@@ -17,6 +17,7 @@ import com.veilframe.app.databinding.LayoutImageStudioBinding
 import com.veilframe.app.media.compression.ImageCompressionEngine
 import com.veilframe.app.media.dialogs.ImageStudioDialogController
 import com.veilframe.app.media.preview.ImagePreviewEngine
+import com.veilframe.app.media.preview.IsolatedImagePreviewRenderer
 import com.veilframe.app.media.transform.ImageTransformEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +90,7 @@ class ImageStudioController(
     // Fast downscaled copy (max 1280px) for smooth 60fps live preview & modal interactions
     private var previewSourceBitmap: Bitmap? = null
     private var currentResultPreviewBitmap: Bitmap? = null
+    private var currentEditingPreviewBitmap: Bitmap? = null
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
@@ -127,7 +129,7 @@ class ImageStudioController(
                 currentItem?.origHeight ?: previewSourceBitmap?.height ?: 1080
             )
         },
-        renderLivePreview = { draftState -> renderLivePreview(draftState, useFullRes = false) },
+        renderLivePreview = { draftState -> renderLivePreview(draftState) },
         onEditsChanged = { refreshPreview() }
     )
 
@@ -470,8 +472,12 @@ class ImageStudioController(
         compressionJob?.cancel()
         compressionJob = null
         lastResultFile = null
+        // Detach the ImageView before retiring either owned preview bitmap.
+        binding.imgAfterPreview.setImageDrawable(null)
         currentResultPreviewBitmap?.recycle()
         currentResultPreviewBitmap = null
+        currentEditingPreviewBitmap?.recycle()
+        currentEditingPreviewBitmap = null
 
         // Save current edits into currently active item
         currentItem?.editState?.copyFrom(editState)
@@ -560,20 +566,18 @@ class ImageStudioController(
     }
 
     /**
-     * Renders live preview using ImageTransformEngine.
+     * Returns an owned preview bitmap. Never give a mutable selected-source
+     * bitmap directly to redaction: it can mutate input pixels in place.
+     * Full-resolution work is exclusively the explicit export pipeline.
      */
-    fun renderLivePreview(state: ImageEditState = editState, useFullRes: Boolean = false): Bitmap? {
+    fun renderLivePreview(state: ImageEditState = editState): Bitmap? {
         val item = currentItem ?: return null
         val src = previewSourceBitmap ?: return null
-        val fullW = item.origWidth
-        val fullH = item.origHeight
-
-        return ImageTransformEngine.transform(
-            src = src,
+        return IsolatedImagePreviewRenderer.render(
+            source = src,
             state = state,
-            origFullW = fullW,
-            origFullH = fullH,
-            useFullRes = false
+            originalWidth = item.origWidth,
+            originalHeight = item.origHeight
         )
     }
 
@@ -583,7 +587,12 @@ class ImageStudioController(
 
     fun updatePreviewBitmap() {
         val previewBmp = renderLivePreview(editState) ?: return
+        // Treat rendered previews as owned buffers; replacing one must release
+        // the old allocation after the view has been rebound.
+        val old = currentEditingPreviewBitmap
+        currentEditingPreviewBitmap = previewBmp
         binding.imgAfterPreview.setImageBitmap(previewBmp)
+        if (old !== previewBmp) old?.recycle()
         val visualScale = (editState.resizeScale.toFloat() / 100f).coerceIn(0.2f, 2.5f)
         binding.imgAfterPreview.scaleX = visualScale
         binding.imgAfterPreview.scaleY = visualScale
@@ -1114,7 +1123,10 @@ class ImageStudioController(
                         currentResultPreviewBitmap?.recycle()
                         currentResultPreviewBitmap = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
                         if (currentResultPreviewBitmap != null) {
+                            val oldEditing = currentEditingPreviewBitmap
+                            currentEditingPreviewBitmap = null
                             binding.imgAfterPreview.setImageBitmap(currentResultPreviewBitmap)
+                            oldEditing?.recycle()
                         }
                         binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${outputConfig.format})"
                         val ratio = if (totalOriginalBytes > 0) {
@@ -1166,6 +1178,9 @@ class ImageStudioController(
     fun clear() {
         activeGeneration++
         loadToken.incrementAndGet()
+        binding.imgAfterPreview.setImageDrawable(null)
+        currentEditingPreviewBitmap?.recycle()
+        currentEditingPreviewBitmap = null
         selectedMediaList.forEach { it.previewBitmap?.recycle() }
         selectedMediaList.clear()
         currentMediaIndex = 0
