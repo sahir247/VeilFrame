@@ -23,6 +23,7 @@ import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
 import com.veilframe.app.cv.motion.MotionLabSourceFrameStage
+import com.veilframe.app.cv.motion.MotionLabDiskBudget
 import com.veilframe.app.cv.motion.MotionLabFrameSampling
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
@@ -495,6 +496,7 @@ class VeilFrameProcessingService : Service() {
         var stagedOutput: File? = null
 
         try {
+            MotionLabDiskBudget.requireHeadroom(workDir)
             updateNotificationProgress("Preparing video source…", 5)
             jobCallback?.onProgress(jobId, 5, "Preparing source…")
 
@@ -509,6 +511,7 @@ class VeilFrameProcessingService : Service() {
                 throw IllegalStateException("No valid input video specified")
             }
 
+            MotionLabDiskBudget.requireHeadroom(workDir)
             CvRuntime.requireAvailable()
 
             val retriever = MediaMetadataRetriever()
@@ -546,6 +549,7 @@ class VeilFrameProcessingService : Service() {
             if (!ReturnCode.isSuccess(extractSession.returnCode)) {
                 throw IllegalStateException("Frame extraction failed (rc=${extractSession.returnCode})")
             }
+            MotionLabDiskBudget.requireHeadroom(workDir)
 
             val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && (f.name.endsWith(".jpg") || f.name.endsWith(".png")) }
                 ?.sortedBy { it.name } ?: emptyList()
@@ -731,6 +735,7 @@ class VeilFrameProcessingService : Service() {
                         }
                     }
 
+                    if (i % 16 == 0) MotionLabDiskBudget.requireHeadroom(workDir)
                     val synthPct = 25 + ((i.toFloat() / frames.size.toFloat()) * 60f).toInt().coerceIn(0, 60)
                     updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
                     jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
@@ -755,6 +760,7 @@ class VeilFrameProcessingService : Service() {
                 check(target.length() > 0L) { "Motion Lab failed to finish the final frame interval" }
             }
             requireMotionSequenceComplete(frames.size, effectiveMultiplier, outDir, outIdx)
+            MotionLabDiskBudget.requireHeadroom(workDir)
             if (opticalFlowFallbackFrames > 0) {
                 Log.w(TAG, "RIFE recovered $opticalFlowFallbackFrames intermediate frames with optical flow")
             }

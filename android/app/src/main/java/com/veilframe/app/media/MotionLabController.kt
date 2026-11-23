@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.veilframe.app.VeilFrameProcessingService
 import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.cv.motion.MotionLabTimingContract
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -362,7 +363,23 @@ class MotionLabController(
             val prefs = activity.getSharedPreferences("veilframe_motion_lab", Context.MODE_PRIVATE)
             val skipWarning = prefs.getBoolean("skip_long_video_warning", false)
 
-            if (!restoringCompleted && durationS > WARN_DURATION_S && !skipWarning) {
+            if (!restoringCompleted && durationMs > MotionLabTimingContract.MAX_DURATION_MS) {
+                // The service rejects >60 s by design; never let a dismissible
+                // 30-second performance warning imply longer clips are supported.
+                applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
+                MaterialAlertDialogBuilder(activity)
+                    .setTitle("Trim required for Motion Lab")
+                    .setMessage(
+                        "This clip is ${durationS}s long. Motion Lab currently accepts at most " +
+                        "60 seconds and 1,800 source frames. Trim the video before processing; " +
+                        "unsupported clips are never silently shortened."
+                    )
+                    .setPositiveButton("Trim video") { _, _ ->
+                        if (!isProcessing) openTrimDialog()
+                    }
+                    .setNegativeButton("Later", null)
+                    .show()
+            } else if (!restoringCompleted && durationS > WARN_DURATION_S && !skipWarning) {
                 showLongVideoWarningDialog(uri, durationMs, durationS, fpsLabel, name)
             } else {
                 applySourceInternal(uri, durationMs, durationS, fpsLabel, name)
@@ -735,6 +752,17 @@ class MotionLabController(
     private fun runInterpolation() {
         val uri = sourceUri ?: return
         if (isProcessing) return
+        if (videoDurationMs <= 0L ||
+            videoDurationMs > MotionLabTimingContract.MAX_DURATION_MS
+        ) {
+            Toast.makeText(
+                activity,
+                "Trim to a complete clip of 60 seconds or less before interpolation",
+                Toast.LENGTH_LONG
+            ).show()
+            openTrimDialog()
+            return
+        }
         cancelRequested = false
 
         try {
