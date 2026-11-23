@@ -654,9 +654,15 @@ class ToolSessionManager(
     fun updatePrivacySummaryUI() {
         when (currentToolMode) {
             ToolMode.AI_BUNDLE -> {
-                binding.tvPrivacyProfileBadge.text = "LLM Packaging"
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                val maskingEnabled = binding.switchOption1.isChecked
+                binding.tvPrivacyProfileBadge.text =
+                    if (maskingEnabled) "MASKED CONTEXT BUNDLE" else "UNMASKED CONTEXT"
+                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(
+                    if (maskingEnabled) R.color.vf_accent_green else R.color.vf_accent_amber
+                ))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (maskingEnabled) R.drawable.bg_badge_pass else R.drawable.bg_badge_warn
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "• Raw credentials unmasked (masking disabled)"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Test suites, mocks & fixtures excluded from context" else "• Full source directory included"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Dependency manifests compressed to reduce prompt tokens" else "• Manifest compression disabled"
@@ -712,9 +718,15 @@ class ToolSessionManager(
                     1 -> "Deep Forensic"
                     else -> "Duplicate Hunt"
                 }
+                val quick = mode == "Quick Audit"
                 binding.tvPrivacyProfileBadge.text = mode.uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (quick) role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    else activity.getColor(R.color.vf_accent_green)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (quick) R.drawable.bg_badge_neutral else R.drawable.bg_badge_pass
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Recursive directory traversal across all subprojects" else "• Top-level directory only"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• SHA-256 cryptographic hashing active" else "• SHA-256 calculation skipped (low CPU/battery)"
                 // All three rows share one view across four modes. Failing to
