@@ -36,6 +36,7 @@ import kotlinx.coroutines.CancellationException
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.imgproc.Imgproc
 import org.opencv.core.Mat
 import org.opencv.android.Utils
 import kotlinx.coroutines.CoroutineScope
@@ -684,14 +685,12 @@ class VeilFrameProcessingService : Service() {
                             if (!interpolatedSuccessfully) {
                                 // Decode each bitmap to Mat at most once per input pair, even
                                 // if several RIFE subframes require optical-flow recovery.
-                                val matA = prevMat ?: fallbackA ?: Mat().also { m ->
-                                    fallbackA = m
-                                    Utils.bitmapToMat(prevBmp ?: error("Missing previous RIFE frame"), m)
-                                }
-                                val matB = curMat ?: fallbackB ?: Mat().also { m ->
-                                    fallbackB = m
-                                    Utils.bitmapToMat(curBmp ?: error("Missing current RIFE frame"), m)
-                                }
+                                val matA = prevMat ?: fallbackA ?: bitmapToMotionBgr(
+                                    prevBmp ?: error("Missing previous RIFE frame")
+                                ).also { fallbackA = it }
+                                val matB = curMat ?: fallbackB ?: bitmapToMotionBgr(
+                                    curBmp ?: error("Missing current RIFE frame")
+                                ).also { fallbackB = it }
                                 if (matA.empty() || matB.empty()) {
                                     throw IllegalStateException("Optical-flow fallback input unavailable for frame ${i + 1}")
                                 }
@@ -814,15 +813,45 @@ class VeilFrameProcessingService : Service() {
                 stagedOutput = null
                 activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
             }
-            val completion = if (opticalFlowFallbackFrames > 0) {
-                "Complete: $opticalFlowFallbackFrames RIFE frames recovered with optical flow"
-            } else "Complete: all interpolations succeeded"
+            val completion = when {
+                methodStr.equals("RIFE", ignoreCase = true) && !useRife ->
+                    "Complete: optical flow used because RIFE was unavailable"
+                opticalFlowFallbackFrames > 0 ->
+                    "Complete: $opticalFlowFallbackFrames RIFE frames recovered with optical flow"
+                useRife -> "Complete: RIFE interpolation succeeded"
+                else -> "Complete: optical-flow interpolation succeeded"
+            }
             jobCallback?.onProgress(jobId, 100, completion)
             jobCallback?.onCompleted(jobId, destFile.absolutePath)
             showCompletionNotification("Motion Lab Finished", completion)
         } finally {
             stagedOutput?.delete()
             workDir.deleteRecursively()
+        }
+    }
+
+    /** Android Bitmap -> RGBA Mat -> explicit BGR Mat for OpenCV optical flow.
+     * BitmapToMat returns RGBA, whereas FrameSynthesizer and JPEG encoding
+     * expect standard BGR. Keep channel contracts consistent across fallbacks.
+     */
+    private fun bitmapToMotionBgr(bitmap: Bitmap): Mat {
+        val rgba = Mat()
+        val bgr = Mat()
+        try {
+            Utils.bitmapToMat(bitmap, rgba)
+            check(!rgba.empty() && rgba.channels() == 4) {
+                "RIFE fallback bitmap conversion did not produce RGBA data"
+            }
+            Imgproc.cvtColor(rgba, bgr, Imgproc.COLOR_RGBA2BGR)
+            check(!bgr.empty() && bgr.channels() == 3) {
+                "Failed to convert RIFE fallback bitmap to BGR"
+            }
+            return bgr
+        } catch (t: Throwable) {
+            bgr.release()
+            throw t
+        } finally {
+            rgba.release()
         }
     }
 
