@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.chip.Chip
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutImageStudioBinding
 import com.veilframe.app.media.compression.ImageCompressionEngine
@@ -954,12 +955,35 @@ class ImageStudioController(
             return
         }
 
-        executeCompression()
+        if (selectedMediaList.size > 1) {
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Export individual image edits")
+                .setMessage(
+                    "Every image will use its own saved crop, rotation, filter, blur and PII redactions. " +
+                        "Edits on the currently selected image are NOT copied to other images. " +
+                        "Review and scan each image separately before exporting sensitive photos."
+                )
+                .setNegativeButton("Review images", null)
+                .setPositiveButton("Export per-image edits") { _, _ ->
+                    if (compressionJob?.isActive != true && selectedMediaList.isNotEmpty()) {
+                        executeCompression()
+                    }
+                }
+                .show()
+        } else executeCompression()
     }
 
     private fun executeCompression() {
         val itemsToProcess = selectedMediaList.toList()
         if (itemsToProcess.isEmpty()) return
+        // One authoritative edit model per source file. Snapshot synchronously
+        // before launching IO so dialog/nav changes cannot mix revisions.
+        currentItem?.editState?.copyFrom(editState)
+        val editsAtExport = ImageStudioBatchEditContract.snapshot(
+            itemsToProcess.map { it.editState },
+            currentMediaIndex,
+            editState
+        )
 
         val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
         val ext = outputConfig.format.lowercase(Locale.US)
@@ -981,9 +1005,6 @@ class ImageStudioController(
                 var totalCompressedBytes = 0L
                 val destUri = safManager.imageDestinationUri
 
-                // Save current edits into currently selected item
-                currentItem?.editState?.copyFrom(editState)
-
                 for ((idx, item) in itemsToProcess.withIndex()) {
                     if (!isActive) break
 
@@ -994,22 +1015,9 @@ class ImageStudioController(
                     val outFilename = if (total == 1) "$safeBase.$ext" else "${safeBase}_${idx + 1}.$ext"
                     val outFile = File(outDir, outFilename)
 
-                    val itemEditState = if (itemsToProcess.size > 1 && item != currentItem) {
-                        item.editState.copy(
-                            cropAspect = if (editState.cropAspect == "Free") "Free" else editState.cropAspect,
-                            filter = editState.filter,
-                            bgType = editState.bgType,
-                            watermarkText = editState.watermarkText,
-                            watermarkPosition = editState.watermarkPosition,
-                            watermarkSize = editState.watermarkSize,
-                            watermarkColor = editState.watermarkColor,
-                            watermarkOpacity = editState.watermarkOpacity,
-                            watermarkFont = editState.watermarkFont,
-                            stripExif = editState.stripExif
-                        )
-                    } else {
-                        editState.copy()
-                    }
+                    // Never copy preview-space PII boxes or source-specific brush
+                    // coordinates from another photograph during batch publication.
+                    val itemEditState = editsAtExport[idx]
 
                     var fullResBmp: Bitmap? = null
                     var transformedBmp: Bitmap? = null
@@ -1120,6 +1128,13 @@ class ImageStudioController(
                     binding.btnImgExecute.text = "Compress"
                     Toast.makeText(activity, "Image compression error: ${e.message}", Toast.LENGTH_LONG).show()
                     syncFloatingDockState()
+                }
+            } finally {
+                // deepCopy() created separate owned mask bitmaps for export; do not
+                // recycle the live per-image edit models still used by preview.
+                editsAtExport.forEach { state ->
+                    state.blurBrushMask?.recycle()
+                    state.blurBgSubjectCutout?.recycle()
                 }
             }
         }
