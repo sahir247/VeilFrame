@@ -6,6 +6,7 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.color.MaterialColors
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.databinding.*
@@ -251,10 +252,10 @@ class ToolSessionManager(
     }
 
     fun getToolTitle(mode: ToolMode): String = when (mode) {
-        ToolMode.AI_BUNDLE -> "AI BUNDLE"
+        ToolMode.AI_BUNDLE -> "AI BUNDLER"
         ToolMode.VIDEO_CLEANER -> "VIDEO CLEANER"
         ToolMode.IMAGE_CLEANER -> "IMAGE CLEANER"
-        ToolMode.FOLDER_SCANNER -> "FOLDER SCANNER"
+        ToolMode.FOLDER_SCANNER -> "FOLDER ANALYZER"
         ToolMode.IMAGE_COMPRESSOR -> "IMAGE STUDIO"
         ToolMode.VIDEO_COMPRESSOR -> "VIDEO STUDIO"
         ToolMode.IMAGE_UPSCALER -> "IMAGE UPSCALER"
@@ -276,7 +277,7 @@ class ToolSessionManager(
         when (mode) {
             ToolMode.AI_BUNDLE -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "AI Bundle"
+                binding.tvToolTitle.text = "AI Bundler"
                 binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
                 binding.btnPickFolder.text = "Project Folder"
                 binding.btnPickFile.text = "Single File"
@@ -305,7 +306,7 @@ class ToolSessionManager(
             }
             ToolMode.VIDEO_CLEANER -> {
                 binding.tvToolTitle.text = "Video Cleaner"
-                binding.tvToolSubtitle.text = "Remove forensic identifiers & camera sensor noise"
+                binding.tvToolSubtitle.text = "Clean metadata and re-encode video with selectable privacy options"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Video"
 
@@ -322,8 +323,8 @@ class ToolSessionManager(
 
                 configureOptions(
                     paramHeader = "VIDEO PRIVACY PARAMETERS",
-                    primaryLabel = "Sensor Fingerprint Protection",
-                    primaryDesc = "Mitigate camera sensor pattern noise (PRNU forensic defense)",
+                    primaryLabel = "Video Noise Treatment",
+                    primaryDesc = "Select temporal noise processing (not validated camera anonymity)",
                     primaryChips = listOf("Standard", "High", "Stealth", "None"),
                     primaryDefaultIndex = 0,
                     formatLabel = "Container Format",
@@ -343,8 +344,8 @@ class ToolSessionManager(
                 )
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvToolTitle.text = "Image Cleaner & PRNU Purifier"
-                binding.tvToolSubtitle.text = "Scrub camera fingerprints, sensor PRNU, AI attribution manifolds & EXIF"
+                binding.tvToolTitle.text = "Image Cleaner"
+                binding.tvToolSubtitle.text = "Remove sensitive metadata and optionally alter image content"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Image"
 
@@ -383,7 +384,7 @@ class ToolSessionManager(
             }
             ToolMode.FOLDER_SCANNER -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "Folder Scanner"
+                binding.tvToolTitle.text = "Folder Analyzer"
                 binding.tvToolSubtitle.text = "Perform structural directory audits, secret scans & duplicate hunts"
                 binding.btnPickFolder.text = "Select Folder"
                 binding.btnPickFile.text = "Select File"
@@ -437,70 +438,33 @@ class ToolSessionManager(
         }
     }
 
-    private fun createChipBackgroundStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_surface_variant)
-            )
-        )
-    }
+    /** Resolve active M3 overlay roles (Dynamic Color, accents, Dark, AMOLED). */
+    private fun role(attr: Int, fallback: Int): Int =
+        MaterialColors.getColor(activity, attr, activity.getColor(fallback))
 
-    private fun createChipTextStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_on_primary),
-                activity.getColor(R.color.vf_text_primary)
-            )
+    private fun createChipBackgroundStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(R.attr.colorSecondaryContainer, R.color.vf_primary_container),
+            role(R.attr.colorSurfaceContainerHigh, R.color.vf_surface_variant)
         )
-    }
+    )
 
-    private fun createChipStrokeStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_surface_stroke)
-            )
+    private fun createChipTextStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(R.attr.colorOnSecondaryContainer, R.color.vf_on_primary_container),
+            role(R.attr.colorOnSurface, R.color.vf_text_primary)
         )
-    }
+    )
 
-    private fun createSwitchThumbStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_text_muted)
-            )
+    private fun createChipStrokeStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(R.attr.colorSecondary, R.color.vf_secondary),
+            role(R.attr.colorOutlineVariant, R.color.vf_outline_variant)
         )
-    }
-
-    private fun createSwitchTrackStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary_container),
-                activity.getColor(R.color.vf_surface_variant)
-            )
-        )
-    }
+    )
 
     fun configureOptions(
         paramHeader: String,
@@ -540,9 +504,10 @@ class ToolSessionManager(
                 chipStrokeWidth = resources.displayMetrics.density * 1.5f
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
-                textSize = 12f
+                textSize = 13f
+                minHeight = (48 * resources.displayMetrics.density).toInt()
                 shapeAppearanceModel = shapeAppearanceModel.toBuilder()
-                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .setAllCornerSizes(resources.displayMetrics.density * 24f)
                     .build()
                 ExpressiveMotion.applyTouchBounce(this)
                 setOnCheckedChangeListener { _, isChecked ->
@@ -569,9 +534,10 @@ class ToolSessionManager(
                 chipStrokeWidth = resources.displayMetrics.density * 1.5f
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
-                textSize = 12f
+                textSize = 13f
+                minHeight = (48 * resources.displayMetrics.density).toInt()
                 shapeAppearanceModel = shapeAppearanceModel.toBuilder()
-                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .setAllCornerSizes(resources.displayMetrics.density * 24f)
                     .build()
                 ExpressiveMotion.applyTouchBounce(this)
             }
@@ -581,20 +547,14 @@ class ToolSessionManager(
         binding.tvSwitch1Title.text = switch1Title
         binding.tvSwitch1Desc.text = switch1Desc
         binding.switchOption1.isChecked = switch1Checked
-        binding.switchOption1.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption1.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch2Title.text = switch2Title
         binding.tvSwitch2Desc.text = switch2Desc
         binding.switchOption2.isChecked = switch2Checked
-        binding.switchOption2.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption2.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch3Title.text = switch3Title
         binding.tvSwitch3Desc.text = switch3Desc
         binding.switchOption3.isChecked = switch3Checked
-        binding.switchOption3.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption3.trackTintList = createSwitchTrackStateList()
 
         binding.btnExecute.text = executeText
     }
@@ -635,7 +595,7 @@ class ToolSessionManager(
             binding.layoutTargetEmpty.visibility = View.GONE
             binding.layoutTargetMounted.visibility = View.VISIBLE
             binding.tvSelectedPath.text = state.selectedPathDisplay
-            binding.tvSelectedPath.setTextColor(activity.getColor(R.color.vf_text_primary))
+            binding.tvSelectedPath.setTextColor(role(R.attr.colorOnSurface, R.color.vf_text_primary))
             binding.tvTargetDetails.text = if (state.isFolderSelected) {
                 "${state.targetFileCount} files • ${safStorageManager.formatBytes(state.targetTotalBytes)} • Ready"
             } else {
