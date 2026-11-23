@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -18,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
+import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
@@ -505,20 +508,33 @@ class VeilFrameProcessingService : Service() {
             CvRuntime.requireAvailable()
 
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(inFile.absolutePath)
-            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
-            runCatching { retriever.release() }
+            val durationMs = try {
+                retriever.setDataSource(inFile.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: throw IllegalStateException("Video duration unavailable; refusing to guess motion timing")
+            } finally {
+                retriever.release()
+            }
+            // Audit source packet presentation timestamps before extracting any frames.
+            // This JPEG-based backend deliberately rejects variable-rate/unsupported clips
+            // rather than inventing CFR and silently drifting audio and video out of sync.
+            val timing = MotionLabTimingContract.plan(
+                presentationUs = readMotionVideoPtsUs(inFile),
+                durationMs = durationMs,
+                target60Fps = isTarget60fps,
+                requestedMultiplier = multiplier
+            )
+            val effectiveMultiplier = timing.multiplier
 
             updateNotificationProgress("Extracting video frames…", 15)
             jobCallback?.onProgress(jobId, 15, "Extracting frames…")
 
-            val maxSeconds = 60
             val extractSession = executeOwnedFfmpeg(
                 arrayOf(
                     "-y",
                     "-i", inFile.absolutePath,
-                    "-t", maxSeconds.toString(),
+                    "-map", "0:v:0", "-an",
+                    "-fps_mode", "passthrough",
                     "-q:v", "2",
                     "${framesDir.absolutePath}/f_%05d.jpg"
                 )
@@ -529,20 +545,8 @@ class VeilFrameProcessingService : Service() {
 
             val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && (f.name.endsWith(".jpg") || f.name.endsWith(".png")) }
                 ?.sortedBy { it.name } ?: emptyList()
-            if (frames.size < 2) throw IllegalStateException("Need at least 2 frames (extracted ${frames.size})")
-            if (frames.size > 1800) throw IllegalStateException("${frames.size} frames exceeds the maximum limit of 1800")
-
-            val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, maxSeconds.toDouble()) else 0.0
-            val fps = if (effectiveDurationS > 0.1) {
-                (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
-            } else {
-                captureFps ?: 30f
-            }
-
-            val effectiveMultiplier = if (isTarget60fps) {
-                if (fps <= 20f) 4 else 2
-            } else {
-                multiplier.coerceIn(2, 4)
+            check(frames.size == timing.sourceFrames) {
+                "Decoded ${frames.size} frames for ${timing.sourceFrames} video timestamps; refusing altered input"
             }
 
             var useRife = false
@@ -728,15 +732,22 @@ class VeilFrameProcessingService : Service() {
                 }
             }
 
-            // A full decode yields N originals and (N-1)*(multiplier-1) real
-            // intermediates. Never encode a shortened, duplicated or missing sequence.
+            // Each source frame occupies one full CFR presentation interval, including
+            // the last. Tail repeats are legitimate final-frame hold, not fallback
+            // duplicates for failed neural or optical-flow interpolation.
+            val lastOutput = File(outDir, "o_%05d.jpg".format(outIdx - 1))
+            for (tail in 1 until effectiveMultiplier) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val target = File(outDir, "o_%05d.jpg".format(outIdx++))
+                lastOutput.copyTo(target)
+                check(target.length() > 0L) { "Motion Lab failed to finish the final frame interval" }
+            }
             requireMotionSequenceComplete(frames.size, effectiveMultiplier, outDir, outIdx)
             if (opticalFlowFallbackFrames > 0) {
                 Log.w(TAG, "RIFE recovered $opticalFlowFallbackFrames intermediate frames with optical flow")
             }
 
-            val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
-            val framerateStr = if (isTarget60fps) "60.000" else String.format(Locale.US, "%.3f", fps * effectiveMultiplier)
+            val framerateStr = String.format(Locale.US, "%.5f", timing.outputFps)
             updateNotificationProgress("Encoding video ($framerateStr fps)…", 88)
             jobCallback?.onProgress(jobId, 88, "Encoding video…")
 
@@ -763,7 +774,7 @@ class VeilFrameProcessingService : Service() {
                     "-crf", "21",
                     "-pix_fmt", "yuv420p",
                     "-c:a", "copy",
-                    "-shortest",
+                    "-t", String.format(Locale.US, "%.3f", durationMs / 1000.0),
                     stage.absolutePath
                 )
             )
@@ -793,6 +804,30 @@ class VeilFrameProcessingService : Service() {
         }
     }
 
+    private fun readMotionVideoPtsUs(input: File): List<Long> {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: throw IllegalStateException("Input has no video track")
+            extractor.selectTrack(videoTrack)
+            val timestamps = ArrayList<Long>()
+            while (true) {
+                val pts = extractor.sampleTime
+                if (pts < 0) break
+                if (timestamps.size >= MotionLabTimingContract.MAX_SOURCE_FRAMES) {
+                    throw IllegalStateException("Video exceeds the 1,800 frame limit; trim before interpolation")
+                }
+                timestamps.add(pts)
+                if (!extractor.advance()) break
+            }
+            return timestamps
+        } finally {
+            extractor.release()
+        }
+    }
+
     private fun saveMotionBitmap(frame: Bitmap, output: File) {
         val encoded = output.outputStream().use { out ->
             frame.compress(Bitmap.CompressFormat.JPEG, 95, out)
@@ -815,7 +850,7 @@ class VeilFrameProcessingService : Service() {
         directory: File,
         outputFrames: Int
     ) {
-        val expected = (sourceFrames - 1) * factor + 1
+        val expected = sourceFrames * factor
         check(outputFrames == expected) {
             "Motion Lab generated $outputFrames frames instead of $expected; refusing output"
         }
