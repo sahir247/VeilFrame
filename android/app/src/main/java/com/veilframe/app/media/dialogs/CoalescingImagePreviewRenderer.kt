@@ -34,7 +34,8 @@ internal class CoalescingImagePreviewRenderer(
 ) {
     private data class Request(val generation: Long, val state: ImageEditState)
 
-    private val original = Bitmap.createBitmap(input)
+    private val original = input.copy(Bitmap.Config.ARGB_8888, true)
+        ?: throw IllegalStateException("Cannot snapshot image preview source")
     private val width = originalWidth
     private val height = originalHeight
     private val parent = SupervisorJob(ownerScope.coroutineContext[Job])
@@ -60,16 +61,25 @@ internal class CoalescingImagePreviewRenderer(
                     val pendingBitmap = AtomicReference<Bitmap?>()
                     try {
                         withContext(Dispatchers.Default) {
-                            val rendered = ImageTransformEngine.transform(
-                                src = original,
-                                state = request.state,
-                                origFullW = width,
-                                origFullH = height,
-                                useFullRes = false
-                            )
-                            pendingBitmap.set(
-                                if (rendered === original) Bitmap.createBitmap(original) else rendered
-                            )
+                            // Some transforms (notably PII redaction) edit a mutable
+                            // input in place. Never render against our shared dialog
+                            // snapshot: each result gets an independently owned
+                            // mutable source, so previews cannot accumulate edits.
+                            val working = original.copy(Bitmap.Config.ARGB_8888, true)
+                                ?: throw IllegalStateException("Cannot allocate preview working bitmap")
+                            var rendered: Bitmap? = null
+                            try {
+                                rendered = ImageTransformEngine.transform(
+                                    src = working,
+                                    state = request.state,
+                                    origFullW = width,
+                                    origFullH = height,
+                                    useFullRes = false
+                                )
+                                pendingBitmap.set(rendered)
+                            } finally {
+                                if (rendered !== working) working.recycle()
+                            }
                         }
                         val next = pendingBitmap.getAndSet(null) ?: continue
                         if (request.generation != latestGeneration || !isActive || closed) {
