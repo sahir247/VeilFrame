@@ -11,6 +11,7 @@
 
     <!-- Header Toolbar -->
     <LinearLayout
+        android:id="@+id/settingsHeaderBar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:background="?attr/colorSurfaceContainerLowest"

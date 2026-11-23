@@ -182,6 +182,7 @@ class MainActivity : AppCompatActivity() {
         }
         // Keep Android status/gesture-navigation icon contrast synchronized with
         // effective System/Light/Dark/OLED configuration after re-inflation.
+        com.veilframe.app.ui.theme.ShellThemeStyler.apply(this, binding)
         com.veilframe.app.settings.ThemeSettingsManager.applySystemBarAppearance(this)
 
         // Seamless settings theme restoration: immediately reveal container to eliminate 1-frame background reveal
@@ -1579,6 +1580,25 @@ class MainActivity : AppCompatActivity() {
         val scrollY = restoreScrollY ?: binding.layoutSettingsPanel.scrollSettings.scrollY
         pendingSeamlessSettingsRestore = true
         pendingSeamlessSettingsScrollY = scrollY
+        val selectedMode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
+        val policy = when (selectedMode) {
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM ->
+                androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT ->
+                androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+            else -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+        }
+        val policyChanged = androidx.appcompat.app.AppCompatDelegate.getDefaultNightMode() != policy
+        val wasDark = com.veilframe.app.settings.ThemeSettingsManager.isDarkUi(this)
+        val wantsDark = when (selectedMode) {
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> false
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK,
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM ->
+                (applicationContext.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
         if (Build.VERSION.SDK_INT >= 34) {
             overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
             overrideActivityTransition(Activity.OVERRIDE_TRANSITION_CLOSE, 0, 0)
@@ -1586,7 +1606,14 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         }
-        recreate()
+        // AppCompat recreates when the effective night configuration changes.
+        // Same-night palette or OLED changes need our own single recreation.
+        if (policyChanged) {
+            com.veilframe.app.settings.ThemeSettingsManager.applyNightMode(selectedMode)
+        }
+        if (!policyChanged || wasDark == wantsDark) {
+            recreate()
+        }
     }
 
     internal fun closeSettingsOverlay(animate: Boolean = true) {

@@ -6,6 +6,7 @@ import android.view.View
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
 import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutSettingsPanelBinding
 import com.veilframe.app.settings.ThemeSettingsManager
@@ -72,7 +73,7 @@ class SettingsOverlayCoordinator(
                     else -> ThemeSettingsManager.ThemeMode.SYSTEM
                 }
                 if (mode != ThemeSettingsManager.getThemeMode(activity)) {
-                    ThemeSettingsManager.setThemeMode(activity, mode, applyImmediately = true)
+                    ThemeSettingsManager.setThemeMode(activity, mode, applyImmediately = false)
                     seamlessRecreate()
                 }
             }
@@ -106,7 +107,7 @@ class SettingsOverlayCoordinator(
 
         // 3. Custom accent palette swatches (5 colored circle swatches)
         fun updateSwatchSelection(selected: ThemeSettingsManager.AccentPalette) {
-            val primaryColor = activity.getColor(R.color.vf_primary)
+            val primaryColor = MaterialColors.getColor(activity, R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
             fun updateCard(card: MaterialCardView, checkView: View, isSelected: Boolean) {
                 checkView.visibility = if (isSelected) View.VISIBLE else View.GONE
                 card.strokeWidth = if (isSelected) 6 else 0
@@ -144,8 +145,8 @@ class SettingsOverlayCoordinator(
 
         // 4. Typography style (2x2 Visual Cards)
         fun updateTypographySelection(selected: ThemeSettingsManager.TypographyStyle) {
-            val primaryColor = activity.getColor(R.color.vf_primary)
-            val outlineVariantColor = activity.getColor(R.color.vf_outline_variant)
+            val primaryColor = MaterialColors.getColor(activity, R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
+            val outlineVariantColor = MaterialColors.getColor(activity, R.attr.colorOutlineVariant, activity.getColor(R.color.vf_outline_variant))
 
             fun highlight(card: MaterialCardView, isSelected: Boolean) {
                 card.strokeWidth = if (isSelected) 4 else 0
