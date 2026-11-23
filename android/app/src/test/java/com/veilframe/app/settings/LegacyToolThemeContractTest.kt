@@ -34,9 +34,14 @@ class LegacyToolThemeContractTest {
     fun oledUsesTrueBlackNavigationAndSettingsCanvas() {
         val context = themed(R.style.ThemeOverlay_VeilFrame_Amoled)
         val lowest = MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.MAGENTA)
-        val body = context.theme.obtainStyledAttributes(
+        val attrs = context.theme.obtainStyledAttributes(
             intArrayOf(android.R.attr.colorBackground)
-        ).use { it.getColor(0, Color.MAGENTA) }
+        )
+        val body = try {
+            attrs.getColor(0, Color.MAGENTA)
+        } finally {
+            attrs.recycle()
+        }
         assertEquals(Color.BLACK, lowest)
         assertEquals(Color.BLACK, body)
         assertNotEquals(Color.BLACK,
