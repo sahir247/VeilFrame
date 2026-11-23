@@ -18,6 +18,7 @@ import com.veilframe.app.media.compression.ImageCompressionEngine
 import com.veilframe.app.media.dialogs.ImageStudioDialogController
 import com.veilframe.app.media.preview.ImagePreviewEngine
 import com.veilframe.app.media.preview.IsolatedImagePreviewRenderer
+import com.veilframe.app.media.ImageStudioBatchExportAcceptance
 import com.veilframe.app.media.transform.ImageTransformEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1060,8 +1061,9 @@ class ImageStudioController(
                             fullResBmp = ImagePreviewEngine.decodePreviewBitmap(item.file, maxDim = 2560)
                         }
                         if (fullResBmp == null) {
-                            Log.e("VeilFrame.ImageStudio", "Could not decode full-res for ${item.displayName}")
-                            continue
+                            throw IllegalStateException(
+                                "Cannot decode ${item.displayName}; refusing incomplete batch export"
+                            )
                         }
 
                         // Apply non-destructive transforms to full-res bitmap
@@ -1081,12 +1083,7 @@ class ImageStudioController(
                             processedBitmap = transformedBmp ?: fullResBmp
                         )
 
-                        if (result.success && outFile.exists()) {
-                            successCount++
-                            lastSavedFile = outFile
-                            totalOriginalBytes += item.originalBytes
-                            totalCompressedBytes += outFile.length()
-
+                        if (result.success && outFile.isFile && outFile.length() > 0L) {
                             if (destUri != null) {
                                 val mime = when (outputConfig.format.uppercase(Locale.US)) {
                                     "PNG" -> "image/png"
@@ -1100,12 +1097,19 @@ class ImageStudioController(
                                     else -> "image/jpeg"
                                 }
                                 val copied = safManager.copyFileToDocumentTree(outFile, destUri, mime)
-                                if (copied != null) exportedCount++
+                                check(copied != null) {
+                                    "Destination refused ${item.displayName}; batch not complete"
+                                }
+                                exportedCount++
                             }
+                            successCount++
+                            lastSavedFile = outFile
+                            totalOriginalBytes += item.originalBytes
+                            totalCompressedBytes += outFile.length()
                         } else {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(activity, "Failed for ${item.displayName}: ${result.error}", Toast.LENGTH_SHORT).show()
-                            }
+                            throw IllegalStateException(
+                                "Could not encode ${item.displayName}: ${result.error ?: "empty output"}"
+                            )
                         }
                     } finally {
                         transformedBmp?.recycle()
@@ -1113,6 +1117,12 @@ class ImageStudioController(
                     }
                 }
 
+                ImageStudioBatchExportAcceptance.requireComplete(
+                    requested = total,
+                    encoded = successCount,
+                    copiedToDestination = exportedCount,
+                    destinationSelected = destUri != null
+                )
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
