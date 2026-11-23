@@ -73,34 +73,51 @@ jobs:
       - name: Cache upstream and app Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
 
-      # The pinned upstream OpenCV Gradle project references JCenter, which
-      # redirects some artifact requests to repo1.maven.org. On shared CI runners
-      # that endpoint frequently returns HTTP 429. Prepend Maven Central's
-      # canonical endpoint *before* the generated project is evaluated.
-      - name: Prefer canonical Maven Central for upstream OpenCV Gradle
+      # The generated OpenCV Gradle 8.11.1/Kotlin 1.8.20 project resolves
+      # plugins independently of VeilFrame. GitHub-hosted runners recently hit
+      # 429 on BOTH repo.maven.apache.org and JCenter -> repo1.maven.org.
+      # Google Cloud's public Maven Central mirror is documented at
+      # https://maven-central.storage.googleapis.com/index.html
+      # Scope the override strictly to OpenCV's standalone generated project,
+      # retaining Google Maven for Android artifacts and Maven Central fallback.
+      - name: Prefer public Google Maven Central mirror for generated OpenCV Gradle
         shell: bash
         run: |
           set -Eeuo pipefail
           GRADLE_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
           mkdir -p "$GRADLE_DIR/init.d"
           cat > "$GRADLE_DIR/init.d/veilframe-opencv-maven.gradle" <<'GRADLE'
-          // Only the OpenCV-generated Gradle project needs this workaround.
-          // The VeilFrame root project uses FAIL_ON_PROJECT_REPOS and rejects
-          // project-level repository injections during its own build.
+          import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+          def mirrorUrl = 'https://maven-central.storage-download.googleapis.com/maven2/'
+          def mirrorOnlyOpenCv = { dir -> dir.absolutePath.contains('/.opencv_build/') }
+          // Hook *existing and future* repositories: the generated project
+          // adds JCenter/repo1 during evaluation, after beforeProject fires.
+          def replaceLegacyCentral = { repository ->
+              if (repository instanceof MavenArtifactRepository) {
+                  def host = repository.url.host?.toLowerCase(java.util.Locale.ROOT)
+                  if (host in ['repo1.maven.org', 'jcenter.bintray.com', 'jcenter.bintray.org']) {
+                      repository.url = new URI(mirrorUrl)
+                  }
+              }
+          }
           gradle.beforeSettings { settings ->
-              if (settings.settingsDir.absolutePath.contains('/.opencv_build/')) {
+              if (mirrorOnlyOpenCv(settings.settingsDir)) {
                   settings.pluginManagement.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
               }
           }
           gradle.beforeProject { project ->
-              if (project.rootDir.absolutePath.contains('/.opencv_build/')) {
+              if (mirrorOnlyOpenCv(project.rootDir)) {
                   project.buildscript.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
                   project.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
               }
           }
