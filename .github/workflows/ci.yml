@@ -334,9 +334,19 @@ jobs:
           CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
             grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
           if [ -n "$CHANGED_INPUTS" ]; then
-            echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+            # A recently changed SDK workflow invalidates the historical artifact.
+            # Do not fail immediately while a source-identical, exact-head SDK
+            # rebuild is still queued/running. Wait for that run to SUCCEED.
+            # This never authorizes using a stale or failed SDK artifact.
+            echo "::notice::OpenCV SDK inputs changed since $ARTIFACT_SHA; requiring an exact-head successful rebuild."
             echo "$CHANGED_INPUTS"
-            exit 1
+            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+              '[.[] | select(.headSha == $sha and (.status != "completed" or .conclusion == "success"))] | first | .databaseId // empty')
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No pending or successful exact-head OpenCV build available for $REQUIRED_HEAD_SHA."
+              exit 1
+            fi
+            ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
           fi
           echo "Verified OpenCV SDK build inputs are unchanged from artifact source $ARTIFACT_SHA."
           if [ "$ARTIFACT_SHA" != "$REQUIRED_HEAD_SHA" ]; then
@@ -1119,9 +1129,19 @@ jobs:
           CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
             grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
           if [ -n "$CHANGED_INPUTS" ]; then
-            echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+            # A recently changed SDK workflow invalidates the historical artifact.
+            # Do not fail immediately while a source-identical, exact-head SDK
+            # rebuild is still queued/running. Wait for that run to SUCCEED.
+            # This never authorizes using a stale or failed SDK artifact.
+            echo "::notice::OpenCV SDK inputs changed since $ARTIFACT_SHA; requiring an exact-head successful rebuild."
             echo "$CHANGED_INPUTS"
-            exit 1
+            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+              '[.[] | select(.headSha == $sha and (.status != "completed" or .conclusion == "success"))] | first | .databaseId // empty')
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No pending or successful exact-head OpenCV build available for $REQUIRED_HEAD_SHA."
+              exit 1
+            fi
+            ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
           fi
           echo "Verified OpenCV SDK build inputs are unchanged from artifact source $ARTIFACT_SHA."
           if [ "$ARTIFACT_SHA" != "$REQUIRED_HEAD_SHA" ]; then
