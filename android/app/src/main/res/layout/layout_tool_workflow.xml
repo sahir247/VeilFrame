@@ -5,7 +5,7 @@
         android:id="@+id/scrollTool"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="?android:attr/colorBackground"
+        android:background="?attr/colorSurfaceContainerLowest"
         android:fillViewport="true"
         android:paddingBottom="160dp"
         android:clipToPadding="false"
@@ -23,7 +23,7 @@
                 android:id="@+id/cardTargetSelection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
+                android:layout_marginBottom="24dp"
                 android:orientation="vertical">
 
                     <!-- Section Header matching Image/Video Studio -->
@@ -34,7 +34,7 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
                         android:paddingHorizontal="20dp"
-                        android:paddingBottom="8dp">
+                        android:paddingBottom="10dp">
 
                         <TextView
                             android:id="@+id/tvToolCardHeaderTitle"
@@ -56,7 +56,7 @@
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:paddingHorizontal="16dp"
-                            android:paddingVertical="16dp">
+                            android:paddingVertical="18dp">
 
                     <!-- State A: Empty State (Shown when no target is selected) -->
                     <LinearLayout
@@ -66,7 +66,7 @@
                         android:orientation="vertical"
                         android:gravity="center_horizontal"
                         android:paddingTop="8dp"
-                        android:paddingBottom="8dp"
+                        android:paddingBottom="10dp"
                         android:visibility="visible">
 
                         <ImageView
@@ -80,8 +80,8 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
-                            android:text="① SELECT TARGET"
-                            android:textColor="@color/vf_text_primary"
+                            android:text="SELECT TARGET"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="13sp"
                             android:textStyle="bold"
                             android:letterSpacing="0.04" />
@@ -92,8 +92,8 @@
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="14dp"
                             android:text="Select a single file or project directory to begin"
-                            android:textColor="@color/vf_text_muted"
-                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp"
                             android:gravity="center" />
 
                         <LinearLayout
@@ -112,14 +112,14 @@
                                 android:paddingStart="8dp"
                                 android:paddingEnd="8dp"
                                 android:text="Select Folder"
-                                android:textColor="@color/vf_primary"
+                                android:textColor="?attr/colorPrimary"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
                                 app:icon="@drawable/ic_folder_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
-                                app:iconTint="@color/vf_primary" />
+                                app:iconTint="?attr/colorPrimary" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnPickFile"
@@ -132,14 +132,14 @@
                                 android:paddingStart="8dp"
                                 android:paddingEnd="8dp"
                                 android:text="Select File"
-                                android:textColor="@color/vf_primary"
+                                android:textColor="?attr/colorPrimary"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
                                 app:icon="@drawable/ic_file_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
-                                app:iconTint="@color/vf_primary" />
+                                app:iconTint="?attr/colorPrimary" />
                         </LinearLayout>
                     </LinearLayout>
 
@@ -162,9 +162,9 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="① TARGET MOUNTED"
+                                android:text="TARGET READY"
                                 android:textColor="@color/vf_accent_green"
-                                android:textSize="12sp"
+                                android:textSize="13sp"
                                 android:textStyle="bold"
                                 android:letterSpacing="0.06" />
 
@@ -178,7 +178,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="READY"
                                 android:textColor="@color/vf_accent_green"
-                                android:textSize="11sp"
+                                android:textSize="13sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -187,7 +187,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
-                            android:background="@color/vf_surface_variant"
+                            android:background="?attr/colorSurfaceContainerHigh"
                             android:padding="12dp"
                             android:layout_marginBottom="12dp">
 
@@ -196,8 +196,8 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:text="No file or folder selected"
-                                android:textColor="@color/vf_text_primary"
-                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="13sp"
                                 android:fontFamily="monospace"
                                 android:maxLines="2"
                                 android:ellipsize="middle" />
@@ -209,7 +209,7 @@
                                 android:layout_marginTop="4dp"
                                 android:text="Select a target below to begin processing"
                                 android:textColor="@color/vf_accent_green"
-                                android:textSize="11sp" />
+                                android:textSize="13sp" />
                         </LinearLayout>
 
                         <!-- Action Buttons when Mounted: Change or Clear -->
@@ -227,15 +227,15 @@
                                 android:layout_weight="1"
                                 android:layout_marginEnd="4dp"
                                 android:text="Change"
-                                android:textColor="@color/vf_primary"
+                                android:textColor="?attr/colorPrimary"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
-                                app:strokeColor="@color/vf_primary"
+                                app:strokeColor="?attr/colorPrimary"
                                 app:strokeWidth="1dp"
                                 app:icon="@drawable/ic_folder_pick"
                                 app:iconSize="14dp"
-                                app:iconTint="@color/vf_primary" />
+                                app:iconTint="?attr/colorPrimary" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnClearTarget"
@@ -266,7 +266,7 @@
                 android:id="@+id/cardConfiguration"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
+                android:layout_marginBottom="24dp"
                 android:orientation="vertical">
 
                     <TextView
@@ -275,7 +275,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:paddingHorizontal="20dp"
-                        android:paddingBottom="8dp"
+                        android:paddingBottom="10dp"
                         android:text="Tool Configuration" />
 
                     <com.google.android.material.card.MaterialCardView
@@ -289,7 +289,7 @@
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:paddingHorizontal="16dp"
-                            android:paddingVertical="16dp">
+                            android:paddingVertical="18dp">
 
                     <!-- Expressive Tool Slider Row (Shown dynamically for Image & Video Cleaner) -->
                     <LinearLayout
@@ -313,22 +313,22 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="Compression Intensity"
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="13sp"
                                 android:textStyle="bold" />
 
                             <TextView
                                 android:id="@+id/tvToolSliderValue"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:background="@color/vf_surface_variant"
+                                android:background="?attr/colorSurfaceContainerHigh"
                                 android:paddingStart="8dp"
                                 android:paddingEnd="8dp"
                                 android:paddingTop="2dp"
                                 android:paddingBottom="2dp"
                                 android:text="95%"
-                                android:textColor="@color/vf_primary"
-                                android:textSize="11sp"
+                                android:textColor="?attr/colorPrimary"
+                                android:textSize="13sp"
                                 android:fontFamily="monospace"
                                 android:textStyle="bold" />
                         </LinearLayout>
@@ -340,7 +340,7 @@
                             android:valueFrom="0"
                             android:valueTo="100"
                             android:value="95"
-                            app:thumbColor="@color/vf_primary" />
+                            app:thumbColor="?attr/colorPrimary" />
                     </LinearLayout>
 
                     <!-- Primary Setting Row -->
@@ -349,8 +349,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Primary Option"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="13sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -360,8 +360,8 @@
                         android:layout_marginTop="2dp"
                         android:layout_marginBottom="6dp"
                         android:text="Configure primary parameters for this tool."
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="11sp" />
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="13sp" />
 
                     <!-- Wrapping Responsive Chip Group -->
                     <com.google.android.material.chip.ChipGroup
@@ -378,8 +378,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Output Format"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="13sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -389,8 +389,8 @@
                         android:layout_marginTop="2dp"
                         android:layout_marginBottom="6dp"
                         android:text="Select the format for the generated artifact."
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="11sp" />
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="13sp" />
 
                     <!-- Wrapping Responsive Chip Group -->
                     <com.google.android.material.chip.ChipGroup
@@ -427,24 +427,22 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Option 1"
-                                    android:textColor="@color/vf_text_primary"
-                                    android:textSize="12sp" />
+                                    android:textColor="?attr/colorOnSurface"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/tvSwitch1Desc"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Description 1"
-                                    android:textColor="@color/vf_text_muted"
-                                    android:textSize="11sp" />
+                                    android:textColor="?attr/colorOnSurfaceVariant"
+                                    android:textSize="13sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
                                 android:id="@+id/switchOption1"
                                 android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                app:thumbTint="@color/vf_primary"
-                                app:trackTint="@color/vf_surface_variant" />
+                                android:layout_height="wrap_content" />
                         </LinearLayout>
 
                         <!-- Switch 2 -->
@@ -467,24 +465,22 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Option 2"
-                                    android:textColor="@color/vf_text_primary"
-                                    android:textSize="12sp" />
+                                    android:textColor="?attr/colorOnSurface"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/tvSwitch2Desc"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Description 2"
-                                    android:textColor="@color/vf_text_muted"
-                                    android:textSize="11sp" />
+                                    android:textColor="?attr/colorOnSurfaceVariant"
+                                    android:textSize="13sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
                                 android:id="@+id/switchOption2"
                                 android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                app:thumbTint="@color/vf_primary"
-                                app:trackTint="@color/vf_surface_variant" />
+                                android:layout_height="wrap_content" />
                         </LinearLayout>
 
                         <!-- Switch 3 -->
@@ -507,24 +503,22 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Option 3"
-                                    android:textColor="@color/vf_text_primary"
-                                    android:textSize="12sp" />
+                                    android:textColor="?attr/colorOnSurface"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/tvSwitch3Desc"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Description 3"
-                                    android:textColor="@color/vf_text_muted"
-                                    android:textSize="11sp" />
+                                    android:textColor="?attr/colorOnSurfaceVariant"
+                                    android:textSize="13sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
                                 android:id="@+id/switchOption3"
                                 android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                app:thumbTint="@color/vf_primary"
-                                app:trackTint="@color/vf_surface_variant" />
+                                android:layout_height="wrap_content" />
                         </LinearLayout>
                     </LinearLayout>
 
@@ -556,25 +550,23 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Full Directory Depth"
-                                    android:textColor="@color/vf_text_primary"
-                                    android:textSize="12sp" />
+                                    android:textColor="?attr/colorOnSurface"
+                                    android:textSize="13sp" />
 
                                 <TextView
                                     android:id="@+id/tvBundleDepthDesc"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Traverse all subdirectories recursively"
-                                    android:textColor="@color/vf_text_muted"
-                                    android:textSize="11sp" />
+                                    android:textColor="?attr/colorOnSurfaceVariant"
+                                    android:textSize="13sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
                                 android:id="@+id/switchBundleFullDepth"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:checked="true"
-                                app:thumbTint="@color/vf_primary"
-                                app:trackTint="@color/vf_surface_variant" />
+                                android:checked="true" />
                         </LinearLayout>
 
                         <!-- Custom Depth Stepper Row -->
@@ -593,8 +585,8 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="Custom Depth Limit"
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="12sp" />
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="13sp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnBundleDepthDecrement"
@@ -619,7 +611,7 @@
                                 android:enabled="false"
                                 android:inputType="number"
                                 android:text="3"
-                                android:textColor="@color/vf_text_primary"
+                                android:textColor="?attr/colorOnSurface"
                                 android:textSize="13sp"
                                 android:textStyle="bold"
                                 android:background="@android:color/transparent" />
@@ -649,7 +641,7 @@
                 android:id="@+id/cardPrivacySummary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
+                android:layout_marginBottom="24dp"
                 android:orientation="vertical">
 
                     <LinearLayout
@@ -658,7 +650,7 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
                         android:paddingHorizontal="20dp"
-                        android:paddingBottom="8dp">
+                        android:paddingBottom="10dp">
 
                         <TextView
                             style="@style/Widget.VeilFrame.SectionHeading"
@@ -678,7 +670,7 @@
                             android:paddingBottom="2dp"
                             android:text="HIGH PROTECTION"
                             android:textColor="@color/vf_accent_green"
-                            android:textSize="11sp"
+                            android:textSize="13sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -693,15 +685,15 @@
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:paddingHorizontal="16dp"
-                            android:paddingVertical="14dp">
+                            android:paddingVertical="18dp">
 
                         <TextView
                             android:id="@+id/tvPrivacyImpact1"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="• Camera EXIF, GPS coordinates &amp; serials stripped"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp"
                             android:layout_marginBottom="4dp" />
 
                         <TextView
@@ -709,8 +701,8 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="• Bitstream repacked &amp; sensor PRNU noise mitigated"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp"
                             android:layout_marginBottom="4dp" />
 
                         <TextView
@@ -729,7 +721,7 @@
                 android:id="@+id/cardTelemetry"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
+                android:layout_marginBottom="24dp"
                 android:orientation="vertical">
 
                     <!-- Execution Monitor Header -->
@@ -739,7 +731,7 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
                         android:paddingHorizontal="20dp"
-                        android:paddingBottom="8dp">
+                        android:paddingBottom="10dp">
 
                         <TextView
                             style="@style/Widget.VeilFrame.SectionHeading"
@@ -758,8 +750,8 @@
                             android:paddingTop="3dp"
                             android:paddingBottom="3dp"
                             android:text="IDLE"
-                            android:textColor="@color/vf_secondary"
-                            android:textSize="11sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -774,7 +766,7 @@
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:paddingHorizontal="16dp"
-                            android:paddingVertical="14dp">
+                            android:paddingVertical="18dp">
 
                     <!-- Linear Progress Bar -->
                     <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -814,7 +806,7 @@
                             android:layout_marginStart="8dp"
                             android:text=""
                             android:textColor="@color/vf_accent_green"
-                            android:textSize="11sp"
+                            android:textSize="13sp"
                             android:fontFamily="monospace"
                             android:textStyle="bold" />
                     </LinearLayout>
@@ -827,7 +819,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="18dp"
                         android:text="View Technical Logs"
-                        android:textColor="@color/vf_secondary"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         app:icon="@drawable/ic_expand_more"
                         app:iconSize="16dp"
                         app:iconGravity="textEnd" />
@@ -852,8 +844,8 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="RAW CONSOLE TELEMETRY"
-                                android:textColor="@color/vf_text_muted"
-                                android:textSize="11sp"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="13sp"
                                 android:fontFamily="monospace" />
 
                             <com.google.android.material.button.MaterialButton
@@ -906,7 +898,7 @@
                                 android:lineSpacingExtra="2dp"
                                 android:text="[SYS] Initializing VeilFrame forensic core...\n[SYS] Ready for execution."
                                 android:textColor="@color/vf_console_text"
-                                android:textSize="11sp" />
+                                android:textSize="13sp" />
                         </androidx.core.widget.NestedScrollView>
                     </LinearLayout>
                         </LinearLayout>
@@ -949,7 +941,7 @@
                             android:layout_marginStart="8dp"
                             android:text="TASK COMPLETE"
                             android:textColor="@color/vf_accent_green"
-                            android:textSize="12sp"
+                            android:textSize="13sp"
                             android:textStyle="bold"
                             android:letterSpacing="0.06" />
                     </LinearLayout>
@@ -959,7 +951,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="Artifact Generated"
-                        android:textColor="@color/vf_text_primary"
+                        android:textColor="?attr/colorOnSurface"
                         android:textSize="13sp"
                         android:textStyle="bold"
                         android:fontFamily="monospace"
@@ -983,10 +975,10 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="Preview Markdown"
-                        android:textColor="@color/vf_primary"
+                        android:textColor="?attr/colorPrimary"
                         android:visibility="gone"
                         app:icon="@drawable/ic_visibility"
-                        app:iconTint="@color/vf_primary"
+                        app:iconTint="?attr/colorPrimary"
                         app:iconSize="16dp" />
 
                     <LinearLayout
@@ -1006,7 +998,7 @@
                             android:layout_marginEnd="4dp"
                             android:text="Save As..."
                             app:icon="@drawable/ic_action_save"
-                            app:iconTint="@color/vf_primary"
+                            app:iconTint="?attr/colorPrimary"
                             app:iconSize="14dp" />
 
                         <com.google.android.material.button.MaterialButton
@@ -1021,7 +1013,7 @@
                             android:layout_marginStart="4dp"
                             android:text="Share File"
                             app:icon="@drawable/ic_action_share"
-                            app:iconTint="@color/vf_primary"
+                            app:iconTint="?attr/colorPrimary"
                             app:iconSize="14dp" />
                     </LinearLayout>
                 </LinearLayout>

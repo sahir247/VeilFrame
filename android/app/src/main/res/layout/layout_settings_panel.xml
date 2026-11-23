@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground"
+    android:background="?attr/colorSurfaceContainerLowest"
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical">
@@ -13,12 +13,12 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="?attr/colorSurface"
+        android:background="?attr/colorSurfaceContainerLowest"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="8dp"
         android:paddingEnd="16dp"
-        android:elevation="2dp">
+        android:elevation="0dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettingsClose"
@@ -27,7 +27,7 @@
             android:layout_height="wrap_content"
             android:contentDescription="Close Settings"
             app:icon="@drawable/ic_arrow_back"
-            app:iconTint="@color/vf_primary" />
+            app:iconTint="?attr/colorOnSurface" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -41,10 +41,10 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Settings &amp; Appearance"
-                android:textColor="@color/vf_text_primary"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.02" />
+                android:textAppearance="?attr/textAppearanceTitleLargeEmphasized"
+                android:textColor="?attr/colorOnSurface"
+                android:maxLines="1"
+                android:ellipsize="end" />
         </LinearLayout>
     </LinearLayout>
 
@@ -67,7 +67,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Theme mode"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -143,7 +143,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Material You Dynamic Color"
-                        android:textColor="@color/vf_text_primary"
+                        android:textColor="?attr/colorOnSurface"
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
@@ -169,7 +169,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Accent palette (when Dynamic Color is off)"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -365,7 +365,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Font"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -405,7 +405,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="System"
-                            android:textColor="@color/vf_text_primary"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="sans-serif" />
@@ -439,7 +439,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Modern"
-                            android:textColor="@color/vf_text_primary"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_sans" />
@@ -473,7 +473,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Mono"
-                            android:textColor="@color/vf_text_primary"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_mono" />
@@ -507,7 +507,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Serif"
-                            android:textColor="@color/vf_text_primary"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="15sp"
                             android:textStyle="bold"
                             android:fontFamily="@font/font_serif" />
@@ -521,7 +521,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Storage governor"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -614,7 +614,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Diagnostics &amp; logs"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -658,7 +658,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="System Diagnostics &amp; Console"
-                            android:textColor="@color/vf_text_primary"
+                            android:textColor="?attr/colorOnSurface"
                             android:textSize="14sp"
                             android:textStyle="bold" />
 
@@ -667,7 +667,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="Engine status, thermal telemetry &amp; live logs"
-                            android:textColor="@color/vf_text_secondary"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp" />
                     </LinearLayout>
 
@@ -686,7 +686,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="About &amp; in-app updates"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
@@ -709,7 +709,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="VeilFrame Mobile"
-                    android:textColor="@color/vf_text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
@@ -719,7 +719,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:text="Installed: v2.3.0 • Local Engine"
-                    android:textColor="@color/vf_text_secondary"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp" />
 
                 <LinearLayout
@@ -756,10 +756,10 @@
                         android:insetBottom="0dp"
                         android:textSize="12sp"
                         android:text="Update"
-                        android:textColor="@color/vf_primary"
+                        android:textColor="?attr/colorPrimary"
                         app:icon="@drawable/ic_system_update"
                         app:iconSize="14dp"
-                        app:iconTint="@color/vf_primary" />
+                        app:iconTint="?attr/colorPrimary" />
                 </LinearLayout>
 
                 <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -792,7 +792,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="What's New in v2.3.0"
-                    android:textColor="@color/vf_text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
@@ -820,7 +820,7 @@
                     android:layout_height="wrap_content"
                     android:padding="14dp"
                     android:text="• Motion Lab: RIFE v4 AI neural frame synthesis with 60 FPS target mode\n• Complete Tencent NCNN native C++ migration (Zero ONNX dependencies)\n• Multi-vendor hardware validation (Qualcomm Adreno &amp; MediaTek Dimensity)\n• PDF Studio smooth Bézier pen signatures with 3.5x supersampling\n• Foreground/background model &amp; update downloads with clean status copy"
-                    android:textColor="@color/vf_text_secondary"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp"
                     android:lineSpacingExtra="4dp" />
             </com.google.android.material.card.MaterialCardView>
@@ -831,7 +831,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Resources &amp; community"
-                android:textColor="@color/vf_accent_green"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
