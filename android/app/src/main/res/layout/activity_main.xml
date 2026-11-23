@@ -411,7 +411,7 @@
                 app:iconGravity="textStart"
                 android:text="Save"
                 app:icon="@drawable/ic_action_save"
-                app:iconTint="?attr/colorOnSurface"
+                app:iconTint="?attr/colorPrimary"
                 app:iconSize="18dp"
                 android:visibility="gone" />
 
@@ -429,7 +429,7 @@
                 app:iconGravity="textStart"
                 android:text="Share"
                 app:icon="@drawable/ic_action_share"
-                app:iconTint="?attr/colorOnSurface"
+                app:iconTint="?attr/colorPrimary"
                 app:iconSize="18dp"
                 android:visibility="gone" />
         </LinearLayout>
