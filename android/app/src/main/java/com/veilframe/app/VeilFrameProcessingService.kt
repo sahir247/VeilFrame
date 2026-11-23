@@ -22,6 +22,7 @@ import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
+import com.veilframe.app.cv.motion.MotionLabSourceFrameStage
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
@@ -623,9 +624,9 @@ class VeilFrameProcessingService : Service() {
 
             if (useRife && prevBmp != null) {
                 val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                saveMotionBitmap(prevBmp!!, outFile)
+                stageMotionSourceFrame(frames[0], outFile, prevBmp)
             } else if (prevMat != null && !prevMat.empty()) {
-                saveMotionMat(prevMat, File(outDir, "o_%05d.jpg".format(outIdx++)))
+                MotionLabSourceFrameStage.stage(frames[0], File(outDir, "o_%05d.jpg".format(outIdx++)))
             } else {
                 throw IllegalStateException("Initial frame unreadable")
             }
@@ -710,11 +711,11 @@ class VeilFrameProcessingService : Service() {
                         fallbackA?.release()
                         fallbackB?.release()
                         if (useRife && curBmp != null) {
-                            saveMotionBitmap(curBmp, File(outDir, "o_%05d.jpg".format(outIdx++)))
+                            stageMotionSourceFrame(frames[i], File(outDir, "o_%05d.jpg".format(outIdx++)), curBmp)
                             prevBmp?.recycle()
                             prevBmp = curBmp
                         } else if (curMat != null) {
-                            saveMotionMat(curMat, File(outDir, "o_%05d.jpg".format(outIdx++)))
+                            MotionLabSourceFrameStage.stage(frames[i], File(outDir, "o_%05d.jpg".format(outIdx++)))
                             prevMat?.release()
                             prevMat = curMat
                         }
@@ -848,6 +849,21 @@ class VeilFrameProcessingService : Service() {
             return timestamps
         } finally {
             extractor.release()
+        }
+    }
+
+    /**
+     * Preserve already-extracted JPEG bytes when RIFE did not downsample the
+     * frame. If the native RIFE memory cap reduced its size, encode precisely
+     * that smaller bitmap so every source/intermediate frame shares geometry.
+     */
+    private fun stageMotionSourceFrame(extracted: File, output: File, decoded: Bitmap) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(extracted.absolutePath, bounds)
+        if (bounds.outWidth == decoded.width && bounds.outHeight == decoded.height) {
+            MotionLabSourceFrameStage.stage(extracted, output)
+        } else {
+            saveMotionBitmap(decoded, output)
         }
     }
 
