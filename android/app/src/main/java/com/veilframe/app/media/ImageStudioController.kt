@@ -769,7 +769,7 @@ class ImageStudioController(
             Toast.makeText(activity, "Please select an image first", Toast.LENGTH_SHORT).show()
             return
         }
-        val sourceBmp = previewSourceBitmap ?: run {
+        if (previewSourceBitmap == null) {
             Toast.makeText(activity, "No preview available", Toast.LENGTH_SHORT).show()
             return
         }
@@ -791,17 +791,18 @@ class ImageStudioController(
         piiJob = scope.launch(Dispatchers.Default) {
             val engine = getOrInitPiiEngine()
             try {
-                // Run multi-modal inference on preview bitmap, scaling bounding boxes to original dimensions
-                val summary = PiiMultiModalDetector.detectAllSummary(
+                // Analyze the actual source pixels in bounded, overlapping native-size
+                // regions. Scanning the 1280px preview used to erase small identifiers
+                // that remain visible in the higher-resolution exported image.
+                val scanContext = kotlin.coroutines.coroutineContext
+                val summary = ImagePiiRegionScanner.scan(
                     context = activity,
+                    file = item.file,
+                    expectedWidth = item.origWidth,
+                    expectedHeight = item.origHeight,
                     ncnnEngine = engine,
-                    bitmap = sourceBmp,
-                    targetWidth = item.origWidth,
-                    targetHeight = item.origHeight,
                     confThreshold = confThreshold,
-                    includeNcnn = true,
-                    includeBarcodes = true,
-                    includeOcrText = true
+                    checkActive = { scanContext.ensureActive() }
                 )
                 val detections = summary.detections
 
