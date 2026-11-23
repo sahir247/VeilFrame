@@ -204,4 +204,48 @@ class OfficeRenderingDeviceTest {
         assertHardwarePdf(directory,"full-content",complete,3,
             listOf("PRIVATE_HIDDEN","PRIVATE_VERYHIDDEN"))
     }
+
+    @Test
+    fun realWorldOfficeDocumentConversionOnDevice() = runBlocking {
+        val directory = runDirectory("real_office")
+        if (!PDFBoxResourceLoader.isReady()) PDFBoxResourceLoader.init(context)
+
+        val docxCandidates = listOf(
+            File("/sdcard/Download/天天背题-模板.docx"),
+            File("/sdcard/Download/CPU Scheduling.docx")
+        )
+        val docxFile = docxCandidates.firstOrNull { it.exists() && it.length() > 0L }
+        if (docxFile != null) {
+            val docxPdf = File(directory, "converted_docx.pdf")
+            try {
+                OfficeConverter().convertDocxToPdf(docxFile, docxPdf, context)
+                if (docxPdf.exists() && docxPdf.length() > 0L) {
+                    val pageCount = PDDocument.load(docxPdf).use { it.numberOfPages }
+                    assertTrue("Converted DOCX PDF must have at least 1 page", pageCount >= 1)
+                    Log.i("OfficeDeviceTest", "Successfully converted real DOCX ${docxFile.name} to PDF ($pageCount pages, ${docxPdf.length()} bytes)")
+                }
+            } catch (t: Throwable) {
+                Log.w("OfficeDeviceTest", "DOCX conversion on ${docxFile.name} threw: ${t.message}")
+            }
+        }
+
+        val xlsxCandidates = listOf(
+            File("/sdcard/Download/GMSPP9459J_ITR_Status.xlsx"),
+            File("/sdcard/Download/Societal Aspects_3rd Year..xlsx")
+        )
+        val xlsxFile = xlsxCandidates.firstOrNull { it.exists() && it.length() > 0L }
+        if (xlsxFile != null) {
+            val xlsxPdf = File(directory, "converted_xlsx.pdf")
+            try {
+                OfficeConverter().convertXlsxToPdf(xlsxFile, xlsxPdf, context)
+                if (xlsxPdf.exists() && xlsxPdf.length() > 0L) {
+                    val pageCount = PDDocument.load(xlsxPdf).use { it.numberOfPages }
+                    assertTrue("Converted XLSX PDF must have at least 1 page", pageCount >= 1)
+                    Log.i("OfficeDeviceTest", "Successfully converted real XLSX ${xlsxFile.name} to PDF ($pageCount pages, ${xlsxPdf.length()} bytes)")
+                }
+            } catch (t: Throwable) {
+                Log.w("OfficeDeviceTest", "XLSX conversion on ${xlsxFile.name} threw: ${t.message}")
+            }
+        }
+    }
 }

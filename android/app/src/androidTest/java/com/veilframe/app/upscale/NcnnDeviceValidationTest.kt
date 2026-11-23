@@ -20,6 +20,7 @@ import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import com.veilframe.app.upscale.model.UpscaleModelRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -403,4 +404,66 @@ class NcnnDeviceValidationTest {
         }
     }
 
+    @Test
+    fun test07_ConcurrentNcnnMattingAndPiiStress() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val portraitCandidates = listOf(
+            File("/data/local/tmp/test_portrait.jpg"),
+            File("/data/local/tmp/veilframe_validation/real_inputs_20/06_720p_real_portrait.jpg"),
+            File(context.cacheDir, "test_portrait.jpg")
+        )
+        val portraitFile = portraitCandidates.firstOrNull { it.exists() && it.length() > 0L }
+
+        if (portraitFile == null) {
+            Log.w(TAG, "No portrait photo found for concurrent stress test")
+            return@runBlocking
+        }
+
+        val bmp = BitmapFactory.decodeFile(portraitFile.absolutePath)
+        assertNotNull("Must decode portrait", bmp)
+
+        // Initialize matting (U2-Net-P)
+        val mattingReady = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeInit(
+            assetManager = context.assets,
+            paramPath = "models/u2netp/u2netp.ncnn.param",
+            binPath = "models/u2netp/u2netp.ncnn.bin",
+            modelType = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_U2NETP,
+            useGpu = false,
+            isAsset = true
+        )
+        assertTrue("Matting must initialize", mattingReady)
+
+        val piiEngine = com.veilframe.app.privacy.PiiNcnnEngine(context)
+
+        val pssBefore = Debug.getPss()
+        val iterations = 5
+        val job1 = async(kotlinx.coroutines.Dispatchers.Default) {
+            for (i in 0 until iterations) {
+                val cutout = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeProcess(
+                    srcBitmap = bmp,
+                    modelType = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_U2NETP,
+                    useGpu = false
+                )
+                assertNotNull("Cutout must not be null", cutout)
+                cutout?.recycle()
+            }
+        }
+
+        val job2 = async(kotlinx.coroutines.Dispatchers.Default) {
+            for (i in 0 until iterations) {
+                val detections = piiEngine.detect(bmp, confThreshold = 0.40f, iouThreshold = 0.45f)
+                assertNotNull("Detections must not be null", detections)
+            }
+        }
+
+        job1.await()
+        job2.await()
+
+        val pssAfter = Debug.getPss()
+        Log.i(TAG, "Concurrent NCNN stress completed: $iterations iterations each, PSS before=${pssBefore}KB after=${pssAfter}KB (delta=${pssAfter - pssBefore}KB)")
+
+        piiEngine.close()
+        com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeRelease()
+        bmp.recycle()
+    }
 }

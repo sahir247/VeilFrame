@@ -154,6 +154,64 @@ class VideoPiiFfmpegRenderTest {
         }
     }
 
+    @Test
+    fun testRealWorldVideoPiiScanningOnDevice() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val sampleVideoCandidates = listOf(
+            File("/data/local/tmp/sample.mp4"),
+            File("/sdcard/Download/sample.mp4"),
+            File("/sdcard/Download/pixilart-1790940747498.mp4")
+        )
+        val sourceVideo = sampleVideoCandidates.firstOrNull { it.exists() && it.length() > 0L }
+        if (sourceVideo == null) {
+            android.util.Log.w("VideoPiiTest", "No real video found on device; skipping real video PII test")
+            return
+        }
+
+        val stagedVideo = File(context.cacheDir, "test_pii_source.mp4")
+        sourceVideo.copyTo(stagedVideo, overwrite = true)
+
+        val retriever = MediaMetadataRetriever()
+        val piiEngine = try {
+            com.veilframe.app.privacy.PiiNcnnEngine(context)
+        } catch (t: Throwable) {
+            android.util.Log.w("VideoPiiTest", "PiiNcnnEngine init failed: ${t.message}")
+            null
+        }
+
+        val fis = java.io.FileInputStream(stagedVideo)
+        try {
+            retriever.setDataSource(fis.fd)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 320
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 240
+            assertTrue("Source video duration must be positive", durationMs > 0L)
+
+            val scanLimitMs = minOf(durationMs, 5000L) // Scan up to 5 seconds
+            var progressCalls = 0
+            val scanResult = VideoPiiRedactionEngine.scanVideo(
+                context = context,
+                retriever = retriever,
+                piiEngine = piiEngine,
+                trimStartMs = 0L,
+                trimEndMs = scanLimitMs,
+                fallbackWidth = width,
+                fallbackHeight = height,
+                density = VideoPiiRedactionEngine.ScanDensity.STANDARD,
+                onProgress = { _, _ -> progressCalls++ }
+            )
+
+            assertNotNull("Scan result must not be null", scanResult)
+            assertTrue("Must sample at least 1 frame", scanResult.sampledFrames > 0)
+            android.util.Log.i("VideoPiiTest", "Scanned ${scanResult.sampledFrames} frames on real video (${sourceVideo.name}): detected ${scanResult.regions.size} regions, counts=${scanResult.detectedCounts}")
+        } finally {
+            try { fis.close() } catch (_: Throwable) {}
+            retriever.release()
+            piiEngine?.close()
+            stagedVideo.delete()
+        }
+    }
+
     private fun decodeFrame(file: File): Bitmap? {
         val retriever = MediaMetadataRetriever()
         return try {
