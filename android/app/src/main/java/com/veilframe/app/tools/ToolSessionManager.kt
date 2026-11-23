@@ -273,6 +273,7 @@ class ToolSessionManager(
 
     fun configureToolUI(mode: ToolMode) {
         currentToolMode = mode
+        updateUtilityWorkspaceHero(mode)
         binding.layoutBundleDepthControl.visibility = if (mode == ToolMode.AI_BUNDLE) View.VISIBLE else View.GONE
         when (mode) {
             ToolMode.AI_BUNDLE -> {
@@ -437,6 +438,48 @@ class ToolSessionManager(
             }
         }
     }
+
+    /**
+     * The four utility tools share one layout; update its entire introduction
+     * on every mode switch rather than leaking the previous screen's identity.
+     */
+    private fun updateUtilityWorkspaceHero(mode: ToolMode) {
+        val hero = binding.layoutToolWorkflow
+        val (eyebrow, title, description, icon) = when (mode) {
+            ToolMode.AI_BUNDLE -> UtilityHero(
+                "DEVELOPER WORKSPACE", "AI Bundler",
+                "Turn project files into locally prepared context bundles.",
+                R.drawable.ic_tab_bundle
+            )
+            ToolMode.FOLDER_SCANNER -> UtilityHero(
+                "FILE INTELLIGENCE", "Folder Analyzer",
+                "Inspect structure, duplicates and optional secret indicators.",
+                R.drawable.ic_tab_folder
+            )
+            ToolMode.IMAGE_CLEANER -> UtilityHero(
+                "IMAGE PRIVACY", "Image Cleaner",
+                "Control metadata removal and optional image transformations.",
+                R.drawable.ic_tab_image
+            )
+            ToolMode.VIDEO_CLEANER -> UtilityHero(
+                "VIDEO PRIVACY", "Video Cleaner",
+                "Control video metadata, noise treatment and re-encoding.",
+                R.drawable.ic_tab_video
+            )
+            else -> return
+        }
+        hero.tvToolHeroEyebrow.text = eyebrow
+        hero.tvToolHeroTitle.text = title
+        hero.tvToolHeroDescription.text = description
+        hero.ivToolHeroIcon.setImageResource(icon)
+    }
+
+    private data class UtilityHero(
+        val eyebrow: String,
+        val title: String,
+        val description: String,
+        val icon: Int
+    )
 
     /** Resolve active M3 overlay roles (Dynamic Color, accents, Dark, AMOLED). */
     private fun role(attr: Int, fallback: Int): Int =
