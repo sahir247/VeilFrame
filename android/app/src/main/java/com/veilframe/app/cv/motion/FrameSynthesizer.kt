@@ -105,6 +105,27 @@ object FrameSynthesizer {
         frameB: Mat,
         t: Double,
         options: Options = Options(),
+    ): SynthesisResult = synthesizeInternal(frameA, frameB, t, options, null)
+
+    /**
+     * Synthesize a frame using a previously computed bidirectional flow.
+     * The caller retains ownership of [flows]; we never release its native
+     * Mats. This is crucial for 3×/4× Motion Lab and partial RIFE fallbacks.
+     */
+    fun synthesizeWithFlows(
+        frameA: Mat,
+        frameB: Mat,
+        t: Double,
+        flows: FlowEstimator.BidirectionalFlow,
+        options: Options = Options(),
+    ): SynthesisResult = synthesizeInternal(frameA, frameB, t, options, flows)
+
+    private fun synthesizeInternal(
+        frameA: Mat,
+        frameB: Mat,
+        t: Double,
+        options: Options,
+        preparedFlows: FlowEstimator.BidirectionalFlow?,
     ): SynthesisResult {
         require(t in 0.0..1.0) { "t must be in [0, 1]" }
         require(frameA.size() == frameB.size()) { "frames must have identical size" }
@@ -112,8 +133,7 @@ object FrameSynthesizer {
         if (t == 0.0) return passthrough(frameA)
         if (t == 1.0) return passthrough(frameB)
 
-        val estimator = options.estimator ?: FlowEstimator()
-        val flows = estimator.estimate(frameA, frameB)
+        val flows = preparedFlows ?: (options.estimator ?: FlowEstimator()).estimate(frameA, frameB)
         try {
             val forward = if (options.refineFlow) refineField(flows.forward) else flows.forward
             val backward = if (options.refineFlow) refineField(flows.backward) else flows.backward
@@ -204,7 +224,9 @@ object FrameSynthesizer {
                 consistency.release()
             }
         } finally {
-            flows.release()
+            // A caller-provided flow survives all subframes in one input pair.
+            // Only locally estimated flows belong to this invocation.
+            if (preparedFlows == null) flows.release()
         }
     }
 

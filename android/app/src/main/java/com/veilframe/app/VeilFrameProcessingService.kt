@@ -587,7 +587,8 @@ class VeilFrameProcessingService : Service() {
             val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
                 FlowEstimator.Algorithm.FARNEBACK
             } else FlowEstimator.Algorithm.DIS
-            val synthOptions = FrameSynthesizer.Options(estimator = FlowEstimator(algorithm = flowAlgo))
+            val flowEstimator = FlowEstimator(algorithm = flowAlgo)
+            val synthOptions = FrameSynthesizer.Options(estimator = flowEstimator)
 
             fun loadRifeBitmap(file: File): Bitmap? {
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -641,6 +642,7 @@ class VeilFrameProcessingService : Service() {
                     var curMat: Mat? = null
                     var fallbackA: Mat? = null
                     var fallbackB: Mat? = null
+                    var pairFlows: FlowEstimator.BidirectionalFlow? = null
 
                     if (useRife) {
                         curBmp = loadRifeBitmap(frames[i])
@@ -695,7 +697,12 @@ class VeilFrameProcessingService : Service() {
                                     throw IllegalStateException("Optical-flow fallback input unavailable for frame ${i + 1}")
                                 }
                                 val result = try {
-                                    FrameSynthesizer.synthesize(matA, matB, t, synthOptions)
+                                    // Optical flow and source frames do not change between
+                                    // k=1..factor-1: estimate once per pair, not once per
+                                    // synthesized frame. A RIFE failure lazily populates it.
+                                    val flows = pairFlows ?: flowEstimator.estimate(matA, matB)
+                                        .also { pairFlows = it }
+                                    FrameSynthesizer.synthesizeWithFlows(matA, matB, t, flows, synthOptions)
                                 } catch (e: Exception) {
                                     throw IllegalStateException("Both RIFE and optical flow failed at frame ${i + 1} (t=$t)", e)
                                 }
@@ -708,6 +715,9 @@ class VeilFrameProcessingService : Service() {
                             }
                         }
                     } finally {
+                        // Release cached dense native flow even if a later RIFE/
+                        // JPEG/optical-flow operation throws or gets cancelled.
+                        pairFlows?.release()
                         fallbackA?.release()
                         fallbackB?.release()
                         if (useRife && curBmp != null) {
