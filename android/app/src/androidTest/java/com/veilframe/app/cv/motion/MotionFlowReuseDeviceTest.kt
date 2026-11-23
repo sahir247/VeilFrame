@@ -46,4 +46,25 @@ class MotionFlowReuseDeviceTest {
             b.release()
         }
     }
+
+    @Test fun exceptionDoesNotConsumeBorrowedFlowOrReleaseInputMats() {
+        CvRuntime.requireAvailable()
+        val gray = Mat(48, 64, CvType.CV_8UC1, Scalar(32.0))
+        val bgr = Mat(48, 64, CvType.CV_8UC3, Scalar(32.0, 64.0, 96.0))
+        val estimator = FlowEstimator(algorithm = FlowEstimator.Algorithm.FARNEBACK)
+        val flows = estimator.estimate(gray, bgr)
+        try {
+            org.junit.Assert.assertThrows(Exception::class.java) {
+                FrameSynthesizer.synthesizeWithFlows(
+                    gray, bgr, 0.5, flows, FrameSynthesizer.Options(estimator = estimator))
+            }
+            assertTrue(!flows.forward.flow.empty())
+            assertTrue(!flows.backward.flow.empty())
+            assertTrue(!gray.empty() && !bgr.empty())
+        } finally {
+            flows.release()
+            gray.release()
+            bgr.release()
+        }
+    }
 }

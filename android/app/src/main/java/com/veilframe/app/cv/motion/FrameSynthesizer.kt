@@ -136,18 +136,25 @@ object FrameSynthesizer {
         val flows = preparedFlows ?: (options.estimator ?: FlowEstimator()).estimate(frameA, frameB)
         try {
             val forward = if (options.refineFlow) refineField(flows.forward) else flows.forward
-            val backward = if (options.refineFlow) refineField(flows.backward) else flows.backward
-
-            val consistency = FlowConsistency.check(forward, backward)
             try {
-                val warpedA = warpToward(frameA, forward, -t, options.pool)
-                val warpedB = warpToward(frameB, backward, (1 - t), options.pool)
+                val backward = if (options.refineFlow) refineField(flows.backward) else flows.backward
+                try {
+                    val consistency = FlowConsistency.check(forward, backward)
+                    try {
+                        // Track every temporary Mat: the earlier success-only
+                        // release list leaked native allocations if any OpenCV
+                        // operation threw partway through synthesis.
+                        val temporaryMats = ArrayList<Mat>()
+                        fun own(mat: Mat): Mat = mat.also { temporaryMats.add(it) }
+                        try {
+                val warpedA = own(warpToward(frameA, forward, -t, options.pool))
+                val warpedB = own(warpToward(frameB, backward, (1 - t), options.pool))
 
                 // Artifact mask: disagreeing warps in supposedly consistent areas.
-                val residual = Mat()
+                val residual = own(Mat())
                 Core.absdiff(warpedA, warpedB, residual)
-                val residualGray = toGray(residual)
-                val artifactMask = Mat()
+                val residualGray = own(toGray(residual))
+                val artifactMask = own(Mat())
                 Imgproc.threshold(
                     residualGray,
                     artifactMask,
@@ -157,75 +164,69 @@ object FrameSynthesizer {
                 )
 
                 // Full-resolution confidence/occlusion.
-                val confidence = Mat()
+                val confidence = own(Mat())
                 Imgproc.resize(consistency.confidence, confidence, frameA.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
-                val occlusion = Mat()
+                val occlusion = own(Mat())
                 Imgproc.resize(consistency.occlusionMask, occlusion, frameA.size(), 0.0, 0.0, Imgproc.INTER_NEAREST)
 
                 // Fallback mask: occluded OR artifact OR low confidence.
-                val fallbackMask = Mat()
+                val fallbackMask = own(Mat())
                 Core.max(occlusion, artifactMask, fallbackMask)
-                val lowConfidence = Mat()
+                val lowConfidence = own(Mat())
                 Core.compare(confidence, ScalarOf(options.minConfidence), lowConfidence, Core.CMP_LT)
                 Core.max(fallbackMask, lowConfidence, fallbackMask)
 
                 // Weights: temporal proximity * confidence, zeroed at fallback.
-                val weightA = Mat()
-                val weightB = Mat()
+                val weightA = own(Mat())
+                val weightB = own(Mat())
                 val temporalA = ScalarOf((1 - t).coerceAtLeast(1e-3))
                 val temporalB = ScalarOf(t.coerceAtLeast(1e-3))
                 Core.multiply(confidence, temporalA, weightA)
                 Core.multiply(confidence, temporalB, weightB)
 
-                val validA = Mat()
-                val validB = Mat()
-                val zero = Mat.zeros(fallbackMask.size(), fallbackMask.type())
+                val validA = own(Mat())
+                val validB = own(Mat())
+                val zero = own(Mat.zeros(fallbackMask.size(), fallbackMask.type()))
                 Core.compare(fallbackMask, zero, validA, Core.CMP_EQ) // valid where mask == 0
                 validA.copyTo(validB)
-                zero.release()
 
-                val weightA32 = Mat()
-                val weightB32 = Mat()
+                val weightA32 = own(Mat())
+                val weightB32 = own(Mat())
                 validA.convertTo(weightA32, CvType.CV_32F, 1.0 / 255.0)
                 validB.convertTo(weightB32, CvType.CV_32F, 1.0 / 255.0)
                 Core.multiply(weightA, weightA32, weightA)
                 Core.multiply(weightB, weightB32, weightB)
 
-                val blended = blendWeighted(warpedA, warpedB, weightA, weightB)
+                val blended = own(blendWeighted(warpedA, warpedB, weightA, weightB))
 
                 // Fallback pixels take the temporally nearest source frame.
                 val nearest = if (t < 0.5) frameA else frameB
-                val out = Mat()
+                val out = own(Mat())
                 blended.copyTo(out)
                 nearest.copyTo(out, fallbackMask)
 
                 val fallbackRatio = Core.countNonZero(fallbackMask).toDouble() /
                     (fallbackMask.rows().toDouble() * fallbackMask.cols())
 
-                residual.release()
-                residualGray.release()
-                artifactMask.release()
-                occlusion.release()
-                lowConfidence.release()
-                validA.release()
-                validB.release()
-                weightA.release()
-                weightB.release()
-                weightA32.release()
-                weightB32.release()
-                blended.release()
-                warpedA.release()
-                warpedB.release()
-                if (forward !== flows.forward) forward.release()
-                if (backward !== flows.backward) backward.release()
-
+                // Transfer only these three matrices to the result owner.
+                // Every other intermediate (including the two warped images)
+                // is reclaimed even if an earlier native step fails.
+                temporaryMats.removeAll { it === out || it === confidence || it === fallbackMask }
                 return SynthesisResult(out, confidence, fallbackMask, fallbackRatio)
+                        } finally {
+                            temporaryMats.forEach { it.release() }
+                        }
+                    } finally {
+                        consistency.release()
+                    }
+                } finally {
+                    if (backward !== flows.backward) backward.release()
+                }
             } finally {
-                consistency.release()
+                if (forward !== flows.forward) forward.release()
             }
         } finally {
-            // A caller-provided flow survives all subframes in one input pair.
-            // Only locally estimated flows belong to this invocation.
+            // Borrowed flow matrices remain owned by Motion Lab's pair scope.
             if (preparedFlows == null) flows.release()
         }
     }
