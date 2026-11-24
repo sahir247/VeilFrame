@@ -4,7 +4,8 @@ import com.tom_roush.pdfbox.pdmodel.font.PDFont
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 
 /** Derived per-cell graphics; no original workbook resources or bitmaps held. */
-data class XlsxDataBarVisual(val start: Float, val end: Float, val rgb: Int, val showValue: Boolean)
+data class XlsxDataBarVisual(val start: Float, val end: Float, val rgb: Int, val showValue: Boolean,
+    val borderRgb: Int? = null, val axis: Float? = null, val axisRgb: Int? = null)
 data class XlsxIconVisual(val rgb: Int, val showValue: Boolean, val shape: String = "circle")
 
 /** Supported subset of the Excel cell appearance contract. */

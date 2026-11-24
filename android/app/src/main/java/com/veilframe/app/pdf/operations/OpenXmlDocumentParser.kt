@@ -1245,7 +1245,7 @@ object OpenXmlDocumentParser {
         val priorities = mutableSetOf<Int>()
         var rangeCount = 0
         var ruleCount = 0
-        val linkedBaseBars = mutableMapOf<String, List<CellRangeAddress>>()
+        val linkedBaseBars = mutableMapOf<String, Pair<List<CellRangeAddress>,Int>>()
         val extendedGroups = root.childElements("extLst").flatMap { it.childElements("ext") }
             .flatMap { it.childElements("conditionalFormattings") }
             .flatMap { it.childElements("conditionalFormatting") }
@@ -1282,7 +1282,7 @@ object OpenXmlDocumentParser {
                     val ids = extension.flatMap { it.childElements("ext") }
                         .flatMap { it.childElements("id") }.map { it.textContent.trim().lowercase(java.util.Locale.ROOT) }
                     for (id in ids) {
-                        require(id.isNotBlank() && id.length <= 128 && linkedBaseBars.put(id, ranges) == null) {
+                        require(id.isNotBlank() && id.length <= 128 && linkedBaseBars.put(id, ranges to result.size) == null) {
                             "Invalid or duplicate data-bar extension identity"
                         }
                     }
@@ -1293,7 +1293,16 @@ object OpenXmlDocumentParser {
                     // is already marked unsupported. An unlinked extension is
                     // conservatively admitted as an unknown high-priority rule.
                     val id = rule.getAttribute("id").trim().lowercase(java.util.Locale.ROOT)
-                    if (type == "dataBar" && linkedBaseBars[id] == ranges) continue
+                    val link = linkedBaseBars.remove(id)
+                    if (type == "dataBar" && link?.first == ranges) {
+                        val baseRule = result[link.second]
+                        val baseElement = root.childElements("conditionalFormatting")
+                            .flatMap { it.childElements("cfRule") }
+                            .singleOrNull { it.getAttribute("priority").toIntOrNull() == baseRule.priority }
+                        val bar = parseExtendedSolidBar(rule,baseElement,root)
+                        if (bar != null) result[link.second] = baseRule.copy(delta=XlsxConditionalFormatting.Delta(),bar=bar)
+                        continue
+                    }
                     result.add(XlsxConditionalFormatting.Rule(Int.MIN_VALUE, true, ranges,
                         "", emptyList(), null))
                     continue
@@ -1323,7 +1332,9 @@ object OpenXmlDocumentParser {
                 val supportedVisual = extension.isEmpty() && (!extended ||
                     (rule.childElements("dxf").isEmpty() && !rule.hasAttribute("dxfId")))
                 val scale = if (supportedVisual && type == "colorScale") parseConditionalColorScale(rule, extended) else null
-                val bar = if (baseSemantics && type == "dataBar") parseConditionalDataBar(rule) else null
+                val bar = if (baseSemantics && type == "dataBar") parseConditionalDataBar(rule)
+                    else if (extended && supportedVisual && type == "dataBar") parseExtendedSolidBar(rule,null,root)
+                    else null
                 val icons = if (supportedVisual && type == "iconSet") parseConditionalIconSet(rule, extended) else null
                 val expression = if (baseSemantics && type == "expression" && rule.childElements("formula").size == 1)
                     XlsxConditionalFormatting.expression(rule.childElements("formula").single().textContent, ranges) else null
@@ -1408,6 +1419,66 @@ object OpenXmlDocumentParser {
         val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
         if (minimum !in 0..100 || maximum !in minimum..100) return null
         return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,minimum,maximum,rgb.takeLast(6).toInt(16))
+    }
+
+    private fun parseExtendedSolidBar(rule: Element, baseRule: Element?, root: Element): XlsxConditionalFormatting.DataBar? {
+        val bar = rule.childElements("dataBar").singleOrNull() ?: return null
+        if (rule.childElements("extLst").isNotEmpty() || bar.childElements("extLst").isNotEmpty()) return null
+        fun flag(key: String, default: Boolean): Boolean? = when(bar.getAttribute(key)) {
+            "" -> default
+            "0","false" -> false
+            "1","true" -> true
+            else -> null
+        }
+        // The renderer implements vector solid bars with automatic signed
+        // baseline only. Do not approximate gradients, midpoint/none or
+        // proprietary length semantics as an exact saved appearance.
+        if (flag("gradient",true) != false || bar.getAttribute("axisPosition").ifEmpty { "automatic" } != "automatic" ||
+            bar.getAttribute("minLength").ifEmpty { "10" } != "0" ||
+            bar.getAttribute("maxLength").ifEmpty { "90" } != "100") return null
+        fun color(node: Element?): Int? {
+            val rgb = node?.getAttribute("rgb") ?: return null
+            if (!rgb.matches(Regex("FF[0-9A-Fa-f]{6}",RegexOption.IGNORE_CASE)) ||
+                node.hasAttribute("theme") || node.hasAttribute("indexed") || node.hasAttribute("tint") ||
+                node.hasAttribute("auto")) return null
+            return rgb.takeLast(6).toInt(16)
+        }
+        fun color(name: String) = color(bar.childElements(name).singleOrNull())
+        val baseBar = baseRule?.childElements("dataBar")?.singleOrNull()
+        val positive = if (baseRule == null) color("fillColor") else {
+            if (bar.childElements("fillColor").isNotEmpty()) return null
+            color(baseBar?.childElements("color")?.singleOrNull())
+        } ?: return null
+        val sameNegative = flag("negativeBarColorSameAsPositive",false) ?: return null
+        val negative = if (sameNegative) positive else color("negativeFillColor") ?: return null
+        val border = flag("border",false) ?: return null
+        val positiveBorder = if (border) color("borderColor") ?: return null else null
+        val sameBorder = flag("negativeBarBorderColorSameAsPositive",true) ?: return null
+        val negativeBorder = if (!border || sameBorder) positiveBorder else color("negativeBorderColor") ?: return null
+        val axis = color("axisColor") ?: return null
+        val rtl = when(bar.getAttribute("direction").ifEmpty { "context" }) {
+            "leftToRight" -> false
+            "rightToLeft" -> true
+            "context" -> root.childElements("sheetViews").flatMap { it.childElements("sheetView") }
+                .any { it.getAttribute("rightToLeft") in setOf("1","true") }
+            else -> return null
+        }
+        val thresholds = bar.childElements("cfvo")
+        if (thresholds.size != 2) return null
+        val stops = thresholds.mapIndexed { index, node ->
+            when(node.getAttribute("type")) {
+                "autoMin" -> if (index == 0) XlsxConditionalFormatting.ScaleStop("min",null,0) else return null
+                "autoMax" -> if (index == 1) XlsxConditionalFormatting.ScaleStop("max",null,0) else return null
+                else -> conditionalStops(listOf(node),true)?.singleOrNull() ?: return null
+            }
+        }
+        // Linked x14 cfvo replaces base thresholds; base showValue is inherited
+        // when extension omits it. All unsupported forms remain disclosed.
+        val baseShow = baseBar?.getAttribute("showValue").orEmpty()
+        if (baseShow !in setOf("","0","1","false","true")) return null
+        val show = flag("showValue",baseShow !in setOf("0","false")) ?: return null
+        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,0,100,positive,
+            XlsxConditionalFormatting.SolidBarAppearance(negative,positiveBorder,negativeBorder,axis,rtl))
     }
 
     private fun parseConditionalIconSet(rule: Element, extended: Boolean = false): XlsxConditionalFormatting.IconSet? {

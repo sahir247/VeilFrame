@@ -77,11 +77,13 @@ internal object XlsxConditionalFormatting {
     }
 
     data class DataBar(val low: ScaleStop, val high: ScaleStop, val showValue: Boolean,
-        val minimumLength: Int, val maximumLength: Int, val rgb: Int) {
+        val minimumLength: Int, val maximumLength: Int, val rgb: Int,
+        val appearance: SolidBarAppearance? = null) {
         fun visual(raw: BigDecimal, extent: NumericExtent): XlsxDataBarVisual? {
             val lower = threshold(low.type, low.value, extent) ?: return null
             val upper = threshold(high.type, high.value, extent) ?: return null
             if (lower > upper) return null
+            appearance?.let { return it.visual(raw,lower,upper,rgb,showValue) }
             if (lower == upper) return XlsxDataBarVisual(0f, maximumLength / 100f, rgb, showValue)
             val span = upper.subtract(lower)
             val bounded = raw.max(lower).min(upper)
@@ -102,6 +104,25 @@ internal object XlsxConditionalFormatting {
                 end = ratio(bounded.subtract(lower))
             }
             return XlsxDataBarVisual(start,end,rgb,showValue)
+        }
+    }
+
+    /** x14 solid, automatic-axis data bars with a 0–100% length range. */
+    data class SolidBarAppearance(val negativeRgb: Int, val borderRgb: Int?, val negativeBorderRgb: Int?,
+        val axisRgb: Int, val rtl: Boolean) {
+        fun visual(raw: BigDecimal, lower: BigDecimal, upper: BigDecimal, rgb: Int, show: Boolean): XlsxDataBarVisual {
+            val lo = minOf(lower,BigDecimal.ZERO)
+            val hi = maxOf(upper,BigDecimal.ZERO)
+            val span = hi.subtract(lo)
+            val value = raw.max(lo).min(hi)
+            fun position(x: BigDecimal): Float = if (span.signum() == 0) 0f else
+                x.subtract(lo).divide(span,java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
+            fun orient(x: Float) = if (rtl) 1f-x else x
+            val axis = orient(position(BigDecimal.ZERO))
+            val negative = raw.signum() < 0
+            return XlsxDataBarVisual(axis,orient(position(value)),if (negative) negativeRgb else rgb,show,
+                if (negative) negativeBorderRgb else borderRgb,
+                if (lo.signum() < 0 && hi.signum() > 0) axis else null,axisRgb)
         }
     }
 

@@ -1946,12 +1946,29 @@ class OfficeConverter {
             val available = (width - 8f).coerceAtLeast(0f)
             val x1 = left + 4f + minOf(bar.start,bar.end)*available
             val x2 = left + 4f + maxOf(bar.start,bar.end)*available
-            if (x2 > x1 && height > 6f) {
+            if (height > 6f) {
                 stream.saveGraphicsState()
                 try {
-                    stream.setNonStrokingColor(bar.rgb ushr 16 and 255,bar.rgb ushr 8 and 255,bar.rgb and 255)
-                    stream.addRect(x1, top-height+3f, x2-x1, height-6f)
-                    stream.fill()
+                    if (x2 > x1) {
+                        stream.setNonStrokingColor(bar.rgb ushr 16 and 255,bar.rgb ushr 8 and 255,bar.rgb and 255)
+                        stream.addRect(x1,top-height+3f,x2-x1,height-6f)
+                        val border = bar.borderRgb
+                        if (border != null) {
+                            stream.setStrokingColor(border ushr 16 and 255,border ushr 8 and 255,border and 255)
+                            stream.setLineWidth(0.5f)
+                            stream.fillAndStroke()
+                        } else stream.fill()
+                    }
+                    val axis = bar.axis
+                    val axisRgb = bar.axisRgb
+                    if (axis != null && axisRgb != null) {
+                        val x = left+4f+axis*available
+                        stream.setStrokingColor(axisRgb ushr 16 and 255,axisRgb ushr 8 and 255,axisRgb and 255)
+                        stream.setLineWidth(0.5f)
+                        stream.moveTo(x,top-height+2f)
+                        stream.lineTo(x,top-2f)
+                        stream.stroke()
+                    }
                 } finally { stream.restoreGraphicsState() }
             }
         }
