@@ -44,6 +44,7 @@ internal fun digestSerializedOcrLayer(page: PDPage, checkpoint: () -> Unit = {})
             checkpoint()
             val count = input.read(block)
             if (count < 0) break
+            if (count == 0) throw IOException("OCR layer stream made no read progress")
             if (output.size().toLong() + count > 16L * 1024 * 1024) {
                 throw IOException("OCR page text layer exceeds verification budget")
             }

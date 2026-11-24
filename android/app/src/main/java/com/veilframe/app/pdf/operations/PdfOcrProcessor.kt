@@ -189,7 +189,7 @@ class PdfOcrProcessor(private val context: Context) {
 
                 // Render page to image
                 val page = document.getPage(pageIndex)
-                val dpi = getSafeOcrDpi(page.mediaBox.width, page.mediaBox.height)
+                val dpi = getSafeOcrDpi(page.cropBox.width, page.cropBox.height)
                 val pageImage = renderer.renderImageWithDPI(pageIndex, dpi)
                 
                 try {
