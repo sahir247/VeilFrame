@@ -171,16 +171,15 @@ val robolectricSdkVersions = listOf(
     "14-robolectric-10818077-i7",    // API 34
     "16-robolectric-13921718-2-i7"  // API 36
 )
-val robolectricSdkConfiguration = configurations.create("robolectricSdkJars") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    isTransitive = false
-}
-robolectricSdkVersions.forEach { version ->
-    dependencies.add(
-        robolectricSdkConfiguration.name,
-        "org.robolectric:android-all-instrumented:$version"
-    )
+// Each framework is a different version of the SAME Maven module. Resolving
+// them together selects only the highest version through Gradle conflict
+// resolution. Isolate each SDK in its own non-transitive configuration.
+val robolectricSdkConfigurations = robolectricSdkVersions.associateWith { version ->
+    configurations.detachedConfiguration(
+        dependencies.create("org.robolectric:android-all-instrumented:$version")
+    ).apply {
+        isTransitive = false
+    }
 }
 val robolectricOfflineDir = layout.buildDirectory.dir("robolectric/preinstrumented")
 // Use the *resolved artifact metadata* to stage each JAR at Robolectric's
@@ -188,12 +187,20 @@ val robolectricOfflineDir = layout.buildDirectory.dir("robolectric/preinstrument
 // expected API 33 file in CI despite successful dependency resolution and gave
 // an unhelpful missing-or-truncated message. Never guess an artifact filename.
 val prepareRobolectricSdkJars = tasks.register("prepareRobolectricSdkJars") {
-    inputs.files(robolectricSdkConfiguration).withPropertyName("robolectricSdkJars")
+    inputs.files(robolectricSdkConfigurations.values).withPropertyName("robolectricSdkJars")
+    inputs.property("robolectricSdkVersions", robolectricSdkVersions)
     outputs.dir(robolectricOfflineDir).withPropertyName("preinstrumentedRobolectricJars")
     doLast {
         val destination = robolectricOfflineDir.get().asFile
         destination.mkdirs()
-        val artifacts = robolectricSdkConfiguration.resolvedConfiguration.resolvedArtifacts
+        val artifacts = robolectricSdkConfigurations.flatMap { (expectedVersion, configuration) ->
+            val resolved = configuration.resolvedConfiguration.resolvedArtifacts
+            check(resolved.size == 1 && resolved.single().moduleVersion.id.version == expectedVersion) {
+                "Unexpected Robolectric SDK resolution for $expectedVersion: " +
+                    resolved.map { it.moduleVersion.id.toString() }
+            }
+            resolved
+        }
         val byVersion = artifacts.groupBy { it.moduleVersion.id.version }
         logger.lifecycle(
             "Robolectric prefetch: expected SDK versions={}, resolved artifacts={}",
@@ -219,9 +226,9 @@ val prepareRobolectricSdkJars = tasks.register("prepareRobolectricSdkJars") {
                 }
             }
             val expected = destination.resolve("android-all-instrumented-$version.jar")
-            if (!expected.isFile || expected.length() != source.length()) {
-                source.copyTo(expected, overwrite = true)
-            }
+            // The task runs when its inputs or outputs change. Replace even a
+            // same-sized stale file instead of trusting its length as identity.
+            source.copyTo(expected, overwrite = true)
             check(expected.isFile && expected.length() == source.length()) {
                 "Robolectric JAR staging failed: source=${source.absolutePath} " +
                     "(${source.length()} bytes), staged=${expected.absolutePath} " +
