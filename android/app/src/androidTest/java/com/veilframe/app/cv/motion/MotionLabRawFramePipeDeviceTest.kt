@@ -153,6 +153,50 @@ class MotionLabRawFramePipeDeviceTest {
         }
     }
 
+    @Test fun streamedH264RoundTripRetainsFrameCountAndEvenGeometry() = runBlocking {
+        withTimeout(60_000) {
+            CvRuntime.requireAvailable()
+            val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+            val output = File.createTempFile("motion_h264_",".mp4",dir)
+            val plan = MotionLabSourceGeometry(65,49,0).plan(false)
+            val frame = Mat(49,65,CvType.CV_8UC3,Scalar(24.0,90.0,170.0))
+            try {
+                MotionLabRawFramePipe.encode(plan.geometry,24.0,4,arrayOf(
+                    "-map","0:v:0","-an","-c:v","libx264","-preset","ultrafast","-crf","21",
+                    "-vf",plan.encodeFilter,"-pix_fmt","yuv420p","-fps_mode","passthrough",
+                    output.absolutePath)) { repeat(4) { writeMat(frame) } }
+                val extractor = android.media.MediaExtractor()
+                try {
+                    extractor.setDataSource(output.absolutePath)
+                    val format = extractor.getTrackFormat(0)
+                    assertEquals(66,format.getInteger(android.media.MediaFormat.KEY_WIDTH))
+                    assertEquals(50,format.getInteger(android.media.MediaFormat.KEY_HEIGHT))
+                    extractor.selectTrack(0)
+                    val pts = mutableListOf<Long>()
+                    while (extractor.sampleTime >= 0) {
+                        pts.add(extractor.sampleTime)
+                        if (!extractor.advance()) break
+                    }
+                    MotionLabSequenceVerifier.verifyPresentation(pts,4,24.0)
+                } finally { extractor.release() }
+                MotionLabRawFramePipe.decode(MotionLabRawFramePipe.Geometry(66,50),4,
+                    arrayOf("-i",output.absolutePath)) {
+                    repeat(4) {
+                        val decoded = readBitmap()
+                        try {
+                            assertEquals(66,decoded.width)
+                            assertEquals(50,decoded.height)
+                            val rgb = decoded.getPixel(16,16)
+                            assertTrue(kotlin.math.abs(android.graphics.Color.red(rgb)-170) < 15)
+                            assertTrue(kotlin.math.abs(android.graphics.Color.green(rgb)-90) < 15)
+                            assertTrue(kotlin.math.abs(android.graphics.Color.blue(rgb)-24) < 15)
+                        } finally { decoded.recycle() }
+                    }
+                }
+            } finally { frame.release(); output.delete() }
+        }
+    }
+
     @Test fun invalidEncoderDoesNotLeaveProducerBlocked() = runBlocking {
         withTimeout(60_000) {
             val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
