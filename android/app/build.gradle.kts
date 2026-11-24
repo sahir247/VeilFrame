@@ -347,6 +347,11 @@ dependencies {
 
     // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Explicit script selection; bundled models preserve offline-first OCR.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 
     // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
     implementation("org.apache.poi:poi:6.0.0")

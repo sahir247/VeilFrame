@@ -23,14 +23,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 
-/**
- * OCR language support.
- * Note: ML Kit's default recognizer supports Latin-based languages.
- * For other languages, different recognizers would be needed.
- */
+/** Explicit model selection; not automatic language detection. */
 enum class OcrLanguage(val displayName: String) {
-    LATIN("Latin-based (English, Spanish, French, German, etc.)"),
-    // Future: Add support for other scripts with ML Kit
+    LATIN("Latin (English, Spanish, French, German, etc.)"),
+    DEVANAGARI("Devanagari (Hindi, Marathi, Nepali, etc.)"),
+    CHINESE("Chinese"),
+    JAPANESE("Japanese"),
+    KOREAN("Korean")
 }
 
 /**
@@ -122,12 +121,13 @@ data class ImageOcrOutcome(
 
 /**
  * OCR Processor - Performs Optical Character Recognition on PDF pages.
- * Uses flavor-specific OCR engine (ML Kit for Play Store, Tesseract for F-Droid).
+ * Uses bundled on-device Google ML Kit models; searchable PDF additionally
+ * requires that the embedded fonts encode every recognized character.
  * Can extract text and make scanned PDFs searchable.
  */
-class PdfOcrProcessor(private val context: Context) {
-    
-    private val ocrEngine = OcrEngine(context)
+class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrLanguage.LATIN) {
+
+    private val ocrEngine = OcrEngine(context, language)
     private companion object {
         private const val MAX_OCR_PIXELS = 4_000_000 // ~4MP per page
         private const val OCR_CHUNK_SIZE = 3
@@ -157,7 +157,7 @@ class PdfOcrProcessor(private val context: Context) {
             // Create a temp file to avoid loading everything into memory
             val cacheDir = File(context.cacheDir, "ocr_cache")
             if (!cacheDir.exists()) cacheDir.mkdirs()
-            tempFile = File(cacheDir, "temp_ocr_${System.currentTimeMillis()}.pdf")
+            tempFile = File.createTempFile("temp_ocr_", ".pdf", cacheDir)
             
             context.contentResolver.openInputStream(pdfUri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -174,8 +174,10 @@ class PdfOcrProcessor(private val context: Context) {
             document = PDDocument.load(tempFile, MemoryUsageSetting.setupTempFileOnly())
             
             val totalPages = document.numberOfPages
-            val pagesToProcess = pageRange ?: (0 until totalPages)
-            val validPages = pagesToProcess.filter { it in 0 until totalPages }
+            val validPages = pageRange ?: (0 until totalPages)
+            require(!validPages.isEmpty() && validPages.first >= 0 && validPages.last < totalPages) {
+                "Requested OCR page range is outside the document"
+            }
             
             progressCallback(10)
             
@@ -352,6 +354,7 @@ class PdfOcrProcessor(private val context: Context) {
             progressCallback(90)
             ensureActive()
             
+            if (layerDigests.isEmpty()) throw IOException("No readable text was recognized; no searchable OCR layer was created")
             val verificationContext = kotlin.coroutines.coroutineContext
             exportVerifiedPdf(context, document, totalPages, verify = { saved ->
                 for ((index, digest) in layerDigests) {
@@ -422,6 +425,7 @@ class PdfOcrProcessor(private val context: Context) {
             val bitmap = context.contentResolver.openInputStream(imageUri)?.use {
                 BitmapFactory.decodeStream(it, null, decodeOptions)
             } ?: return@withContext null
+            OcrImageGeometry.requireDecodedDimensions(bitmap.width, bitmap.height) { bitmap.recycle() }
             val oriented = applyExifOrientation(imageUri, bitmap)
 
             var ownedTemp: File? = null
@@ -432,8 +436,7 @@ class PdfOcrProcessor(private val context: Context) {
                 val out = allocateOcrWrapFile(File(context.cacheDir, "ocr_cache"))
                 ownedTemp = out
                 PDDocument().use { doc ->
-                    val wPt = (oriented.width * 72f / 200f).coerceIn(72f, 3000f)
-                    val hPt = (oriented.height * 72f / 200f).coerceIn(72f, 3000f)
+                    val (wPt, hPt) = OcrImageGeometry.pdfPoints(oriented.width, oriented.height)
                     val page = PDPage(PDRectangle(wPt, hPt))
                     doc.addPage(page)
                     val image = LosslessFactory.createFromImage(doc, oriented)
@@ -587,6 +590,7 @@ class PdfOcrProcessor(private val context: Context) {
         val bitmap = context.contentResolver.openInputStream(imageUri)?.use {
             BitmapFactory.decodeStream(it, null, decodeOptions)
         } ?: throw IOException("Cannot decode selected image for OCR")
+        OcrImageGeometry.requireDecodedDimensions(bitmap.width, bitmap.height) { bitmap.recycle() }
         val oriented = applyExifOrientation(imageUri, bitmap)
         trail.append("bitmap=${oriented.width}x${oriented.height} ")
         try {
@@ -634,14 +638,8 @@ class PdfOcrProcessor(private val context: Context) {
         return OcrDpiUtil.getSafeOcrDpi(pageWidthPoints, pageHeightPoints)
     }
 
-    private fun calculateInSampleSize(width: Int, height: Int, maxPixels: Int): Int {
-        if (width <= 0 || height <= 0) return 1
-        var sample = 1
-        while ((width / sample) * (height / sample) > maxPixels) {
-            sample *= 2
-        }
-        return sample.coerceAtLeast(1)
-    }
+    private fun calculateInSampleSize(width: Int, height: Int, maxPixels: Int): Int =
+        OcrImageGeometry.sampleSize(width, height, maxPixels.toLong())
     
     /**
      * Add invisible text layer to a page for searchability.
@@ -775,7 +773,7 @@ class PdfOcrProcessor(private val context: Context) {
     }
 }
 
-/** The OCR recognizer is Latin-only. Use embeddable font fallbacks, never drop glyphs. */
+/** Searchable PDF font admission is independent of recognition script. Never drop glyphs. */
 internal class SearchableOcrFonts(context: Context, document: PDDocument) {
     private val candidates = listOf<() -> PDType0Font>(
         { context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) } },
