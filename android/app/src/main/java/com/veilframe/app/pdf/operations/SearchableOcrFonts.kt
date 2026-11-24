@@ -26,17 +26,20 @@ internal class SearchableOcrFonts(private val context: Context, private val docu
     ).map { loader -> lazy { attempt(loader) } }
 
     // Only static glyf-based system fonts with explicit unrestricted embedding
-    // permissions. CFF, variable fonts and collections are not silently treated
-    // as supported by this PDFBox version.
-    private val systemFiles by lazy {
+    // permissions. CFF and variable fonts remain unsupported.
+    private val installedFontFiles by lazy {
         val files = if (Build.VERSION.SDK_INT >= 29) {
             attempt { android.graphics.fonts.SystemFonts.getAvailableFonts().mapNotNull { it.file } }.orEmpty()
         } else File("/system/fonts").listFiles()?.toList().orEmpty()
-        files.filter { it.extension.equals("ttf",true) && it.isFile && it.length() in 1..16_777_216L &&
+        files.filter { it.isFile &&
             (it.name.startsWith("NotoSans") || it.name.startsWith("DroidSansFallback")) &&
             !it.name.contains("Bold",true) && !it.name.contains("Italic",true) }
-            .distinctBy { it.absolutePath }.sortedBy { it.name }.take(128)
+            .distinctBy { it.absolutePath }.sortedBy { it.absolutePath }
     }
+    private val systemFiles by lazy {
+        installedFontFiles.filter { it.extension.equals("ttf",true) && it.length() in 1..16_777_216L }.take(128)
+    }
+    private var collectionFallback: SearchableOcrCollectionFonts? = null
     private val loaded = linkedMapOf<File,PDType0Font>()
     private val rejected = hashSetOf<File>()
     private val owned = ArrayList<TrueTypeFont>()
@@ -51,6 +54,7 @@ internal class SearchableOcrFonts(private val context: Context, private val docu
         }
         for (candidate in candidates) candidate.value?.let { width(it)?.let { match -> return match } }
         for (font in loaded.values) width(font)?.let { return it }
+        collectionFallback?.findLoaded(text)?.let { return it }
         // Inspect cmap before embedding. Keep only fonts actually used, with
         // a bounded count. Do not register every installed font in the PDF.
         for (file in systemFiles) {
@@ -78,14 +82,22 @@ internal class SearchableOcrFonts(private val context: Context, private val docu
                 if (!retained) attempt { parsed.close() }
             }
         }
+        val collections = collectionFallback ?: SearchableOcrCollectionFonts(document,
+            installedFontFiles.filter { it.extension.equals("ttc",true) }.take(32)).also { collectionFallback = it }
+        collections.select(text)?.let { return it }
         throw IOException("Searchable PDF has no compatible embeddable font for all recognized characters; export refused")
     }
 
     override fun close() {
         if (closed) return
         closed = true
-        owned.asReversed().forEach { attempt { it.close() } }
-        owned.clear()
+        try {
+            collectionFallback?.close()
+            collectionFallback = null
+        } finally {
+            owned.asReversed().forEach { attempt { it.close() } }
+            owned.clear()
+        }
     }
 
     private inline fun <T> attempt(block: () -> T): T? = try { block() }
