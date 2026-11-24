@@ -1311,3 +1311,9 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — OCR range compile regression
 
 - Exact head `5f8a6a0` failed `:app:compileDebugKotlin` in [CI job 138516713491](https://github.com/sahir247/VeilFrame/actions/runs/45414381261/job/138516713491): validated `IntRange` no longer has the list `size` property. Compute the bounded range length from endpoints with Long progress arithmetic, retaining lazy range iteration and strict range validation. No test gate bypass. Fresh compilation pending.
+
+
+### 2026-11-24 — B03 descriptor-backed raw frame transport implementation (not yet default)
+
+- FFmpeg 8.1 `pipe_open` duplicates caller descriptors (`fd_dup`), so use an anonymous Android ParcelFileDescriptor pipe instead of a filesystem FIFO and its blocking open handshake. Keep original reader until owned native session retirement; close writer on every success/failure/cancellation before awaiting retirement. Nonblocking writes have byte-progress deadlines, cancellation checkpoints and row-aligned chunks; no full-frame array or queue. Strict BGR24 geometry/frame count, explicit ARGB-to-BGR packing and CV_8UC3 row access including non-contiguous Mats. Caller retains staged output ownership and verification. Sources: https://ffmpeg.org/doxygen/8.1/libavformat_2file_8c_source.html and https://developer.android.com/reference/android/system/Os .
+- Added native CI instrumentation under existing `com.veilframe.app.cv` gate: exact bitmap/ROI bytes across pipe backpressure, incomplete producer followed by a fresh independent native session, invalid encoder retirement. Added pure geometry/packing tests. No default switch yet: run exact-head native tests first; then integrate streamed output and separately address input extraction/PTS. B03 remains PARTIAL; no throughput or physical-device claim.
