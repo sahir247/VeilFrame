@@ -9,7 +9,6 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
-import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
 import com.tom_roush.pdfbox.util.Matrix
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
@@ -395,7 +394,7 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
                 errorMessage = "Error: ${e.message}"
             )
         } finally {
-            tempFile?.delete()
+            try { ownedFonts?.close() } finally { tempFile?.delete() }
         }
     }
     
@@ -451,7 +450,6 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
                 completed = true
                 out
             } finally {
-            ownedFonts?.close()
                 if (!oriented.isRecycled) oriented.recycle()
                 if (!completed) ownedTemp?.delete()
             }
