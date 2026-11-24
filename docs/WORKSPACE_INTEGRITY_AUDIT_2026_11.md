@@ -1368,3 +1368,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — B03 decoder PTS correspondence and native VFR fixture
 
 - Source decoder appends checksum-disabled showinfo to the existing filter, verifies actual ordered decoded PTS against MediaExtractor's normalized source samples (1 ms tolerance, exact count/index, bounded log), and refuses publication on missing/mismatched evidence. This guards timestamp/frame association beyond matching count alone. Added pure evidence parser and irregular-timestamp H.264 decode/60fps native fixture. No checksum scan added. CI pending; exact native fixture must pass before release.
+
+
+### 2026-11-24 — B03 CFR quantization and serialized grid verification
+
+- Correct ordinary 30 fps ×4 and 60 fps ×2 admission at the 120 fps ceiling, where integer-microsecond source timestamps previously produced slightly excessive floating-point FPS. Snap only CFR periods within one microsecond of an explicit supported boundary; genuinely over-limit inputs still fail. Also correct the 10 fps source boundary. Verify every serialized frame against the requested CFR grid and each adjacent interval with 2 ms tolerance, rejecting cumulative drift and alternating short/long intervals even when frame count and end duration agree. Added boundary, drift, jitter and reordered-packet regressions. VFR input remains resampled to CFR; this is not original VFR output preservation. Exact-head CI and physical-device acceptance pending.

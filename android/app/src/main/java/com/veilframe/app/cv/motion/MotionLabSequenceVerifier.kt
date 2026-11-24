@@ -37,15 +37,20 @@ object MotionLabSequenceVerifier {
         }
         val sorted = presentationUs.sorted()
         val periodUs = 1_000_000.0 / expectedFps
-        val toleranceUs = maxOf(5_000.0, periodUs * 0.65)
-        check(sorted.zipWithNext().all { (a, b) ->
+        // The MP4 encoder is configured for a CFR grid, not merely a similar
+        // average duration. Allow timestamp/muxer rounding without allowing
+        // accumulated drift or alternating short/long presentation intervals.
+        val toleranceUs = 2_000.0
+        val first = sorted.first()
+        check(first >= 0L && sorted.zipWithNext().all { (a, b) ->
             b > a && abs((b - a) - periodUs) <= toleranceUs
         }) {
             "Encoded video presentation timestamps contain gaps, duplicates or timing drift"
         }
-        val expectedSpanUs = (expectedFrames - 1) * periodUs
-        check(abs((sorted.last() - sorted.first()) - expectedSpanUs) <= maxOf(20_000.0, periodUs)) {
-            "Encoded Motion Lab timeline is not the requested full duration"
+        check(sorted.withIndex().all { (index, timestamp) ->
+            abs((timestamp - first) - index * periodUs) <= toleranceUs
+        }) {
+            "Encoded Motion Lab timeline differs from the requested CFR grid"
         }
     }
 }

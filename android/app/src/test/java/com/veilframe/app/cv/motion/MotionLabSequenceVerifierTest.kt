@@ -44,6 +44,27 @@ class MotionLabSequenceVerifierTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun rejectsJitterEvenWhenOverallDurationMatches() {
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabSequenceVerifier.verifyPresentation(
+                listOf(0L, 9_000L, 33_333L, 42_333L, 66_667L, 83_333L), 6, 60.0
+            )
+        }
+    }
+
+    @Test fun rejectsAccumulatedSmallTimingErrors() {
+        val drift = (0L until 12L).map { it * 17_667L }
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabSequenceVerifier.verifyPresentation(drift, 12, 60.0)
+        }
+    }
+
+    @Test fun acceptsReorderedPacketsAndMicrosecondRounding() {
+        MotionLabSequenceVerifier.verifyPresentation(
+            listOf(100L, 25_100L, 8_433L, 16_767L, 33_433L), 5, 120.0
+        )
+    }
+
     @Test fun rejectsEncodedTemporalGapsAndFrameLoss() {
         assertThrows(IllegalStateException::class.java) {
             MotionLabSequenceVerifier.verifyPresentation(

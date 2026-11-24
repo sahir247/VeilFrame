@@ -79,6 +79,24 @@ class MotionLabTimingContractTest {
         assertEquals(0.8,plan.pairFractions[0][2],0.001)
     }
 
+    @Test fun quantizedCfrAtOneHundredTwentyFpsOutputBoundary() {
+        val thirty = MotionLabTimingContract.plan(pts(60,33_333),2000,false,4)
+        assertEquals(120.0,thirty.outputFps,0.0)
+        assertEquals(240,thirty.expectedOutputFrames)
+        val sixty = MotionLabTimingContract.plan(pts(120,16_666),2000,false,2)
+        assertEquals(120.0,sixty.outputFps,0.0)
+        assertEquals(240,sixty.expectedOutputFrames)
+        assertThrows(IllegalArgumentException::class.java) {
+            MotionLabTimingContract.plan(pts(62,32_258),2000,false,4)
+        }
+    }
+
+    @Test fun acceptsQuantizationAtMinimumSourceCadence() {
+        val plan = MotionLabTimingContract.plan(pts(20,100_001),2000,false,2)
+        assertEquals(10.0,plan.sourceFps,0.0)
+        assertEquals(20.0,plan.outputFps,0.0)
+    }
+
     @Test fun sourceFrameBudgetIsStrict() {
         assertThrows(IllegalArgumentException::class.java) {
             MotionLabTimingContract.plan(pts(1801, 33_333), 60_000, false, 2)

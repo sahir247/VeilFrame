@@ -51,13 +51,27 @@ object MotionLabTimingContract {
         require(relative.last() < durationUs && durationUs-relative.last() <= MAX_GAP_US) {
             "Source timestamps disagree with video duration"
         }
-        val sourceFps = if (variable) sorted.size*1_000_000.0/durationUs else 1_000_000.0/nominalPeriod
-        require(sourceFps in 10.0..120.01) { "Source average FPS outside supported range" }
+        // MediaExtractor exposes integer microseconds. A real 30 fps track can
+        // therefore have a 33333 us median and appear slightly faster than 30.
+        // Snap only a CFR boundary within one microsecond of quantization.
+        fun atPeriodBoundary(fps: Double): Boolean =
+            !variable && abs(nominalPeriod - 1_000_000.0/fps) <= 1.0
+        val measuredFps = if (variable) sorted.size*1_000_000.0/durationUs else 1_000_000.0/nominalPeriod
+        val sourceFps = when {
+            atPeriodBoundary(10.0) -> 10.0
+            atPeriodBoundary(120.0) -> 120.0
+            else -> measuredFps
+        }
+        require(sourceFps in 10.0..120.0) { "Source average FPS outside supported range" }
         val factor = if (target60Fps) (60.0/sourceFps).roundToInt().coerceAtLeast(1) else {
             require(requestedMultiplier == 2 || requestedMultiplier == 4) { "Choose 2x or 4x" }
             requestedMultiplier
         }
-        val outputFps = if (target60Fps) 60.0 else sourceFps*factor
+        val outputFps = when {
+            target60Fps -> 60.0
+            atPeriodBoundary(120.0/factor) -> 120.0
+            else -> sourceFps*factor
+        }
         require(outputFps in 10.0..120.0) { "Output would exceed supported FPS range" }
         val count = (durationUs*outputFps/1_000_000.0).roundToInt()
         require(count in 2..MAX_OUTPUT_FRAMES) { "Output frame count exceeds timing budget" }
