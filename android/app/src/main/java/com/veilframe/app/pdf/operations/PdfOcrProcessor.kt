@@ -291,6 +291,7 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
         progressCallback: (Int) -> Unit = {}
     ): SearchablePdfResult = withContext(Dispatchers.IO) {
         var document: PDDocument? = null
+        var ownedFonts: SearchableOcrFonts? = null
         var tempFile: File? = null
         
         try {
@@ -320,7 +321,7 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
             progressCallback(10)
             
             val renderer = PDFRenderer(document)
-            val fonts = SearchableOcrFonts(context, document)
+            val fonts = SearchableOcrFonts(context, document).also { ownedFonts = it }
             val layerDigests = linkedMapOf<Int, ByteArray>()
             
             for (pageIndex in 0 until totalPages) {
@@ -450,6 +451,7 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
                 completed = true
                 out
             } finally {
+            ownedFonts?.close()
                 if (!oriented.isRecycled) oriented.recycle()
                 if (!completed) ownedTemp?.delete()
             }
@@ -772,26 +774,6 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
         ocrEngine.close()
     }
 }
-
-/** Searchable PDF font admission is independent of recognition script. Never drop glyphs. */
-internal class SearchableOcrFonts(context: Context, document: PDDocument) {
-    private val candidates = listOf<() -> PDType0Font>(
-        { context.assets.open("fonts/Helvetica-Regular.ttf").use { PDType0Font.load(document, it) } },
-        { context.resources.openRawResource(com.veilframe.app.R.font.font_sans).use { PDType0Font.load(document, it) } },
-        { context.resources.openRawResource(com.veilframe.app.R.font.font_serif).use { PDType0Font.load(document, it) } },
-        { context.resources.openRawResource(com.veilframe.app.R.font.font_mono).use { PDType0Font.load(document, it) } }
-    ).map { loader -> lazy { runCatching(loader).getOrNull() } }
-
-    fun select(text: String): Pair<PDType0Font, Float> {
-        for (candidate in candidates) {
-            val font = candidate.value ?: continue
-            val width = try { font.getStringWidth(text) / 1000f } catch (_: IllegalArgumentException) { continue }
-            if (width.isFinite() && width > 0f) return font to width
-        }
-        throw IOException("Searchable PDF fonts cannot encode all recognized characters; no text was silently removed")
-    }
-}
-
 
 /** Temp files are never shared between concurrent OCR image imports. */
 internal fun allocateOcrWrapFile(directory: File): File {
