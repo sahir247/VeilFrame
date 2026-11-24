@@ -91,7 +91,7 @@ object ImageFormatEncoder {
                 encodeBmp(bitmap, outFile)
             }
             Format.TIFF -> {
-                encodeViaFFmpeg(bitmap, outFile, "-c:v tiff")
+                encodeViaFFmpeg(bitmap, outFile, arrayOf("-c:v", "tiff"))
             }
             Format.GIF -> {
                 encodeGifViaFFmpeg(bitmap, outFile)
@@ -195,7 +195,7 @@ object ImageFormatEncoder {
 
         // Fallback: FFmpegKit x265 encoder
         val crf = (51 - ((quality / 100.0) * 35)).toInt().coerceIn(16, 45)
-        return encodeViaFFmpeg(bitmap, outFile, "-c:v libx265 -crf $crf -preset veryfast")
+        return encodeViaFFmpeg(bitmap, outFile, arrayOf("-c:v", "libx265", "-crf", crf.toString(), "-preset", "veryfast"))
     }
 
     private fun encodeGifViaFFmpeg(bitmap: Bitmap, outFile: File): Boolean {
@@ -204,8 +204,11 @@ object ImageFormatEncoder {
             FileOutputStream(tempPng).use { fos ->
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
-            val cmd = "-y -i \"${tempPng.absolutePath}\" -map_metadata -1 -vf \"split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128\" \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
+            val session = FFmpegKit.executeWithArguments(arrayOf(
+                "-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1",
+                "-vf", "split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128",
+                outFile.absolutePath
+            ))
             ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0
         } catch (e: Exception) {
             Log.e(TAG, "GIF encoding failed: ${e.message}", e)
@@ -223,8 +226,10 @@ object ImageFormatEncoder {
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
             // A failed AVIF encoder is not permission to return WebP in an AVIF container.
-            val cmd = "-y -i \"${tempPng.absolutePath}\" -map_metadata -1 -frames:v 1 -c:v libaom-av1 -crf $crf -f avif \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
+            val session = FFmpegKit.executeWithArguments(arrayOf(
+                "-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1",
+                "-c:v", "libaom-av1", "-crf", crf.toString(), "-f", "avif", outFile.absolutePath
+            ))
             val valid = ReturnCode.isSuccess(session.returnCode) && ImageContainerContract.matches(outFile, Format.AVIF)
             if (!valid) outFile.delete()
             valid
@@ -236,14 +241,16 @@ object ImageFormatEncoder {
         }
     }
 
-    private fun encodeViaFFmpeg(bitmap: Bitmap, outFile: File, ffmpegVideoOptions: String): Boolean {
+    private fun encodeViaFFmpeg(bitmap: Bitmap, outFile: File, ffmpegVideoOptions: Array<String>): Boolean {
         val tempPng = File.createTempFile("vf_encode_src_", ".png", outFile.parentFile)
         return try {
             FileOutputStream(tempPng).use { fos ->
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
-            val cmd = "-y -i \"${tempPng.absolutePath}\" -map_metadata -1 -frames:v 1 $ffmpegVideoOptions \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
+            val session = FFmpegKit.executeWithArguments(
+                arrayOf("-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1") +
+                    ffmpegVideoOptions + arrayOf(outFile.absolutePath)
+            )
             ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0
         } catch (e: Exception) {
             Log.e(TAG, "FFmpeg image encoding failed: ${e.message}", e)

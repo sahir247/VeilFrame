@@ -284,7 +284,7 @@ class ImageStudioController(
             },
             onSecondaryClick = {
                 val f = lastResultFile
-                if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+                if (f != null && f.exists()) onShareFileRequest(f, com.veilframe.app.storage.SafStorageManager.getExportMimeType(f))
             },
             onCancelClick = {
                 cancelProcessing()
@@ -298,7 +298,7 @@ class ImageStudioController(
         }
         binding.btnImgShareResult.setOnClickListener {
             val f = lastResultFile
-            if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+            if (f != null && f.exists()) onShareFileRequest(f, com.veilframe.app.storage.SafStorageManager.getExportMimeType(f))
         }
 
         // Attach Material 3 Expressive tactile bounce to interactive controls
@@ -1024,7 +1024,7 @@ class ImageStudioController(
         val destName = safManager.imageDestinationName
         val ext = exportConfig.format.lowercase(Locale.US)
         val rawName = binding.etImgOutputFilename.text.toString().trim()
-        val safeBase = File(rawName).name.substringBeforeLast('.').ifBlank { "compressed_image" }
+        val safeBase = ImageStudioBatchArchive.safeBaseName(rawName)
 
         val generation = ++activeGeneration
         binding.layoutImgProgress.visibility = View.VISIBLE
@@ -1033,6 +1033,7 @@ class ImageStudioController(
 
         compressionJob = scope.launch(Dispatchers.IO) {
             var outDir: File? = null
+            var resultPreview: Bitmap? = null
             var committed = false
             val createdDocuments = mutableListOf<Uri>()
             val encodedFiles = mutableListOf<File>()
@@ -1116,6 +1117,15 @@ class ImageStudioController(
                 // Finish all encoding before creating any external document. A
                 // later transfer failure rolls back only this batch's newly created URIs.
                 ImageStudioBatchExportAcceptance.requireComplete(total, successCount, 0, false)
+                // Save/Share accept a single artifact. For a multi-image job it
+                // must contain the entire batch, not merely its final image.
+                val resultArtifact = if (total == 1) encodedFiles.single() else {
+                    File(ownedDir, "$safeBase.zip").also { archive ->
+                        ImageStudioBatchArchive.writeVerified(encodedFiles, archive) {
+                            coroutineContext.ensureActive()
+                        }
+                    }
+                }
                 if (destUri != null) {
                     val mime = com.veilframe.app.storage.SafStorageManager.getExportMimeType(encodedFiles.first())
                     for (file in encodedFiles) {
@@ -1134,29 +1144,39 @@ class ImageStudioController(
                     copiedToDestination = exportedCount,
                     destinationSelected = destUri != null
                 )
+                resultPreview = lastSavedFile?.let {
+                    ImagePreviewEngine.decodePreviewBitmap(it, maxDim = 1280)
+                }
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress again"
 
-                    if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists()) {
-                        lastResultFile = lastSavedFile
+                    if (successCount > 0 && lastSavedFile != null && resultArtifact.isFile && resultArtifact.length() > 0L) {
+                        lastResultFile = resultArtifact
                         committed = true
-                        currentResultPreviewBitmap?.recycle()
-                        currentResultPreviewBitmap = ImagePreviewEngine.decodePreviewBitmap(lastSavedFile, maxDim = 1280)
+                        val oldResult = currentResultPreviewBitmap
+                        val oldEditing = currentEditingPreviewBitmap
+                        currentResultPreviewBitmap = resultPreview
+                        resultPreview = null
+                        currentEditingPreviewBitmap = null
                         if (currentResultPreviewBitmap != null) {
-                            val oldEditing = currentEditingPreviewBitmap
-                            currentEditingPreviewBitmap = null
                             binding.imgAfterPreview.setImageBitmap(currentResultPreviewBitmap)
-                            oldEditing?.recycle()
+                        } else {
+                            binding.imgAfterPreview.setImageDrawable(null)
                         }
-                        binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${exportConfig.format})"
+                        oldResult?.recycle()
+                        if (oldEditing !== oldResult) oldEditing?.recycle()
+                        binding.tvImgAfterSize.text = if (total == 1)
+                            "${formatBytes(lastSavedFile.length())} (${exportConfig.format})"
+                        else "${formatBytes(resultArtifact.length())} (ZIP • $total images; last image preview)"
                         val ratio = if (totalOriginalBytes > 0) {
                             (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
                         binding.tvImgComparisonRatio.text = "Saved: ${formatBytes(totalOriginalBytes)} → ${formatBytes(totalCompressedBytes)} (-$ratio%)"
                         binding.tvImgActualStats.visibility = View.VISIBLE
-                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%"
+                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%" +
+                            if (total > 1) " • Save/Share: all images in ZIP" else ""
                         binding.layoutImgResultActions.visibility = View.VISIBLE
 
                         val destMsg = if (destUri != null) "\nSaved to: $destName" else ""
@@ -1191,6 +1211,7 @@ class ImageStudioController(
                     syncFloatingDockState()
                 }
             } finally {
+                resultPreview?.recycle()
                 if (!committed) {
                     val failedCleanup = rollback()
                     if (failedCleanup > 0) Log.e("VeilFrame.ImageStudioController",
