@@ -141,11 +141,16 @@ internal object XlsxAnchoredChartRenderer {
                     checkpoint()
                     val rgb=s.rgb ?: palette[i];color(rgb);stroke(rgb)
                     var previous:Pair<Float,Float>?=null
-                    for ((point,raw) in s.values.withIndex()){
+                    val isLine = chart.kind == "line" || (chart.kind == "combo" && s.chartKind == "line")
+                    for ((point,cached) in s.values.withIndex()){
                         checkpoint()
-                        if(raw == null){previous=null;continue}
+                        val raw = if (isLine) chart.blankDisplay.lineValue(cached) else cached
+                        if(raw == null){
+                            if (!isLine || chart.blankDisplay.breakOnMissing()) previous = null
+                            continue
+                        }
                         val position=if(horizontal) y0+h-slot*(point+0.5f) else x0+slot*(point+0.5f)
-                        if(chart.kind=="line" || (chart.kind=="combo" && s.chartKind=="line")){
+                        if(isLine){
                             val sy=y0+fraction(raw/maxAbs)*h
                             stream.setLineWidth(s.strokeWidthPt ?: 1.2f)
                             previous?.let { line(it.first,it.second,position,sy) }

@@ -1314,10 +1314,15 @@ class OfficeConverter {
                     var previous: Pair<Float,Float>? = null
                     val bar = slot * 0.8f / (if (stacked) 1 else if (combo) comboBarCount else chart.series.size)
                     for ((local, index) in indices.withIndex()) {
-                        val v = series.values[index]
-                        if (v == null) { previous = null; continue }
+                        val isLine = chart.kind == "line" || (combo && series.chartKind == "line")
+                        val raw = series.values[index]
+                        val v = if (isLine) chart.blankDisplay.lineValue(raw) else raw
+                        if (v == null) {
+                            if (!isLine || chart.blankDisplay.breakOnMissing()) previous = null
+                            continue
+                        }
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
-                        if (chart.kind == "line" || (combo && series.chartKind == "line")) {
+                        if (isLine) {
                             val y = bottom + fraction(v)*height
                             stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
@@ -1360,7 +1365,8 @@ class OfficeConverter {
                     for ((i,series) in chart.series.withIndex())
                         label(series.values[index]?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",230f+i*column,y,8f)
                 }
-                label("Labels and numbers abbreviated for display; absent cache points are not inferred.", 30f, 28f, 8f)
+                label("Cache table preserves missing points; line blank display: " +
+                    chart.blankDisplay.name.lowercase(java.util.Locale.ROOT) + ". Labels abbreviated.", 30f, 28f, 8f)
             }
         }
     }

@@ -738,6 +738,18 @@ object OpenXmlDocumentParser {
             }
             else -> return null
         }
+        val blankNodes = chart.childElements("dispBlanksAs")
+        if (blankNodes.size > 1) return null
+        val blankDisplay = when (blankNodes.singleOrNull()?.getAttribute("val")) {
+            null, "gap" -> XlsxCachedChart.BlankDisplay.GAP
+            "zero" -> XlsxCachedChart.BlankDisplay.ZERO
+            "span" -> XlsxCachedChart.BlankDisplay.SPAN
+            else -> return null
+        }
+        // Scatter requires explicit numeric x coordinates; do not invent an x
+        // value or bridge missing pairs using categorical-line rules.
+        if (kind == "scatter" && blankDisplay != XlsxCachedChart.BlankDisplay.GAP) return null
+        if (blankDisplay == XlsxCachedChart.BlankDisplay.SPAN && kind !in setOf("line", "combo")) return null
         fun text(element: Element?): String? {
             if (element == null) return null
             val str = descendants(element, "t").joinToString(" ") { it.textContent }
@@ -783,12 +795,12 @@ object OpenXmlDocumentParser {
             // Per-marker fills, strokes and effects are not reconstructed.
             if (marker.childElements("spPr").isNotEmpty() || marker.childElements("extLst").isNotEmpty()) return null
             val symbol = marker.childElements("symbol").singleOrNull()?.getAttribute("val") ?: return null
-            if (symbol !in setOf("none","circle","square","diamond","triangle")) return null
+            if (symbol !in XlsxChartMarker.supportedSymbols) return null
             val rawSize = marker.childElements("size")
             if (rawSize.size > 1) return null
-            val size = rawSize.singleOrNull()?.getAttribute("val")?.toFloatOrNull()
-            if (rawSize.isNotEmpty() && (size == null || !size.isFinite() || size !in 2f..72f)) return null
-            return symbol to size
+            val size = rawSize.singleOrNull()?.getAttribute("val")?.toIntOrNull()
+            if (rawSize.isNotEmpty() && (size == null || size !in 2..72)) return null
+            return symbol to size?.toFloat()
         }
         fun chartDisablesMarkers(element: Element): Boolean? {
             val nodes = element.childElements("marker")
@@ -858,7 +870,8 @@ object OpenXmlDocumentParser {
             // can be assigned invented axes and subsequently abort the PDF.
             if (parsedScatter.none { series -> series.xValues.zip(series.values).any { (x,y) -> x != null && y != null } }) return null
             return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
-                "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style)
+                "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style,
+                blankDisplay = blankDisplay)
         }
         var labels: List<String?>? = null
         val parsed = mutableListOf<XlsxCachedChart.Series>()
@@ -886,7 +899,7 @@ object OpenXmlDocumentParser {
                 markerSizePt = marker.second))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
-            grouping ?: "clustered")
+            grouping ?: "clustered", blankDisplay = blankDisplay)
     }
 
     private data class ParsedXlsxStyles(

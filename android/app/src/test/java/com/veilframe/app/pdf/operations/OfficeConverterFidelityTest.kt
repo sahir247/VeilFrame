@@ -2271,8 +2271,40 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(stream))
         }
         PDDocument.load(withoutMarker).use { doc -> assertEquals(2,doc.numberOfPages) }
-        val invalid = chart("star",7)
-        assertTrue(OpenXmlDocumentParser.parseXlsx(source(invalid)).sheets.single().charts.isEmpty())
+        // Standard DrawingML vector symbols must parse and survive PDF conversion.
+        for (symbol in listOf("dash", "dot", "plus", "x", "star")) {
+            val input = source(chart(symbol, 7))
+            assertEquals(symbol, OpenXmlDocumentParser.parseXlsx(input).sheets.single().charts.single().series.single().markerSymbol)
+            val result = File(tempFolder.root, "$symbol-markers.pdf")
+            OfficeConverter().convertXlsxToPdf(input, result, context)
+            PDDocument.load(result).use { doc ->
+                assertEquals(2, doc.numberOfPages)
+                val stream = doc.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+                assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(stream))
+            }
+        }
+        for (invalid in listOf(chart("picture", 7), chart("invalid", 7), chart("circle", 7).replace("val=\"7\"", "val=\"7.5\""))) {
+            assertTrue(OpenXmlDocumentParser.parseXlsx(source(invalid)).sheets.single().charts.isEmpty())
+        }
+        // Preserve explicit blank drawing semantics without changing the cached values.
+        for ((value, expected) in listOf(
+            "gap" to XlsxCachedChart.BlankDisplay.GAP,
+            "zero" to XlsxCachedChart.BlankDisplay.ZERO,
+            "span" to XlsxCachedChart.BlankDisplay.SPAN
+        )) {
+            val input = source(chart("none", 7)
+                .replace("<c:pt idx=\"1\"><c:v>4</c:v></c:pt>", "")
+                .replace("</c:chart>", "<c:dispBlanksAs val=\"$value\"/></c:chart>"))
+            val cached = OpenXmlDocumentParser.parseXlsx(input).sheets.single().charts.single()
+            assertEquals(expected, cached.blankDisplay)
+            assertNull(cached.series.single().values[1])
+            val output = File(tempFolder.root, "blank-$value.pdf")
+            OfficeConverter().convertXlsxToPdf(input, output, context)
+            PDDocument.load(output).use { doc ->
+                assertEquals(2, doc.numberOfPages)
+                assertTrue(PDFTextStripper().getText(doc).contains("(missing)"))
+            }
+        }
     }
 
     @Test
