@@ -1,3 +1,5 @@
+import java.util.jar.JarFile
+
 plugins {
     id("com.android.application")
 }
@@ -211,7 +213,7 @@ val prepareRobolectricSdkJars = tasks.register("prepareRobolectricSdkJars") {
             }
             // Validate the ZIP central directory and an actual Android framework
             // class rather than treating arbitrary nonempty files as SDK JARs.
-            java.util.jar.JarFile(source).use { jar ->
+            JarFile(source).use { jar ->
                 check(jar.getJarEntry("android/os/Build.class") != null) {
                     "Resolved artifact is not a Robolectric Android framework JAR: $source"
                 }

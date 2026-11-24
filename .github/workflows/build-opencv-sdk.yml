@@ -123,6 +123,46 @@ jobs:
           }
           GRADLE
 
+      # Avoid the generated OpenCV Android project's late wrapper download from
+      # services.gradle.org. That network timeout previously aborted ninja at
+      # 16/17 after C++ libraries had successfully linked.
+      - name: Cache pinned Gradle 8.11.1 archive for upstream OpenCV
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache/gradle-8.11.1-bin.zip
+          key: opencv-gradle-8.11.1-bin-f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6
+
+      - name: Download and verify upstream OpenCV Gradle distribution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          DIST="${GITHUB_WORKSPACE}/.ci-cache/gradle-8.11.1-bin.zip"
+          SHA256="f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
+          mkdir -p "$(dirname "$DIST")"
+          if [ ! -f "$DIST" ] || ! echo "$SHA256  $DIST" | sha256sum --check --status; then
+            rm -f "$DIST"
+            success=false
+            for url in \
+              "https://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip" \
+              "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"; do
+              if curl --fail --location --silent --show-error \
+                --retry 3 --retry-all-errors --retry-delay 3 \
+                --connect-timeout 20 --max-time 240 "$url" -o "$DIST" \
+                && echo "$SHA256  $DIST" | sha256sum --check --status; then
+                success=true
+                break
+              fi
+              echo "::warning::Pinned Gradle download failed or checksum mismatch: $url"
+              rm -f "$DIST"
+            done
+            if [ "$success" != true ]; then
+              echo "::error::Could not verify Gradle 8.11.1 distribution from either host."
+              exit 1
+            fi
+          fi
+          echo "$SHA256  $DIST" | sha256sum --check
+          echo "VEILFRAME_UPSTREAM_GRADLE_ZIP=$DIST" >> "$GITHUB_ENV"
+
       - name: Execute OpenCV Android SDK Build
         run: |
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"

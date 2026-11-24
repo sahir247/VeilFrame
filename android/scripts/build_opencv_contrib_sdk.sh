@@ -116,6 +116,428 @@ checkout_pinned_repo() {
 checkout_pinned_repo "opencv" "https://github.com/opencv/opencv.git" "${OPENCV_COMMIT_SHA}"
 checkout_pinned_repo "opencv_contrib" "https://github.com/opencv/opencv_contrib.git" "${OPENCV_CONTRIB_COMMIT_SHA}"
 
+# In CI, never let upstream's generated Gradle wrapper fetch its distribution
+# during the final AAR packaging step (after minutes of successful C++ work).
+# The workflow has already downloaded + SHA-256 checked the pinned 8.11.1 ZIP.
+# Patch only ephemeral copies of BOTH upstream wrapper templates; never commit
+# modifications to opencv or opencv_contrib and never alter VeilFrame's wrapper.
+if [ -n "${VEILFRAME_UPSTREAM_GRADLE_ZIP:-}" ]; then
+    UPSTREAM_GRADLE_ZIP="$(realpath "${VEILFRAME_UPSTREAM_GRADLE_ZIP}")"
+    EXPECTED_GRADLE_SHA256="f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
+    if [ ! -f "${UPSTREAM_GRADLE_ZIP}" ] || ! echo "${EXPECTED_GRADLE_SHA256}  ${UPSTREAM_GRADLE_ZIP}" | sha256sum --check --status; then
+        echo "FATAL: OpenCV upstream Gradle 8.11.1 ZIP is missing or fails published SHA-256." >&2
+        exit 1
+    fi
+    python3 - "${WORK_DIR}/opencv" "${UPSTREAM_GRADLE_ZIP}" "${EXPECTED_GRADLE_SHA256}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+opencv_root = Path(sys.argv[1])
+archive = Path(sys.argv[2])
+expected_hash = sys.argv[3]
+templates = (
+    opencv_root / 'platforms/android/aar-template/gradle/wrapper/gradle-wrapper.properties',
+    opencv_root / 'platforms/android/gradle-wrapper/gradle/wrapper/gradle-wrapper.properties.in',
+)
+# OpenCV's Android AAR build and its classic SDK wrapper use separate template
+# paths. Patch both because either generated project may run a wrapper.
+for template in templates:
+    original = template.read_text(encoding='utf-8')
+    if not re.search(r'(?m)^distributionUrl=.*
+# 3. Create build configuration
+# FIX: In OpenCV's CMake system, --modules_list sets -DBUILD_LIST.
+# If 'java' is omitted, CMake disables java and java_bindings_generator by whitelist!
+# Modules MUST explicitly include: core, imgproc, imgcodecs, video, videoio, photo, objdetect, dnn, wechat_qrcode, java
+BUILD_MODULES="core,imgproc,imgcodecs,video,videoio,photo,objdetect,dnn,wechat_qrcode,java"
+
+BUILD_OUT="${WORK_DIR}/output"
+rm -rf "${BUILD_OUT}"
+mkdir -p "${BUILD_OUT}"
+
+cat << 'EOF' > "${WORK_DIR}/opencv-veilframe.config.py"
+ABIs = [
+    ABI("3", "arm64-v8a", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
+    ABI("4", "x86_64", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
+]
+EOF
+
+echo "==> Invoking OpenCV build_sdk.py with verified module whitelist..."
+python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
+    --ndk_path="${ANDROID_NDK_HOME}" \
+    --sdk_path="${ANDROID_HOME:-/opt/android-sdk}" \
+    --extra_modules_path="${WORK_DIR}/opencv_contrib/modules" \
+    --modules_list="${BUILD_MODULES}" \
+    --config="${WORK_DIR}/opencv-veilframe.config.py" \
+    --no_samples_build \
+    "${BUILD_OUT}" \
+    "${WORK_DIR}/opencv"
+
+SDK_STAGE="${BUILD_OUT}/OpenCV-android-sdk/sdk"
+
+# 4. Strict fail-closed validation of generated artifacts
+echo "==> Validating generated artifacts in SDK stage..."
+if [ ! -s "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" ]; then
+    echo "FATAL: arm64-v8a/libopencv_java4.so is missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" ]; then
+    echo "FATAL: x86_64/libopencv_java4.so is missing or empty!"
+    exit 1
+fi
+
+validate_elf_arch() {
+    local so_path="$1"
+    local expected_arch="$2"
+    local readelf_bin=""
+    if command -v readelf >/dev/null 2>&1; then
+        readelf_bin="readelf"
+    else
+        local ndk_llvm_readelf
+        ndk_llvm_readelf=$(find "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt" -name "llvm-readelf" 2>/dev/null | head -n 1 || true)
+        if [ -n "${ndk_llvm_readelf}" ] && [ -x "${ndk_llvm_readelf}" ]; then
+            readelf_bin="${ndk_llvm_readelf}"
+        fi
+    fi
+
+    if [ -z "${readelf_bin}" ]; then
+        echo "FATAL: readelf or llvm-readelf is required for fail-closed ELF architecture verification."
+        exit 1
+    fi
+
+    local header
+    header=$("${readelf_bin}" -h "${so_path}" 2>/dev/null || true)
+    if ! echo "${header}" | grep -q "${expected_arch}"; then
+        echo "FATAL: ELF machine architecture mismatch for ${so_path}!"
+        echo "Expected: ${expected_arch}"
+        echo "${header}"
+        exit 1
+    fi
+    echo "✓ Validated ELF architecture (${expected_arch}) for $(basename "${so_path}")"
+}
+
+validate_elf_arch "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "AArch64"
+validate_elf_arch "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "Advanced Micro Devices X86-64"
+
+validate_elf_page_alignment() {
+    local so_path="$1"
+    python3 - "$so_path" <<'PYALIGN'
+import subprocess
+import sys
+path = sys.argv[1]
+output = subprocess.check_output(["readelf", "-lW", path], text=True)
+loads = [line.split() for line in output.splitlines() if line.lstrip().startswith("LOAD ")]
+if not loads:
+    raise SystemExit(f"FATAL: no ELF LOAD segments in {path}")
+bad = []
+for fields in loads:
+    alignment = int(fields[-1], 0)
+    if alignment < 0x4000 or alignment % 0x4000:
+        bad.append(f"{alignment:#x}")
+if bad:
+    raise SystemExit(f"FATAL: {path} has ELF LOAD p_align below 16 KB: {", ".join(bad)}")
+print(f"✓ Validated 16 KB ELF LOAD alignment for {path}")
+PYALIGN
+}
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so"
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so"
+
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/core/Mat.java" ]; then
+    echo "FATAL: Core Java bindings (org/opencv/core/Mat.java) missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/wechat_qrcode/WeChatQRCode.java" ]; then
+    echo "FATAL: WeChatQRCode Java binding (org/opencv/wechat_qrcode/WeChatQRCode.java) missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/videoio/Videoio.java" ]; then
+    echo "FATAL: VideoIO Java binding (org/opencv/videoio/Videoio.java) missing or empty!"
+    exit 1
+fi
+
+echo "✓ All required native libraries (valid ELF ABIs) and Java sources verified in build stage."
+
+# 5. Staging into :opencv-sdk with completion marker
+echo "==> Staging compiled native libraries, Java bindings, and resources into :opencv-sdk..."
+# Remove marker first so partial staging cannot be interpreted as complete
+rm -f "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+
+mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/java"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res"
+
+cp "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/"
+cp "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/"
+cp -R "${SDK_STAGE}/java/src/org" "${OPENCV_SDK_DIR}/src/main/java/"
+if [ -d "${SDK_STAGE}/java/res" ]; then
+    cp -R "${SDK_STAGE}/java/res/"* "${OPENCV_SDK_DIR}/src/main/res/"
+fi
+
+# Ensure CameraBridgeViewBase styled attributes XML is always present and valid
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res/values"
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ] || ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    cat << 'EOF' > "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CameraBridgeViewBase">
+        <attr name="show_fps" format="boolean" />
+        <attr name="camera_id" format="integer">
+            <enum name="any" value="-1" />
+            <enum name="back" value="99" />
+            <enum name="front" value="98" />
+        </attr>
+    </declare-styleable>
+</resources>
+EOF
+fi
+
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ]; then
+    echo "FATAL: attrs.xml missing or empty in :opencv-sdk!"
+    exit 1
+fi
+if ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    echo "FATAL: attrs.xml does not declare CameraBridgeViewBase!"
+    exit 1
+fi
+
+ARM64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
+X86_64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/libopencv_java4.so"
+ARM64_SHA256="$(sha256sum "${ARM64_SO}" | awk '{print $1}')"
+X86_64_SHA256="$(sha256sum "${X86_64_SO}" | awk '{print $1}')"
+
+# Write completion marker with exact provenance metadata
+cat << EOF > "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+OpenCV=${OPENCV_VERSION}
+OpenCV_SHA=${OPENCV_COMMIT_SHA}
+Contrib_SHA=${OPENCV_CONTRIB_COMMIT_SHA}
+NDK=${EXPECTED_NDK_VERSION}
+STL=c++_static
+ABIs=arm64-v8a,x86_64
+ARM64_SHA256=${ARM64_SHA256}
+X86_64_SHA256=${X86_64_SHA256}
+GeneratedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+Status=VERIFIED_COMPLETE
+EOF
+
+echo "✓ Wrote completion marker: ${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+echo "========================================================================"
+echo "Successfully built, verified, and staged custom OpenCV 4.14.0 SDK"
+echo "========================================================================"
+, original):
+        raise SystemExit(f'FATAL: missing Gradle wrapper URL in {template}')
+    if '8.11.1' not in original and '@GRADLE_VERSION@' not in original:
+        raise SystemExit(f'FATAL: unexpected OpenCV Gradle version in {template}')
+    file_url = archive.as_uri().replace(':', r'\:')
+    patched = re.sub(
+        r'(?m)^distributionUrl=.*
+# 3. Create build configuration
+# FIX: In OpenCV's CMake system, --modules_list sets -DBUILD_LIST.
+# If 'java' is omitted, CMake disables java and java_bindings_generator by whitelist!
+# Modules MUST explicitly include: core, imgproc, imgcodecs, video, videoio, photo, objdetect, dnn, wechat_qrcode, java
+BUILD_MODULES="core,imgproc,imgcodecs,video,videoio,photo,objdetect,dnn,wechat_qrcode,java"
+
+BUILD_OUT="${WORK_DIR}/output"
+rm -rf "${BUILD_OUT}"
+mkdir -p "${BUILD_OUT}"
+
+cat << 'EOF' > "${WORK_DIR}/opencv-veilframe.config.py"
+ABIs = [
+    ABI("3", "arm64-v8a", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
+    ABI("4", "x86_64", None, "26", cmake_vars=dict(
+        ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang",
+        CMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+        CMAKE_MODULE_LINKER_FLAGS="-Wl,-z,max-page-size=16384",
+    )),
+]
+EOF
+
+echo "==> Invoking OpenCV build_sdk.py with verified module whitelist..."
+python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
+    --ndk_path="${ANDROID_NDK_HOME}" \
+    --sdk_path="${ANDROID_HOME:-/opt/android-sdk}" \
+    --extra_modules_path="${WORK_DIR}/opencv_contrib/modules" \
+    --modules_list="${BUILD_MODULES}" \
+    --config="${WORK_DIR}/opencv-veilframe.config.py" \
+    --no_samples_build \
+    "${BUILD_OUT}" \
+    "${WORK_DIR}/opencv"
+
+SDK_STAGE="${BUILD_OUT}/OpenCV-android-sdk/sdk"
+
+# 4. Strict fail-closed validation of generated artifacts
+echo "==> Validating generated artifacts in SDK stage..."
+if [ ! -s "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" ]; then
+    echo "FATAL: arm64-v8a/libopencv_java4.so is missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" ]; then
+    echo "FATAL: x86_64/libopencv_java4.so is missing or empty!"
+    exit 1
+fi
+
+validate_elf_arch() {
+    local so_path="$1"
+    local expected_arch="$2"
+    local readelf_bin=""
+    if command -v readelf >/dev/null 2>&1; then
+        readelf_bin="readelf"
+    else
+        local ndk_llvm_readelf
+        ndk_llvm_readelf=$(find "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt" -name "llvm-readelf" 2>/dev/null | head -n 1 || true)
+        if [ -n "${ndk_llvm_readelf}" ] && [ -x "${ndk_llvm_readelf}" ]; then
+            readelf_bin="${ndk_llvm_readelf}"
+        fi
+    fi
+
+    if [ -z "${readelf_bin}" ]; then
+        echo "FATAL: readelf or llvm-readelf is required for fail-closed ELF architecture verification."
+        exit 1
+    fi
+
+    local header
+    header=$("${readelf_bin}" -h "${so_path}" 2>/dev/null || true)
+    if ! echo "${header}" | grep -q "${expected_arch}"; then
+        echo "FATAL: ELF machine architecture mismatch for ${so_path}!"
+        echo "Expected: ${expected_arch}"
+        echo "${header}"
+        exit 1
+    fi
+    echo "✓ Validated ELF architecture (${expected_arch}) for $(basename "${so_path}")"
+}
+
+validate_elf_arch "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "AArch64"
+validate_elf_arch "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "Advanced Micro Devices X86-64"
+
+validate_elf_page_alignment() {
+    local so_path="$1"
+    python3 - "$so_path" <<'PYALIGN'
+import subprocess
+import sys
+path = sys.argv[1]
+output = subprocess.check_output(["readelf", "-lW", path], text=True)
+loads = [line.split() for line in output.splitlines() if line.lstrip().startswith("LOAD ")]
+if not loads:
+    raise SystemExit(f"FATAL: no ELF LOAD segments in {path}")
+bad = []
+for fields in loads:
+    alignment = int(fields[-1], 0)
+    if alignment < 0x4000 or alignment % 0x4000:
+        bad.append(f"{alignment:#x}")
+if bad:
+    raise SystemExit(f"FATAL: {path} has ELF LOAD p_align below 16 KB: {", ".join(bad)}")
+print(f"✓ Validated 16 KB ELF LOAD alignment for {path}")
+PYALIGN
+}
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so"
+validate_elf_page_alignment "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so"
+
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/core/Mat.java" ]; then
+    echo "FATAL: Core Java bindings (org/opencv/core/Mat.java) missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/wechat_qrcode/WeChatQRCode.java" ]; then
+    echo "FATAL: WeChatQRCode Java binding (org/opencv/wechat_qrcode/WeChatQRCode.java) missing or empty!"
+    exit 1
+fi
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/videoio/Videoio.java" ]; then
+    echo "FATAL: VideoIO Java binding (org/opencv/videoio/Videoio.java) missing or empty!"
+    exit 1
+fi
+
+echo "✓ All required native libraries (valid ELF ABIs) and Java sources verified in build stage."
+
+# 5. Staging into :opencv-sdk with completion marker
+echo "==> Staging compiled native libraries, Java bindings, and resources into :opencv-sdk..."
+# Remove marker first so partial staging cannot be interpreted as complete
+rm -f "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+
+mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/java"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res"
+
+cp "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/"
+cp "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/"
+cp -R "${SDK_STAGE}/java/src/org" "${OPENCV_SDK_DIR}/src/main/java/"
+if [ -d "${SDK_STAGE}/java/res" ]; then
+    cp -R "${SDK_STAGE}/java/res/"* "${OPENCV_SDK_DIR}/src/main/res/"
+fi
+
+# Ensure CameraBridgeViewBase styled attributes XML is always present and valid
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res/values"
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ] || ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    cat << 'EOF' > "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CameraBridgeViewBase">
+        <attr name="show_fps" format="boolean" />
+        <attr name="camera_id" format="integer">
+            <enum name="any" value="-1" />
+            <enum name="back" value="99" />
+            <enum name="front" value="98" />
+        </attr>
+    </declare-styleable>
+</resources>
+EOF
+fi
+
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ]; then
+    echo "FATAL: attrs.xml missing or empty in :opencv-sdk!"
+    exit 1
+fi
+if ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    echo "FATAL: attrs.xml does not declare CameraBridgeViewBase!"
+    exit 1
+fi
+
+ARM64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
+X86_64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/libopencv_java4.so"
+ARM64_SHA256="$(sha256sum "${ARM64_SO}" | awk '{print $1}')"
+X86_64_SHA256="$(sha256sum "${X86_64_SO}" | awk '{print $1}')"
+
+# Write completion marker with exact provenance metadata
+cat << EOF > "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+OpenCV=${OPENCV_VERSION}
+OpenCV_SHA=${OPENCV_COMMIT_SHA}
+Contrib_SHA=${OPENCV_CONTRIB_COMMIT_SHA}
+NDK=${EXPECTED_NDK_VERSION}
+STL=c++_static
+ABIs=arm64-v8a,x86_64
+ARM64_SHA256=${ARM64_SHA256}
+X86_64_SHA256=${X86_64_SHA256}
+GeneratedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+Status=VERIFIED_COMPLETE
+EOF
+
+echo "✓ Wrote completion marker: ${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
+echo "========================================================================"
+echo "Successfully built, verified, and staged custom OpenCV 4.14.0 SDK"
+echo "========================================================================"
+,
+        lambda match: 'distributionUrl=' + file_url,
+        original,
+        count=1,
+    )
+    patched = re.sub(r'(?m)^distributionSha256Sum=.*\n?', '', patched)
+    patched += f'\ndistributionSha256Sum={expected_hash}\n'
+    template.write_text(patched, encoding='utf-8')
+    print(f'OpenCV upstream Gradle 8.11.1 pinned to verified local distribution: {template}')
+PY
+fi
+
 # 3. Create build configuration
 # FIX: In OpenCV's CMake system, --modules_list sets -DBUILD_LIST.
 # If 'java' is omitted, CMake disables java and java_bindings_generator by whitelist!
