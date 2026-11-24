@@ -259,19 +259,16 @@ jobs:
           profile: pixel_6
           working-directory: ./android
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # The emulator action runs each nonempty script line in its own
+          # sh -c process. Keep each command self-contained; never use shell
+          # continuations or multi-line compound statements in this input.
+          emulator-port: 5554
           script: |
             chmod +x ./gradlew
-            # AndroidJUnitRunner accepts a comma-delimited package filter.
-            # One invocation covers existing native CV tests, the borrowed-flow
-            # regression, and Image Studio's async preview isolation test.
-            # Avoid a second --rerun-tasks, which rebuilds the whole app.
-            ./gradlew :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs || {
-                echo "=== Dumping native CV/preview instrumentation logcat ==="
-                adb logcat -d -b crash || true
-                adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
-                exit 1
-              }
+            timeout 90s sh -c 'until [ "$(timeout 5s adb -s emulator-5554 get-state 2>/dev/null)" = device ] && [ "$(timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ] && timeout 5s adb -s emulator-5554 shell pm path android 2>/dev/null | grep -q "^package:"; do sleep 2; done' || ( echo "::error::Emulator ADB, boot, or package manager readiness timed out"; adb devices -l; exit 1 )
+            adb -s emulator-5554 shell getprop ro.product.cpu.abilist
+            adb -s emulator-5554 shell getprop ro.product.cpu.abilist | tr -d '\r' | grep -Eq '(^|,)arm64-v8a(,|$)' || ( echo "::error::Emulator does not advertise ARM64 compatibility required by VeilFrame"; exit 1 )
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs || ( status=$?; echo "=== Dumping native CV/preview instrumentation logcat ==="; timeout 20s adb -s emulator-5554 logcat -d -b crash || true; timeout 20s adb -s emulator-5554 logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true; exit "$status" )
 
       - name: Upload Connected Android Test Reports
         if: always()
