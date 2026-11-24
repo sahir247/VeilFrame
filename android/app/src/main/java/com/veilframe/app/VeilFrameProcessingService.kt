@@ -22,7 +22,7 @@ import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
 import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
-import com.veilframe.app.cv.motion.MotionLabSourceFrameStage
+import com.veilframe.app.cv.motion.MotionLabRawFramePipe
 import com.veilframe.app.cv.motion.MotionLabDiskBudget
 import com.veilframe.app.cv.motion.MotionLabAudioTimeline
 import com.veilframe.app.cv.motion.MotionLabFrameSampling
@@ -492,7 +492,6 @@ class VeilFrameProcessingService : Service() {
     ) {
         val workDir = File(cacheDir, "motionlab_${UUID.randomUUID()}").apply { mkdirs() }
         val framesDir = File(workDir, "frames").apply { mkdirs() }
-        val outDir = File(workDir, "out").apply { mkdirs() }
         val inFile = File(workDir, "in.mp4")
         var stagedOutput: File? = null
 
@@ -568,6 +567,17 @@ class VeilFrameProcessingService : Service() {
                 "Decoded frame sequence does not match ${timing.sourceFrames} video timestamps; refusing altered input"
             }
 
+            val destFile = if (outputPath.isNotEmpty()) File(outputPath) else {
+                val exportDir = File(filesDir, "exports").apply { mkdirs() }
+                File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
+            }
+            val destinationDirectory = requireNotNull(destFile.absoluteFile.parentFile)
+            check(destinationDirectory.isDirectory || destinationDirectory.mkdirs()) { "Cannot create Motion Lab destination" }
+            val stage = File(destinationDirectory, ".motion_${UUID.randomUUID()}.mp4")
+            stagedOutput = stage
+            // Consume the entire raw stream to EOF before remuxing audio. An
+            // output -t on the pipe can cause the encoder to stop reading early.
+            val videoOnly = if (sourceAudioTracks.isEmpty()) stage else File(workDir, "encoded_video.mp4")
             var useRife = false
             if (methodStr.equals("RIFE", ignoreCase = true)) {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
@@ -628,7 +638,6 @@ class VeilFrameProcessingService : Service() {
                 }
             }
 
-            var outIdx = 0
             var opticalFlowFallbackFrames = 0
             var prevBmp: Bitmap? = null
             var prevMat: Mat? = null
@@ -638,14 +647,25 @@ class VeilFrameProcessingService : Service() {
                 prevBmp = if (useRife) loadRifeBitmap(frames[0]) else null
                 prevMat = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
 
-                if (useRife && prevBmp != null) {
-                    val outFile = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
-                    stageMotionSourceFrame(frames[0], outFile, prevBmp)
-                } else if (prevMat != null && !prevMat.empty()) {
-                    MotionLabSourceFrameStage.stage(frames[0], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
-                } else {
-                    throw IllegalStateException("Initial video frame unreadable")
+                val geometry = when {
+                    useRife && prevBmp != null -> requireNotNull(prevBmp).let { MotionLabRawFramePipe.Geometry(it.width, it.height) }
+                    prevMat?.empty() == false -> requireNotNull(prevMat).let { MotionLabRawFramePipe.Geometry(it.cols(), it.rows()) }
+                    else -> throw IllegalStateException("Initial video frame unreadable")
                 }
+                val encodeSession = MotionLabDiskBudget.monitor(check = {
+                    MotionLabDiskBudget.requireHeadroom(workDir)
+                    MotionLabDiskBudget.requireHeadroom(destinationDirectory)
+                }) {
+                    MotionLabRawFramePipe.encode(
+                        geometry, timing.outputFps, timing.expectedOutputFrames,
+                        arrayOf("-map", "0:v:0", "-an", "-c:v", "libx264",
+                            "-preset", "veryfast", "-crf", "21",
+                            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                            "-pix_fmt", "yuv420p", "-fps_mode", "passthrough",
+                            videoOnly.absolutePath)
+                    ) {
+                        if (useRife) writeBitmap(requireNotNull(prevBmp))
+                        else writeMat(requireNotNull(prevMat))
 
                 for (i in 1 until frames.size) {
                     kotlin.coroutines.coroutineContext.ensureActive()
@@ -680,17 +700,21 @@ class VeilFrameProcessingService : Service() {
                             if (useRife && prevBmp != null && curBmp != null) {
                                 val synthBmp = try {
                                     RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
-                                } catch (e: Throwable) {
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
                                     Log.w(TAG, "RIFE interpolation failed for frame $i: ${e.message}")
+                                    null
+                                } catch (e: LinkageError) {
+                                    Log.w(TAG, "RIFE interpolation unavailable", e)
                                     null
                                 }
                                 if (synthBmp != null) {
-                                    val outFile = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
                                     try {
-                                        saveMotionBitmap(synthBmp, outFile)
+                                        writeBitmap(synthBmp)
                                         interpolatedSuccessfully = true
                                     } finally {
-                                        synthBmp.recycle()
+                                        if (synthBmp !== prevBmp && synthBmp !== curBmp) synthBmp.recycle()
                                     }
                                 } else {
                                     Log.w(TAG, "RIFE returned null for frame $i (t=$t); attempting optical flow fallback")
@@ -720,7 +744,7 @@ class VeilFrameProcessingService : Service() {
                                     throw IllegalStateException("Both RIFE and optical flow failed at frame ${i + 1} (t=$t)", e)
                                 }
                                 try {
-                                    saveMotionMat(result.frame, File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
+                                    writeMat(result.frame)
                                     if (useRife) opticalFlowFallbackFrames++
                                 } finally {
                                     result.release()
@@ -732,12 +756,12 @@ class VeilFrameProcessingService : Service() {
                         kotlin.coroutines.coroutineContext.ensureActive()
                         MotionLabDiskBudget.requireHeadroom(workDir)
                         if (useRife && curBmp != null) {
-                            stageMotionSourceFrame(frames[i], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)), curBmp)
+                            writeBitmap(curBmp)
                             prevBmp?.recycle()
                             prevBmp = curBmp
                             curBmp = null
                         } else if (curMat != null) {
-                            MotionLabSourceFrameStage.stage(frames[i], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
+                            writeMat(curMat)
                             prevMat?.release()
                             prevMat = curMat
                             curMat = null
@@ -757,69 +781,49 @@ class VeilFrameProcessingService : Service() {
                     updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
                     jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
                 }
+                        // Repeat the final source frame for its remaining CFR interval.
+                        repeat(effectiveMultiplier - 1) {
+                            if (useRife) writeBitmap(requireNotNull(prevBmp))
+                            else writeMat(requireNotNull(prevMat))
+                        }
+                    }
+                }
+                check(ReturnCode.isSuccess(encodeSession.returnCode) && videoOnly.isFile && videoOnly.length() > 0L) {
+                    "Raw video encoding failed"
+                }
             } finally {
-                if (useRife) {
-                    RifeNcnnNative.nativeRelease()
+                try {
+                    if (useRife) RifeNcnnNative.nativeRelease()
+                } finally {
                     prevBmp?.recycle()
-                } else {
                     prevMat?.release()
                 }
             }
 
-            // Each source frame occupies one full CFR presentation interval, including
-            // the last. Tail repeats are legitimate final-frame hold, not fallback
-            // duplicates for failed neural or optical-flow interpolation.
-            val lastOutput = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx - 1))
-            for (tail in 1 until effectiveMultiplier) {
-                kotlin.coroutines.coroutineContext.ensureActive()
-                val target = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
-                MotionLabDiskBudget.requireHeadroom(workDir)
-                MotionLabSourceFrameStage.stage(lastOutput, target)
-            }
-            requireMotionSequenceComplete(frames.size, effectiveMultiplier, outDir, outIdx)
-            MotionLabDiskBudget.requireHeadroom(workDir)
             if (opticalFlowFallbackFrames > 0) {
                 Log.w(TAG, "RIFE recovered $opticalFlowFallbackFrames intermediate frames with optical flow")
             }
-
-            val framerateStr = String.format(Locale.US, "%.5f", timing.outputFps)
-            updateNotificationProgress("Encoding video ($framerateStr fps)…", 88)
-            jobCallback?.onProgress(jobId, 88, "Encoding video…")
-
-            val destFile = if (outputPath.isNotEmpty()) {
-                File(outputPath)
-            } else {
-                val exportDir = File(filesDir, "exports").apply { mkdirs() }
-                File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-            }
-            destFile.parentFile?.mkdirs()
-            val stage = File(destFile.parentFile, ".motion_${UUID.randomUUID()}.mp4")
-            stagedOutput = stage
-
-            val encodeSession = MotionLabDiskBudget.monitor(
-                check = {
+            // Verify the encoded video before remux. The remux must also pass
+            // the same frame count/PTS contract, so it cannot truncate video.
+            val encodedPts = readMotionVideoPtsUs(videoOnly, timing.expectedOutputFrames)
+            MotionLabSequenceVerifier.verifyPresentation(encodedPts, timing.expectedOutputFrames, timing.outputFps)
+            if (sourceAudioTracks.isNotEmpty()) {
+                updateNotificationProgress("Remuxing source audio…", 88)
+                jobCallback?.onProgress(jobId, 88, "Remuxing source audio…")
+                val mux = MotionLabDiskBudget.monitor(check = {
                     MotionLabDiskBudget.requireHeadroom(workDir)
-                    MotionLabDiskBudget.requireHeadroom(requireNotNull(stage.parentFile))
+                    MotionLabDiskBudget.requireHeadroom(destinationDirectory)
+                }) {
+                    executeOwnedFfmpeg(arrayOf(
+                        "-nostdin", "-y", "-i", videoOnly.absolutePath, "-i", inFile.absolutePath,
+                        "-map", "0:v:0", "-map", "1:a", "-c", "copy",
+                        "-t", String.format(Locale.US, "%.6f", timing.expectedOutputFrames / timing.outputFps),
+                        "-movflags", "+faststart", stage.absolutePath
+                    ))
                 }
-            ) {
-                executeOwnedFfmpeg(arrayOf(
-                    "-y",
-                    "-framerate", framerateStr,
-                    "-i", "${outDir.absolutePath}/o_%05d.jpg",
-                    "-i", inFile.absolutePath,
-                    "-map", "0:v",
-                    "-map", "1:a?",
-                    "-c:v", "libx264",
-                    "-preset", "veryfast",
-                    "-crf", "21",
-                    "-pix_fmt", "yuv420p",
-                    "-c:a", "copy",
-                    "-t", String.format(Locale.US, "%.3f", durationMs / 1000.0),
-                    stage.absolutePath
-                ))
-            }
-            if (!ReturnCode.isSuccess(encodeSession.returnCode) || !stage.isFile || stage.length() == 0L) {
-                throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
+                check(ReturnCode.isSuccess(mux.returnCode) && stage.isFile && stage.length() > 0L) {
+                    "Motion Lab audio remux failed"
+                }
             }
             // Inspect the actual serialized MP4, not just a successful FFmpeg exit.
             // This also detects output-timeline truncation or extra CFR frames.
@@ -878,7 +882,7 @@ class VeilFrameProcessingService : Service() {
     }
 
     /** Android Bitmap -> RGBA Mat -> explicit BGR Mat for OpenCV optical flow.
-     * BitmapToMat returns RGBA, whereas FrameSynthesizer and JPEG encoding
+     * BitmapToMat returns RGBA, whereas FrameSynthesizer and raw encoding
      * expect standard BGR. Keep channel contracts consistent across fallbacks.
      */
     private fun bitmapToMotionBgr(bitmap: Bitmap): Mat {
@@ -971,44 +975,6 @@ class VeilFrameProcessingService : Service() {
             extractor.release()
         }
     }
-
-    /**
-     * Preserve already-extracted JPEG bytes when RIFE did not downsample the
-     * frame. If the native RIFE memory cap reduced its size, encode precisely
-     * that smaller bitmap so every source/intermediate frame shares geometry.
-     */
-    private fun stageMotionSourceFrame(extracted: File, output: File, decoded: Bitmap) {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(extracted.absolutePath, bounds)
-        if (bounds.outWidth == decoded.width && bounds.outHeight == decoded.height) {
-            MotionLabSourceFrameStage.stage(extracted, output)
-        } else {
-            saveMotionBitmap(decoded, output)
-        }
-    }
-
-    private fun saveMotionBitmap(frame: Bitmap, output: File) {
-        val encoded = output.outputStream().use { out ->
-            frame.compress(Bitmap.CompressFormat.JPEG, 95, out)
-        }
-        check(encoded && output.isFile && output.length() > 0L) {
-            "Motion Lab could not encode frame ${output.name}"
-        }
-    }
-
-    private fun saveMotionMat(frame: Mat, output: File) {
-        check(!frame.empty() && Imgcodecs.imwrite(output.absolutePath, frame) &&
-            output.isFile && output.length() > 0L) {
-            "Motion Lab could not encode frame ${output.name}"
-        }
-    }
-
-    private fun requireMotionSequenceComplete(
-        sourceFrames: Int,
-        factor: Int,
-        directory: File,
-        outputFrames: Int
-    ) = MotionLabSequenceVerifier.verify(directory, sourceFrames, factor, outputFrames)
 
     private suspend fun executeVideoStabilization(
         jobId: UUID,

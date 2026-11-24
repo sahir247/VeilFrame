@@ -5,6 +5,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.veilframe.app.cv.core.CvRuntime
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
@@ -39,9 +44,11 @@ class MotionLabRawFramePipeDeviceTest {
                     writeMat(roi)
                 }
                 val frameSize = geometry.frameBytes.toInt()
+                val first = byteArrayOf(0x56, 0x34, 0x12)
+                val second = byteArrayOf(7, 19, 231.toByte())
                 val expected = ByteArray(frameSize * 2) { index ->
-                    if (index < frameSize) byteArrayOf(0x56, 0x34, 0x12)[index % 3]
-                    else byteArrayOf(7, 19, 231.toByte())[(index-frameSize) % 3]
+                    if (index < frameSize) first[index % 3]
+                    else second[(index-frameSize) % 3]
                 }
                 assertArrayEquals(expected, output.readBytes())
                 assertFalse(bitmap.isRecycled)
@@ -68,6 +75,32 @@ class MotionLabRawFramePipeDeviceTest {
                 }.exceptionOrNull()
                 assertTrue("Expected incomplete producer rejection, got $failure", failure is IllegalStateException)
                 // A new independent session must still work after the failed producer.
+                MotionLabRawFramePipe.encode(geometry, 24.0, 1, rawOutput(output)) { writeBitmap(bitmap) }
+                assertEquals(geometry.frameBytes, output.length())
+            } finally {
+                bitmap.recycle()
+                output.delete()
+            }
+        }
+    }
+
+    @Test fun explicitCancellationDeliversEofAndRetiresOwnedSession() = runBlocking {
+        withTimeout(60_000) {
+            val geometry = MotionLabRawFramePipe.Geometry(320, 240)
+            val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
+            val output = temp()
+            val ready = CompletableDeferred<Unit>()
+            try {
+                val worker = launch(Dispatchers.IO) {
+                    MotionLabRawFramePipe.encode(geometry, 24.0, 10, rawOutput(output)) {
+                        writeBitmap(bitmap)
+                        ready.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+                ready.await()
+                worker.cancelAndJoin()
+                assertTrue(worker.isCancelled)
                 MotionLabRawFramePipe.encode(geometry, 24.0, 1, rawOutput(output)) { writeBitmap(bitmap) }
                 assertEquals(geometry.frameBytes, output.length())
             } finally {
