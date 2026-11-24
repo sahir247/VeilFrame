@@ -221,17 +221,25 @@ class MotionLabRawFramePipeDeviceTest {
                 } finally { extractor.release() }
             }
             try {
-                // Input grid 100 Hz; output VFR PTS 0,30,100,140 ms.
+                // Input grid 100 Hz; output VFR PTS 0,30,100,140 ms; duration 150 ms.
+                // executeWithArgumentsAsync passes argv directly; quotes here belong to
+                // the filtergraph parser, not a shell. Do not double-escape its commas.
                 MotionLabRawFramePipe.encode(geometry,100.0,4,arrayOf(
-                    "-map","0:v:0","-an","-vf","""settb=1/1000,setpts=if(eq(N\\,0)\\,0\\,if(eq(N\\,1)\\,30\\,if(eq(N\\,2)\\,100\\,140)))""",
+                    "-map","0:v:0","-an","-vf","settb=1/1000,setpts='if(eq(N,0),0,if(eq(N,1),30,if(eq(N,2),100,140)))'",
                     "-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",
-                    "-enc_time_base","1:1000","-fps_mode","passthrough",source.absolutePath)) {
+                    // Supply a final 10 ms packet duration explicitly in the encoder time base.
+                    // MP4 derives earlier durations from the adjacent DTS values (no B frames).
+                    "-bf","0","-enc_time_base","1:1000","-bsf:v","setts=duration=10",
+                    "-video_track_timescale","1000","-fps_mode","passthrough",source.absolutePath)) {
                     repeat(4) { writeMat(frame) }
                 }
                 val (sourcePts,durationUs) = pts(source)
-                assertEquals(listOf(0L,30_000L,100_000L,140_000L),sourcePts.sorted())
+                assertEquals("VFR fixture presentation order",listOf(0L,30_000L,100_000L,140_000L),sourcePts)
+                assertEquals("VFR fixture duration",150_000L,durationUs)
                 val plan = MotionLabTimingContract.plan(sourcePts,durationUs/1000,true,2,durationUs)
                 assertTrue(plan.variableCadence)
+                assertEquals(60.0,plan.outputFps,0.0)
+                assertEquals(9,plan.expectedOutputFrames)
                 MotionLabRawFramePipe.encode(geometry,plan.outputFps,plan.expectedOutputFrames,arrayOf(
                     "-map","0:v:0","-an","-c:v","libx264","-preset","ultrafast",
                     "-pix_fmt","yuv420p","-fps_mode","passthrough",output.absolutePath)) {
