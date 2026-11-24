@@ -119,6 +119,36 @@ class OfficeConverterFidelityTest {
         }
     }
 
+    private fun singleTextWorkbook(value: String): File = createZip(mapOf(
+        "xl/workbook.xml" to """<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Text" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+        "xl/worksheets/sheet1.xml" to """<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>$value</t></is></c></row></sheetData></worksheet>"""
+    ))
+
+    @Test
+    fun unsupportedSpreadsheetGlyphsDoNotOverwriteDestination() = runBlocking {
+        val input = singleTextWorkbook("Invoice বাংলা 42")
+        val destination = File(tempFolder.root, "existing_unicode.pdf")
+        destination.writeText("previous artifact")
+        for (saved in listOf(false, true)) {
+            val failure = runCatching {
+                OfficeConverter().convertXlsxToPdf(input, destination, context, savedPrintLayout = saved)
+            }
+            assertTrue("Unsupported glyphs must not silently disappear", failure.isFailure)
+            assertEquals("previous artifact", destination.readText())
+        }
+    }
+
+    @Test
+    fun supportedWinAnsiSpreadsheetGlyphsSurviveRendering() = runBlocking {
+        val input = singleTextWorkbook("Café €42 – paid")
+        val destination = File(tempFolder.root, "winansi.pdf")
+        OfficeConverter().convertXlsxToPdf(input, destination, context)
+        PDDocument.load(destination).use { doc ->
+            val text = PDFTextStripper().getText(doc)
+            assertTrue(text.contains("Café €42 – paid"))
+        }
+    }
+
     @Test
     fun testXlsxContentWeightedAndMultiLineWrappedToPdf() = runBlocking {
         val sharedStringsXml = """

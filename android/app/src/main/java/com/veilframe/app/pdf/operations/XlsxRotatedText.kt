@@ -30,7 +30,7 @@ internal object XlsxRotatedText {
 
     fun measureLines(lines: List<String>, rotation: Int, font: PDFont, size: Float, lineHeight: Float): Block {
         val w = lines.maxOfOrNull { line ->
-            val clean = line.map { if (it.code in 32..126 || it.code in 160..255) it else ' ' }.joinToString("")
+            val clean = line.replace('\t', ' ')
             try { font.getStringWidth(clean) * size / 1000f }
             catch (_: Exception) { clean.length * size }
         } ?: 0f

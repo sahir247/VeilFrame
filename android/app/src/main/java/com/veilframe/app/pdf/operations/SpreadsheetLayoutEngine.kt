@@ -669,18 +669,9 @@ object SpreadsheetLayoutEngine {
 
     // --- Helper text wrapping & font metrics ---
 
-    private fun sanitizeForFontMetrics(text: String): String {
-        val sb = StringBuilder()
-        for (char in text) {
-            val code = char.code
-            if (code in 32..126 || code in 160..255) {
-                sb.append(char)
-            } else {
-                sb.append(' ')
-            }
-        }
-        return sb.toString()
-    }
+    // Keep WinAnsi glyphs such as currency symbols and typographic punctuation
+    // intact when measuring. Actual drawing rejects unsupported glyphs.
+    private fun sanitizeForFontMetrics(text: String): String = text.replace('\t', ' ')
 
     fun wrapCellText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): List<String> {
         if (maxWidth <= 0f) return listOf(text)

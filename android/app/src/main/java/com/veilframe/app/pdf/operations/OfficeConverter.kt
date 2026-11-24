@@ -1047,7 +1047,7 @@ class OfficeConverter {
                     pdf.addPage(page)
                     PDPageContentStream(pdf, page).use { stream ->
                         stream.beginText(); stream.setFont(fontBold, 12f); stream.newLineAtOffset(30f, 550f)
-                        safeShowText(stream, sheet.name + ": unsupported drawing objects", fontBold); stream.endText()
+                        showSpreadsheetText(stream, sheet.name + ": unsupported drawing objects", fontBold); stream.endText()
                     }
                 }
             }
@@ -1157,7 +1157,7 @@ class OfficeConverter {
                             val cx = x(c) + (layout.colWidths[c] - width)/2f
                             stream.beginText(); stream.setFont(font, titleSize)
                             stream.newLineAtOffset(cx, topY)
-                            safeShowText(stream,label,font); stream.endText()
+                            showSpreadsheetText(stream,label,font); stream.endText()
                         }
                         for (r in rowRange) {
                             checkpoint()
@@ -1167,7 +1167,7 @@ class OfficeConverter {
                             val baseline = y(r) - layout.rowHeights[r]/2f - titleSize/3f
                             stream.beginText(); stream.setFont(font, titleSize)
                             stream.newLineAtOffset(rightEdge-width,baseline)
-                            safeShowText(stream,label,font); stream.endText()
+                            showSpreadsheetText(stream,label,font); stream.endText()
                         }
                     }
                 } finally { stream.restoreGraphicsState() }
@@ -1176,7 +1176,7 @@ class OfficeConverter {
                     stream.beginText(); stream.setFont(font, 8f); stream.newLineAtOffset(plan.left, 5f)
                     val note = if (settings.unsupportedFeatures || sheet.unsupportedConditionalRules > 0 ||
                         sheet.unsupportedDrawings > 0 || sheet.charts.isNotEmpty()) " - some features reconstructed or omitted" else ""
-                    safeShowText(stream, "Approximate saved print layout" + note, font); stream.endText()
+                    showSpreadsheetText(stream, "Approximate saved print layout" + note, font); stream.endText()
                 }
             }
         }
@@ -1280,7 +1280,7 @@ class OfficeConverter {
                     val f = if (bold) PDType1Font.HELVETICA_BOLD else font
                     stream.setNonStrokingColor(0, 0, 0)
                     stream.beginText(); stream.setFont(f, size); stream.newLineAtOffset(x, y)
-                    safeShowText(stream, value, f); stream.endText()
+                    showSpreadsheetText(stream, value, f); stream.endText()
                 }
                 fun color(rgb: Int) { stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
                 fun stroke(rgb: Int) { stream.setStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
@@ -1396,7 +1396,7 @@ class OfficeConverter {
                 fun textAt(s: String, x: Float, y: Float, size: Float = 9f) {
                     stream.setNonStrokingColor(0,0,0)
                     stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
-                    safeShowText(stream,s,font); stream.endText()
+                    showSpreadsheetText(stream,s,font); stream.endText()
                 }
                 textAt(sheet.take(70) + " / XY scatter (cached) " + (panel+1),30f,565f,11f)
                 textAt(chart.title.take(95),30f,545f,13f)
@@ -1471,7 +1471,7 @@ class OfficeConverter {
             fun label(text: String, x: Float, y: Float, size: Float = 10f) {
                 stream.setNonStrokingColor(0,0,0)
                 stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
-                safeShowText(stream,text,font); stream.endText()
+                showSpreadsheetText(stream,text,font); stream.endText()
             }
             fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
             label(sheet.take(70) + " / Cached pie chart", 30f,565f,12f)
@@ -1540,7 +1540,7 @@ class OfficeConverter {
             stream.beginText()
             stream.setFont(fontBold, 12f)
             stream.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
-            safeShowText(stream, "Spreadsheet: ${layout.name}", fontBold)
+            showSpreadsheetText(stream, "Spreadsheet: ${layout.name}", fontBold)
             stream.endText()
             val tableTop = naturalHeight - limits.margin - 20f
             fun rowTop(row: Int) = tableTop - layout.rowY[row]
@@ -1607,7 +1607,7 @@ class OfficeConverter {
                 contentStream.beginText()
                 contentStream.setFont(fontBold, 11f)
                 contentStream.newLineAtOffset(margin, pageH - margin + 10f)
-                safeShowText(contentStream, headerText, fontBold)
+                showSpreadsheetText(contentStream, headerText, fontBold)
                 contentStream.endText()
 
                 // 2. Horizontal Continuation Banners
@@ -1617,7 +1617,7 @@ class OfficeConverter {
                     contentStream.beginText()
                     contentStream.setFont(fontBold, 9f)
                     contentStream.newLineAtOffset(margin, pageH - topOffset)
-                    safeShowText(contentStream, "Continued from $prevColRef <-", fontBold)
+                    showSpreadsheetText(contentStream, "Continued from $prevColRef <-", fontBold)
                     contentStream.endText()
                 }
                 if (tile.colGroup.hasRightContinuation) {
@@ -1627,7 +1627,7 @@ class OfficeConverter {
                     val rightText = "Continues right -> $nextColRef"
                     val textW = try { fontBold.getStringWidth(rightText) / 1000f * 9f } catch (_: Exception) { rightText.length * 5f }
                     contentStream.newLineAtOffset(pageW - margin - textW, pageH - topOffset)
-                    safeShowText(contentStream, rightText, fontBold)
+                    showSpreadsheetText(contentStream, rightText, fontBold)
                     contentStream.endText()
                 }
 
@@ -1637,7 +1637,7 @@ class OfficeConverter {
                     contentStream.beginText()
                     contentStream.setFont(fontBold, 9f)
                     contentStream.newLineAtOffset(margin, margin - 14f)
-                    safeShowText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
+                    showSpreadsheetText(contentStream, "Continues down v Row $nextRowDisplay", fontBold)
                     contentStream.endText()
                 }
 
@@ -1775,7 +1775,7 @@ class OfficeConverter {
                             contentStream.beginText()
                             contentStream.setFont(font, cellSize)
                             contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, sliceLeft, sliceWidth, style), textY)
-                            safeShowText(contentStream, lineText, font)
+                            showSpreadsheetText(contentStream, lineText, font)
                             contentStream.endText()
                             textY -= cellLeading
                         }
@@ -1840,7 +1840,7 @@ class OfficeConverter {
                 contentStream.beginText()
                 contentStream.setFont(font, cellSize)
                 contentStream.newLineAtOffset(spreadsheetTextX(lineText, font, cellSize, cellLeft, cellW, style), textY)
-                safeShowText(contentStream, lineText, font)
+                showSpreadsheetText(contentStream, lineText, font)
                 contentStream.endText()
                 textY -= cellLeading
             }
@@ -1869,7 +1869,7 @@ class OfficeConverter {
                 stream.beginText()
                 stream.setFont(font, size)
                 stream.newLineAtOffset(spreadsheetTextX(line, font, size, -4f, block.unrotatedWidth + 8f, style), baseline)
-                safeShowText(stream, line, font)
+                showSpreadsheetText(stream, line, font)
                 stream.endText()
                 baseline -= lineHeight
             }
@@ -3271,6 +3271,23 @@ class OfficeConverter {
             }
         }
         return sb.toString().replace(Regex("\\s+"), " ")
+    }
+
+    /** XLSX is a content-preserving export, not a best-effort text preview.
+     * Unsupported visible glyphs must abort the staged PDF instead of disappearing. */
+    private fun showSpreadsheetText(
+        stream: PDPageContentStream?,
+        text: String,
+        font: PDFont
+    ) {
+        if (stream == null || text.isEmpty()) return
+        val normalized = text.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
+        try {
+            font.encode(normalized)
+            stream.showText(normalized)
+        } catch (failure: IllegalArgumentException) {
+            throw java.io.IOException("Spreadsheet text contains glyphs unsupported by the PDF renderer; export refused", failure)
+        }
     }
 
     private fun safeShowText(

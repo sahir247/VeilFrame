@@ -1373,3 +1373,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — B03 CFR quantization and serialized grid verification
 
 - Correct ordinary 30 fps ×4 and 60 fps ×2 admission at the 120 fps ceiling, where integer-microsecond source timestamps previously produced slightly excessive floating-point FPS. Snap only CFR periods within one microsecond of an explicit supported boundary; genuinely over-limit inputs still fail. Also correct the 10 fps source boundary. Verify every serialized frame against the requested CFR grid and each adjacent interval with 2 ms tolerance, rejecting cumulative drift and alternating short/long intervals even when frame count and end duration agree. Added boundary, drift, jitter and reordered-packet regressions. VFR input remains resampled to CFR; this is not original VFR output preservation. Exact-head CI and physical-device acceptance pending.
+
+
+### 2026-11-24 — A28 spreadsheet text encoding integrity
+
+- Spreadsheet content, merged/rotated text, headings and reconstructed chart labels previously shared a lossy PDF text helper that substituted spaces for unsupported characters and could swallow a second drawing failure. Replace the XLSX rendering calls with strict font encoding and drawing; a visible unsupported glyph now refuses staged publication rather than silently disappearing. Preserve the actual WinAnsi currency and punctuation in width/rotation metrics. Add full-content/saved-print existing-destination preservation and encodable WinAnsi extraction regressions. This is an integrity refusal, not full Unicode Office rendering; DOCX legacy fallback, font shaping, CJK and complex script support remain separate. CI pending.
