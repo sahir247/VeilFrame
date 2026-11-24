@@ -63,13 +63,15 @@ object AiBundleEngine {
 
     // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
+        // YAML block scalars must be masked before scalar assignment rules consume
+        // the indicator itself. Quoted keys and chomping/indent modifiers are valid YAML.
+        Pattern.compile("""(?im)(?:^|[ \t])["']?(?:password|passwd|api[_-]?key|secret(?:[_-]?key)?|token|private[_-]?key|client[_-]?secret|refresh[_-]?token|access[_-]?token|aws[_-]?(?:secret[_-]?access[_-]?key|session[_-]?token)|db[_-]?password|database[_-]?(?:password|url)|github[_-]?token|openai[_-]?api[_-]?key|stripe[_-]?secret[_-]?key|smtp[_-]?password|redis[_-]?password|access[_-]?key|api[_-]?secret)["']?[ \t]*:[ \t]*[|>](?:[1-9][+-]?|[+-][1-9]?)?[ \t]*(?:#[^\r\n]*)?\r?\n(?:[ \t]+[^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n)++"""),
         // Explicit environment-variable names and short credentials are still credentials.
         Pattern.compile("""(?i)\b(?:aws[_-]?(?:secret[_-]?access[_-]?key|session[_-]?token)|db[_-]?password|database[_-]?password|database[_-]?url|github[_-]?token|gitlab[_-]?token|openai[_-]?api[_-]?key|stripe[_-]?secret[_-]?key|smtp[_-]?password|redis[_-]?password|access[_-]?key|api[_-]?secret)\b["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n]++)*+"|'(?:\\.|[^'\\\r\n]++)*+'|[^\s,;}"']++)"""),
-        Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----"""),
+        Pattern.compile("""(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\z)"""),
         Pattern.compile("""(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9_./+=-]+"""),
         // Match whole escaped quoted values instead of leaving a secret suffix.
         Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth|client[_-]?secret|refresh[_-]?token|private[_-]?key|accountkey)\b["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n]++)*+"|'(?:\\.|[^'\\\r\n]++)*+')"""),
-        Pattern.compile("""(?i)\b(?:password|passwd|api[_-]?key|secret|token|private[_-]?key|client[_-]?secret)\b\s*[:=]\s*[|>]\s*\r?\n(?:[ \t]+[^\r\n]*(?:\r?\n|$))++"""),
         Pattern.compile("""\b(?:glpat-[A-Za-z0-9_-]{15,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{12,})\b"""),
         Pattern.compile("""(?i)\b(?:accountkey|client[_-]?secret|refresh[_-]?token|private[_-]?token|aws[_-]?secret[_-]?access[_-]?key)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
         Pattern.compile("""(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|token|password|passwd|authorization|auth)\b["']?\s*[:=]\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;}"']+)"""),
@@ -98,6 +100,8 @@ object AiBundleEngine {
                 "google-services.json", "secrets.properties", "secrets.json", "local.settings.json",
                 "application-default-credentials.json", "application_default_credentials.json") ||
             lower.startsWith("secrets.") || lower.endsWith(".tfstate") || lower.endsWith(".tfstate.backup") ||
+            lower.endsWith(".tfvars") || lower.endsWith(".tfvars.json") ||
+            lower.startsWith("service-account-") && lower.endsWith(".json") ||
             lower.substringAfterLast('.', "") in setOf("pem", "key", "p12", "pfx", "jks", "keystore", "kdbx")
     }
 
@@ -122,8 +126,21 @@ object AiBundleEngine {
     private const val MAX_DIRECTORY_DEPTH = 128
     private const val MAX_ENTRIES = 50_000
     private const val MAX_BUNDLE_BYTES = 32L * 1024 * 1024
+    private const val MAX_RECHECK_BYTES = 64L * 1024 * 1024
     private const val MAX_PATH_CHARS = 4096
     private class InputTooLarge : IOException("File exceeds 500 KiB input limit")
+    internal data class ContentStamp(val size: Int, val sha256: String)
+    private data class ReadText(val text: String, val stamp: ContentStamp)
+    private data class IncludedSource(val uri: Uri, val stamp: ContentStamp)
+
+    internal fun contentStamp(bytes: ByteArray): ContentStamp {
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        return ContentStamp(bytes.size, hash.joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 255) })
+    }
+
+    internal fun requireUnchangedContent(expected: ContentStamp, observed: ContentStamp) {
+        if (expected != observed) throw IOException("Included source content changed during generation; review the folder and regenerate")
+    }
     internal data class BundleInput(val uri: String, val path: String, val size: Long, val directory: Boolean,
         val lastModified: Long = -1L)
 
@@ -267,6 +284,9 @@ object AiBundleEngine {
         var omissionBytes = 0L
         val includedPaths = HashSet<String>()
         val excludedIdentities = ExcludedDocumentIdentities()
+        val includedSources = ArrayList<IncludedSource>()
+        var recheckBytes = 0L
+        var generationInventoryFingerprint: String? = null
         fun safePath(path: String): String = if (config.maskSecrets) maskSecrets(path) else path
         val exportedRoot = safePath(rootName).take(MAX_PATH_CHARS)
         try {
@@ -299,7 +319,7 @@ object AiBundleEngine {
                         if (ext in BINARY_EXTENSIONS) { omit(path, "binary file type"); return }
                         if (config.excludeTests && isTestFile(name, path)) { omit(path, "test filter"); return }
                         if (reportedSize > MAX_FILE_BYTES) { omit(path, "input exceeds 500 KiB"); return }
-                        var content = try {
+                        val source = try {
                             readBoundedText(context.contentResolver, uri)
                         } catch (e: InputTooLarge) {
                             omit(path, "input exceeds 500 KiB"); return
@@ -310,6 +330,7 @@ object AiBundleEngine {
                         } catch (e: SecurityException) {
                             omit(path, "permission denied"); return
                         }
+                        var content = source.text
                         if (content.isBlank()) { omit(path, "empty file"); return }
                         if (config.maskSecrets) content = maskSecrets(content)
                         val beforeCondense = content
@@ -328,6 +349,14 @@ object AiBundleEngine {
                         if (exact && candidateTokens > sectionTokenBudget - sectionTokens) {
                             omit(path, "${config.tokenEncoding} section budget"); return
                         }
+                        // Keep only bounded source identities/digests, never raw copies.
+                        // Condensing or masking can make admitted raw bytes much larger
+                        // than the serialized bundle, so bound the verification workload too.
+                        if (source.stamp.size.toLong() > MAX_RECHECK_BYTES - recheckBytes) {
+                            throw IOException("Included source verification exceeds 64 MiB; narrow the selection")
+                        }
+                        recheckBytes += source.stamp.size
+                        includedSources.add(IncludedSource(uri, source.stamp))
                         sectionTokens += candidateTokens
                         writer.write(separator)
                         writer.write(section)
@@ -339,6 +368,7 @@ object AiBundleEngine {
                     }
                     if (root != null) {
                         val inventory = enumerateInventory(context, root.uri, config.maxDepth)
+                        generationInventoryFingerprint = inventory.fingerprint
                         if (config.expectedInventoryFingerprint != null &&
                             inventory.fingerprint != config.expectedInventoryFingerprint) {
                             throw IOException("Folder inventory changed since selection; review files again")
@@ -360,6 +390,7 @@ object AiBundleEngine {
                                 excludedIdentities.exclude(entry.uri)
                                 omit(entry.path, "potential credential container (masking enabled)")
                             } else if (name.startsWith(".") && name != ".env.example") {
+                                excludedIdentities.exclude(entry.uri)
                                 omit(entry.path, "hidden entry")
                             } else candidates.add(entry)
                         }
@@ -433,6 +464,18 @@ object AiBundleEngine {
             val cc = currentCoroutineContext()
             val wholeTokens = if (exact) BundleTokenizer.verify(temp, config.tokenBudget, config.tokenEncoding) { cc.ensureActive() }
                 else finalBytes / 4 + if (finalBytes % 4 == 0L) 0 else 1
+            // The file-name review is metadata-only. Before publishing, re-read
+            // each admitted source and compare its raw bytes, then check the
+            // inventory again. This catches same-size/mtime-stable mutations
+            // during generation; it is not a transactional provider snapshot.
+            for (source in includedSources) {
+                cc.ensureActive()
+                val observed = readBoundedText(context.contentResolver, source.uri).stamp
+                requireUnchangedContent(source.stamp, observed)
+            }
+            if (root != null && enumerateInventory(context, root.uri, config.maxDepth).fingerprint != generationInventoryFingerprint) {
+                throw IOException("Folder inventory changed during generation; review files again")
+            }
             cc.ensureActive()
             Files.move(temp.toPath(), outputFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             return BundleResult(files, included, wholeTokens, outputFile.absolutePath, omitted,
@@ -443,7 +486,7 @@ object AiBundleEngine {
         }
     }
 
-    private suspend fun readBoundedText(resolver: ContentResolver, uri: Uri): String {
+    private suspend fun readBoundedText(resolver: ContentResolver, uri: Uri): ReadText {
         val input = resolver.openInputStream(uri) ?: throw IOException("Cannot read input")
         val bytes = input.use { stream ->
             val out = ByteArrayOutputStream()
@@ -459,10 +502,11 @@ object AiBundleEngine {
             out.toByteArray()
         }
         if (bytes.any { it == 0.toByte() }) throw IOException("Binary content")
-        return Charsets.UTF_8.newDecoder()
+        val text = Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT)
             .decode(ByteBuffer.wrap(bytes)).toString()
+        return ReadText(text, contentStamp(bytes))
     }
 
     private const val MAX_EXPLICIT_EXCLUSIONS = 2000

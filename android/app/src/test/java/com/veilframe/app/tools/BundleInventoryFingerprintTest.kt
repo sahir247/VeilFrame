@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BundleInventoryFingerprintTest {
+    @Test fun byteIdentityDetectsSameLengthContentMutationWithoutProviderMetadata() {
+        val before = AiBundleEngine.contentStamp("value=A".toByteArray())
+        val unchanged = AiBundleEngine.contentStamp("value=A".toByteArray())
+        val after = AiBundleEngine.contentStamp("value=B".toByteArray())
+        assertEquals(before.size, after.size)
+        assertEquals(before, unchanged)
+        AiBundleEngine.requireUnchangedContent(before, unchanged)
+        assertThrows(java.io.IOException::class.java) {
+            AiBundleEngine.requireUnchangedContent(before, after)
+        }
+    }
+
     @Test fun detectsIdentityPathSizeAndDirectoryChangesBeforeTransfer() {
         val file = AiBundleEngine.BundleInput("content://provider/1", "src/a.kt", 120, false, 1732200000000L)
         val sibling = AiBundleEngine.BundleInput("content://provider/2", "src/b.kt", 120, false)

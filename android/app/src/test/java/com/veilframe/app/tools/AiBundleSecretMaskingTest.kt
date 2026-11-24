@@ -6,6 +6,31 @@ import org.junit.Test
 
 class AiBundleSecretMaskingTest {
     @Test
+    fun yamlBlockScalarsAreMaskedBeforeSingleLineAssignments() {
+        val cases = listOf(
+            "AWS_SECRET_ACCESS_KEY: |\n  example-first\n  example-second\n",
+            "\"client_secret\": >- # folded\n  example-first\n  example-second\n",
+            "password: |2-\n  example-first\n  example-second\n"
+        )
+        for (input in cases) {
+            val masked = AiBundleEngine.maskSecrets(input + "ordinary: public\n")
+            assertTrue(masked.contains("[REDACTED_SECRET]"))
+            assertFalse(masked.contains("example-first"))
+            assertFalse(masked.contains("example-second"))
+            assertTrue(masked.contains("ordinary: public"))
+        }
+    }
+
+    @Test
+    fun incompletePrivateKeyAndAdditionalCredentialContainersAreConservative() {
+        val input = "-----BEGIN OPENSSH PRIVATE KEY-----\nexample-incomplete-key"
+        assertFalse(AiBundleEngine.maskSecrets(input).contains("example-incomplete-key"))
+        assertTrue(AiBundleEngine.isSensitiveFileName("production.tfvars"))
+        assertTrue(AiBundleEngine.isSensitiveFileName("production.tfvars.json"))
+        assertTrue(AiBundleEngine.isSensitiveFileName("service-account-prod.json"))
+    }
+
+    @Test
     fun masksRecognizedModernAndStructuredCredentials() {
         val examples = listOf(
             "password = \"short!9\"",

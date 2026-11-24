@@ -26,7 +26,7 @@ internal object BundleFileSelectionDialog {
             setPadding(pad, 0, pad, 0)
         }
         val description = TextView(activity).apply {
-            text = "Check files to exclude before reading contents. Automatic filters still apply; excluded names may appear in the omission report."
+            text = "Check files to exclude before reading contents. This reviews file names, not bytes. Included contents are checked again before generation completes; review the final bundle before sharing. Automatic filters still apply; excluded names may appear in the omission report."
         }
         root.addView(description)
         val search = EditText(activity).apply {
