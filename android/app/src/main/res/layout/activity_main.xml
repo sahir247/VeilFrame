@@ -450,7 +450,6 @@
         app:elevation="0dp"
         app:itemIconTint="@color/selector_vf_navigation_item"
         app:itemTextColor="@color/selector_vf_navigation_item"
-        app:itemActiveIndicatorColor="?attr/colorSecondaryContainer"
         app:menu="@menu/bottom_nav_menu" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
@@ -463,7 +462,6 @@
         app:elevation="0dp"
         app:itemIconTint="@color/selector_vf_navigation_item"
         app:itemTextColor="@color/selector_vf_navigation_item"
-        app:itemActiveIndicatorColor="?attr/colorSecondaryContainer"
         app:menu="@menu/bottom_nav_menu" />
 
     <!-- 8. SETTINGS SLIDE-OVER OVERLAY                                    -->
