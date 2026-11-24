@@ -12,6 +12,58 @@ import org.junit.Test
 
 class PdfActiveContentSanitizerTest {
     private fun n(value: String) = COSName.getPDFName(value)
+
+    @Test fun prunesEmptyNameTreeBranchesAndRepairsAllAncestorLimits() {
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            fun leaf(key: String, script: Boolean) = COSDictionary().apply {
+                val text = com.tom_roush.pdfbox.cos.COSString(key)
+                setItem(n("Names"), COSArray().apply {
+                    add(text)
+                    add(COSDictionary().apply {
+                        if (script) { setItem(n("S"), n("JavaScript")); setString(n("JS"), "fixture") }
+                        else setString(n("Value"), "keep")
+                    })
+                })
+                setItem(n("Limits"), COSArray().apply { add(text); add(text) })
+            }
+            val branch = COSDictionary().apply {
+                setItem(n("Kids"), COSArray().apply { add(leaf("a",true)); add(leaf("b",false)) })
+                setItem(n("Limits"), COSArray().apply {
+                    add(com.tom_roush.pdfbox.cos.COSString("a")); add(com.tom_roush.pdfbox.cos.COSString("b"))
+                })
+            }
+            val root = COSDictionary().apply { setItem(n("Kids"), COSArray().apply { add(branch); add(leaf("c",false)) }) }
+            doc.documentCatalog.cosObject.setItem(n("Names"), COSDictionary().apply { setItem(n("Custom"),root) })
+            PdfActiveContentSanitizer.remove(doc,true,false)
+            val limits = branch.getDictionaryObject(n("Limits")) as COSArray
+            assertEquals("b",(limits.getObject(0) as com.tom_roush.pdfbox.cos.COSString).string)
+            assertEquals(1,(branch.getDictionaryObject(n("Kids")) as COSArray).size())
+            PdfActiveContentSanitizer.verify(doc,true,false)
+        }
+    }
+
+    @Test fun noRequestedRemovalDoesNotTraverseAndOpaqueMultimediaFailsClosed() {
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            val media = COSDictionary().apply { setItem(n("Subtype"),n("RichMedia")) }
+            doc.documentCatalog.cosObject.setItem(n("MediaFixture"),media)
+            PdfActiveContentSanitizer.remove(doc,false,false,maxVisitedNodes=1)
+            assertThrows(IOException::class.java) { PdfActiveContentSanitizer.remove(doc,true,false) }
+        }
+    }
+
+    @Test fun relatedFileSpecificationIsNotLeftReachable() {
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            doc.documentCatalog.cosObject.setItem(n("RelatedFixture"),COSDictionary().apply {
+                setItem(n("Type"),n("Filespec"))
+                setItem(n("RF"),COSDictionary())
+            })
+            PdfActiveContentSanitizer.remove(doc,false,true)
+            assertNull(doc.documentCatalog.cosObject.getItem(n("RelatedFixture")))
+        }
+    }
     @Test fun loadedRewriteRemovesScriptSentinelAndPreservesNameTreePairs() {
         val marker = "VeilFramePrivateScriptPayload_37601"
         val source = PDDocument().use { document ->

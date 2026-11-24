@@ -18,8 +18,11 @@ class PdfFlattenPreviewSizingTest {
     }
 
     @Test
-    fun invalidPageDimensionsUseSafeDefault() {
-        assertEquals(72f, PdfFlattenPreviewSizing.dpi(0f, 792f), 0f)
-        assertEquals(72f, PdfFlattenPreviewSizing.dpi(612f, -1f), 0f)
+    fun invalidPageDimensionsAreRejectedBeforeRasterization() {
+        for ((w,h) in listOf(0f to 792f, 612f to -1f, Float.NaN to 792f)) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                PdfFlattenPreviewSizing.dpi(w,h)
+            }
+        }
     }
 }
