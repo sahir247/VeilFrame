@@ -4,6 +4,12 @@ plugins {
     id("com.android.application")
 }
 
+// Explicit opt-in for the native x86_64 instrumentation build. The normal
+// debug and production release builds remain arm64-v8a.
+val cvEmulatorX86 = providers.gradleProperty("cvEmulatorX86")
+    .map { it.toBooleanStrict() }.orElse(false).get()
+val cvDebugAbi = if (cvEmulatorX86) "x86_64" else "arm64-v8a"
+
 android {
     namespace = "com.veilframe.app"
     // AndroidX Core 1.19.1 requires API 37; use the explicit 37.0 platform hash.
@@ -14,7 +20,7 @@ android {
         }
     }
 
-    val supportedAbis = setOf("arm64-v8a")
+    val supportedAbis = setOf(cvDebugAbi)
     val customAbis = (project.findProperty("targetAbi") as String?)
         ?.split(",")
         ?.map { it.trim() }
@@ -26,7 +32,7 @@ android {
         if (unsupported.isNotEmpty()) {
             throw org.gradle.api.GradleException(
                 "Unsupported targetAbi: ${unsupported.joinToString()}. " +
-                "VeilFrame NCNN upscaler subsystem strictly supports arm64-v8a."
+                "This build requires $cvDebugAbi; production releases support arm64-v8a only."
             )
         }
     }
@@ -49,7 +55,7 @@ android {
 
         ndk {
             abiFilters.clear()
-            abiFilters.add("arm64-v8a")
+            abiFilters.add(cvDebugAbi)
         }
     }
 
@@ -106,10 +112,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Debug targets arm64-v8a exclusively
+            // Normal debug is ARM64; only the explicit CV test build is x86_64.
             ndk {
                 abiFilters.clear()
-                abiFilters.add("arm64-v8a")
+                abiFilters.add(cvDebugAbi)
             }
         }
     }
@@ -266,6 +272,10 @@ kotlin {
 }
 
 androidComponents {
+    // An opt-in emulator configuration must never produce a release APK.
+    if (cvEmulatorX86) {
+        beforeVariants(selector().withBuildType("release")) { it.enable = false }
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
     }
