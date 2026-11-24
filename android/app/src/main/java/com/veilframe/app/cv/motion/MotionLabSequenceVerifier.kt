@@ -1,6 +1,7 @@
 package com.veilframe.app.cv.motion
 
 import java.io.File
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -21,7 +22,7 @@ object MotionLabSequenceVerifier {
         } ?: throw IllegalStateException("Motion sequence cannot be read")
         check(frames.size == expected) { "Motion sequence has extra or missing files" }
         for (i in 0 until expected) {
-            val frame = File(directory, "o_%05d.jpg".format(i))
+            val frame = File(directory, String.format(Locale.ROOT, "o_%05d.jpg", i))
             check(frame.isFile && frame.length() > 0L) {
                 "Motion sequence has a missing/empty frame at index $i"
             }

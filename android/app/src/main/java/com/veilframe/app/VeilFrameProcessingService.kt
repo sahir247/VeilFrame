@@ -503,11 +503,14 @@ class VeilFrameProcessingService : Service() {
 
             if (inputUri.scheme == "content" || inputUri.scheme == "file") {
                 contentResolver.openInputStream(inputUri)?.use { input ->
-                    inFile.outputStream().use { output -> input.copyTo(output) }
+                    MotionLabDiskBudget.stageInput(input, inFile, workDir)
                 } ?: throw IllegalStateException("Cannot open input video URI")
             } else if (inputPath.isNotEmpty()) {
                 val resolvedPath = if (inputPath.startsWith("file://")) inputPath.removePrefix("file://") else inputPath
-                File(resolvedPath).copyTo(inFile, overwrite = true)
+                val source = File(resolvedPath)
+                check(source.isFile && source.length() > 0) { "Video source unavailable" }
+                MotionLabDiskBudget.requireHeadroom(workDir, source.length())
+                source.inputStream().use { MotionLabDiskBudget.stageInput(it, inFile, workDir) }
             } else {
                 throw IllegalStateException("No valid input video specified")
             }
@@ -538,25 +541,29 @@ class VeilFrameProcessingService : Service() {
             updateNotificationProgress("Extracting video frames…", 15)
             jobCallback?.onProgress(jobId, 15, "Extracting frames…")
 
-            val extractSession = executeOwnedFfmpeg(
-                arrayOf(
+            val extractSession = MotionLabDiskBudget.monitor(
+                check = { MotionLabDiskBudget.requireHeadroom(workDir) }
+            ) {
+                executeOwnedFfmpeg(arrayOf(
                     "-y",
                     "-i", inFile.absolutePath,
                     "-map", "0:v:0", "-an",
                     "-fps_mode", "passthrough",
                     "-q:v", "2",
                     "${framesDir.absolutePath}/f_%05d.jpg"
-                )
-            )
+                ))
+            }
             if (!ReturnCode.isSuccess(extractSession.returnCode)) {
                 throw IllegalStateException("Frame extraction failed (rc=${extractSession.returnCode})")
             }
             MotionLabDiskBudget.requireHeadroom(workDir)
 
-            val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && (f.name.endsWith(".jpg") || f.name.endsWith(".png")) }
+            val frames = framesDir.listFiles { f -> f.name.matches(Regex("f_[0-9]{5}\\.jpg")) }
                 ?.sortedBy { it.name } ?: emptyList()
-            check(frames.size == timing.sourceFrames) {
-                "Decoded ${frames.size} frames for ${timing.sourceFrames} video timestamps; refusing altered input"
+            check(frames.size == timing.sourceFrames && frames.withIndex().all { (index, frame) ->
+                frame.name == String.format(Locale.ROOT, "f_%05d.jpg", index + 1) && frame.isFile && frame.length() > 0
+            }) {
+                "Decoded frame sequence does not match ${timing.sourceFrames} video timestamps; refusing altered input"
             }
 
             var useRife = false
@@ -633,10 +640,10 @@ class VeilFrameProcessingService : Service() {
                 prevMat = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
 
                 if (useRife && prevBmp != null) {
-                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                    val outFile = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
                     stageMotionSourceFrame(frames[0], outFile, prevBmp)
                 } else if (prevMat != null && !prevMat.empty()) {
-                    MotionLabSourceFrameStage.stage(frames[0], File(outDir, "o_%05d.jpg".format(outIdx++)))
+                    MotionLabSourceFrameStage.stage(frames[0], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
                 } else {
                     throw IllegalStateException("Initial video frame unreadable")
                 }
@@ -667,6 +674,7 @@ class VeilFrameProcessingService : Service() {
                     try {
                         for (k in 1 until effectiveMultiplier) {
                             kotlin.coroutines.coroutineContext.ensureActive()
+                            MotionLabDiskBudget.requireHeadroom(workDir)
                             val t = k.toDouble() / effectiveMultiplier
                             var interpolatedSuccessfully = false
 
@@ -678,7 +686,7 @@ class VeilFrameProcessingService : Service() {
                                     null
                                 }
                                 if (synthBmp != null) {
-                                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
+                                    val outFile = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
                                     try {
                                         saveMotionBitmap(synthBmp, outFile)
                                         interpolatedSuccessfully = true
@@ -713,31 +721,39 @@ class VeilFrameProcessingService : Service() {
                                     throw IllegalStateException("Both RIFE and optical flow failed at frame ${i + 1} (t=$t)", e)
                                 }
                                 try {
-                                    saveMotionMat(result.frame, File(outDir, "o_%05d.jpg".format(outIdx++)))
+                                    saveMotionMat(result.frame, File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
                                     if (useRife) opticalFlowFallbackFrames++
                                 } finally {
                                     result.release()
                                 }
                             }
                         }
+                        // Publication belongs to the success path. Transfer ownership
+                        // only after staging succeeds, never from a finally block.
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        MotionLabDiskBudget.requireHeadroom(workDir)
+                        if (useRife && curBmp != null) {
+                            stageMotionSourceFrame(frames[i], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)), curBmp)
+                            prevBmp?.recycle()
+                            prevBmp = curBmp
+                            curBmp = null
+                        } else if (curMat != null) {
+                            MotionLabSourceFrameStage.stage(frames[i], File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++)))
+                            prevMat?.release()
+                            prevMat = curMat
+                            curMat = null
+                        } else {
+                            error("Missing current motion frame")
+                        }
                     } finally {
-                        // Release cached dense native flow even if a later RIFE/
-                        // JPEG/optical-flow operation throws or gets cancelled.
                         pairFlows?.release()
                         fallbackA?.release()
                         fallbackB?.release()
-                        if (useRife && curBmp != null) {
-                            stageMotionSourceFrame(frames[i], File(outDir, "o_%05d.jpg".format(outIdx++)), curBmp)
-                            prevBmp?.recycle()
-                            prevBmp = curBmp
-                        } else if (curMat != null) {
-                            MotionLabSourceFrameStage.stage(frames[i], File(outDir, "o_%05d.jpg".format(outIdx++)))
-                            prevMat?.release()
-                            prevMat = curMat
-                        }
+                        curBmp?.recycle()
+                        curMat?.release()
                     }
 
-                    if (i % 16 == 0) MotionLabDiskBudget.requireHeadroom(workDir)
+                    MotionLabDiskBudget.requireHeadroom(workDir)
                     val synthPct = 25 + ((i.toFloat() / frames.size.toFloat()) * 60f).toInt().coerceIn(0, 60)
                     updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
                     jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
@@ -754,12 +770,12 @@ class VeilFrameProcessingService : Service() {
             // Each source frame occupies one full CFR presentation interval, including
             // the last. Tail repeats are legitimate final-frame hold, not fallback
             // duplicates for failed neural or optical-flow interpolation.
-            val lastOutput = File(outDir, "o_%05d.jpg".format(outIdx - 1))
+            val lastOutput = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx - 1))
             for (tail in 1 until effectiveMultiplier) {
                 kotlin.coroutines.coroutineContext.ensureActive()
-                val target = File(outDir, "o_%05d.jpg".format(outIdx++))
-                lastOutput.copyTo(target)
-                check(target.length() > 0L) { "Motion Lab failed to finish the final frame interval" }
+                val target = File(outDir, String.format(Locale.ROOT, "o_%05d.jpg", outIdx++))
+                MotionLabDiskBudget.requireHeadroom(workDir)
+                MotionLabSourceFrameStage.stage(lastOutput, target)
             }
             requireMotionSequenceComplete(frames.size, effectiveMultiplier, outDir, outIdx)
             MotionLabDiskBudget.requireHeadroom(workDir)
@@ -781,8 +797,13 @@ class VeilFrameProcessingService : Service() {
             val stage = File(destFile.parentFile, ".motion_${UUID.randomUUID()}.mp4")
             stagedOutput = stage
 
-            val encodeSession = executeOwnedFfmpeg(
-                arrayOf(
+            val encodeSession = MotionLabDiskBudget.monitor(
+                check = {
+                    MotionLabDiskBudget.requireHeadroom(workDir)
+                    MotionLabDiskBudget.requireHeadroom(requireNotNull(stage.parentFile))
+                }
+            ) {
+                executeOwnedFfmpeg(arrayOf(
                     "-y",
                     "-framerate", framerateStr,
                     "-i", "${outDir.absolutePath}/o_%05d.jpg",
@@ -796,8 +817,8 @@ class VeilFrameProcessingService : Service() {
                     "-c:a", "copy",
                     "-t", String.format(Locale.US, "%.3f", durationMs / 1000.0),
                     stage.absolutePath
-                )
-            )
+                ))
+            }
             if (!ReturnCode.isSuccess(encodeSession.returnCode) || !stage.isFile || stage.length() == 0L) {
                 throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
             }
