@@ -6,7 +6,6 @@ import com.veilframe.app.media.CompressionResult
 import com.veilframe.app.media.ImageEditState
 import com.veilframe.app.media.ImageOutputConfig
 import com.veilframe.app.media.metadata.ImageMetadataWriter
-import com.veilframe.app.privacy.ImageMetadataSanitizer
 import java.io.File
 import java.util.Locale
 
@@ -29,17 +28,20 @@ object ImageCompressionEngine {
         outputConfig: ImageOutputConfig,
         processedBitmap: Bitmap
     ): CompressionResult {
+        var workingBmp = processedBitmap
+        var tempProbeFile: File? = null
+        var committed = false
         return try {
             outFile.parentFile?.mkdirs()
-            if (outFile.exists()) outFile.delete()
+            if (outFile.exists()) check(outFile.delete()) { "Cannot replace old encoded output" }
 
             val targetFormat = ImageFormatEncoder.Format.fromString(outputConfig.format)
             val targetSizeKb = outputConfig.targetSizeKb ?: 250
             val isTargetSizeMode = outputConfig.compressionMode == "target_size" && targetSizeKb > 0
             val targetBytes = targetSizeKb.toLong() * 1024L
 
-            var workingBmp = processedBitmap
-            val tempProbeFile = File(outFile.parentFile, "probe_${System.currentTimeMillis()}.${targetFormat.extension}")
+            val probe = File.createTempFile("vf_probe_", ".${targetFormat.extension}", outFile.parentFile)
+            tempProbeFile = probe
 
             if (isTargetSizeMode) {
                 var bestFileUnderTarget = false
@@ -50,10 +52,10 @@ object ImageCompressionEngine {
                     var high = 95
                     for (iter in 0 until 8) {
                         val mid = (low + high) / 2
-                        tempProbeFile.delete()
-                        val ok = ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, mid)
-                        if (ok && tempProbeFile.exists() && tempProbeFile.length() <= targetBytes) {
-                            tempProbeFile.copyTo(outFile, overwrite = true)
+                        probe.delete()
+                        val ok = ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, mid)
+                        if (ok && ImageContainerContract.matches(probe, targetFormat) && probe.length() <= targetBytes) {
+                            probe.copyTo(outFile, overwrite = true)
                             bestFileUnderTarget = true
                             optimalQuality = mid
                             low = mid + 1 // try higher quality
@@ -68,21 +70,23 @@ object ImageCompressionEngine {
                 if (!bestFileUnderTarget || (outFile.exists() && outFile.length() > targetBytes) || !outFile.exists()) {
                     var scale = 0.85f
                     for (downscaleAttempt in 0 until 6) {
-                        val newW = (workingBmp.width * scale).toInt().coerceAtLeast(32)
-                        val newH = (workingBmp.height * scale).toInt().coerceAtLeast(32)
+                        // Every trial derives from the original processed pixels rather than
+                        // successively resampling an already degraded image.
+                        val newW = (processedBitmap.width * scale).toInt().coerceIn(1, processedBitmap.width)
+                        val newH = (processedBitmap.height * scale).toInt().coerceIn(1, processedBitmap.height)
                         val downscaled = try {
-                            Bitmap.createScaledBitmap(workingBmp, newW, newH, true)
+                            Bitmap.createScaledBitmap(processedBitmap, newW, newH, true)
                         } catch (_: Exception) { null }
 
                         if (downscaled != null) {
-                            if (workingBmp != processedBitmap) workingBmp.recycle()
+                            if (workingBmp !== processedBitmap && workingBmp !== downscaled) workingBmp.recycle()
                             workingBmp = downscaled
 
-                            tempProbeFile.delete()
+                            probe.delete()
                             val probeQ = if (targetFormat.supportsQuality) 30 else 100
-                            val ok = ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, probeQ)
-                            if (ok && tempProbeFile.exists() && tempProbeFile.length() <= targetBytes) {
-                                tempProbeFile.copyTo(outFile, overwrite = true)
+                            val ok = ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, probeQ)
+                            if (ok && ImageContainerContract.matches(probe, targetFormat) && probe.length() <= targetBytes) {
+                                probe.copyTo(outFile, overwrite = true)
                                 bestFileUnderTarget = true
                                 break
                             }
@@ -91,17 +95,14 @@ object ImageCompressionEngine {
                     }
                 }
 
-                tempProbeFile.delete()
+                probe.delete()
 
                 if (!bestFileUnderTarget || !outFile.exists() || outFile.length() > targetBytes) {
                     // Try one final minimum encode to report actual smallest achievable size
-                    tempProbeFile.delete()
-                    ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, 15)
-                    val minBytes = if (tempProbeFile.exists()) tempProbeFile.length() else workingBmp.byteCount.toLong()
-                    tempProbeFile.delete()
-                    if (workingBmp != processedBitmap) {
-                        try { workingBmp.recycle() } catch (_: Exception) {}
-                    }
+                    probe.delete()
+                    ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, 15)
+                    val minBytes = if (probe.exists()) probe.length() else workingBmp.byteCount.toLong()
+                    probe.delete()
                     val formattedMin = if (minBytes < 1024) "$minBytes B" else if (minBytes < 1024 * 1024) "${minBytes / 1024} KB" else String.format(Locale.US, "%.1f MB", minBytes / (1024.0 * 1024.0))
                     return CompressionResult(
                         success = false,
@@ -112,19 +113,22 @@ object ImageCompressionEngine {
                 }
             } else {
                 // Quality mode: direct encode
-                ImageFormatEncoder.encodeImage(workingBmp, outFile, targetFormat, outputConfig.quality)
+                check(ImageFormatEncoder.encodeImage(workingBmp, outFile, targetFormat, outputConfig.quality)) {
+                    "Encoder failed for ${targetFormat.displayName}"
+                }
             }
 
-            if (workingBmp != processedBitmap) {
-                try { workingBmp.recycle() } catch (_: Exception) {}
+            check(ImageContainerContract.matches(outFile, targetFormat)) {
+                "Encoder output is not the requested ${targetFormat.displayName} container"
             }
-
-            // Metadata handling
-            if (editState.stripExif && outFile.exists()) {
-                ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
-            } else if (!editState.stripExif && outFile.exists() && targetFormat == ImageFormatEncoder.Format.JPEG) {
-                ImageMetadataWriter.applyMetadata(outFile, editState)
+            // This is a fresh pixel encode, never a source-file copy. Do not run the
+            // generic EXIF scrubber's format-changing pixel re-encode fallback.
+            // Only explicitly requested custom metadata is written to supported JPEG.
+            if (!editState.stripExif && ImageMetadataWriter.hasCustomTags(editState)) {
+                check(targetFormat == ImageFormatEncoder.Format.JPEG) { "Custom EXIF is supported only for JPEG export" }
+                check(ImageMetadataWriter.applyMetadata(outFile, editState)) { "Requested EXIF metadata could not be written" }
             }
+            check(ImageContainerContract.matches(outFile, targetFormat)) { "Metadata operation changed the requested image container" }
 
             val targetBytesLimit = if (isTargetSizeMode) targetSizeKb.toLong() * 1024L else Long.MAX_VALUE
             val isSuccess = outFile.exists() && outFile.length() > 0L && outFile.length() <= targetBytesLimit
@@ -132,6 +136,7 @@ object ImageCompressionEngine {
                 val outSize = outFile.length()
                 val origSize = srcFile.length()
                 val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
+                committed = true
                 CompressionResult(
                     success = true,
                     outputPath = outFile.absolutePath,
@@ -165,6 +170,10 @@ object ImageCompressionEngine {
                 savingsPercent = 0.0,
                 error = e.message ?: "Unknown compression error"
             )
+        } finally {
+            if (workingBmp !== processedBitmap && !workingBmp.isRecycled) workingBmp.recycle()
+            tempProbeFile?.delete()
+            if (!committed) outFile.delete()
         }
     }
 

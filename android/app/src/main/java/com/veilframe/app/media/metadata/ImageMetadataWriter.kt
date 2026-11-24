@@ -14,17 +14,15 @@ object ImageMetadataWriter {
 
     private const val TAG = "VeilFrame.ImageMetadataWriter"
 
+    fun hasCustomTags(state: ImageEditState): Boolean =
+        state.exifMake.isNotBlank() || state.exifModel.isNotBlank() ||
+            state.exifSoftware.isNotBlank() || state.exifDateTime.isNotBlank() || state.exifGps.isNotBlank()
+
     fun applyMetadata(file: File, state: ImageEditState): Boolean {
         if (!file.exists()) return false
         if (state.stripExif) return true // Handled by sanitization path
 
-        val hasCustomTags = state.exifMake.isNotBlank() ||
-                state.exifModel.isNotBlank() ||
-                state.exifSoftware.isNotBlank() ||
-                state.exifDateTime.isNotBlank() ||
-                state.exifGps.isNotBlank()
-
-        if (!hasCustomTags) return true
+        if (!hasCustomTags(state)) return true
 
         return try {
             val exif = ExifInterface(file.absolutePath)
@@ -43,13 +41,13 @@ object ImageMetadataWriter {
             }
             if (state.exifGps.isNotBlank()) {
                 val parts = state.exifGps.split(",")
-                if (parts.size == 2) {
-                    val lat = parts[0].trim().toDoubleOrNull()
-                    val lon = parts[1].trim().toDoubleOrNull()
-                    if (lat != null && lon != null) {
-                        exif.setLatLong(lat, lon)
-                    }
+                require(parts.size == 2) { "GPS requires latitude, longitude" }
+                val lat = parts[0].trim().toDoubleOrNull()
+                val lon = parts[1].trim().toDoubleOrNull()
+                require(lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
+                    "Invalid GPS coordinates"
                 }
+                exif.setLatLong(lat, lon)
             }
 
             exif.saveAttributes()
