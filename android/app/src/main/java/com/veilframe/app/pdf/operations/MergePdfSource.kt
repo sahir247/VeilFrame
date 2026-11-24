@@ -54,7 +54,7 @@ internal suspend fun loadMergePdf(context: Context, uri: Uri): LoadedMergePdf {
 
                 override fun skip(count: Long): Long = throw IOException("Unexpected PDF source skip")
                 override fun markSupported(): Boolean = false
-                override fun reset() = throw IOException("Unexpected PDF source reset")
+                override fun reset(): Unit = throw IOException("Unexpected PDF source reset")
             }
             document = PDDocument.load(hashed, MemoryUsageSetting.setupTempFileOnly())
         }
