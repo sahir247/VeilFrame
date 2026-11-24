@@ -524,8 +524,7 @@ class VeilFrameProcessingService : Service() {
                 retriever.release()
             }
             // Audit source packet presentation timestamps before extracting any frames.
-            // Raw transport does not itself preserve arbitrary PTS. Continue
-            // refusing unsupported VFR rather than inventing a CFR timeline.
+            // Resample the source presentation timeline onto the requested output grid.
             val sourceVideoPts = readMotionVideoPtsUs(inFile)
             // Validate every audio track before expensive synthesis begins.
             val sourceAudioTracks = readMotionAudioTracks(inFile)
@@ -533,9 +532,9 @@ class VeilFrameProcessingService : Service() {
                 presentationUs = sourceVideoPts,
                 durationMs = durationMs,
                 target60Fps = isTarget60fps,
-                requestedMultiplier = multiplier
+                requestedMultiplier = multiplier,
+                videoDurationUs = readMotionVideoDurationUs(inFile)
             )
-            val effectiveMultiplier = timing.multiplier
 
             val sourceGeometry = readMotionSourceGeometry(inFile)
             updateNotificationProgress("Preparing streaming decoder…", 15)
@@ -613,9 +612,6 @@ class VeilFrameProcessingService : Service() {
                             val input = this
                             prevBmp = if (useRife) input.readBitmap() else null
                             prevMat = if (!useRife) input.readMat() else null
-                            if (useRife) output.writeBitmap(requireNotNull(prevBmp))
-                            else output.writeMat(requireNotNull(prevMat))
-
                             for (i in 1 until timing.sourceFrames) {
                                 kotlin.coroutines.coroutineContext.ensureActive()
 
@@ -640,10 +636,14 @@ class VeilFrameProcessingService : Service() {
                                 }
 
                                 try {
-                                    for (k in 1 until effectiveMultiplier) {
+                                    for (t in timing.pairFractions[i-1]) {
                                         kotlin.coroutines.coroutineContext.ensureActive()
                                         MotionLabDiskBudget.requireHeadroom(workDir)
-                                        val t = k.toDouble() / effectiveMultiplier
+                                        if (t == 0.0) {
+                                            if (useRife) output.writeBitmap(requireNotNull(prevBmp))
+                                            else output.writeMat(requireNotNull(prevMat))
+                                            continue
+                                        }
                                         var interpolatedSuccessfully = false
 
                                         if (useRife && prevBmp != null && curBmp != null) {
@@ -705,12 +705,10 @@ class VeilFrameProcessingService : Service() {
                                     kotlin.coroutines.coroutineContext.ensureActive()
                                     MotionLabDiskBudget.requireHeadroom(workDir)
                                     if (useRife && curBmp != null) {
-                                        output.writeBitmap(curBmp)
                                         prevBmp?.recycle()
                                         prevBmp = curBmp
                                         curBmp = null
                                     } else if (curMat != null) {
-                                        output.writeMat(curMat)
                                         prevMat?.release()
                                         prevMat = curMat
                                         curMat = null
@@ -730,8 +728,8 @@ class VeilFrameProcessingService : Service() {
                                 updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
                                 jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
                             }
-                        // Repeat the final source frame for its remaining CFR interval.
-                        repeat(effectiveMultiplier - 1) {
+                        // Sample-and-hold the final source image for its actual tail interval.
+                        repeat(timing.tailFrames) {
                             if (useRife) output.writeBitmap(requireNotNull(prevBmp))
                             else output.writeMat(requireNotNull(prevMat))
                         }
@@ -896,6 +894,17 @@ class VeilFrameProcessingService : Service() {
                 extractor.release()
             }
         }
+    }
+
+    private fun readMotionVideoDurationUs(input: File): Long? {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val video = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+                .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+                ?: error("Input has no video track")
+            return if (video.containsKey(MediaFormat.KEY_DURATION)) video.getLong(MediaFormat.KEY_DURATION) else null
+        } finally { extractor.release() }
     }
 
     private fun readMotionSourceGeometry(input: File): com.veilframe.app.cv.motion.MotionLabSourceGeometry {
