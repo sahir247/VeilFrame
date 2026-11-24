@@ -181,16 +181,60 @@ robolectricSdkVersions.forEach { version ->
     )
 }
 val robolectricOfflineDir = layout.buildDirectory.dir("robolectric/preinstrumented")
-val prepareRobolectricSdkJars = tasks.register<Sync>("prepareRobolectricSdkJars") {
-    from(robolectricSdkConfiguration)
-    into(robolectricOfflineDir)
+// Use the *resolved artifact metadata* to stage each JAR at Robolectric's
+// required filename. A bare Gradle Sync(from(configuration)) did not produce the
+// expected API 33 file in CI despite successful dependency resolution and gave
+// an unhelpful missing-or-truncated message. Never guess an artifact filename.
+val prepareRobolectricSdkJars = tasks.register("prepareRobolectricSdkJars") {
+    inputs.files(robolectricSdkConfiguration).withPropertyName("robolectricSdkJars")
+    outputs.dir(robolectricOfflineDir).withPropertyName("preinstrumentedRobolectricJars")
     doLast {
-        robolectricSdkVersions.forEach { version ->
-            val jar = robolectricOfflineDir.get().file("android-all-instrumented-$version.jar").asFile
-            check(jar.isFile && jar.length() > 10_000_000L) {
-                "Missing or truncated preinstrumented Robolectric SDK JAR: $jar"
-            }
+        val destination = robolectricOfflineDir.get().asFile
+        destination.mkdirs()
+        val artifacts = robolectricSdkConfiguration.resolvedConfiguration.resolvedArtifacts
+        val byVersion = artifacts.groupBy { it.moduleVersion.id.version }
+        logger.lifecycle(
+            "Robolectric prefetch: expected SDK versions={}, resolved artifacts={}",
+            robolectricSdkVersions,
+            artifacts.map { "${it.moduleVersion.id.version}: ${it.file.name} (${it.file.length()} bytes)" }
+        )
+        check(byVersion.keys == robolectricSdkVersions.toSet() &&
+            robolectricSdkVersions.all { byVersion[it]?.size == 1 }) {
+            "Unexpected Robolectric SDK artifacts: expected=$robolectricSdkVersions, " +
+                "resolved=${artifacts.map { "${it.moduleVersion.id.version}/${it.file.name}" }}"
         }
+        robolectricSdkVersions.forEach { version ->
+            val source = byVersion.getValue(version).single().file
+            check(source.isFile && source.length() > 10_000_000L) {
+                "Resolved Robolectric SDK JAR missing/truncated: ${source.absolutePath}, " +
+                    "exists=${source.exists()}, size=${if (source.exists()) source.length() else -1}"
+            }
+            // Validate the ZIP central directory and an actual Android framework
+            // class rather than treating arbitrary nonempty files as SDK JARs.
+            java.util.jar.JarFile(source).use { jar ->
+                check(jar.getJarEntry("android/os/Build.class") != null) {
+                    "Resolved artifact is not a Robolectric Android framework JAR: $source"
+                }
+            }
+            val expected = destination.resolve("android-all-instrumented-$version.jar")
+            if (!expected.isFile || expected.length() != source.length()) {
+                source.copyTo(expected, overwrite = true)
+            }
+            check(expected.isFile && expected.length() == source.length()) {
+                "Robolectric JAR staging failed: source=${source.absolutePath} " +
+                    "(${source.length()} bytes), staged=${expected.absolutePath} " +
+                    "(${if (expected.exists()) expected.length() else -1} bytes)"
+            }
+            logger.lifecycle(
+                "Robolectric SDK staged: {} -> {} ({} bytes)",
+                source.name, expected.absolutePath, expected.length()
+            )
+        }
+        // Fail closed if an old / removed SDK is still present. The output
+        // directory must contain exactly the current three named JARs.
+        val expectedNames = robolectricSdkVersions.map { "android-all-instrumented-$it.jar" }.toSet()
+        destination.listFiles()?.filter { it.isFile && it.extension == "jar" && it.name !in expectedNames }
+            ?.forEach { obsolete -> check(obsolete.delete()) { "Cannot remove stale SDK JAR: $obsolete" } }
     }
 }
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

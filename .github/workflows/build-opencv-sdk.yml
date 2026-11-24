@@ -175,8 +175,9 @@ jobs:
         working-directory: android
         run: |
           ./gradlew :app:assembleDebug --no-daemon
-          # Test task depends on prepareRobolectricSdkJars on CI: resolve SDK
-          # JARs through Gradle (with cache/mirror) before running JUnit offline.
+          # Stage Robolectric JARs explicitly and log resolved artifact paths
+          # before the test task. Any missing/corrupt jar fails the build.
+          ./gradlew :app:prepareRobolectricSdkJars --no-daemon --info
           # Do not retry or suppress actual failing CV test assertions.
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*" --no-daemon
 
