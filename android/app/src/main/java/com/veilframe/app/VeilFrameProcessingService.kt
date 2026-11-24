@@ -530,6 +530,8 @@ class VeilFrameProcessingService : Service() {
             // This JPEG-based backend deliberately rejects variable-rate/unsupported clips
             // rather than inventing CFR and silently drifting audio and video out of sync.
             val sourceVideoPts = readMotionVideoPtsUs(inFile)
+            // Validate every audio track before expensive synthesis begins.
+            val sourceAudioTracks = readMotionAudioTracks(inFile)
             val timing = MotionLabTimingContract.plan(
                 presentationUs = sourceVideoPts,
                 durationMs = durationMs,
@@ -573,21 +575,18 @@ class VeilFrameProcessingService : Service() {
                 if (rifeManager.verifyModelIntegrity(selectedModel)) {
                     val attemptGpu = !RifeNcnnNative.isEmulator()
                     val requiredPadding = rifeManager.requiredPadding
-                    useRife = if (attemptGpu) {
-                        try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true, padding = requiredPadding)
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
-                            try {
-                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
-                            } catch (_: Throwable) { false }
-                        }
-                    } else {
-                        Log.i(TAG, "Android Emulator detected: defaulting RIFE to CPU OpenMP mode for stability")
-                        try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
-                        } catch (_: Throwable) { false }
+                    fun initializeRife(gpu: Boolean): Boolean = try {
+                        RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = gpu, padding = requiredPadding)
+                    } catch (failure: Exception) {
+                        Log.w(TAG, "RIFE initialization failed (GPU=$gpu)", failure)
+                        false
+                    } catch (failure: LinkageError) {
+                        Log.w(TAG, "RIFE JNI unavailable", failure)
+                        false
                     }
+                    // JNI reports failed initialization as false as well as throwing.
+                    // CPU must be attempted before falling back to a different algorithm.
+                    useRife = com.veilframe.app.cv.motion.MotionLabBackendSelection.initialize(attemptGpu, ::initializeRife)
                 } else {
                     Log.w(TAG, "RIFE model ${selectedModel.id} unavailable or failed cryptographic checksum; falling back to optical flow")
                     jobCallback?.onProgress(jobId, 18, "RIFE model unverified; using optical flow fallback…")
@@ -843,9 +842,9 @@ class VeilFrameProcessingService : Service() {
             }
             // An apparently complete video is still a bad export if a source
             // audio stream was dropped or shifted during stream-copy remuxing.
-            MotionLabAudioTimeline.verify(
-                source = readMotionAudioSpan(inFile),
-                output = readMotionAudioSpan(stage),
+            MotionLabAudioTimeline.verifyTracks(
+                source = sourceAudioTracks,
+                output = readMotionAudioTracks(stage),
                 sourceVideoFirstUs = sourceVideoPts.minOrNull() ?: 0L,
                 outputVideoFirstUs = publishedPts.minOrNull() ?: 0L,
                 durationMs = durationMs
@@ -903,36 +902,49 @@ class VeilFrameProcessingService : Service() {
         }
     }
 
-    private fun readMotionAudioSpan(input: File): MotionLabAudioTimeline.AudioSpan? {
-        val extractor = MediaExtractor()
-        try {
-            extractor.setDataSource(input.absolutePath)
-            val audioTrack = (0 until extractor.trackCount).firstOrNull { index ->
-                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-            } ?: return null
-            extractor.selectTrack(audioTrack)
-            var firstPts = -1L
-            var lastPts = -1L
-            var count = 0
-            while (true) {
-                val ptsUs = extractor.sampleTime
-                if (ptsUs < 0L) break
-                check(count < MotionLabAudioTimeline.MAX_AUDIO_SAMPLES) {
-                    "Audio track exceeds bounded verification budget"
+    private suspend fun readMotionAudioTracks(input: File): List<MotionLabAudioTimeline.Track> {
+        val tracks = MediaExtractor().let { extractor ->
+            try {
+                extractor.setDataSource(input.absolutePath)
+                (0 until extractor.trackCount).mapNotNull { index ->
+                    val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                    if (mime?.startsWith("audio/") == true) index to mime else null
                 }
-                if (firstPts < 0L) firstPts = ptsUs
-                if (ptsUs > lastPts) lastPts = ptsUs
-                count++
-                if (!extractor.advance()) break
+            } finally {
+                extractor.release()
             }
-            check(count > 0 && firstPts >= 0L) { "Audio stream has no readable samples" }
-            return MotionLabAudioTimeline.AudioSpan(firstPts, lastPts, count)
-        } finally {
-            extractor.release()
+        }
+        check(tracks.size <= MotionLabAudioTimeline.MAX_AUDIO_TRACKS) { "Too many audio tracks" }
+        return tracks.map { (index, mime) ->
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(input.absolutePath)
+                extractor.selectTrack(index)
+                var firstPts = Long.MAX_VALUE
+                var lastPts = -1L
+                var count = 0
+                while (true) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val ptsUs = extractor.sampleTime
+                    if (ptsUs < 0L) break
+                    check(count < MotionLabAudioTimeline.MAX_AUDIO_SAMPLES) {
+                        "Audio track exceeds bounded verification budget"
+                    }
+                    firstPts = minOf(firstPts, ptsUs)
+                    lastPts = maxOf(lastPts, ptsUs)
+                    count++
+                    if (!extractor.advance()) break
+                }
+                check(count > 0 && firstPts >= 0L) { "Audio stream has no readable samples" }
+                MotionLabAudioTimeline.Track(mime, MotionLabAudioTimeline.AudioSpan(firstPts, lastPts, count))
+            } finally {
+                extractor.release()
+            }
         }
     }
 
-    private fun readMotionVideoPtsUs(
+    private suspend fun readMotionVideoPtsUs(
         input: File,
         maxFrames: Int = MotionLabTimingContract.MAX_SOURCE_FRAMES
     ): List<Long> {
@@ -945,6 +957,7 @@ class VeilFrameProcessingService : Service() {
             extractor.selectTrack(videoTrack)
             val timestamps = ArrayList<Long>()
             while (true) {
+                kotlin.coroutines.coroutineContext.ensureActive()
                 val pts = extractor.sampleTime
                 if (pts < 0) break
                 if (timestamps.size >= maxFrames) {

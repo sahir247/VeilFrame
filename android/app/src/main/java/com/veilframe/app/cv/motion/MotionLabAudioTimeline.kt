@@ -12,6 +12,7 @@ import kotlin.math.abs
  */
 object MotionLabAudioTimeline {
     const val MAX_AUDIO_SAMPLES = 500_000
+    const val MAX_AUDIO_TRACKS = 16
     const val SYNC_TOLERANCE_US = 300_000L
 
     data class AudioSpan(
@@ -23,6 +24,22 @@ object MotionLabAudioTimeline {
             require(firstPtsUs >= 0L && lastPtsUs >= firstPtsUs && packets > 0) {
                 "Audio samples must have valid ordered timestamps"
             }
+        }
+    }
+
+    data class Track(val mime: String, val span: AudioSpan)
+
+    fun verifyTracks(
+        source: List<Track>, output: List<Track>, sourceVideoFirstUs: Long,
+        outputVideoFirstUs: Long, durationMs: Long
+    ) {
+        require(source.size <= MAX_AUDIO_TRACKS && output.size <= MAX_AUDIO_TRACKS) {
+            "Audio track count exceeds bounded verification budget"
+        }
+        check(source.size == output.size) { "Motion Lab audio track count changed" }
+        for ((before, after) in source.zip(output)) {
+            check(before.mime == after.mime) { "Motion Lab stream-copy audio codec changed" }
+            verify(before.span, after.span, sourceVideoFirstUs, outputVideoFirstUs, durationMs)
         }
     }
 

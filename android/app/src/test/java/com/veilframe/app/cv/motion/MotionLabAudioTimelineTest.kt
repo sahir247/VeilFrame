@@ -7,6 +7,22 @@ class MotionLabAudioTimelineTest {
     private fun span(first: Long, last: Long) =
         MotionLabAudioTimeline.AudioSpan(first, last, 120)
 
+    @Test fun everyStreamCopyTrackMustSurviveWithTheSameCodecAndTimeline() {
+        val aac = MotionLabAudioTimeline.Track("audio/mp4a-latm", span(0, 1_900_000))
+        val opus = MotionLabAudioTimeline.Track("audio/opus", span(10_000, 1_850_000))
+        val source = listOf(aac, opus)
+        MotionLabAudioTimeline.verifyTracks(source, source, 0, 0, 2_000)
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabAudioTimeline.verifyTracks(source, listOf(aac), 0, 0, 2_000)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabAudioTimeline.verifyTracks(source, listOf(aac, opus.copy(mime = "audio/mpeg")), 0, 0, 2_000)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabAudioTimeline.verifyTracks(source, listOf(aac, opus.copy(span = span(0, 800_000))), 0, 0, 2_000)
+        }
+    }
+
     @Test fun sourceWithoutAudioRequiresAudioFreeOutput() {
         MotionLabAudioTimeline.verify(null, null, 0, 0, 2_000)
         assertThrows(IllegalStateException::class.java) {
