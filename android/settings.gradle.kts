@@ -35,14 +35,15 @@ buildscript {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        // Only CI Robolectric framework JAR provisioning uses Google's public
-        // Maven Central mirror before the canonical endpoint. This repository
-        // is scoped to ONE module and cannot alter Android app dependencies.
+        // CI resolves Robolectric's framework and native runtime artifacts
+        // through Google's public Maven Central mirror first to avoid Central
+        // rate limits. Keep the mirror scoped to Robolectric; unrelated app
+        // dependencies and local developer repository selection are unchanged.
         if (System.getenv("CI").equals("true", ignoreCase = true)) {
             maven {
                 url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
                 content {
-                    includeModule("org.robolectric", "android-all-instrumented")
+                    includeGroup("org.robolectric")
                 }
             }
         }
