@@ -112,6 +112,7 @@ internal object MotionLabRawFramePipe {
         expectedFrames: Int,
         inputArguments: Array<String>,
         stallTimeoutMs: Long = 30_000L,
+        expectedPresentationUs: List<Long>? = null,
         consume: suspend Reader.() -> T
     ): T {
         require(expectedFrames in 1..MotionLabTimingContract.MAX_SOURCE_FRAMES)
@@ -123,7 +124,18 @@ internal object MotionLabRawFramePipe {
                 val fd = reader.fileDescriptor
                 Os.fcntlInt(fd, OsConstants.F_SETFL,
                     Os.fcntlInt(fd, OsConstants.F_GETFL, 0) or OsConstants.O_NONBLOCK)
-                val args = arrayOf("-nostdin", "-xerror") + inputArguments + arrayOf(
+                val inspectedInput = if (expectedPresentationUs == null) inputArguments else {
+                    require(expectedPresentationUs.size == expectedFrames)
+                    val filters = inputArguments.indices.filter { inputArguments[it] == "-vf" }
+                    require(filters.size <= 1) { "Ambiguous raw decoder filter" }
+                    if (filters.isEmpty()) inputArguments + arrayOf("-vf","showinfo=checksum=0")
+                    else inputArguments.copyOf().also {
+                        val index = filters.single()+1
+                        require(index < it.size)
+                        it[index] += ",showinfo=checksum=0"
+                    }
+                }
+                val args = arrayOf("-nostdin", "-xerror", "-loglevel","info") + inspectedInput + arrayOf(
                     "-map", "0:v:0", "-an", "-sn", "-dn", "-fps_mode", "passthrough",
                     "-c:v", "rawvideo", "-threads:v", "1", "-pix_fmt", "bgr24",
                     "-f", "rawvideo", "pipe:${writer.fd}"
@@ -134,6 +146,9 @@ internal object MotionLabRawFramePipe {
                             val result = executePipeSession(args)
                             if (!ReturnCode.isSuccess(result.returnCode)) {
                                 throw IOException("Raw frame decoder failed (rc=${result.returnCode})")
+                            }
+                            if (expectedPresentationUs != null) {
+                                MotionLabDecodedTimeline.verify(result.getAllLogsAsString(5000),expectedPresentationUs)
                             }
                         } finally {
                             // EOF means the native writer is no longer alive.

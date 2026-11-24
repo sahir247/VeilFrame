@@ -607,7 +607,8 @@ class VeilFrameProcessingService : Service() {
                     ) {
                         val output = this
                         MotionLabRawFramePipe.decode(geometry, timing.sourceFrames,
-                            arrayOf("-noautorotate", "-i", inFile.absolutePath, "-vf", plan.decodeFilter)
+                            arrayOf("-noautorotate", "-i", inFile.absolutePath, "-vf", plan.decodeFilter),
+                            expectedPresentationUs = sourceVideoPts
                         ) {
                             val input = this
                             prevBmp = if (useRife) input.readBitmap() else null

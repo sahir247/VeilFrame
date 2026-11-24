@@ -1363,3 +1363,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 
 - Extracted Office content inspection, owned staging and schematic bitmap rendering into UI-independent OfficePreviewEngine. Controller owns only selection/generation checks, UI adoption and stale bitmap retirement. Zero-progress provider reads fail; source staging and returned bitmap ownership are explicit. No change to the advertised schematic preview semantics. Removed roughly 330 lines of preview logic from the oversized controller.
 - Extracted all-or-nothing split range parser; invalid tokens/overflow/out-of-range parts now reject the request rather than silently producing a subset. Snapshot source page count before dispatch, retaining order and existing reversed-endpoint normalization. Added parser regressions. A29 remains PARTIAL: signature, form, merge and other large controller sections still need separate decomposition. CI pending.
+
+
+### 2026-11-24 — B03 decoder PTS correspondence and native VFR fixture
+
+- Source decoder appends checksum-disabled showinfo to the existing filter, verifies actual ordered decoded PTS against MediaExtractor's normalized source samples (1 ms tolerance, exact count/index, bounded log), and refuses publication on missing/mismatched evidence. This guards timestamp/frame association beyond matching count alone. Added pure evidence parser and irregular-timestamp H.264 decode/60fps native fixture. No checksum scan added. CI pending; exact native fixture must pass before release.

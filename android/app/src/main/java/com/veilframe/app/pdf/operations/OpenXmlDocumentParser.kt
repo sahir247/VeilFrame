@@ -1294,7 +1294,7 @@ object OpenXmlDocumentParser {
                     // conservatively admitted as an unknown high-priority rule.
                     val id = rule.getAttribute("id").trim().lowercase(java.util.Locale.ROOT)
                     val link = linkedBaseBars.remove(id)
-                    if (type == "dataBar" && link?.first == ranges) {
+                    if (type == "dataBar" && link != null && link.first == ranges) {
                         val baseRule = result[link.second]
                         val baseElement = root.childElements("conditionalFormatting")
                             .flatMap { it.childElements("cfRule") }

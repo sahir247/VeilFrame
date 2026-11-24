@@ -197,6 +197,62 @@ class MotionLabRawFramePipeDeviceTest {
         }
     }
 
+    @Test fun variableCadenceH264DecodeMatchesSourcePtsAndResamplesToSixtyFps() = runBlocking {
+        withTimeout(60_000) {
+            CvRuntime.requireAvailable()
+            val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+            val source = File.createTempFile("vfr_source_",".mp4",dir)
+            val output = File.createTempFile("vfr_output_",".mp4",dir)
+            val geometry = MotionLabRawFramePipe.Geometry(64,48)
+            val frame = Mat(48,64,CvType.CV_8UC3,Scalar(24.0,90.0,170.0))
+            fun pts(file: File): Pair<List<Long>,Long> {
+                val extractor = android.media.MediaExtractor()
+                try {
+                    extractor.setDataSource(file.absolutePath)
+                    val format = extractor.getTrackFormat(0)
+                    val duration = format.getLong(android.media.MediaFormat.KEY_DURATION)
+                    extractor.selectTrack(0)
+                    val list = mutableListOf<Long>()
+                    while (extractor.sampleTime >= 0) {
+                        list.add(extractor.sampleTime)
+                        if (!extractor.advance()) break
+                    }
+                    return list to duration
+                } finally { extractor.release() }
+            }
+            try {
+                // Input grid 100 Hz; output VFR PTS 0,30,100,140 ms.
+                MotionLabRawFramePipe.encode(geometry,100.0,4,arrayOf(
+                    "-map","0:v:0","-an","-vf","""settb=1/1000,setpts=if(eq(N\\,0)\\,0\\,if(eq(N\\,1)\\,30\\,if(eq(N\\,2)\\,100\\,140)))""",
+                    "-c:v","libx264","-preset","ultrafast","-pix_fmt","yuv420p",
+                    "-enc_time_base","1:1000","-fps_mode","passthrough",source.absolutePath)) {
+                    repeat(4) { writeMat(frame) }
+                }
+                val (sourcePts,durationUs) = pts(source)
+                assertEquals(listOf(0L,30_000L,100_000L,140_000L),sourcePts.sorted())
+                val plan = MotionLabTimingContract.plan(sourcePts,durationUs/1000,true,2,durationUs)
+                assertTrue(plan.variableCadence)
+                MotionLabRawFramePipe.encode(geometry,plan.outputFps,plan.expectedOutputFrames,arrayOf(
+                    "-map","0:v:0","-an","-c:v","libx264","-preset","ultrafast",
+                    "-pix_fmt","yuv420p","-fps_mode","passthrough",output.absolutePath)) {
+                    val sink = this
+                    MotionLabRawFramePipe.decode(geometry,4,arrayOf("-i",source.absolutePath),
+                        expectedPresentationUs=sourcePts) {
+                        // Uniform pixels isolate the timeline test from optical-flow quality.
+                        repeat(4) { index ->
+                            val mat = readMat()
+                            try {
+                                val count = if (index == 3) plan.tailFrames else plan.pairFractions[index].size
+                                repeat(count) { sink.writeMat(mat) }
+                            } finally { mat.release() }
+                        }
+                    }
+                }
+                MotionLabSequenceVerifier.verifyPresentation(pts(output).first,plan.expectedOutputFrames,60.0)
+            } finally { frame.release(); source.delete(); output.delete() }
+        }
+    }
+
     @Test fun invalidEncoderDoesNotLeaveProducerBlocked() = runBlocking {
         withTimeout(60_000) {
             val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
