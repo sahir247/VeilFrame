@@ -45,7 +45,14 @@ object ImageCompressionEngine {
 
             if (isTargetSizeMode) {
                 var bestFileUnderTarget = false
-                var optimalQuality = outputConfig.quality
+                // Lossless formats should try their original dimensions before any resize.
+                if (!targetFormat.supportsQuality) {
+                    val ok = ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, 100)
+                    if (ok && ImageContainerContract.matches(probe, targetFormat) && probe.length() <= targetBytes) {
+                        probe.copyTo(outFile, overwrite = true)
+                        bestFileUnderTarget = true
+                    }
+                }
 
                 if (targetFormat.supportsQuality) {
                     var low = 5
@@ -57,7 +64,6 @@ object ImageCompressionEngine {
                         if (ok && ImageContainerContract.matches(probe, targetFormat) && probe.length() <= targetBytes) {
                             probe.copyTo(outFile, overwrite = true)
                             bestFileUnderTarget = true
-                            optimalQuality = mid
                             low = mid + 1 // try higher quality
                         } else {
                             high = mid - 1 // reduce quality
@@ -98,17 +104,18 @@ object ImageCompressionEngine {
                 probe.delete()
 
                 if (!bestFileUnderTarget || !outFile.exists() || outFile.length() > targetBytes) {
-                    // Try one final minimum encode to report actual smallest achievable size
+                    // A finite search cannot prove a mathematical minimum, and a
+                    // failed encode is not a measured file size.
                     probe.delete()
-                    ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, 15)
-                    val minBytes = if (probe.exists()) probe.length() else workingBmp.byteCount.toLong()
+                    val ok = ImageFormatEncoder.encodeImage(workingBmp, probe, targetFormat, 15)
+                    val minBytes = if (ok && ImageContainerContract.matches(probe, targetFormat)) probe.length() else 0L
                     probe.delete()
-                    val formattedMin = if (minBytes < 1024) "$minBytes B" else if (minBytes < 1024 * 1024) "${minBytes / 1024} KB" else String.format(Locale.US, "%.1f MB", minBytes / (1024.0 * 1024.0))
+                    val detail = if (minBytes > 0) " Last valid trial: $minBytes bytes." else " Encoder could not produce a valid trial."
                     return CompressionResult(
                         success = false,
                         outputPath = outFile.absolutePath,
                         sizeBytes = minBytes,
-                        error = "Target size ${targetSizeKb} KB could not be achieved (smallest possible for ${targetFormat.displayName} was $formattedMin). Try selecting a larger target size or resizing image dimensions."
+                        error = "Target size ${targetSizeKb} KB was not achieved by the bounded ${targetFormat.displayName} search.$detail Try a larger target size or explicit resizing."
                     )
                 }
             } else {

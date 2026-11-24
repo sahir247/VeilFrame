@@ -21,6 +21,7 @@ import com.veilframe.app.media.preview.IsolatedImagePreviewRenderer
 import com.veilframe.app.media.ImageStudioBatchExportAcceptance
 import com.veilframe.app.media.transform.ImageTransformEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -1018,8 +1019,10 @@ class ImageStudioController(
             editState
         )
 
-        val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
-        val ext = outputConfig.format.lowercase(Locale.US)
+        val exportConfig = outputConfig.copy()
+        val destUri = safManager.imageDestinationUri
+        val destName = safManager.imageDestinationName
+        val ext = exportConfig.format.lowercase(Locale.US)
         val rawName = binding.etImgOutputFilename.text.toString().trim()
         val safeBase = File(rawName).name.substringBeforeLast('.').ifBlank { "compressed_image" }
 
@@ -1029,24 +1032,34 @@ class ImageStudioController(
         floatingDockController.transitionTo(FloatingActionState.PROCESSING)
 
         compressionJob = scope.launch(Dispatchers.IO) {
+            var outDir: File? = null
+            var committed = false
+            val createdDocuments = mutableListOf<Uri>()
+            val encodedFiles = mutableListOf<File>()
+            fun rollback(): Int = ImageStudioBatchExportAcceptance.rollbackCreated(
+                createdDocuments, safManager::deleteCreatedDocument
+            )
             try {
+                val parent = File(activity.cacheDir, "studio_output")
+                check(parent.isDirectory || parent.mkdirs()) { "Cannot create export cache" }
+                val ownedDir = java.nio.file.Files.createTempDirectory(parent.toPath(), "batch_").toFile()
+                outDir = ownedDir
                 var successCount = 0
                 var exportedCount = 0
                 val total = itemsToProcess.size
                 var lastSavedFile: File? = null
                 var totalOriginalBytes = 0L
                 var totalCompressedBytes = 0L
-                val destUri = safManager.imageDestinationUri
 
                 for ((idx, item) in itemsToProcess.withIndex()) {
-                    if (!isActive) break
+                    coroutineContext.ensureActive()
 
                     withContext(Dispatchers.Main) {
                         binding.tvImgProgressStatus.text = "Processing ${idx + 1} of $total: ${item.displayName}"
                     }
 
                     val outFilename = if (total == 1) "$safeBase.$ext" else "${safeBase}_${idx + 1}.$ext"
-                    val outFile = File(outDir, outFilename)
+                    val outFile = File(ownedDir, outFilename)
 
                     // Never copy preview-space PII boxes or source-specific brush
                     // coordinates from another photograph during batch publication.
@@ -1058,13 +1071,13 @@ class ImageStudioController(
                         // DEFERRED FULL RESOLUTION DECODE: ONLY WHEN EXPORTING!
                         fullResBmp = ImagePreviewEngine.decodeFullResolution(item.file)
                         if (fullResBmp == null) {
-                            fullResBmp = ImagePreviewEngine.decodePreviewBitmap(item.file, maxDim = 2560)
-                        }
-                        if (fullResBmp == null) {
                             throw IllegalStateException(
                                 "Cannot decode ${item.displayName}; refusing incomplete batch export"
                             )
                         }
+                        ImageStudioBatchExportAcceptance.requireOriginalDimensions(
+                            item.origWidth, item.origHeight, fullResBmp.width, fullResBmp.height
+                        )
 
                         // Apply non-destructive transforms to full-res bitmap
                         transformedBmp = ImageTransformEngine.transform(
@@ -1079,29 +1092,12 @@ class ImageStudioController(
                             srcFile = item.file,
                             outFile = outFile,
                             editState = itemEditState,
-                            outputConfig = outputConfig,
+                            outputConfig = exportConfig,
                             processedBitmap = transformedBmp ?: fullResBmp
                         )
 
                         if (result.success && outFile.isFile && outFile.length() > 0L) {
-                            if (destUri != null) {
-                                val mime = when (outputConfig.format.uppercase(Locale.US)) {
-                                    "PNG" -> "image/png"
-                                    "WEBP" -> "image/webp"
-                                    "BMP" -> "image/bmp"
-                                    "TIFF" -> "image/tiff"
-                                    "GIF" -> "image/gif"
-                                    "HEIF" -> "image/heif"
-                                    "HEIC" -> "image/heic"
-                                    "AVIF" -> "image/avif"
-                                    else -> "image/jpeg"
-                                }
-                                val copied = safManager.copyFileToDocumentTree(outFile, destUri, mime)
-                                check(copied != null) {
-                                    "Destination refused ${item.displayName}; batch not complete"
-                                }
-                                exportedCount++
-                            }
+                            encodedFiles.add(outFile)
                             successCount++
                             lastSavedFile = outFile
                             totalOriginalBytes += item.originalBytes
@@ -1112,11 +1108,26 @@ class ImageStudioController(
                             )
                         }
                     } finally {
-                        transformedBmp?.recycle()
+                        if (transformedBmp !== fullResBmp) transformedBmp?.recycle()
                         fullResBmp?.recycle()
                     }
                 }
 
+                // Finish all encoding before creating any external document. A
+                // later transfer failure rolls back only this batch's newly created URIs.
+                ImageStudioBatchExportAcceptance.requireComplete(total, successCount, 0, false)
+                if (destUri != null) {
+                    val mime = com.veilframe.app.storage.SafStorageManager.getExportMimeType(encodedFiles.first())
+                    for (file in encodedFiles) {
+                        coroutineContext.ensureActive()
+                        val created = safManager.copyVerifiedFileToDocumentTree(file, destUri, mime) {
+                            coroutineContext.ensureActive()
+                        }
+                        createdDocuments.add(created)
+                        exportedCount++
+                    }
+                }
+                coroutineContext.ensureActive()
                 ImageStudioBatchExportAcceptance.requireComplete(
                     requested = total,
                     encoded = successCount,
@@ -1130,15 +1141,16 @@ class ImageStudioController(
 
                     if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists()) {
                         lastResultFile = lastSavedFile
+                        committed = true
                         currentResultPreviewBitmap?.recycle()
-                        currentResultPreviewBitmap = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
+                        currentResultPreviewBitmap = ImagePreviewEngine.decodePreviewBitmap(lastSavedFile, maxDim = 1280)
                         if (currentResultPreviewBitmap != null) {
                             val oldEditing = currentEditingPreviewBitmap
                             currentEditingPreviewBitmap = null
                             binding.imgAfterPreview.setImageBitmap(currentResultPreviewBitmap)
                             oldEditing?.recycle()
                         }
-                        binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${outputConfig.format})"
+                        binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${exportConfig.format})"
                         val ratio = if (totalOriginalBytes > 0) {
                             (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
@@ -1147,7 +1159,7 @@ class ImageStudioController(
                         binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%"
                         binding.layoutImgResultActions.visibility = View.VISIBLE
 
-                        val destMsg = if (safManager.imageDestinationUri != null) "\nSaved to: ${safManager.imageDestinationName}" else ""
+                        val destMsg = if (destUri != null) "\nSaved to: $destName" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount image(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                         ExpressiveMotion.playJellyBounce(binding.btnImgExecute)
                         ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
@@ -1165,16 +1177,26 @@ class ImageStudioController(
                         floatingDockController.transitionTo(FloatingActionState.READY, actionTitle = "Compress")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}", e)
+                val failedCleanup = if (!committed) rollback() else 0
+                val cleanupNotice = if (failedCleanup > 0) " Destination refused cleanup of $failedCleanup file(s)." else ""
+                Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}$cleanupNotice", e)
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress"
-                    Toast.makeText(activity, "Image compression error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "Image compression error: ${e.message}$cleanupNotice", Toast.LENGTH_LONG).show()
                     syncFloatingDockState()
                 }
             } finally {
+                if (!committed) {
+                    val failedCleanup = rollback()
+                    if (failedCleanup > 0) Log.e("VeilFrame.ImageStudioController",
+                        "Destination refused rollback of $failedCleanup newly created file(s)")
+                    outDir?.deleteRecursively()
+                }
                 // deepCopy() created separate owned mask bitmaps for export; do not
                 // recycle the live per-image edit models still used by preview.
                 editsAtExport.forEach { state ->

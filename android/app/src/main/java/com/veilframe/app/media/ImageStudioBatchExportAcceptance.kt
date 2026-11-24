@@ -8,6 +8,23 @@ package com.veilframe.app.media
  * local cache output is not evidence that a SAF export succeeded.
  */
 object ImageStudioBatchExportAcceptance {
+    /** Roll back only identities this operation created, in reverse order. */
+    internal fun <T> rollbackCreated(created: MutableList<T>, delete: (T) -> Boolean): Int {
+        var failures = 0
+        for (entry in created.asReversed()) {
+            if (!delete(entry)) failures++
+        }
+        created.clear()
+        return failures
+    }
+
+    internal fun requireOriginalDimensions(expectedWidth: Int, expectedHeight: Int, width: Int, height: Int) {
+        require(expectedWidth > 0 && expectedHeight > 0) { "Unknown source dimensions" }
+        check(width == expectedWidth && height == expectedHeight) {
+            "Full-resolution decode unavailable ($width × $height instead of $expectedWidth × $expectedHeight); no preview substitute was exported"
+        }
+    }
+
     fun requireComplete(
         requested: Int,
         encoded: Int,
