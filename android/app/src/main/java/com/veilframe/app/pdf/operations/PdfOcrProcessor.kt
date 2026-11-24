@@ -236,7 +236,7 @@ class PdfOcrProcessor(private val context: Context, language: OcrLanguage = OcrL
                     pageImage.recycle()
                 }
                 
-                val progress = 10 + ((index + 1) * 85 / validPages.size)
+                val progress = 10 + (((index + 1L) * 85) / (validPages.last.toLong() - validPages.first + 1L)).toInt()
                 progressCallback(progress)
                 if ((index + 1) % OCR_CHUNK_SIZE == 0) {
                     yield()

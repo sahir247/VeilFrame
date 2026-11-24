@@ -1306,3 +1306,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — A28 worksheet-level x14 conditional formatting admission
 
 - MS-XLSX CT_CfRule distinguishes standalone prioritized x14 rules from priority-less data-bar extension records linked to a base rule ID. Parse worksheet extLst/conditionalFormattings groups and xm:sqref ranges, support standard existing vector icon families and color scales with literal x14:cfvo/xm:f numeric thresholds; share priority/range/256-rule budgets with base SpreadsheetML. Unsupported custom icons, advanced data bars, formula/style extensions and orphan unprioritized rules are disclosed and prevent misleading lower-priority styling. Linked unsupported base bars count once, not twice. ZIP-to-PDF fixture checks ranges, icon tiers, RGB endpoints, unsupported bar/custom-icon counts and partial disclosure. Exact proprietary icon artwork, x14 data-bar borders/axis/gradients and arbitrary formulas remain PARTIAL. References: https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/025ea6e4-ad42-43ea-a016-16f4e4688ac8 and https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/15094f93-f587-4f4e-be74-1fbdc93da768 . CI pending.
+
+
+### 2026-11-24 — OCR range compile regression
+
+- Exact head `5f8a6a0` failed `:app:compileDebugKotlin` in [CI job 138516713491](https://github.com/sahir247/VeilFrame/actions/runs/45414381261/job/138516713491): validated `IntRange` no longer has the list `size` property. Compute the bounded range length from endpoints with Long progress arithmetic, retaining lazy range iteration and strict range validation. No test gate bypass. Fresh compilation pending.
