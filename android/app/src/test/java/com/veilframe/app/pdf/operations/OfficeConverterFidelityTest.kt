@@ -6,6 +6,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -1885,7 +1886,7 @@ class OfficeConverterFidelityTest {
         }
     }
     @Test
-    fun x14LinkedSolidDataBarUsesSignedColorsAxisAndBorder() = runBlocking {
+    fun x14LinkedSolidDataBarUsesSignedColorsAxisAndBorder() = runBlocking<Unit> {
         val workbook = """<workbook><sheets><sheet name="Bars" sheetId="1"/></sheets></workbook>"""
         val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>0</v></c></row><row r="3"><c r="A3"><v>75</v></c></row></sheetData><conditionalFormatting sqref="A1:A3"><cfRule type="dataBar" priority="1"><dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="FF2266AA"/></dataBar><extLst><ext><x14:id>{11111111-1111-1111-1111-111111111111}</x14:id></ext></extLst></cfRule></conditionalFormatting><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" id="{11111111-1111-1111-1111-111111111111}"><x14:dataBar minLength="0" maxLength="100" gradient="0" border="1"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:borderColor rgb="FF112233"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A3</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""
         val input = createZip(mapOf("xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to sheet))

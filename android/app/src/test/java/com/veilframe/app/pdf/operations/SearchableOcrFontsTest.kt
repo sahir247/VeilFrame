@@ -1,6 +1,5 @@
 package com.veilframe.app.pdf.operations
 
-import androidx.test.core.app.ApplicationProvider
 import android.content.Context
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -10,14 +9,17 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SearchableOcrFontsTest {
     @Test fun staticCollectionFaceSurvivesSubsetAndUnicodeReadback() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        val context: Context = RuntimeEnvironment.getApplication()
         PDFBoxResourceLoader.init(context)
         // Build a one-face TTC from a bundled static OFL TTF. Table offsets
         // are relative to the start of the collection rather than the sfnt.
@@ -58,7 +60,7 @@ class SearchableOcrFontsTest {
     }
 
     @Test fun bundledFontsRoundTripExactUnicodeThroughSavedPdf() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        val context: Context = RuntimeEnvironment.getApplication()
         PDFBoxResourceLoader.init(context)
         val words = listOf("English","हिन्दी","বাংলা","Ελληνικά","Русский")
         val bytes = ByteArrayOutputStream()

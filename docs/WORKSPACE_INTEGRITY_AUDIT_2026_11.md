@@ -1393,3 +1393,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — A02 PDFBox font API compile regression
 
 - Exact head `5dc3ab3` failed `:app:compileDebugKotlin` in both [OpenCV validation](https://github.com/sahir247/VeilFrame/actions/runs/45428763119/job/138568125829) and [ARM64 NCNN hardening](https://github.com/sahir247/VeilFrame/actions/runs/45428763168/job/138568953535). Native builds succeeded; both errors are unresolved `os2Windows` Kotlin property references. Confirmed the pinned PDFBox-Android v2.0.27.0 Java API (`TrueTypeFont.getOS2Windows()` and `OS2WindowsMetricsTable.getFsType()`); use explicit getters for both TTF and TTC admission. Keep unrestricted embedding permission checks unchanged. Fresh CI pending; no gates bypassed.
+
+
+### 2026-11-24 — JVM test compilation regression follow-up
+
+- At `43c8789`, the reported `:app:compileDebugUnitTestKotlin` diagnostics identify unresolved AndroidX `ApplicationProvider` in `SearchableOcrFontsTest` and missing JUnit `assertFalse`/result inference in the x14 solid data bar regression. Source inspection confirms these references; the workflow status API had not yet recorded the reported failure when checked. Use the project's existing `RuntimeEnvironment.getApplication()` and API 34 Robolectric configuration (already staged by CI), import `assertFalse`, and explicitly make the coroutine test return `Unit`. No added dependencies, disabled tests, changed assertions, or production behavior changes. Fresh exact-head compilation and execution pending.
