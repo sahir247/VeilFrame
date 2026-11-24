@@ -488,24 +488,24 @@ class ToolSessionManager(
     private fun createChipBackgroundStateList(): ColorStateList = ColorStateList(
         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
         intArrayOf(
-            role(R.attr.colorSecondaryContainer, R.color.vf_primary_container),
-            role(R.attr.colorSurfaceContainerHigh, R.color.vf_surface_variant)
+            role(com.google.android.material.R.attr.colorSecondaryContainer, R.color.vf_primary_container),
+            role(com.google.android.material.R.attr.colorSurfaceContainerHigh, R.color.vf_surface_variant)
         )
     )
 
     private fun createChipTextStateList(): ColorStateList = ColorStateList(
         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
         intArrayOf(
-            role(R.attr.colorOnSecondaryContainer, R.color.vf_on_primary_container),
-            role(R.attr.colorOnSurface, R.color.vf_text_primary)
+            role(com.google.android.material.R.attr.colorOnSecondaryContainer, R.color.vf_on_primary_container),
+            role(com.google.android.material.R.attr.colorOnSurface, R.color.vf_text_primary)
         )
     )
 
     private fun createChipStrokeStateList(): ColorStateList = ColorStateList(
         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
         intArrayOf(
-            role(R.attr.colorSecondary, R.color.vf_secondary),
-            role(R.attr.colorOutlineVariant, R.color.vf_outline_variant)
+            role(com.google.android.material.R.attr.colorSecondary, R.color.vf_secondary),
+            role(com.google.android.material.R.attr.colorOutlineVariant, R.color.vf_outline_variant)
         )
     )
 
@@ -638,7 +638,7 @@ class ToolSessionManager(
             binding.layoutTargetEmpty.visibility = View.GONE
             binding.layoutTargetMounted.visibility = View.VISIBLE
             binding.tvSelectedPath.text = state.selectedPathDisplay
-            binding.tvSelectedPath.setTextColor(role(R.attr.colorOnSurface, R.color.vf_text_primary))
+            binding.tvSelectedPath.setTextColor(role(com.google.android.material.R.attr.colorOnSurface, R.color.vf_text_primary))
             binding.tvTargetDetails.text = if (state.isFolderSelected) {
                 "${state.targetFileCount} files • ${safStorageManager.formatBytes(state.targetTotalBytes)} • Ready"
             } else {
@@ -724,7 +724,7 @@ class ToolSessionManager(
                 } else "NO NOISE TREATMENT"
                 binding.tvPrivacyProfileBadge.setTextColor(
                     if (noiseEnabled) activity.getColor(R.color.vf_accent_green)
-                    else role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    else role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
                 )
                 binding.tvPrivacyProfileBadge.setBackgroundResource(
                     if (noiseEnabled) R.drawable.bg_badge_pass else R.drawable.bg_badge_neutral
@@ -745,7 +745,7 @@ class ToolSessionManager(
                     "METADATA ONLY"
                 } else "$mode IMAGE TREATMENT".uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(
-                    if (metadataOnly) role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    if (metadataOnly) role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
                     else activity.getColor(R.color.vf_accent_green)
                 )
                 binding.tvPrivacyProfileBadge.setBackgroundResource(
@@ -764,7 +764,7 @@ class ToolSessionManager(
                 val quick = mode == "Quick Audit"
                 binding.tvPrivacyProfileBadge.text = mode.uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(
-                    if (quick) role(R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    if (quick) role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
                     else activity.getColor(R.color.vf_accent_green)
                 )
                 binding.tvPrivacyProfileBadge.setBackgroundResource(

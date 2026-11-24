@@ -25,12 +25,12 @@ class ShellThemeStylerTest {
     @Config(qualifiers = "night")
     fun oledCanvasIsBlackAndNavigationContrastIsThemed() {
         val context = themed(R.style.ThemeOverlay_VeilFrame_Amoled)
-        assertEquals(Color.BLACK, MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.MAGENTA))
+        assertEquals(Color.BLACK, MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.MAGENTA))
         val tint = ShellThemeStyler.navigationItemTint(context)
         val selected = tint.getColorForState(intArrayOf(android.R.attr.state_checked), Color.MAGENTA)
         val other = tint.getColorForState(intArrayOf(-android.R.attr.state_checked), Color.MAGENTA)
-        assertEquals(MaterialColors.getColor(context, R.attr.colorOnSecondaryContainer, Color.MAGENTA), selected)
-        assertEquals(MaterialColors.getColor(context, R.attr.colorOnSurfaceVariant, Color.MAGENTA), other)
+        assertEquals(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSecondaryContainer, Color.MAGENTA), selected)
+        assertEquals(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.MAGENTA), other)
         assertNotEquals(Color.BLACK, selected)
         assertNotEquals(Color.BLACK, other)
     }
@@ -43,14 +43,14 @@ class ShellThemeStylerTest {
         ShellThemeStyler.styleNavigation(oledContext, oledNav)
         assertEquals(Color.BLACK, (oledNav.background as ColorDrawable).color)
         assertEquals(
-            MaterialColors.getColor(oledContext, R.attr.colorOnSecondaryContainer, Color.MAGENTA),
+            MaterialColors.getColor(oledContext, com.google.android.material.R.attr.colorOnSecondaryContainer, Color.MAGENTA),
             oledNav.itemIconTintList!!.getColorForState(intArrayOf(android.R.attr.state_checked), Color.MAGENTA)
         )
         val darkContext = themed(R.style.ThemeOverlay_VeilFrame_Palette_Monochrome)
         val darkNav = BottomNavigationView(darkContext)
         ShellThemeStyler.styleNavigation(darkContext, darkNav)
         assertEquals(
-            MaterialColors.getColor(darkContext, R.attr.colorSurfaceContainerLowest, Color.MAGENTA),
+            MaterialColors.getColor(darkContext, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.MAGENTA),
             (darkNav.background as ColorDrawable).color
         )
         assertNotEquals((oledNav.background as ColorDrawable).color, (darkNav.background as ColorDrawable).color)
@@ -63,11 +63,11 @@ class ShellThemeStylerTest {
         val nav = BottomNavigationView(context)
         ShellThemeStyler.styleNavigation(context, nav)
         assertEquals(
-            MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.MAGENTA),
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.MAGENTA),
             (nav.background as ColorDrawable).color
         )
         assertEquals(
-            MaterialColors.getColor(context, R.attr.colorSecondaryContainer, Color.MAGENTA),
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondaryContainer, Color.MAGENTA),
             nav.itemActiveIndicatorColor!!.defaultColor
         )
     }

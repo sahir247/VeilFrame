@@ -18,26 +18,26 @@ object ShellThemeStyler {
             intArrayOf()
         ),
         intArrayOf(
-            MaterialColors.getColor(context, R.attr.colorOutline, Color.GRAY),
-            MaterialColors.getColor(context, R.attr.colorOnSecondaryContainer, Color.WHITE),
-            MaterialColors.getColor(context, R.attr.colorOnSurfaceVariant, Color.GRAY)
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorOutline, Color.GRAY),
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSecondaryContainer, Color.WHITE),
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY)
         )
     )
 
     /** Real NavigationBarView binding; callable by visual Robolectric contracts. */
     internal fun styleNavigation(context: Context, nav: NavigationBarView) {
-        nav.setBackgroundColor(MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.BLACK))
+        nav.setBackgroundColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.BLACK))
         val tint = navigationItemTint(context)
         nav.setItemIconTintList(tint)
         nav.setItemTextColor(tint)
         nav.setItemActiveIndicatorColor(ColorStateList.valueOf(
-            MaterialColors.getColor(context, R.attr.colorSecondaryContainer, Color.DKGRAY)
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondaryContainer, Color.DKGRAY)
         ))
     }
 
     fun apply(activity: Activity, binding: ActivityMainBinding) {
-        val canvas = MaterialColors.getColor(activity, R.attr.colorSurfaceContainerLowest, Color.BLACK)
-        val onSurface = MaterialColors.getColor(activity, R.attr.colorOnSurface, Color.WHITE)
+        val canvas = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.BLACK)
+        val onSurface = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnSurface, Color.WHITE)
         for (nav: NavigationBarView in listOf(binding.bottomNavigation, binding.navigationRail)) {
             styleNavigation(activity, nav)
         }

@@ -33,7 +33,7 @@ class LegacyToolThemeContractTest {
     @Config(qualifiers = "night")
     fun oledUsesTrueBlackNavigationAndSettingsCanvas() {
         val context = themed(R.style.ThemeOverlay_VeilFrame_Amoled)
-        val lowest = MaterialColors.getColor(context, R.attr.colorSurfaceContainerLowest, Color.MAGENTA)
+        val lowest = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLowest, Color.MAGENTA)
         val attrs = context.theme.obtainStyledAttributes(
             intArrayOf(android.R.attr.colorBackground)
         )
@@ -45,7 +45,7 @@ class LegacyToolThemeContractTest {
         assertEquals(Color.BLACK, lowest)
         assertEquals(Color.BLACK, body)
         assertNotEquals(Color.BLACK,
-            MaterialColors.getColor(context, R.attr.colorOnSurface, Color.BLACK))
+            MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
     }
 
     @Test
@@ -59,10 +59,10 @@ class LegacyToolThemeContractTest {
                 context, R.color.selector_vf_navigation_item
             ) ?: throw AssertionError("Navigation tint selector could not be inflated")
             val selected = MaterialColors.getColor(
-                context, R.attr.colorOnSecondaryContainer, Color.MAGENTA
+                context, com.google.android.material.R.attr.colorOnSecondaryContainer, Color.MAGENTA
             )
             val normal = MaterialColors.getColor(
-                context, R.attr.colorOnSurfaceVariant, Color.MAGENTA
+                context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.MAGENTA
             )
             assertEquals(selected, color.getColorForState(
                 intArrayOf(android.R.attr.state_checked), Color.MAGENTA
@@ -79,8 +79,8 @@ class LegacyToolThemeContractTest {
     fun changingAccentOverlayChangesMaterialPrimaryRole() {
         val monochrome = themed(R.style.ThemeOverlay_VeilFrame_Palette_Monochrome)
         val ocean = themed(R.style.ThemeOverlay_VeilFrame_Palette_Ocean)
-        val monoPrimary = MaterialColors.getColor(monochrome, R.attr.colorPrimary, Color.MAGENTA)
-        val oceanPrimary = MaterialColors.getColor(ocean, R.attr.colorPrimary, Color.MAGENTA)
+        val monoPrimary = MaterialColors.getColor(monochrome, com.google.android.material.R.attr.colorPrimary, Color.MAGENTA)
+        val oceanPrimary = MaterialColors.getColor(ocean, com.google.android.material.R.attr.colorPrimary, Color.MAGENTA)
         assertNotEquals("Dynamic chips cannot keep a fixed @color/vf_primary", monoPrimary, oceanPrimary)
     }
 
@@ -88,8 +88,8 @@ class LegacyToolThemeContractTest {
     @Config(qualifiers = "notnight")
     fun lightModeNavigationIsContrastAware() {
         val context = themed()
-        val selected = MaterialColors.getColor(context, R.attr.colorOnSecondaryContainer, Color.MAGENTA)
-        val unchecked = MaterialColors.getColor(context, R.attr.colorOnSurfaceVariant, Color.MAGENTA)
+        val selected = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSecondaryContainer, Color.MAGENTA)
+        val unchecked = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.MAGENTA)
         assertNotEquals(Color.MAGENTA, selected)
         assertNotEquals(Color.MAGENTA, unchecked)
     }
