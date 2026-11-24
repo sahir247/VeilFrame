@@ -156,13 +156,52 @@ android {
     }
 }
 
-// Robolectric downloads its android-all-instrumented SDK jars at test runtime,
-// outside Gradle's ordinary dependency resolution. Its repo1.maven.org default
-// can fail transiently on shared CI hosts even after :app:assembleDebug passes.
-// Use the canonical Maven Central hostname for every forked JVM test process;
-// this changes TEST provisioning only, never production app dependencies.
+// Robolectric fetches framework JARs from Maven independently of Gradle, *during*
+// JUnit class setup. On CI a transient HTTP failure at MavenArtifactFetcher.java:129
+// looks like a product test failure (PrnuSanitizerEngineTest > classMethod).
+//
+// Resolve only the SDK levels used by our tests via Gradle BEFORE starting JUnit,
+// so its normal dependency cache, mirror and checksum verification apply.
+// Version strings are from Robolectric 4.18's DefaultSdkProvider (i7).
+// @Config(sdk=33) QR tests, @Config(sdk=34) CV/Office tests, targetSdk=36 default.
+val robolectricSdkVersions = listOf(
+    "13-robolectric-9030017-i7",     // API 33
+    "14-robolectric-10818077-i7",    // API 34
+    "16-robolectric-13921718-2-i7"  // API 36
+)
+val robolectricSdkConfiguration = configurations.create("robolectricSdkJars") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+robolectricSdkVersions.forEach { version ->
+    dependencies.add(
+        robolectricSdkConfiguration.name,
+        "org.robolectric:android-all-instrumented:$version"
+    )
+}
+val robolectricOfflineDir = layout.buildDirectory.dir("robolectric/preinstrumented")
+val prepareRobolectricSdkJars = tasks.register<Sync>("prepareRobolectricSdkJars") {
+    from(robolectricSdkConfiguration)
+    into(robolectricOfflineDir)
+    doLast {
+        robolectricSdkVersions.forEach { version ->
+            val jar = robolectricOfflineDir.get().file("android-all-instrumented-$version.jar").asFile
+            check(jar.isFile && jar.length() > 10_000_000L) {
+                "Missing or truncated preinstrumented Robolectric SDK JAR: $jar"
+            }
+        }
+    }
+}
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
-    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2/")
+    if (providers.environmentVariable("CI").orNull.equals("true", ignoreCase = true)) {
+        dependsOn(prepareRobolectricSdkJars)
+        systemProperty("robolectric.dependency.dir", robolectricOfflineDir.get().asFile.absolutePath)
+        systemProperty("robolectric.offline", "true")
+    } else {
+        // Local developer JVM tests continue to work without a prefetch task.
+        systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2/")
+    }
 }
 
 // AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.

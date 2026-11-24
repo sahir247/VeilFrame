@@ -175,8 +175,9 @@ jobs:
         working-directory: android
         run: |
           ./gradlew :app:assembleDebug --no-daemon
-          # Keep CV regression assertions strict. Robolectric runtime jars resolve
-          # through the canonical Maven Central URL configured for Gradle Test tasks.
+          # Test task depends on prepareRobolectricSdkJars on CI: resolve SDK
+          # JARs through Gradle (with cache/mirror) before running JUnit offline.
+          # Do not retry or suppress actual failing CV test assertions.
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*" --no-daemon
 
       - name: Upload focused CV JVM test evidence
