@@ -79,8 +79,8 @@ class LegacyToolThemeContractTest {
     fun changingAccentOverlayChangesMaterialPrimaryRole() {
         val monochrome = themed(R.style.ThemeOverlay_VeilFrame_Palette_Monochrome)
         val ocean = themed(R.style.ThemeOverlay_VeilFrame_Palette_Ocean)
-        val monoPrimary = MaterialColors.getColor(monochrome, com.google.android.material.R.attr.colorPrimary, Color.MAGENTA)
-        val oceanPrimary = MaterialColors.getColor(ocean, com.google.android.material.R.attr.colorPrimary, Color.MAGENTA)
+        val monoPrimary = MaterialColors.getColor(monochrome, androidx.appcompat.R.attr.colorPrimary, Color.MAGENTA)
+        val oceanPrimary = MaterialColors.getColor(ocean, androidx.appcompat.R.attr.colorPrimary, Color.MAGENTA)
         assertNotEquals("Dynamic chips cannot keep a fixed @color/vf_primary", monoPrimary, oceanPrimary)
     }
 

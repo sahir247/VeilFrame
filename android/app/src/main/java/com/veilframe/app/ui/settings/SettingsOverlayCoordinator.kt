@@ -107,7 +107,7 @@ class SettingsOverlayCoordinator(
 
         // 3. Custom accent palette swatches (5 colored circle swatches)
         fun updateSwatchSelection(selected: ThemeSettingsManager.AccentPalette) {
-            val primaryColor = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
+            val primaryColor = MaterialColors.getColor(activity, androidx.appcompat.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
             fun updateCard(card: MaterialCardView, checkView: View, isSelected: Boolean) {
                 checkView.visibility = if (isSelected) View.VISIBLE else View.GONE
                 card.strokeWidth = if (isSelected) 6 else 0
@@ -145,7 +145,7 @@ class SettingsOverlayCoordinator(
 
         // 4. Typography style (2x2 Visual Cards)
         fun updateTypographySelection(selected: ThemeSettingsManager.TypographyStyle) {
-            val primaryColor = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
+            val primaryColor = MaterialColors.getColor(activity, androidx.appcompat.R.attr.colorPrimary, activity.getColor(R.color.vf_primary))
             val outlineVariantColor = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOutlineVariant, activity.getColor(R.color.vf_outline_variant))
 
             fun highlight(card: MaterialCardView, isSelected: Boolean) {
