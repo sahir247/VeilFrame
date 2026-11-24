@@ -37,8 +37,6 @@ import com.veilframe.app.navigation.ToolWorkStateContract
 import com.veilframe.app.pdf.operations.HtmlToPdfConverter
 import com.veilframe.app.pdf.operations.ImageConverter
 import com.veilframe.app.pdf.operations.ImageFormat
-import com.veilframe.app.pdf.operations.MergeItem
-import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.OfficeConverter
 import com.veilframe.app.pdf.operations.OfficeSourceFormat
@@ -113,6 +111,9 @@ class PdfQuickToolController(
     private var selectionGeneration: Long = 0L
     private var pendingSaveGeneration: Long? = null
     private var officePreviewBitmap: Bitmap? = null
+    private var mergePageRequest = 0L
+    private var mergePageLoadJob: Job? = null
+    private var mergePageReadySources: List<Uri>? = null
 
     private fun clearOfficePreview() {
         binding.ivDocVisualPreview.setImageDrawable(null)
@@ -191,6 +192,7 @@ class PdfQuickToolController(
         activeJob?.cancel()
         activeJob = null
         cancelTransientJobs()
+        invalidateMergePagePlan()
         selectedUris.clear()
         primaryDocName = "document.pdf"
         primaryDocPages = 1
@@ -612,8 +614,14 @@ class PdfQuickToolController(
             thumbnailLoader = thumbnailLoader
         ).apply {
             onOrderChanged = { newOrder ->
+                val changed = selectedUris != newOrder
                 selectedUris.clear()
                 selectedUris.addAll(newOrder)
+                if (changed) {
+                    invalidateMergePagePlan()
+                    if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked)
+                        refreshMergePageItems()
+                }
                 binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
                 if (selectedUris.isEmpty()) {
                     binding.containerQuickToolEmptyState.visibility = View.VISIBLE
@@ -686,6 +694,7 @@ class PdfQuickToolController(
             mergeFileListAdapter?.sortByName()
         }
         binding.chipMergeClear.setOnClickListener {
+            invalidateMergePagePlan()
             selectedUris.clear()
             isSourceReady = false
             binding.btnQuickToolExecute.isEnabled = false
@@ -738,8 +747,13 @@ class PdfQuickToolController(
             binding.tvMergeDragTip.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.btnAddMoreFiles.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.layoutMergePageInterleave.visibility = if (isPages) View.VISIBLE else View.GONE
-            if (isPages) {
-                refreshMergePageItems()
+            if (activeMode == QuickMode.MERGE) {
+                if (isPages) {
+                    refreshMergePageItems()
+                } else {
+                    invalidateMergePagePlan()
+                    binding.btnQuickToolExecute.isEnabled = !isExecuting && isSourceReady && selectedUris.isNotEmpty()
+                }
             }
         }
 
@@ -752,51 +766,53 @@ class PdfQuickToolController(
         }
     }
 
+    private fun invalidateMergePagePlan() {
+        mergePageRequest++
+        mergePageLoadJob?.cancel()
+        mergePageLoadJob = null
+        mergePageReadySources = null
+        mergePageAdapter?.setItems(emptyList())
+    }
+
     private fun refreshMergePageItems() {
-        if (selectedUris.isEmpty()) {
-            mergePageAdapter?.setItems(emptyList())
-            return
-        }
+        invalidateMergePagePlan()
+        if (activeMode != QuickMode.MERGE || !binding.chipMergeModePages.isChecked) return
+        binding.btnQuickToolExecute.isEnabled = false
+        if (selectedUris.isEmpty()) return
         val generation = selectionGeneration
+        val request = mergePageRequest
         val sourceUris = selectedUris.toList()
-        launchTransient {
-            val mergeItems = sourceUris.mapIndexed { idx, uri ->
-                val mime = activity.contentResolver.getType(uri) ?: ""
-                val isImg = mime.startsWith("image/") ||
-                    uri.toString().endsWith(".jpg", true) ||
-                    uri.toString().endsWith(".jpeg", true) ||
-                    uri.toString().endsWith(".png", true) ||
-                    uri.toString().endsWith(".webp", true)
-                val type = if (isImg) MergeItemType.IMAGE else MergeItemType.PDF
-                var pageCount = 1
-                if (!isImg) {
-                    try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc -> pageCount = doc.numberOfPages }
-                        }
-                    } catch (_: Exception) {}
+        fun isCurrent() = request == mergePageRequest && generation == selectionGeneration &&
+            activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            sourceUris == selectedUris.toList()
+        mergePageLoadJob = launchTransient {
+            try {
+                val pageItems = PdfMergePagePlanner.build(activity, sourceUris, ::queryDocumentName)
+                withContext(Dispatchers.Main) {
+                    if (isCurrent()) {
+                        mergePageAdapter?.setItems(pageItems)
+                        mergePageReadySources = sourceUris
+                        binding.btnQuickToolExecute.isEnabled = !isExecuting
+                    }
                 }
-                MergeItem(
-                    id = "doc_$idx",
-                    uri = uri,
-                    name = queryDocumentName(uri),
-                    type = type,
-                    pageCount = pageCount
-                )
-            }
-            val pageItems = pdfMerger.buildPageItems(mergeItems)
-            withContext(Dispatchers.Main) {
-                if (generation == selectionGeneration &&
-                    (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) &&
-                    sourceUris == selectedUris.toList()
-                ) {
-                    mergePageAdapter?.setItems(pageItems)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                withContext(Dispatchers.Main) {
+                    if (isCurrent()) {
+                        Toast.makeText(activity, "Cannot prepare complete page list: ${failure.message ?: "unreadable source"}",
+                            Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
     private fun applyCustomMergeOrderText() {
+        if (mergePageReadySources != selectedUris.toList()) {
+            Toast.makeText(activity, "Wait for the complete page list", Toast.LENGTH_SHORT).show()
+            return
+        }
         val input = binding.etCustomMergeOrder.text?.toString().orEmpty()
         val currentItems = mergePageAdapter?.getItems() ?: emptyList()
         val requestedOrder = parsePageSequence(input, currentItems.size)
@@ -984,7 +1000,7 @@ class PdfQuickToolController(
     private fun updateMultiFileList() {
         binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
         mergeFileListAdapter?.setUris(selectedUris)
-        if (binding.chipMergeModePages.isChecked) {
+        if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked) {
             refreshMergePageItems()
         }
     }
@@ -1785,6 +1801,11 @@ class PdfQuickToolController(
         }
 
         if (isExecuting) return
+        if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            (mergePageReadySources != selectedUris.toList() || (mergePageAdapter?.itemCount ?: 0) == 0)) {
+            Toast.makeText(activity, "Complete page list required for page-by-page merge", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (activeMode == QuickMode.DOC_TO_PDF && OfficeSourceFormat.fromName(primaryDocName) == OfficeSourceFormat.XLSX && xlsxPrintLayout == null) {
             val generation = selectionGeneration
             val source = selectedUris.firstOrNull()
@@ -1834,8 +1855,7 @@ class PdfQuickToolController(
         val operationFileName = primaryDocName
         val operationBase = primaryDocName.removeSuffix(".pdf")
         val generation = selectionGeneration
-        val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
-            (mergePageAdapter?.itemCount ?: 0) > 0
+        val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked
         val mergePlan = if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty() else emptyList()
         val deletePages = if (operationMode == QuickMode.DELETE) rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty() else emptySet()
         val rotatePages = if (operationMode == QuickMode.ROTATE) rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty() else emptySet()

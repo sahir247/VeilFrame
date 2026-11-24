@@ -336,32 +336,38 @@ class PdfMerger {
         val openedDocs = mutableMapOf<Uri, PDDocument>()
 
         try {
-            destinationDocument = PDDocument()
+            destinationDocument = PDDocument(MemoryUsageSetting.setupTempFileOnly())
             val destination = destinationDocument
 
             pageItems.forEachIndexed { index, pageItem ->
                 ensureActive()
                 if (pageItem.isImage) {
                     val bitmap = loadBitmap(context, pageItem.sourceItem.uri)
-                    if (bitmap != null) {
+                        ?: throw IllegalStateException("Cannot load selected image: ${pageItem.sourceItem.name}")
+                    try {
                         addImagePageToDocument(destination, bitmap)
+                    } finally {
+                        bitmap.recycle()
                     }
                 } else {
                     val uri = pageItem.sourceItem.uri
                     val srcDoc = openedDocs.getOrPut(uri) {
                         val stream = context.contentResolver.openInputStream(uri)
                             ?: throw IllegalStateException("Cannot open ${pageItem.sourceItem.name}")
-                        PDDocument.load(stream, MemoryUsageSetting.setupTempFileOnly())
+                        stream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
                     }
-                    if (pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
-                        val page = srcDoc.getPage(pageItem.sourcePageIndex)
-                        destination.importPage(page)
+                    check(srcDoc.numberOfPages == pageItem.sourceItem.pageCount &&
+                        pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
+                        "Selected PDF page plan no longer matches ${pageItem.sourceItem.name}"
                     }
+                    val page = srcDoc.getPage(pageItem.sourcePageIndex)
+                    destination.importPage(page)
                 }
                 onProgress((index + 1).toFloat() / pageItems.size)
             }
 
             ensureActive()
+            check(destination.numberOfPages == pageItems.size) { "Incomplete page-by-page merge" }
             destination.save(outputStream)
             outputStream.flush()
             onProgress(1.0f)
