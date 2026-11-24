@@ -5,6 +5,7 @@ import android.view.ContextThemeWrapper
 import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.color.MaterialColors
 import com.veilframe.app.R
+import com.veilframe.app.ui.theme.ShellThemeStyler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -53,7 +54,8 @@ class LegacyToolThemeContractTest {
     fun darkAndOledNavigationColorsFollowSelectedMaterialRoles() {
         for (context in listOf(
             themed(),
-            themed(R.style.ThemeOverlay_VeilFrame_Amoled)
+            themed(R.style.ThemeOverlay_VeilFrame_Amoled),
+            themed(R.style.ThemeOverlay_VeilFrame_Palette_Ocean)
         )) {
             val color = AppCompatResources.getColorStateList(
                 context, R.color.selector_vf_navigation_item
@@ -64,13 +66,23 @@ class LegacyToolThemeContractTest {
             val normal = MaterialColors.getColor(
                 context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.MAGENTA
             )
-            assertEquals(selected, color.getColorForState(
-                intArrayOf(android.R.attr.state_checked), Color.MAGENTA
-            ))
-            assertEquals(normal, color.getColorForState(
-                intArrayOf(-android.R.attr.state_checked), Color.MAGENTA
-            ))
+            val disabled = MaterialColors.getColor(
+                context, com.google.android.material.R.attr.colorOutline, Color.MAGENTA
+            )
+            // Actual drawable-state sets contain enabled only when the view is enabled.
+            val cases = listOf(
+                intArrayOf(android.R.attr.state_enabled, android.R.attr.state_checked) to selected,
+                intArrayOf(android.R.attr.state_enabled) to normal,
+                intArrayOf(android.R.attr.state_checked) to disabled,
+                intArrayOf() to disabled
+            )
+            val runtimeTint = ShellThemeStyler.navigationItemTint(context)
+            for ((state, expected) in cases) {
+                assertEquals(expected, color.getColorForState(state, Color.MAGENTA))
+                assertEquals(expected, runtimeTint.getColorForState(state, Color.MAGENTA))
+            }
             assertTrue(color.isStateful)
+            assertTrue(runtimeTint.isStateful)
         }
     }
 
