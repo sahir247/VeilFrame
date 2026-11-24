@@ -66,7 +66,7 @@ internal class SearchableOcrFonts(private val context: Context, private val docu
             try {
                 val tables = parsed.tableMap
                 if ("glyf" !in tables || "fvar" in tables || "CFF " in tables ||
-                    parsed.os2Windows?.fsType?.toInt() != 0) {
+                    parsed.getOS2Windows()?.getFsType()?.toInt() != 0) {
                     rejected.add(file)
                     continue
                 }

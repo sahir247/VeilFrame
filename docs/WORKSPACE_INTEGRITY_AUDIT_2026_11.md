@@ -1388,3 +1388,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — A02 bounded static TrueType collection fallback
 
 - Confirmed the exact PDFBox-Android v2.0.27.0 TrueTypeCollection and TTCDataStream ownership contract. Extend installed Noto/Droid fallback to bounded TTC inputs (32 candidates, 64 MiB/file, 16 faces, 12 embedded faces) with validated collection header, unrestricted fsType, static glyf and full cmap coverage. Own shared collection descriptors through document save and verification; retain existing bundled/standalone paths, exact serialized Unicode digest and fail-closed behavior. A synthetic single-face collection from bundled Devanagari TTF exercises subsetting and exact readback. CFF and variable collections are still unsupported; device-specific CJK fonts and recognition accuracy remain pending. Source: https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/library/src/main/java/com/tom_roush/fontbox/ttf/TrueTypeCollection.java and TTCDataStream.java. CI pending.
+
+
+### 2026-11-24 — A02 PDFBox font API compile regression
+
+- Exact head `5dc3ab3` failed `:app:compileDebugKotlin` in both [OpenCV validation](https://github.com/sahir247/VeilFrame/actions/runs/45428763119/job/138568125829) and [ARM64 NCNN hardening](https://github.com/sahir247/VeilFrame/actions/runs/45428763168/job/138568953535). Native builds succeeded; both errors are unresolved `os2Windows` Kotlin property references. Confirmed the pinned PDFBox-Android v2.0.27.0 Java API (`TrueTypeFont.getOS2Windows()` and `OS2WindowsMetricsTable.getFsType()`); use explicit getters for both TTF and TTC admission. Keep unrestricted embedding permission checks unchanged. Fresh CI pending; no gates bypassed.

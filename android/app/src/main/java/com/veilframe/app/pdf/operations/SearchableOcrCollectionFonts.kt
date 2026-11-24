@@ -49,7 +49,7 @@ internal class SearchableOcrCollectionFonts(
                         if (selected != null || loaded.size >= 12) return@processAllFonts
                         val tables = attempt { parsed.tableMap } ?: return@processAllFonts
                         if ("glyf" !in tables || "fvar" in tables || "CFF " in tables || "CFF2" in tables ||
-                            attempt { parsed.os2Windows?.fsType?.toInt() } != 0) return@processAllFonts
+                            attempt { parsed.getOS2Windows()?.getFsType()?.toInt() } != 0) return@processAllFonts
                         val name = attempt { parsed.name } ?: return@processAllFonts
                         eligibleFace = true
                         val key = file to name
