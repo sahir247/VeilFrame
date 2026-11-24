@@ -1855,6 +1855,32 @@ class OfficeConverterFidelityTest {
         }
     }
     @Test
+    fun x14ConditionalIconsAndColorScalesUseSavedRangesAndThresholds() = runBlocking {
+        val workbook = """<workbook><sheets><sheet name="X14" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>0</v></c><c r="B1"><v>0</v></c><c r="C1"><v>1</v></c></row><row r="2"><c r="A2"><v>50</v></c><c r="B2"><v>50</v></c><c r="C2"><v>2</v></c></row><row r="3"><c r="A3"><v>100</v></c><c r="B3"><v>100</v></c><c r="C3"><v>3</v></c></row></sheetData><conditionalFormatting sqref="C1:C3"><cfRule type="dataBar" priority="3"><dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="FF2266AA"/></dataBar><extLst><ext><x14:id>{11111111-1111-1111-1111-111111111111}</x14:id></ext></extLst></cfRule></conditionalFormatting><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="iconSet" priority="1"><x14:iconSet iconSet="3Arrows"><x14:cfvo type="percent"><xm:f>0</xm:f></x14:cfvo><x14:cfvo type="percent"><xm:f>33</xm:f></x14:cfvo><x14:cfvo type="percent"><xm:f>67</xm:f></x14:cfvo></x14:iconSet></x14:cfRule><xm:sqref>A1:A3</xm:sqref></x14:conditionalFormatting><x14:conditionalFormatting><x14:cfRule type="colorScale" priority="2"><x14:colorScale><x14:cfvo type="num"><xm:f>0</xm:f></x14:cfvo><x14:cfvo type="num"><xm:f>100</xm:f></x14:cfvo><x14:color rgb="FFFF0000"/><x14:color rgb="FF00FF00"/></x14:colorScale></x14:cfRule><xm:sqref>B1:B3</xm:sqref></x14:conditionalFormatting><x14:conditionalFormatting><x14:cfRule type="dataBar" id="{11111111-1111-1111-1111-111111111111}"><x14:dataBar border="1"/></x14:cfRule><xm:sqref>C1:C3</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(1,parsed.unsupportedConditionalRules)
+        assertEquals("down",parsed.styles.at(0,0).icon!!.shape)
+        assertEquals("up",parsed.styles.at(2,0).icon!!.shape)
+        assertEquals(0xFF0000,parsed.styles.at(0,1).fillRgb)
+        assertEquals(0x00FF00,parsed.styles.at(2,1).fillRgb)
+        assertNull(parsed.styles.at(1,2).dataBar)
+        val out = File(tempFolder.root,"x14-conditional.pdf")
+        OfficeConverter().convertXlsxToPdf(input,out,context)
+        PDDocument.load(out).use { pdf ->
+            assertTrue(pdf.numberOfPages > 0)
+            assertTrue(PDFTextStripper().getText(pdf).contains("conditional formatting partial"))
+        }
+
+        val custom = sheet.replace("iconSet=\"3Arrows\"", "iconSet=\"3Arrows\" custom=\"1\"")
+        val unsupported = OpenXmlDocumentParser.parseXlsx(createZip(mapOf(
+            "xl/workbook.xml" to workbook,"xl/worksheets/sheet1.xml" to custom))).sheets.single()
+        assertEquals(2,unsupported.unsupportedConditionalRules)
+        assertNull(unsupported.styles.at(0,0).icon)
+    }
+
+    @Test
     fun boundedFormulaConditionalFormattingRespectsRelativeCellsAndModulo() = runBlocking {
         val range = listOf(OpenXmlDocumentParser.CellRangeAddress(0,2,0,0))
         assertEquals(XlsxConditionalFormatting.Expression.Modulo(true,2,0,false),
