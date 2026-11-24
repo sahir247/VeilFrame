@@ -31,56 +31,36 @@ object FlowConsistency {
      * Checks `F_ab(q) + F_ba(q + F_ab(q)) ≈ 0`.
      * Large residual → flow is inconsistent (typically occlusion).
      */
-    fun check(forward: FlowEstimator.FlowField, backward: FlowEstimator.FlowField): ConsistencyResult {
-        val warpedBackward = warpFlow(backward.flow, forward.flow, scale = 1.0)
-        val sum = Mat()
-        var errorMap: Mat? = Mat()
-        var occlusionMask: Mat? = Mat()
-        var confidence: Mat? = Mat()
-        try {
-            val err = errorMap!!
-            val occ = occlusionMask!!
-            val conf = confidence!!
-            Core.add(forward.flow, warpedBackward, sum)
-            // split + magnitude
-            val channels = ArrayList<Mat>()
-            Core.split(sum, channels)
-            Core.magnitude(channels[0], channels[1], err)
-            channels.forEach { it.release() }
+    fun check(forward: FlowEstimator.FlowField, backward: FlowEstimator.FlowField): ConsistencyResult = withMotionMats {
+        val warpedBackward = own(warpFlow(backward.flow, forward.flow, scale = 1.0))
+        val sum = own(Mat())
+        val err = own(Mat())
+        val occ = own(Mat())
+        val conf = own(Mat())
+        Core.add(forward.flow, warpedBackward, sum)
+        release(warpedBackward)
+        val channels = split(sum)
+        Core.magnitude(channels[0], channels[1], err)
+        channels.forEach { release(it) }
+        release(sum)
 
-            // Threshold: relative to displacement + 1px tolerance.
-            val dispChannels = ArrayList<Mat>()
-            Core.split(forward.flow, dispChannels)
-            val dispMagnitude = Mat()
-            Core.magnitude(dispChannels[0], dispChannels[1], dispMagnitude)
-            dispChannels.forEach { it.release() }
-            val thresholdMap = Mat()
-            Core.add(dispMagnitude, Scalar1(), thresholdMap)
-            Core.multiply(thresholdMap, Scalar05(), thresholdMap)
-
-            Core.compare(err, thresholdMap, occ, Core.CMP_GT)
-
-            // confidence = 1 - normalized error, clipped to 0..1
-            Core.divide(err, thresholdMap, conf)
-            val ones = Mat.ones(conf.size(), conf.type())
-            Core.subtract(ones, conf, conf)
-            Core.max(conf, Scalar0(), conf)
-            Core.min(conf, Scalar1(), conf)
-            ones.release()
-            dispMagnitude.release()
-            thresholdMap.release()
-
-            val result = ConsistencyResult(err, occ, conf)
-            errorMap = null
-            occlusionMask = null
-            confidence = null
-            return result
-        } finally {
-            errorMap?.release()
-            occlusionMask?.release()
-            confidence?.release()
-            warpedBackward.release()
-            sum.release()
+        val dispChannels = split(forward.flow)
+        val dispMagnitude = own(Mat())
+        Core.magnitude(dispChannels[0], dispChannels[1], dispMagnitude)
+        dispChannels.forEach { release(it) }
+        val thresholdMap = own(Mat())
+        Core.add(dispMagnitude, Scalar1(), thresholdMap)
+        release(dispMagnitude)
+        Core.multiply(thresholdMap, Scalar05(), thresholdMap)
+        Core.compare(err, thresholdMap, occ, Core.CMP_GT)
+        Core.divide(err, thresholdMap, conf)
+        release(thresholdMap)
+        val ones = own(Mat.ones(conf.size(), conf.type()))
+        Core.subtract(ones, conf, conf)
+        Core.max(conf, Scalar0(), conf)
+        Core.min(conf, Scalar1(), conf)
+        ConsistencyResult(err, occ, conf).also {
+            transfer(err); transfer(occ); transfer(conf)
         }
     }
 
@@ -92,85 +72,78 @@ object FlowConsistency {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(flow, "flow")
         com.veilframe.app.cv.core.CvContracts.requireFlow32FC2(flow, "flow")
         com.veilframe.app.cv.core.CvContracts.requireInRange(boundaryStrength, 0.0, 1.0, "boundaryStrength")
-        val smoothed = Mat()
-        val boundaryMask = Mat()
-        val refined = Mat()
-        try {
-            val channels = ArrayList<Mat>()
-            Core.split(flow, channels)
-            val smoothedChannels = ArrayList<Mat>()
-            for (channel in channels) {
-                val out = Mat()
+        return withMotionMats {
+            val smoothed = own(Mat())
+            val boundaryMask = own(Mat())
+            val refined = own(Mat())
+            val channels = split(flow)
+            val smoothedChannels = channels.map { channel ->
+                val out = own(Mat())
                 Imgproc.medianBlur(channel, out, 5)
-                smoothedChannels += out
+                out
             }
             Core.merge(smoothedChannels, smoothed)
-            smoothedChannels.forEach { it.release() }
+            smoothedChannels.forEach { release(it) }
 
             // Motion-boundary mask from the gradients of Fx, Fy AND |F|.
             // |F| alone misses directional discontinuities (|A| ≈ |B| but
             // direction A ≠ direction B) — those motion boundaries would be
             // smoothed away by the median pass. Combining all three gradients
             // keeps them.
-            val boundaryGrad = Mat()
+            val boundaryGrad = own(Mat())
             for (channelIndex in 0..2) {
                 val src = if (channelIndex < 2) {
                     channels[channelIndex]
                 } else {
-                    val magnitude = Mat()
+                    val magnitude = own(Mat())
                     Core.magnitude(channels[0], channels[1], magnitude)
                     magnitude
                 }
-                val gradX = Mat()
-                val gradY = Mat()
+                val gradX = own(Mat())
+                val gradY = own(Mat())
                 Imgproc.Sobel(src, gradX, CvType.CV_32F, 1, 0, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
                 Imgproc.Sobel(src, gradY, CvType.CV_32F, 0, 1, 3, 1.0, 0.0, Core.BORDER_REPLICATE)
-                val gradMag = Mat()
+                val gradMag = own(Mat())
                 Core.magnitude(gradX, gradY, gradMag)
                 if (channelIndex == 0) {
                     gradMag.copyTo(boundaryGrad)
                 } else {
                     Core.max(boundaryGrad, gradMag, boundaryGrad)
                 }
-                gradX.release()
-                gradY.release()
-                gradMag.release()
-                if (channelIndex == 2) src.release() // the |F| magnitude Mat
+                release(gradX)
+                release(gradY)
+                release(gradMag)
+                if (channelIndex == 2) release(src) // the |F| magnitude Mat
             }
             Core.normalize(boundaryGrad, boundaryMask, 0.0, 1.0, Core.NORM_MINMAX)
-            channels.forEach { it.release() }
-            boundaryGrad.release()
+            channels.forEach { release(it) }
+            release(boundaryGrad)
 
             // refined = smoothed * (1 - strength*mask) + flow * strength*mask
-            val maskWeighted = Mat()
+            val maskWeighted = own(Mat())
             boundaryMask.convertTo(maskWeighted, CvType.CV_32F, boundaryStrength)
-            val invMask = Mat()
-            val ones = Mat.ones(boundaryMask.size(), CvType.CV_32F)
+            val invMask = own(Mat())
+            val ones = own(Mat.ones(boundaryMask.size(), CvType.CV_32F))
             Core.subtract(ones, maskWeighted, invMask)
-            ones.release()
+            release(ones)
 
-            val flowChannels = ArrayList<Mat>()
-            val smoothChannels = ArrayList<Mat>()
-            Core.split(flow, flowChannels)
-            Core.split(smoothed, smoothChannels)
+            val flowChannels = split(flow)
+            val smoothChannels = split(smoothed)
             for (i in flowChannels.indices) {
-                val keepOriginal = Mat()
-                val keepSmoothed = Mat()
+                val keepOriginal = own(Mat())
+                val keepSmoothed = own(Mat())
                 Core.multiply(flowChannels[i], maskWeighted, keepOriginal)
                 Core.multiply(smoothChannels[i], invMask, keepSmoothed)
                 Core.add(keepOriginal, keepSmoothed, flowChannels[i])
-                keepOriginal.release()
-                keepSmoothed.release()
-                smoothChannels[i].release()
+                release(keepOriginal)
+                release(keepSmoothed)
+                release(smoothChannels[i])
             }
             Core.merge(flowChannels, refined)
-            flowChannels.forEach { it.release() }
-            maskWeighted.release()
-            invMask.release()
-            return refined
-        } finally {
-            smoothed.release()
-            boundaryMask.release()
+            flowChannels.forEach { release(it) }
+            release(maskWeighted)
+            release(invMask)
+            transfer(refined)
         }
     }
 
@@ -181,26 +154,23 @@ object FlowConsistency {
         scale: Double,
         pool: com.veilframe.app.cv.core.MatPool = com.veilframe.app.cv.core.MatPool.default,
     ): Mat {
-        val channels = ArrayList<Mat>()
-        Core.split(byFlow, channels)
-        val mapXLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
-        val mapYLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
-        val mapX = mapXLease.mat
-        val mapY = mapYLease.mat
-        try {
+        return withMotionMats {
+            val channels = split(byFlow)
+            pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F).use { mapXLease ->
+            pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F).use { mapYLease ->
+            val mapX = mapXLease.mat
+            val mapY = mapYLease.mat
             Core.multiply(channels[0], ScalarOf(scale), mapX)
             Core.multiply(channels[1], ScalarOf(scale), mapY)
             CoordinateGridCache.withGrid(byFlow.rows(), byFlow.cols()) { gridX, gridY ->
                 Core.add(mapX, gridX, mapX)
                 Core.add(mapY, gridY, mapY)
             }
-            val out = Mat()
+            val out = own(Mat())
             Imgproc.remap(flow, out, mapX, mapY, Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE)
-            return out
-        } finally {
-            channels.forEach { it.release() }
-            mapXLease.close()
-            mapYLease.close()
+            transfer(out)
+            }
+            }
         }
     }
 

@@ -13,6 +13,7 @@ internal class MotionMatScope {
         mats.removeAt(index)
         return mat
     }
+    fun release(mat: Mat) { transfer(mat).release() }
     fun split(mat: Mat): List<Mat> {
         val channels = ArrayList<Mat>()
         try { Core.split(mat,channels) }

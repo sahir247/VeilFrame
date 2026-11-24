@@ -1339,3 +1339,5 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — B03/A25 native optical flow exception-path ownership
 
 - Scoped ownership of temporary grayscale, working flow, forward/backward, warp, blend and scale Mats; failed second flow calculation or failed native operation retires prior allocations. Nested MatPool leases release the first lease if acquiring the second fails. Coordinate grid replacement only commits after both populated grids are available. No algorithm tuning or quality claims. Added actual libx264 odd-geometry/PTS/color round-trip instrumentation to the existing native CI package. These tests have not yet run on the exact head.
+
+- Extended the scoped Mat contract through flow consistency, occlusion and refinement, including partial channel splits, intermediate gradients and paired map leases. Preserve early releases to avoid extending peak native lifetimes; added injected failure ownership instrumentation. CI pending.

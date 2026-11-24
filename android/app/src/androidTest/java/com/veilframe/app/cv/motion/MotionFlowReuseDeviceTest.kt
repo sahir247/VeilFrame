@@ -47,6 +47,28 @@ class MotionFlowReuseDeviceTest {
         }
     }
 
+    @Test fun scopedNativeFailureRetiresOwnedMatsButNotBorrowedInputs() {
+        CvRuntime.requireAvailable()
+        val borrowed = Mat(2,2,CvType.CV_8UC3)
+        val first = Mat(2,2,CvType.CV_8UC3)
+        val transferred = Mat(2,2,CvType.CV_8UC3)
+        try {
+            org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+                withMotionMats {
+                    own(first)
+                    own(transferred)
+                    transfer(transferred)
+                    error("Injected native operation failure")
+                }
+            }
+            assertTrue(first.empty())
+            assertTrue(!borrowed.empty())
+            assertTrue(!transferred.empty())
+        } finally {
+            borrowed.release(); first.release(); transferred.release()
+        }
+    }
+
     @Test fun exceptionDoesNotConsumeBorrowedFlowOrReleaseInputMats() {
         CvRuntime.requireAvailable()
         val gray = Mat(48, 64, CvType.CV_8UC1, Scalar(32.0))
