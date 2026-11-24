@@ -536,7 +536,7 @@ class PdfQuickToolController(
             if (order.isNotEmpty()) {
                 rotateThumbnailAdapter?.setPageOrder(order)
             } else {
-                Toast.makeText(activity, "Enter valid page sequence (e.g. 3>4>2>1>5 or 1-3, 5)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Use valid, unique page numbers or ranges (max 10,000 entries)", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -817,19 +817,14 @@ class PdfQuickToolController(
         val currentItems = mergePageAdapter?.getItems() ?: emptyList()
         val requestedOrder = parsePageSequence(input, currentItems.size)
         if (requestedOrder.isEmpty() || currentItems.isEmpty()) {
-            Toast.makeText(activity, "Enter page sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Use valid, unique page numbers or ranges (max 10,000 entries)", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val itemMap = currentItems.associateBy { it.overallPageNumber }
-        val reordered = mutableListOf<MergePageItem>()
-        for (num in requestedOrder) {
-            itemMap[num]?.let { reordered.add(it) }
-        }
-        for (item in currentItems) {
-            if (!reordered.contains(item)) {
-                reordered.add(item)
-            }
+        val reordered = PdfPageSequenceParser.reorderPrefix(currentItems, requestedOrder) { it.overallPageNumber }
+        if (reordered.isEmpty()) {
+            Toast.makeText(activity, "Invalid page order; previous order retained", Toast.LENGTH_SHORT).show()
+            return
         }
         mergePageAdapter?.setItems(reordered)
     }
@@ -2678,67 +2673,10 @@ class PdfQuickToolController(
             "text/plain"
         )
 
-        /**
-         * Robust page sequence parser supporting:
-         * - Arbitrary delimiters: ',', ';', '>', '->', spaces, '|' (e.g. "3>4>2>1>5", "1, 2, 7, 6, 3, 4, 5, 10, 8, 9")
-         * - Ranges: "1-4" or "1..4" -> [1, 2, 3, 4]
-         * - Reverse ranges: "5-1" -> [5, 4, 3, 2, 1]
-         * - Keywords: "reverse", "rev", "odd", "even", "reset", "all"
-         */
-        fun parsePageSequence(input: String, totalPages: Int = 0): List<Int> {
-            if (input.isBlank()) return emptyList()
-            val clean = input.trim().lowercase()
+        /** Parse a bounded manual page-order prefix without silently ignoring errors. */
+        fun parsePageSequence(input: String, totalPages: Int = 0): List<Int> =
+            PdfPageSequenceParser.parse(input, totalPages)
 
-            if (totalPages > 0) {
-                if (clean == "reverse" || clean == "rev") {
-                    return (totalPages downTo 1).toList()
-                }
-                if (clean == "odd" || clean == "odds") {
-                    return (1..totalPages step 2).toList()
-                }
-                if (clean == "even" || clean == "evens") {
-                    return (2..totalPages step 2).toList()
-                }
-                if (clean == "reset" || clean == "all") {
-                    return (1..totalPages).toList()
-                }
-            }
-
-            val result = mutableListOf<Int>()
-            // Split on delimiters: >, ->, commas, semicolons, or pipes
-            val tokens = input.split(Regex("[,;>|]+|\\s*->\\s*"))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-
-            for (token in tokens) {
-                // Range check: 1-4 or 1..4 or 4-1
-                val rangeMatch = Regex("""^(\d+)\s*(?:-|–|\.\.)\s*(\d+)$""").matchEntire(token)
-                if (rangeMatch != null) {
-                    val start = rangeMatch.groupValues[1].toIntOrNull() ?: continue
-                    val end = rangeMatch.groupValues[2].toIntOrNull() ?: continue
-                    if (start > 0 && end > 0) {
-                        if (start <= end) {
-                            for (p in start..end) {
-                                if (totalPages <= 0 || p <= totalPages) result.add(p)
-                            }
-                        } else {
-                            for (p in start downTo end) {
-                                if (totalPages <= 0 || p <= totalPages) result.add(p)
-                            }
-                        }
-                    }
-                } else {
-                    // Single page or space-separated tokens
-                    val numbers = Regex("""\d+""").findAll(token).mapNotNull { it.value.toIntOrNull() }
-                    for (num in numbers) {
-                        if (num > 0 && (totalPages <= 0 || num <= totalPages)) {
-                            result.add(num)
-                        }
-                    }
-                }
-            }
-            return result
-        }
     }
 
     private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {
