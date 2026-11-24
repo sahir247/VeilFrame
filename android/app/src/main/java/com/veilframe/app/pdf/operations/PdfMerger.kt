@@ -38,7 +38,8 @@ data class MergeItem(
     val size: Long = 0L,
     val formattedSize: String = "",
     val type: MergeItemType,
-    val pageCount: Int = 1
+    val pageCount: Int = 1,
+    val sourceSha256: String? = null
 )
 
 /**
@@ -333,7 +334,7 @@ class PdfMerger {
         MemoryGuard.checkMemory("mergePageItems")
 
         var destinationDocument: PDDocument? = null
-        val openedDocs = mutableMapOf<Uri, PDDocument>()
+        val openedDocs = mutableMapOf<Uri, LoadedMergePdf>()
 
         try {
             destinationDocument = PDDocument(MemoryUsageSetting.setupTempFileOnly())
@@ -351,11 +352,12 @@ class PdfMerger {
                     }
                 } else {
                     val uri = pageItem.sourceItem.uri
-                    val srcDoc = openedDocs.getOrPut(uri) {
-                        val stream = context.contentResolver.openInputStream(uri)
-                            ?: throw IllegalStateException("Cannot open ${pageItem.sourceItem.name}")
-                        stream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
+                    val loaded = openedDocs[uri] ?: loadMergePdf(context, uri).also { openedDocs[uri] = it }
+                    val expectedHash = pageItem.sourceItem.sourceSha256
+                    check(expectedHash == null || loaded.sha256 == expectedHash) {
+                        "Selected PDF changed since page ordering: ${pageItem.sourceItem.name}"
                     }
+                    val srcDoc = loaded.document
                     check(srcDoc.numberOfPages == pageItem.sourceItem.pageCount &&
                         pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
                         "Selected PDF page plan no longer matches ${pageItem.sourceItem.name}"

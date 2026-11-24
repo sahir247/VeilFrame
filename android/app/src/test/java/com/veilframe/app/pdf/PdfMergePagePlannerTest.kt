@@ -54,4 +54,25 @@ class PdfMergePagePlannerTest {
             PdfMergePagePlanner.build(context, listOf(Uri.fromFile(file))) { "corrupt.pdf" }
         }.isFailure)
     }
+
+    @Test fun samePageCountReplacementIsRejectedBeforeOutput() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        PDFBoxResourceLoader.init(context)
+        val file = temp.newFile("same-count.pdf")
+        writePdf(file, 2)
+        val uri = Uri.fromFile(file)
+        val plan = PdfMergePagePlanner.build(context, listOf(uri)) { "same-count.pdf" }
+        assertEquals(64, plan.first().sourceItem.sourceSha256?.length)
+        PDDocument().use { replacement ->
+            repeat(2) { replacement.addPage(PDPage()) }
+            replacement.documentInformation.title = "Different source, same number of pages"
+            replacement.save(file)
+        }
+        val output = ByteArrayOutputStream()
+        assertTrue(PdfMerger().mergePageItems(context, plan, output).isFailure)
+        assertEquals(0, output.size())
+        val refreshed = PdfMergePagePlanner.build(context, listOf(uri)) { "same-count.pdf" }
+        assertTrue(PdfMerger().mergePageItems(context, refreshed, output).isSuccess)
+        PDDocument.load(output.toByteArray()).use { assertEquals(2, it.numberOfPages) }
+    }
 }
