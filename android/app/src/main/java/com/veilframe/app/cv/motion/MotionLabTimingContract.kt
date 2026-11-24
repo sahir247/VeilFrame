@@ -4,10 +4,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Fail-closed timing admission for Motion Lab's constant-rate JPEG sequence.
+ * Fail-closed timing admission for Motion Lab's constant-rate raw frame stream.
  *
  * Use the actual encoded video sample presentation timestamps (not JPEG count
- * divided by container duration). VFR is currently unsupported by the JPEG
+ * divided by container duration). VFR is currently unsupported by the raw CFR
  * bridge; require a well-defined CFR contract until PTS-native streaming exists.
  */
 object MotionLabTimingContract {

@@ -33,10 +33,16 @@ internal suspend fun <T> awaitOwnedNativeSession(
     }
 }
 
-internal suspend fun executeOwnedFfmpeg(args: Array<String>): FFmpegSession =
+internal suspend fun executeOwnedFfmpeg(
+    args: Array<String>, executor: java.util.concurrent.ExecutorService? = null
+): FFmpegSession =
     awaitOwnedNativeSession(
         start = { complete ->
-            val session = FFmpegKit.executeWithArgumentsAsync(args) { finished -> complete(finished) }
+            val session = (if (executor == null) {
+                FFmpegKit.executeWithArgumentsAsync(args) { finished -> complete(finished) }
+            } else {
+                FFmpegKit.executeWithArgumentsAsync(args, { finished -> complete(finished) }, executor)
+            })
                 ?: error("FFmpegKit did not create a session")
             session.sessionId
         },

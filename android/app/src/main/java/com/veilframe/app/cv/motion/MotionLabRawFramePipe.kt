@@ -19,6 +19,7 @@ import org.opencv.core.Mat
 import java.io.IOException
 import kotlin.coroutines.coroutineContext
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * In-process FFmpeg 8.1 descriptor transport. Unlike named FIFOs, creating both
@@ -72,7 +73,7 @@ internal object MotionLabRawFramePipe {
                 ) + outputArguments
                 return coroutineScope {
                     val session = async(Dispatchers.IO) {
-                        val completed = executeOwnedFfmpeg(args)
+                        val completed = executePipeSession(args)
                         if (!ReturnCode.isSuccess(completed.returnCode)) {
                             throw IOException("Raw frame encoder failed (rc=${completed.returnCode})")
                         }
@@ -90,6 +91,151 @@ internal object MotionLabRawFramePipe {
                     session.await()
                 }
             }
+        }
+    }
+
+    // Each end has its own native execution thread. A saturated shared
+    // FFmpegKit executor cannot serialize the two mutually dependent sessions.
+    private suspend fun executePipeSession(args: Array<String>): FFmpegSession {
+        val executor = Executors.newSingleThreadExecutor()
+        return try { executeOwnedFfmpeg(args, executor) }
+        finally { executor.shutdown() }
+    }
+
+    /**
+     * The decoder owns the write descriptor until its native duplicate has
+     * retired. The consumer owns the nonblocking read end and closes it
+     * before cancellation joins a potentially blocked native writer.
+     */
+    suspend fun <T> decode(
+        geometry: Geometry,
+        expectedFrames: Int,
+        inputArguments: Array<String>,
+        stallTimeoutMs: Long = 30_000L,
+        consume: suspend Reader.() -> T
+    ): T {
+        require(expectedFrames in 1..MotionLabTimingContract.MAX_SOURCE_FRAMES)
+        require(stallTimeoutMs in 100L..120_000L)
+        coroutineContext.ensureActive()
+        val ends = ParcelFileDescriptor.createPipe()
+        return ends[0].use { reader ->
+            ends[1].use { writer ->
+                val fd = reader.fileDescriptor
+                Os.fcntlInt(fd, OsConstants.F_SETFL,
+                    Os.fcntlInt(fd, OsConstants.F_GETFL, 0) or OsConstants.O_NONBLOCK)
+                val args = arrayOf("-nostdin", "-xerror") + inputArguments + arrayOf(
+                    "-map", "0:v:0", "-an", "-sn", "-dn", "-fps_mode", "passthrough",
+                    "-c:v", "rawvideo", "-threads:v", "1", "-pix_fmt", "bgr24",
+                    "-f", "rawvideo", "pipe:${writer.fd}"
+                )
+                coroutineScope {
+                    val session = async(Dispatchers.IO) {
+                        try {
+                            val result = executePipeSession(args)
+                            if (!ReturnCode.isSuccess(result.returnCode)) {
+                                throw IOException("Raw frame decoder failed (rc=${result.returnCode})")
+                            }
+                        } finally {
+                            // EOF means the native writer is no longer alive.
+                            writer.close()
+                        }
+                    }
+                    val frames = Reader(geometry, expectedFrames, stallTimeoutMs, fd)
+                    val result = try {
+                        frames.consume().also { frames.requireComplete() }
+                    } finally {
+                        reader.close()
+                    }
+                    session.await()
+                    result
+                }
+            }
+        }
+    }
+
+    internal class Reader(
+        val geometry: Geometry,
+        private val expectedFrames: Int,
+        private val stallTimeoutMs: Long,
+        private val descriptor: java.io.FileDescriptor
+    ) {
+        private val row = ByteArray(geometry.rowBytes)
+        private val pixels = IntArray(geometry.width)
+        private val rowsPerChunk = (64 * 1024 / geometry.rowBytes).coerceAtLeast(1)
+        private val chunk = ByteArray(rowsPerChunk * geometry.rowBytes)
+        var framesRead = 0
+            private set
+
+        suspend fun readBitmap(): Bitmap {
+            check(framesRead < expectedFrames) { "Unexpected additional source frame request" }
+            val bitmap = Bitmap.createBitmap(geometry.width, geometry.height, Bitmap.Config.ARGB_8888)
+            try {
+                readRows { y ->
+                    for (x in pixels.indices) {
+                        val p = x * 3
+                        pixels[x] = (0xff shl 24) or ((row[p+2].toInt() and 255) shl 16) or
+                            ((row[p+1].toInt() and 255) shl 8) or (row[p].toInt() and 255)
+                    }
+                    bitmap.setPixels(pixels, 0, geometry.width, 0, y, geometry.width, 1)
+                }
+                return bitmap
+            } catch (failure: Throwable) {
+                bitmap.recycle()
+                throw failure
+            }
+        }
+
+        suspend fun readMat(): Mat {
+            check(framesRead < expectedFrames) { "Unexpected additional source frame request" }
+            val mat = Mat(geometry.height, geometry.width, CvType.CV_8UC3)
+            try {
+                readRows { y -> check(mat.put(y, 0, row) == row.size) { "Incomplete raw Mat row" } }
+                return mat
+            } catch (failure: Throwable) {
+                mat.release()
+                throw failure
+            }
+        }
+
+        private suspend fun readRows(accept: (Int) -> Unit) {
+            var y = 0
+            while (y < geometry.height) {
+                val rows = minOf(rowsPerChunk, geometry.height-y)
+                val bytes = rows * row.size
+                var offset = 0
+                while (offset < bytes) {
+                    val n = readProgress(chunk, offset, bytes-offset)
+                    if (n == 0) throw IOException("Raw source ended in frame ${framesRead+1}")
+                    offset += n
+                }
+                for (i in 0 until rows) {
+                    coroutineContext.ensureActive()
+                    chunk.copyInto(row, 0, i*row.size, (i+1)*row.size)
+                    accept(y++)
+                }
+            }
+            framesRead++
+        }
+
+        private suspend fun readProgress(bytes: ByteArray, offset: Int, length: Int): Int {
+            val start = SystemClock.elapsedRealtime()
+            while (true) {
+                coroutineContext.ensureActive()
+                try {
+                    return Os.read(descriptor, bytes, offset, length)
+                } catch (failure: ErrnoException) {
+                    if (failure.errno != OsConstants.EAGAIN && failure.errno != OsConstants.EINTR)
+                        throw IOException("Raw source pipe read failed", failure)
+                }
+                if (SystemClock.elapsedRealtime()-start >= stallTimeoutMs)
+                    throw IOException("Raw source decoder stopped producing bytes")
+                delay(2)
+            }
+        }
+
+        internal suspend fun requireComplete() {
+            check(framesRead == expectedFrames) { "Raw source delivered $framesRead of $expectedFrames expected frames" }
+            check(readProgress(row, 0, 1) == 0) { "Raw source contains unexpected extra bytes or frames" }
         }
     }
 

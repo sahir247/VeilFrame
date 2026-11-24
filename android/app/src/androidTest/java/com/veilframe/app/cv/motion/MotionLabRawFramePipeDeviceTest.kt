@@ -110,6 +110,49 @@ class MotionLabRawFramePipeDeviceTest {
         }
     }
 
+    @Test fun simultaneousDecoderAndEncoderPreserveFramesAndRetireBothSessions() = runBlocking {
+        withTimeout(60_000) {
+            CvRuntime.requireAvailable()
+            val geometry = MotionLabRawFramePipe.Geometry(320,240)
+            val source = temp()
+            val target = temp()
+            val frameBytes = geometry.frameBytes.toInt()
+            val expected = ByteArray(frameBytes*2) { (it*37).toByte() }
+            source.writeBytes(expected)
+            try {
+                MotionLabRawFramePipe.encode(geometry,24.0,2,rawOutput(target)) {
+                    val output = this
+                    MotionLabRawFramePipe.decode(geometry,2,arrayOf("-f","rawvideo",
+                        "-pixel_format","bgr24","-video_size","320x240","-framerate","24",
+                        "-i",source.absolutePath)) {
+                        repeat(2) {
+                            val mat = readMat()
+                            try { output.writeMat(mat) } finally { mat.release() }
+                        }
+                    }
+                }
+                assertArrayEquals(expected,target.readBytes())
+            } finally { source.delete(); target.delete() }
+        }
+    }
+
+    @Test fun decoderRejectsExtraFramesRatherThanDiscardingThem() = runBlocking {
+        withTimeout(60_000) {
+            CvRuntime.requireAvailable()
+            val geometry = MotionLabRawFramePipe.Geometry(64,64)
+            val source = temp()
+            source.writeBytes(ByteArray(geometry.frameBytes.toInt()*2))
+            try {
+                val result = runCatching {
+                    MotionLabRawFramePipe.decode(geometry,1,arrayOf("-f","rawvideo",
+                        "-pixel_format","bgr24","-video_size","64x64","-framerate","24",
+                        "-i",source.absolutePath)) { readMat().release() }
+                }
+                assertTrue(result.isFailure)
+            } finally { source.delete() }
+        }
+    }
+
     @Test fun invalidEncoderDoesNotLeaveProducerBlocked() = runBlocking {
         withTimeout(60_000) {
             val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
