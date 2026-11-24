@@ -1357,3 +1357,9 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-24 — A28 x14 solid linked and standalone data bars
 
 - Match priority-less x14 extension records to base identity and exact range; parse supported solid automatic-axis bars with explicit 0–100% length, numeric/automatic thresholds, negative fill, positive/negative borders, axis color and LTR/RTL direction. Render signed vector bars and axis in the shared cell renderer. Linked rule uses saved base fill and x14 thresholds, avoiding duplicate priority. Unsupported gradients, other axis/length modes, custom icons and incompatible colors remain disclosed. Added linked signed-bar XLSX-to-PDF fixture. References: https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/88c5ca0a-3a34-4fad-8c91-fdb4550d3fe1 . CI pending; no Excel printer parity claim.
+
+
+### 2026-11-24 — A29 PDF quick-tool controller decomposition and strict split ranges
+
+- Extracted Office content inspection, owned staging and schematic bitmap rendering into UI-independent OfficePreviewEngine. Controller owns only selection/generation checks, UI adoption and stale bitmap retirement. Zero-progress provider reads fail; source staging and returned bitmap ownership are explicit. No change to the advertised schematic preview semantics. Removed roughly 330 lines of preview logic from the oversized controller.
+- Extracted all-or-nothing split range parser; invalid tokens/overflow/out-of-range parts now reject the request rather than silently producing a subset. Snapshot source page count before dispatch, retaining order and existing reversed-endpoint normalization. Added parser regressions. A29 remains PARTIAL: signature, form, merge and other large controller sections still need separate decomposition. CI pending.
