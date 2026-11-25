@@ -2756,6 +2756,25 @@ class OfficeConverterFidelityTest {
         }
     }
 
+    @Test fun x14SignedDataBarsHonorCustomLengthsAndZero() {
+        val wb = """<workbook><sheets><sheet name="Bars" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>0</v></c></row><row r="3"><c r="A3"><v>75</v></c></row><row r="4"><c r="A4"><v>37.5</v></c></row></sheetData><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1"><x14:dataBar minLength="10" maxLength="80" gradient="0" axisPosition="automatic"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor rgb="FF2266AA"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A4</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""
+        for (middle in listOf(false,true)) {
+            val xml = if (middle) sheet.replace("automatic","middle") else sheet
+            val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to xml))
+            val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+            assertEquals(0,parsed.unsupportedConditionalRules)
+            val bars = (0..3).map { requireNotNull(parsed.styles.at(it,0).dataBar) }
+            val axis = if (middle) 0.5f else 0.25f
+            val expected = if (middle) listOf(0.1f,0.5f,0.9f,0.75f) else listOf(0.05f,0.25f,0.85f,0.60f)
+            for (i in bars.indices) {
+                assertEquals(axis,bars[i].start,0.001f)
+                assertEquals(axis,bars[i].axis!!,0.001f)
+                assertEquals(expected[i],bars[i].end,0.001f)
+            }
+        }
+    }
+
     @Test fun x14GradientMidpointBarsRenderAxialPdfShading() = runBlocking<Unit> {
         val wb = """<workbook><sheets><sheet name="Gradient" sheetId="1"/></sheets></workbook>"""
         val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>75</v></c></row></sheetData><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1"><x14:dataBar minLength="0" maxLength="100" gradient="1" axisPosition="middle"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor rgb="FF2266AA"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A2</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""

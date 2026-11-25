@@ -1438,8 +1438,6 @@ object OpenXmlDocumentParser {
         val minimum = bar.getAttribute("minLength").ifEmpty { "10" }.toIntOrNull() ?: return null
         val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
         if (minimum !in 0..100 || maximum !in minimum..100) return null
-        // Signed nonstandard lengths require their own baseline geometry.
-        if (!noAxis && (minimum != 0 || maximum != 100)) return null
         fun color(node: Element?): Int? {
             val rgb = node?.getAttribute("rgb") ?: return null
             if (!rgb.matches(Regex("FF[0-9A-Fa-f]{6}",RegexOption.IGNORE_CASE)) ||

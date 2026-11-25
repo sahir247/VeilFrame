@@ -107,7 +107,7 @@ internal object XlsxConditionalFormatting {
         }
     }
 
-    /** x14 data bars: signed axes (0–100%) or no-axis bars with explicit length limits. */
+    /** x14 data bars with automatic, midpoint or no-axis geometry and length limits. */
     data class SolidBarAppearance(val negativeRgb: Int, val borderRgb: Int?, val negativeBorderRgb: Int?,
         val axisRgb: Int, val rtl: Boolean, val gradient: Boolean = false,
         val midpoint: Boolean = false, val noAxis: Boolean = false) {
@@ -123,25 +123,31 @@ internal object XlsxConditionalFormatting {
                     if (negative) negativeRgb else rgb,show,
                     if (negative) negativeBorderRgb else borderRgb,null,axisRgb,gradient)
             }
-            val lo = minOf(lower,BigDecimal.ZERO)
-            val hi = maxOf(upper,BigDecimal.ZERO)
-            val span = hi.subtract(lo)
-            val value = raw.max(lo).min(hi)
-            val signed = lo.signum() < 0 && hi.signum() > 0
-            fun position(x: BigDecimal): Float {
-                if (midpoint && signed) {
-                    val limit = if (x.signum() < 0) lo.negate() else hi
-                    return (0.5 + 0.5*x.divide(limit,java.math.MathContext.DECIMAL64).toDouble()).toFloat().coerceIn(0f,1f)
-                }
-                return if (span.signum() == 0) 0f else
-                    x.subtract(lo).divide(span,java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
-            }
-            fun orient(x: Float) = if (rtl) 1f-x else x
-            val axis = orient(position(BigDecimal.ZERO))
+            val negativeExtent = minOf(lower,BigDecimal.ZERO).negate()
+            val positiveExtent = maxOf(upper,BigDecimal.ZERO)
+            val span = negativeExtent.add(positiveExtent)
             val negative = raw.signum() < 0
-            return XlsxDataBarVisual(axis,orient(position(value)),if (negative) negativeRgb else rgb,show,
+            val hasNegative = negativeExtent.signum() > 0
+            val hasPositive = positiveExtent.signum() > 0
+            fun ratio(n: BigDecimal,d: BigDecimal): Float = if (d.signum() == 0) 0f else
+                n.divide(d,java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
+            // Automatic: divide the available length by the relative extrema.
+            // Midpoint: each side has half the available cell width.
+            val baseline = if (midpoint) 0.5f else ratio(negativeExtent,span)
+            val side = if (negative) baseline else 1f-baseline
+            val extent = if (negative) negativeExtent else positiveExtent
+            val fraction = ratio(raw.abs().min(extent),extent)
+            val cap = side * maximumLength / 100f
+            val floor = minOf(cap,minimumLength / 100f)
+            val length = if (raw.signum() == 0 || extent.signum() == 0) 0f
+                else floor+(cap-floor)*fraction
+            val end = if (negative) baseline-length else baseline+length
+            fun orient(x: Float) = if (rtl) 1f-x else x
+            val axis = orient(baseline)
+            return XlsxDataBarVisual(axis,orient(end.coerceIn(0f,1f)),
+                if (negative) negativeRgb else rgb,show,
                 if (negative) negativeBorderRgb else borderRgb,
-                if (signed) axis else null,axisRgb,gradient)
+                if (hasNegative && (hasPositive || midpoint)) axis else null,axisRgb,gradient)
         }
     }
 
