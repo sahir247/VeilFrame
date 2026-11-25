@@ -378,7 +378,9 @@ class PdfSignCanvasView @JvmOverloads constructor(
                 width = box.width,
                 height = box.height,
                 rotationDegrees = box.rotationDegrees,
-                bitmap = box.bitmap
+                bitmap = box.bitmap,
+                previewWidth = pages.getOrNull(box.pageIndex)?.width,
+                previewHeight = pages.getOrNull(box.pageIndex)?.height
             )
         }
     }

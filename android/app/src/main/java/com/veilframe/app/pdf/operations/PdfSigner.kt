@@ -11,6 +11,9 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -66,7 +69,9 @@ data class SignatureItemPlacement(
     val width: Float,
     val height: Float,
     val rotationDegrees: Float = 0f,
-    val bitmap: Bitmap
+    val bitmap: Bitmap,
+    val previewWidth: Float? = null,
+    val previewHeight: Float? = null
 )
 
 /**
@@ -544,73 +549,18 @@ class PdfSigner(private val context: Context) {
         bitmap: Bitmap,
         placement: SignaturePlacement
     ) {
-        val srcW = placement.width
-        val srcH = placement.height
-        val finalBitmap: Bitmap
-        val drawW: Float
-        val drawH: Float
-        val pdfX: Float
-        val pdfY: Float
+        drawSignatureImage(document,page,bitmap,SignaturePageGeometry.absolute(
+            placement.x,placement.y,placement.width,placement.height,placement.rotationDegrees))
+    }
 
-        if (placement.rotationDegrees != 0f) {
-            val origW = bitmap.width.toFloat()
-            val origH = bitmap.height.toFloat()
-            val rad = Math.toRadians(Math.abs(placement.rotationDegrees.toDouble()))
-            val cos = Math.cos(rad)
-            val sin = Math.sin(rad)
-            drawW = (srcW * cos + srcH * sin).toFloat()
-            drawH = (srcW * sin + srcH * cos).toFloat()
-            val rotW = Math.max(1, (origW * cos + origH * sin).toInt())
-            val rotH = Math.max(1, (origW * sin + origH * cos).toInt())
-            finalBitmap = Bitmap.createBitmap(rotW, rotH, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(finalBitmap)
-            canvas.save()
-            canvas.translate(rotW / 2f, rotH / 2f)
-            canvas.rotate(placement.rotationDegrees)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-            val halfW = origW / 2f
-            val halfH = origH / 2f
-            canvas.drawBitmap(bitmap, null, android.graphics.RectF(-halfW, -halfH, halfW, halfH), paint)
-            canvas.restore()
-
-            val centerX = placement.x + srcW / 2f
-            val centerY = placement.y + srcH / 2f
-            pdfX = centerX - drawW / 2f
-            pdfY = centerY - drawH / 2f
-        } else {
-            finalBitmap = bitmap
-            drawW = srcW
-            drawH = srcH
-            pdfX = placement.x
-            pdfY = placement.y
-        }
-
-        val pdImage = LosslessFactory.createFromImage(document, finalBitmap)
-        
-        val contentStream = PDPageContentStream(
-            document,
-            page,
-            PDPageContentStream.AppendMode.APPEND,
-            true,
-            true
-        )
-        
-        try {
-            contentStream.drawImage(
-                pdImage,
-                pdfX,
-                pdfY,
-                drawW,
-                drawH
-            )
-        } finally {
-            contentStream.close()
-            if (finalBitmap != bitmap) {
-                finalBitmap.recycle()
-            }
+    private fun drawSignatureImage(document: PDDocument, page: PDPage, bitmap: Bitmap, affine: SignatureAffine) {
+        require(!bitmap.isRecycled && bitmap.width > 0 && bitmap.height > 0) { "Invalid signature bitmap" }
+        val image = LosslessFactory.createFromImage(document,bitmap)
+        PDPageContentStream(document,page,PDPageContentStream.AppendMode.APPEND,true,true).use { stream ->
+            stream.drawImage(image,affine.matrix())
         }
     }
-    
+
     /**
      * Add signature extras (date, name, initials) below the signature.
      */
@@ -696,32 +646,24 @@ class PdfSigner(private val context: Context) {
         try {
             val inputStream = context.contentResolver.openInputStream(inputUri)
                 ?: return@withContext SignatureResult(false, "Cannot open source PDF")
-            document = PDDocument.load(inputStream)
-            inputStream.close()
+            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
 
+            require(placements.all { it.pageIndex in 0 until document.numberOfPages }) { "Invalid signature page number" }
             for (placement in placements) {
-                val pageIndex = placement.pageIndex.coerceIn(0, (document.numberOfPages - 1).coerceAtLeast(0))
-                val page = document.getPage(pageIndex)
-
-                val scaledBitmap = Bitmap.createScaledBitmap(
-                    signatureBitmap,
-                    placement.width.toInt().coerceAtLeast(1),
-                    placement.height.toInt().coerceAtLeast(1),
-                    true
-                )
-
-                addSignatureToPage(document, page, scaledBitmap, placement)
+                ensureActive()
+                val page = document.getPage(placement.pageIndex)
+                addSignatureToPage(document, page, signatureBitmap, placement)
                 if (extras.addDate || (extras.addName && extras.name.isNotBlank()) || (extras.addInitials && extras.initials.isNotBlank())) {
                     addSignatureExtras(document, page, placement, extras)
                 }
-                if (scaledBitmap != signatureBitmap) {
-                    scaledBitmap.recycle()
-                }
-            }
+             }
 
+            ensureActive()
             document.save(outputStream)
             outputStream.flush()
             SignatureResult(true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             SignatureResult(false, e.message ?: "Failed to sign PDF")
         } finally {
@@ -737,91 +679,61 @@ class PdfSigner(private val context: Context) {
         inputUri: Uri,
         outputStream: java.io.OutputStream,
         items: List<SignatureItemPlacement>
+    ): SignatureResult = renderCanvasSignatures(inputUri,outputStream) { items }
+
+    /** Quick placement is relative to the actual displayed crop box of each selected page. */
+    internal suspend fun addRelativeSignatureBitmaps(
+        inputUri: Uri,
+        outputStream: java.io.OutputStream,
+        bitmap: Bitmap,
+        pages: List<Int>,
+        xFraction: Float,
+        yFractionFromBottom: Float,
+        scale: Float
+    ): SignatureResult = renderCanvasSignatures(inputUri,outputStream) { document ->
+        require(!bitmap.isRecycled && pages.isNotEmpty() && pages.all { it in 0 until document.numberOfPages }) {
+            "Invalid signature page selection"
+        }
+        pages.map { index ->
+            val geometry = SignaturePageGeometry.from(document.getPage(index))
+            val rect = geometry.relativeRect(xFraction,yFractionFromBottom,scale,
+                bitmap.width.toFloat()/bitmap.height.toFloat())
+            SignatureItemPlacement(index,rect[0],rect[1],rect[2],rect[3],bitmap=bitmap)
+        }
+    }
+
+    private suspend fun renderCanvasSignatures(
+        inputUri: Uri,
+        outputStream: java.io.OutputStream,
+        placements: (PDDocument) -> List<SignatureItemPlacement>
     ): SignatureResult = withContext(Dispatchers.IO) {
-        if (items.isEmpty()) return@withContext SignatureResult(false, "No signatures placed")
-        var document: PDDocument? = null
         try {
-            try {
-                com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(context.applicationContext)
-            } catch (ignored: Throwable) {}
-
-            val inputStream = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext SignatureResult(false, "Cannot open source PDF")
-            document = PDDocument.load(inputStream)
-            inputStream.close()
-
-            for (item in items) {
-                val pageIndex = item.pageIndex.coerceIn(0, (document.numberOfPages - 1).coerceAtLeast(0))
-                val page = document.getPage(pageIndex)
-                val cropBox = page.cropBox ?: page.mediaBox
-                val pageHeight = cropBox.height
-
-                val targetW = item.width.toInt().coerceAtLeast(1)
-                val targetH = item.height.toInt().coerceAtLeast(1)
-
-                val finalBitmap: Bitmap
-                val drawW: Float
-                val drawH: Float
-
-                if (item.rotationDegrees != 0f) {
-                    val origW = item.bitmap.width.toFloat()
-                    val origH = item.bitmap.height.toFloat()
-                    val rad = Math.toRadians(Math.abs(item.rotationDegrees.toDouble()))
-                    val cos = Math.cos(rad)
-                    val sin = Math.sin(rad)
-                    drawW = (item.width * cos + item.height * sin).toFloat()
-                    drawH = (item.width * sin + item.height * cos).toFloat()
-                    val rotW = Math.max(1, (origW * cos + origH * sin).toInt())
-                    val rotH = Math.max(1, (origW * sin + origH * cos).toInt())
-                    finalBitmap = Bitmap.createBitmap(rotW, rotH, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(finalBitmap)
-                    canvas.save()
-                    canvas.translate(rotW / 2f, rotH / 2f)
-                    canvas.rotate(item.rotationDegrees)
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-                    val halfW = origW / 2f
-                    val halfH = origH / 2f
-                    canvas.drawBitmap(item.bitmap, null, android.graphics.RectF(-halfW, -halfH, halfW, halfH), paint)
-                    canvas.restore()
-                } else {
-                    finalBitmap = item.bitmap
-                    drawW = item.width
-                    drawH = item.height
+            val source = context.contentResolver.openInputStream(inputUri)
+                ?: return@withContext SignatureResult(false,"Cannot open source PDF")
+            source.use { input ->
+                PDDocument.load(input,MemoryUsageSetting.setupTempFileOnly())
+            }.use { document ->
+                val items = placements(document)
+                require(items.isNotEmpty() && items.all { it.pageIndex in 0 until document.numberOfPages }) {
+                    "Invalid signature page selection"
                 }
-
-                val centerX = item.x + item.width / 2f
-                val centerY = item.y + item.height / 2f
-                val pdfCenterX = cropBox.lowerLeftX + centerX
-                val pdfCenterY = cropBox.lowerLeftY + (pageHeight - centerY)
-
-                val pdfX = pdfCenterX - drawW / 2f
-                val pdfY = pdfCenterY - drawH / 2f
-
-                val pdImage = LosslessFactory.createFromImage(document, finalBitmap)
-                val contentStream = PDPageContentStream(
-                    document,
-                    page,
-                    PDPageContentStream.AppendMode.APPEND,
-                    true,
-                    true
-                )
-                try {
-                    contentStream.drawImage(pdImage, pdfX, pdfY, drawW, drawH)
-                } finally {
-                    contentStream.close()
-                    if (finalBitmap != item.bitmap) {
-                        finalBitmap.recycle()
-                    }
+                for (item in items) {
+                    ensureActive()
+                    val page = document.getPage(item.pageIndex)
+                    val geometry = SignaturePageGeometry.from(page)
+                    val affine = geometry.transform(item.x,item.y,item.width,item.height,item.rotationDegrees,
+                        item.previewWidth ?: geometry.displayWidth,item.previewHeight ?: geometry.displayHeight)
+                    drawSignatureImage(document,page,item.bitmap,affine)
                 }
+                ensureActive()
+                document.save(outputStream)
+                outputStream.flush()
             }
-
-            document.save(outputStream)
-            outputStream.flush()
             SignatureResult(true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            SignatureResult(false, e.message ?: "Failed to sign PDF")
-        } finally {
-            document?.close()
+            SignatureResult(false,e.message ?: "Failed to sign PDF")
         }
     }
 }

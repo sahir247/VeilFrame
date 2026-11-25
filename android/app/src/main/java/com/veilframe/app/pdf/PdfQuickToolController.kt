@@ -51,7 +51,6 @@ import com.veilframe.app.pdf.operations.PdfSecurityOptions
 import com.veilframe.app.pdf.operations.PdfSigner
 import com.veilframe.app.pdf.operations.PdfSplitter
 import com.veilframe.app.pdf.operations.RotationAngle
-import com.veilframe.app.pdf.operations.SignaturePlacement
 import com.veilframe.app.pdf.ui.PdfMergePageAdapter
 import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
 import com.veilframe.app.pdf.ui.PdfThumbnailLoader
@@ -1834,6 +1833,12 @@ class PdfQuickToolController(
                 }.show()
             return
         }
+        if (activeMode == QuickMode.SIGN && binding.pdfSignCanvasView.getAllPlacements().isEmpty() &&
+            binding.chipSignPageCustom.isChecked &&
+            (binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 0) !in 1..primaryDocPages) {
+            Toast.makeText(activity, "Enter a valid signature page number", Toast.LENGTH_SHORT).show()
+            return
+        }
         val quality = if (activeMode == QuickMode.COMPRESS) binding.sliderCompressQuality.value.toInt() else 65
         isExecuting = true
         binding.btnQuickToolExecute.isEnabled = false
@@ -1871,6 +1876,9 @@ class PdfQuickToolController(
         val htmlInput = if (operationMode == QuickMode.HTML_TO_PDF) binding.etSourceInput.text?.toString()?.trim().orEmpty() else ""
         val signatureItems = if (operationMode == QuickMode.SIGN) binding.pdfSignCanvasView.getAllPlacements().toList() else emptyList()
 
+        val signX = (signPosXPercent / 100f).coerceIn(0f, 1f)
+        val signY = (signPosYPercent / 100f).coerceIn(0f, 1f)
+        val signScale = signScaleFactor
         val signatureInput = if (operationMode == QuickMode.SIGN && signatureItems.isEmpty()) {
             val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
             val bitmap = binding.viewSignaturePad.getSignatureBitmap(
@@ -1881,18 +1889,12 @@ class PdfQuickToolController(
                 binding.chipSignPageFirst.isChecked -> listOf(0)
                 binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
                 binding.chipSignPageCustom.isChecked -> {
-                    val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                    listOf((requested - 1).coerceIn(0, lastPage))
+                    val requested = requireNotNull(binding.etSignCustomPage.text?.toString()?.toIntOrNull())
+                    listOf(requested - 1)
                 }
                 else -> listOf(lastPage)
             }
-            val width = 180f * signScaleFactor
-            val height = 60f * signScaleFactor
-            val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-            val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-            bitmap to pages.map { page ->
-                SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
-            }
+            bitmap to pages
         } else null
 
         activeJob = launchTransient(ExecutionGeneration(generation)) {
@@ -2148,9 +2150,10 @@ class PdfQuickToolController(
                                 return@launchTransient
                             }
                             finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
-                                pdfSigner.addSignatureBitmaps(
+                                pdfSigner.addRelativeSignatureBitmaps(
                                     inputUri = uri, outputStream = output,
-                                    signatureBitmap = bitmap, placements = inputs.second
+                                    bitmap = bitmap, pages = inputs.second,
+                                    xFraction = signX, yFractionFromBottom = signY, scale = signScale
                                 ).success
                             }
                         }
