@@ -24,7 +24,7 @@ internal object XlsxAnchoredChartRenderer {
     fun locate(chart: XlsxCachedChart, layout: SheetLayout,
         plans: List<XlsxSavedPrintLayout.Plan>): Placement? {
         if (!chart.printsWithSheet || chart.drawingOffsets == null ||
-            chart.kind !in setOf("column","bar","line","combo","scatter")) return null
+            chart.kind !in setOf("column","bar","line","combo","scatter","pie")) return null
         val ends = chart.sourceAnchor?.split(':') ?: return null
         if (ends.size != 2) return null
         val from = marker(ends[0]) ?: return null
@@ -88,6 +88,10 @@ internal object XlsxAnchoredChartRenderer {
             if (chart.title.isNotEmpty()) {
                 color(0x222222); stream.beginText(); stream.setFont(font,8f)
                 stream.newLineAtOffset(p.left+6f,p.top-13f); stream.showText(chart.title); stream.endText()
+            }
+            if (chart.kind == "pie") {
+                drawPie(stream,chart,p,font,checkpoint)
+                return
             }
             val x0=p.left+22f; val y0=bottom+17f
             val w=p.width-33f; val h=p.height-42f
@@ -176,5 +180,38 @@ internal object XlsxAnchoredChartRenderer {
                 }
             }
         } finally { stream.restoreGraphicsState() }
+    }
+
+    private fun drawPie(stream: PDPageContentStream,chart: XlsxCachedChart,p: Placement,
+        font: PDType1Font,checkpoint: ()->Unit) {
+        val values=chart.series.single().values
+        val shares=XlsxPieChartPainter.shares(values)
+        require(chart.categories.size==values.size)
+        val availableH=p.height-28f
+        val labelX=p.left+p.width*0.52f
+        val labelW=p.width*0.48f-17f
+        val labelSize=7f
+        require(availableH>=values.size*11f+4f) { "Saved pie legend exceeds chart height" }
+        val labels=values.indices.map { i ->
+            val category=chart.categories[i] ?: "(missing category)"
+            val percent=if(values[i]==null) "missing" else String.format(java.util.Locale.US,"%.1f%%",shares[i]*100)
+            "$category  $percent"
+        }
+        for (label in labels) {
+            font.encode(label)
+            require(font.getStringWidth(label)*labelSize/1000f <= labelW) { "Saved pie legend exceeds chart width" }
+        }
+        val radius=minOf(p.width*0.24f-4f,availableH/2f-3f)
+        XlsxPieChartPainter.draw(stream,shares,p.left+p.width*0.25f,p.top-19f-availableH/2f,radius,checkpoint)
+        for ((index,label) in labels.withIndex()) {
+            checkpoint()
+            val y=p.top-25f-index*11f
+            val rgb=XlsxPieChartPainter.palette[index]
+            stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+            stream.addRect(labelX,y-1f,7f,7f);stream.fill()
+            stream.setNonStrokingColor(0,0,0)
+            stream.beginText();stream.setFont(font,labelSize)
+            stream.newLineAtOffset(labelX+10f,y);stream.showText(label);stream.endText()
+        }
     }
 }

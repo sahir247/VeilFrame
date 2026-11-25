@@ -1512,12 +1512,8 @@ class OfficeConverter {
     private fun renderCachedPieChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
         checkpoint()
         val values = chart.series.single().values
-        require(values.size in 1..12 && values.all { it == null || (it.isFinite() && it >= 0.0) })
-        val max = values.filterNotNull().maxOrNull() ?: 0.0
-        require(max > 0.0)
-        val total = values.sumOf { (it ?: 0.0) / max }
-        val colors = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82,
-            0xAA4167, 0x6D7C35, 0x5264B4, 0x9B653C, 0x557D83, 0x777777)
+        val shares = XlsxPieChartPainter.shares(values)
+        val colors = XlsxPieChartPainter.palette
         require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
         val page = PDPage(PDRectangle(842f, 595f))
         pdf.addPage(page)
@@ -1533,29 +1529,10 @@ class OfficeConverter {
             label(chart.title.take(85),30f,543f,14f)
             label("Saved chart cache; reconstructed appearance, not recalculated",30f,523f)
             val cx = 225f; val cy = 300f; val radius = 170f
-            var angle = Math.PI / 2
+            XlsxPieChartPainter.draw(stream,shares,cx,cy,radius,checkpoint)
             for ((i,v) in values.withIndex()) {
                 checkpoint()
-                val share = if (v == null) 0.0 else (v / max) / total
-                if (share > 0.0) {
-                    val sweep = -2 * Math.PI * share
-                    val segments = kotlin.math.ceil(kotlin.math.abs(sweep) / (Math.PI / 2)).toInt().coerceAtLeast(1)
-                    val delta = sweep / segments
-                    color(colors[i])
-                    stream.moveTo(cx,cy)
-                    stream.lineTo(cx + radius * kotlin.math.cos(angle).toFloat(), cy + radius * kotlin.math.sin(angle).toFloat())
-                    repeat(segments) {
-                        val end = angle + delta
-                        val k = (4.0 / 3.0 * kotlin.math.tan(delta / 4.0)).toFloat()
-                        val x0 = kotlin.math.cos(angle).toFloat(); val y0 = kotlin.math.sin(angle).toFloat()
-                        val x1 = kotlin.math.cos(end).toFloat(); val y1 = kotlin.math.sin(end).toFloat()
-                        stream.curveTo(cx + radius*(x0-k*y0), cy + radius*(y0+k*x0),
-                            cx + radius*(x1+k*y1), cy + radius*(y1-k*x1),
-                            cx + radius*x1, cy + radius*y1)
-                        angle = end
-                    }
-                    stream.closePath(); stream.fill()
-                }
+                val share=shares[i]
                 val y = 481f - i * 26f
                 color(colors[i]); stream.addRect(430f,y-3f,10f,10f); stream.fill()
                 label((i+1).toString() + " " + (chart.categories[i] ?: "(missing category)").take(27),447f,y)

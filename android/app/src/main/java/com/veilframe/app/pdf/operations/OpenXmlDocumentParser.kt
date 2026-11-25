@@ -1327,7 +1327,7 @@ object OpenXmlDocumentParser {
                 val text = baseSemantics && type in XlsxConditionalFormatting.textOperators && literal.length in 1..1024 &&
                     literal.none { it in "*?~" } && (op.isEmpty() || op == type)
                 // Support only explicitly representable x14 icon/scale rules;
-                // custom icons, gradients/borders on data bars, formulas and
+                // custom icons, unsupported data-bar options, general formulas and
                 // extension styles remain disclosed unknown rules.
                 val supportedVisual = extension.isEmpty() && (!extended ||
                     (rule.childElements("dxf").isEmpty() && !rule.hasAttribute("dxfId")))

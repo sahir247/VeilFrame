@@ -315,7 +315,7 @@ jobs:
             timeout 90s sh -c 'until [ "$(timeout 5s adb -s emulator-5554 get-state 2>/dev/null)" = device ] && [ "$(timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ] && timeout 5s adb -s emulator-5554 shell pm path android 2>/dev/null | grep -q "^package:"; do sleep 2; done' || ( echo "::error::Emulator ADB, boot, or package manager readiness timed out"; adb devices -l; exit 1 )
             adb -s emulator-5554 shell getprop ro.product.cpu.abilist
             adb -s emulator-5554 shell getprop ro.product.cpu.abi | tr -d '\r' | grep -qx x86_64 || ( echo "::error::Expected a native x86_64 Android guest"; exit 1 )
-            ./gradlew :app:connectedDebugAndroidTest -PcvEmulatorX86=true -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs || ( status=$?; echo "=== Dumping native CV/preview instrumentation logcat ==="; timeout 20s adb -s emulator-5554 logcat -d -b crash || true; timeout 20s adb -s emulator-5554 logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true; exit "$status" )
+            ./gradlew :app:connectedDebugAndroidTest -PcvEmulatorX86=true -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs,com.veilframe.app.pdf.operations || ( status=$?; echo "=== Dumping native CV/preview instrumentation logcat ==="; timeout 20s adb -s emulator-5554 logcat -d -b crash || true; timeout 20s adb -s emulator-5554 logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true; exit "$status" )
 
       - name: Upload Connected Android Test Reports
         if: always()
