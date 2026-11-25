@@ -2756,6 +2756,17 @@ class OfficeConverterFidelityTest {
         }
     }
 
+    @Test fun conditionalBarsResolveThemeTintAndIndexedColors() {
+        val wb = """<workbook><sheets><sheet name="Bars" sheetId="1"/></sheets></workbook>"""
+        val theme = """<theme><themeElements><clrScheme><accent1><srgbClr val="000000"/></accent1></clrScheme></themeElements></theme>"""
+        val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>75</v></c></row></sheetData><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1"><x14:dataBar minLength="0" maxLength="100" gradient="0"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor theme="4" tint="0.5"/><x14:negativeFillColor indexed="2"/><x14:axisColor indexed="0"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A2</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/theme/theme1.xml" to theme,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(0,parsed.unsupportedConditionalRules)
+        assertEquals(0xFF0000,requireNotNull(parsed.styles.at(0,0).dataBar).rgb)
+        assertEquals(0x808080,requireNotNull(parsed.styles.at(1,0).dataBar).rgb)
+    }
+
     @Test fun x14SignedDataBarsHonorCustomLengthsAndZero() {
         val wb = """<workbook><sheets><sheet name="Bars" sheetId="1"/></sheets></workbook>"""
         val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>0</v></c></row><row r="3"><c r="A3"><v>75</v></c></row><row r="4"><c r="A4"><v>37.5</v></c></row></sheetData><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1"><x14:dataBar minLength="10" maxLength="80" gradient="0" axisPosition="automatic"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor rgb="FF2266AA"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A4</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""

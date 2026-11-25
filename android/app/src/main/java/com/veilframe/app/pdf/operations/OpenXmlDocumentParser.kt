@@ -548,7 +548,7 @@ object OpenXmlDocumentParser {
             } ?: zip.getEntry("xl/theme/theme1.xml")
             val theme = themeEntry?.let { parseXlsxTheme(budget.read(zip, it)) }.orEmpty()
             val styleTable = if (styleEntry == null) ParsedXlsxStyles(
-                XlsxValueFormatter(date1904, listOf(0), emptyMap()), listOf(XlsxCellStyle()))
+                XlsxValueFormatter(date1904, listOf(0), emptyMap()), listOf(XlsxCellStyle()), theme = theme)
                 else parseXlsxStyles(budget.read(zip, styleEntry), date1904, theme)
             val sharedStrings = mutableListOf<String>()
             val sharedParts = relationships?.values?.filter { it.type.endsWith("/sharedStrings") }.orEmpty()
@@ -904,7 +904,9 @@ object OpenXmlDocumentParser {
 
     private data class ParsedXlsxStyles(
         val formatter: XlsxValueFormatter, val visuals: List<XlsxCellStyle>,
-        val differential: List<XlsxConditionalFormatting.Delta?> = emptyList()
+        val differential: List<XlsxConditionalFormatting.Delta?> = emptyList(),
+        val theme: Map<String, Int> = emptyMap(),
+        val indexed: List<Int>? = null
     )
 
     private fun parseXlsxTheme(xml: String): Map<String, Int> {
@@ -1087,7 +1089,7 @@ object OpenXmlDocumentParser {
                 fillRgb = pattern?.let { rgb(one(it, "fgColor")) ?: rgb(one(it, "bgColor")) }
             )
         }
-        return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals, differential)
+        return ParsedXlsxStyles(XlsxValueFormatter(date1904, cells.map { it.number }, custom), visuals, differential,theme,indexed)
     }
 
     private fun parseSharedStrings(xml: String, outStrings: MutableList<String>) {
@@ -1239,8 +1241,9 @@ object OpenXmlDocumentParser {
                 setup["blackAndWhite"] in setOf("1", "true") || setup["draft"] in setOf("1", "true"))
     }
 
-    private fun parseConditionalFormatting(root: Element, differential: List<XlsxConditionalFormatting.Delta?>):
+    private fun parseConditionalFormatting(root: Element, styles: ParsedXlsxStyles):
         List<XlsxConditionalFormatting.Rule> {
+        val differential = styles.differential
         val result = mutableListOf<XlsxConditionalFormatting.Rule>()
         val priorities = mutableSetOf<Int>()
         var rangeCount = 0
@@ -1299,7 +1302,7 @@ object OpenXmlDocumentParser {
                         val baseElement = root.childElements("conditionalFormatting")
                             .flatMap { it.childElements("cfRule") }
                             .singleOrNull { it.getAttribute("priority").toIntOrNull() == baseRule.priority }
-                        val bar = parseExtendedSolidBar(rule,baseElement,root)
+                        val bar = parseExtendedSolidBar(rule,baseElement,root,styles)
                         if (bar != null) result[link.second] = baseRule.copy(delta=XlsxConditionalFormatting.Delta(),bar=bar)
                         continue
                     }
@@ -1331,9 +1334,9 @@ object OpenXmlDocumentParser {
                 // extension styles remain disclosed unknown rules.
                 val supportedVisual = extension.isEmpty() && (!extended ||
                     (rule.childElements("dxf").isEmpty() && !rule.hasAttribute("dxfId")))
-                val scale = if (supportedVisual && type == "colorScale") parseConditionalColorScale(rule, extended) else null
-                val bar = if (baseSemantics && type == "dataBar") parseConditionalDataBar(rule)
-                    else if (extended && supportedVisual && type == "dataBar") parseExtendedSolidBar(rule,null,root)
+                val scale = if (supportedVisual && type == "colorScale") parseConditionalColorScale(rule, extended,styles) else null
+                val bar = if (baseSemantics && type == "dataBar") parseConditionalDataBar(rule,styles)
+                    else if (extended && supportedVisual && type == "dataBar") parseExtendedSolidBar(rule,null,root,styles)
                     else null
                 val icons = if (supportedVisual && type == "iconSet") parseConditionalIconSet(rule, extended) else null
                 val expression = if (baseSemantics && type == "expression" && rule.childElements("formula").size == 1)
@@ -1359,7 +1362,33 @@ object OpenXmlDocumentParser {
         return expressions.single().textContent.trim()
     }
 
-    private fun parseConditionalColorScale(rule: Element, extended: Boolean = false): XlsxConditionalFormatting.ColorScale? {
+    private fun conditionalColor(node: Element?,styles: ParsedXlsxStyles,opaque: Boolean = false): Int? {
+        node ?: return null
+        if (node.getAttribute("auto") !in setOf("","0","false")) return null
+        val sources = listOf("rgb","theme","indexed").filter { node.hasAttribute(it) }
+        if (sources.size != 1) return null
+        val base = when (sources.single()) {
+            "rgb" -> {
+                val raw = node.getAttribute("rgb")
+                if (!raw.matches(Regex("[0-9A-Fa-f]{8}")) ||
+                    (opaque && !raw.startsWith("FF",ignoreCase = true))) return null
+                XlsxColors.parseArgb(raw)
+            }
+            "theme" -> {
+                val slot = node.getAttribute("theme").toIntOrNull() ?: return null
+                styles.theme[XlsxColors.themeSlots.getOrNull(slot) ?: return null] ?: return null
+            }
+            else -> {
+                val index = node.getAttribute("indexed").toIntOrNull()?.takeIf { it in 0..255 } ?: return null
+                XlsxColors.indexed(index,styles.indexed) ?: return null
+            }
+        }
+        val tint = if (node.hasAttribute("tint")) node.getAttribute("tint").toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it in -1.0..1.0 } ?: return null else 0.0
+        return XlsxColors.tint(base,tint)
+    }
+
+    private fun parseConditionalColorScale(rule: Element, extended: Boolean, styles: ParsedXlsxStyles): XlsxConditionalFormatting.ColorScale? {
         val scale = rule.childElements("colorScale").singleOrNull() ?: return null
         val thresholds = scale.childElements("cfvo")
         val colors = scale.childElements("color")
@@ -1373,10 +1402,8 @@ object OpenXmlDocumentParser {
                 else null
             if (type in setOf("percent", "percentile") && (value == null ||
                 value < java.math.BigDecimal.ZERO || value > java.math.BigDecimal("100"))) return null
-            val rgb = color.getAttribute("rgb")
-            if (!rgb.matches(Regex("[0-9A-Fa-f]{8}")) || color.hasAttribute("theme") ||
-                color.hasAttribute("indexed") || color.hasAttribute("tint")) return null
-            XlsxConditionalFormatting.ScaleStop(type, value, rgb.takeLast(6).toInt(16))
+            val rgb = conditionalColor(color,styles) ?: return null
+            XlsxConditionalFormatting.ScaleStop(type, value, rgb)
         }
         if (stops.drop(1).any { it.type == "min" } || stops.dropLast(1).any { it.type == "max" }) return null
         return XlsxConditionalFormatting.ColorScale(stops)
@@ -1401,13 +1428,12 @@ object OpenXmlDocumentParser {
         }
     }
 
-    private fun parseConditionalDataBar(rule: Element): XlsxConditionalFormatting.DataBar? {
+    private fun parseConditionalDataBar(rule: Element,styles: ParsedXlsxStyles): XlsxConditionalFormatting.DataBar? {
         val bar = rule.childElements("dataBar").singleOrNull() ?: return null
         if (rule.childElements("extLst").isNotEmpty()) return null // x14 custom rendering cannot be inferred.
         val stops = conditionalStops(bar.childElements("cfvo")) ?: return null
         if (stops.size != 2) return null
-        val rgb = bar.childElements("color").singleOrNull()?.getAttribute("rgb") ?: return null
-        if (!rgb.matches(Regex("[0-9A-Fa-f]{8}"))) return null
+        val rgb = conditionalColor(bar.childElements("color").singleOrNull(),styles) ?: return null
         fun flag(key: String, default: Boolean): Boolean? = when (bar.getAttribute(key)) {
             "" -> default
             "0","false" -> false
@@ -1418,10 +1444,10 @@ object OpenXmlDocumentParser {
         val minimum = bar.getAttribute("minLength").ifEmpty { "10" }.toIntOrNull() ?: return null
         val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
         if (minimum !in 0..100 || maximum !in minimum..100) return null
-        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,minimum,maximum,rgb.takeLast(6).toInt(16))
+        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,minimum,maximum,rgb)
     }
 
-    private fun parseExtendedSolidBar(rule: Element, baseRule: Element?, root: Element): XlsxConditionalFormatting.DataBar? {
+    private fun parseExtendedSolidBar(rule: Element, baseRule: Element?, root: Element,styles: ParsedXlsxStyles): XlsxConditionalFormatting.DataBar? {
         val bar = rule.childElements("dataBar").singleOrNull() ?: return null
         if (rule.childElements("extLst").isNotEmpty() || bar.childElements("extLst").isNotEmpty()) return null
         fun flag(key: String, default: Boolean): Boolean? = when(bar.getAttribute(key)) {
@@ -1438,13 +1464,7 @@ object OpenXmlDocumentParser {
         val minimum = bar.getAttribute("minLength").ifEmpty { "10" }.toIntOrNull() ?: return null
         val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
         if (minimum !in 0..100 || maximum !in minimum..100) return null
-        fun color(node: Element?): Int? {
-            val rgb = node?.getAttribute("rgb") ?: return null
-            if (!rgb.matches(Regex("FF[0-9A-Fa-f]{6}",RegexOption.IGNORE_CASE)) ||
-                node.hasAttribute("theme") || node.hasAttribute("indexed") || node.hasAttribute("tint") ||
-                node.hasAttribute("auto")) return null
-            return rgb.takeLast(6).toInt(16)
-        }
+        fun color(node: Element?): Int? = conditionalColor(node,styles,opaque = true)
         fun color(name: String) = color(bar.childElements(name).singleOrNull())
         val baseBar = baseRule?.childElements("dataBar")?.singleOrNull()
         val positive = if (baseRule == null) color("fillColor") else {
@@ -1556,7 +1576,7 @@ object OpenXmlDocumentParser {
         }
         val rowHeights = mutableMapOf<Int, Float>()
         val styledRows = mutableMapOf<Int, IntArray>()
-        val conditional = parseConditionalFormatting(root, styleTable.differential)
+        val conditional = parseConditionalFormatting(root, styleTable)
         val visuals = styleTable.visuals.toMutableList()
         val derivedStyles = mutableMapOf<XlsxCellStyle, Int>()
         var conditionalChecks = 0L

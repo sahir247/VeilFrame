@@ -1499,3 +1499,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A21/A29 thumbnail cache invalidation and explicit preview resolution
 
 - A late native PDF thumbnail render could repopulate the shared URI-only cache after reset, and source replacement in the same workspace did not invalidate it. Add generation-tagged cache keys and synchronized publication/invalidation; old native requests cannot repopulate a cleared cache. Invalidate on quick-tool source selection; uncached preview requests no longer modify the page-count cache. List thumbnails retain the 512×1024 envelope; explicit uncached previews may use up to 1080×1920 (8 MiB ARGB), still under the shared two-render concurrency gate. Transfer thumbnail descriptor ownership to PdfRenderer after successful construction. Tests cover stale publication and preview geometry. Same-URI mutation during a single selection remains a provider consistency issue; native UI/physical memory evidence pending. CI pending.
+
+
+### 2026-11-26 — A28 conditional visual workbook palette resolution
+
+- Pass workbook theme and custom indexed palette to conditional visual parsing (including theme-only workbooks). Resolve explicit, theme, indexed and HSL-tinted colors for base and extended scales/data bars; reject ambiguous color sources, invalid tint/index, unresolved system colors and nonopaque explicit x14 colors rather than guessing. Existing cell color resolution is unchanged. Regression uses theme accent tint and default indexed negative/axis colors in a standalone x14 rule. CI pending; exact color/gradient and Excel reference-rendering parity remain unverified.
