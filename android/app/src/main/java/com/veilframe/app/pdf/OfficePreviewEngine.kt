@@ -24,36 +24,19 @@ import java.io.File
 /** UI-independent, bounded content inspection. This is not Office page-layout rendering. */
 internal object OfficePreviewEngine {
     private const val TAG = "OfficePreviewEngine"
-    data class Preview(val format: OfficeSourceFormat, val summary: String, val text: String, val bitmap: Bitmap?)
+    data class Preview(val format: OfficeSourceFormat, val summary: String, val text: String, val bitmap: Bitmap?,
+        val sourceIdentity: OfficeSourceSnapshot.Identity)
 
     /** Called on the IO dispatcher. Caller owns the bitmap only after return. */
     suspend fun inspect(context: Context, uri: Uri, selectedName: String): Preview {
-        var previewFile: File? = null
+        var snapshot: OfficeSourceSnapshot? = null
         var previewBitmap: Bitmap? = null
         var transferred = false
         try {
             val format = OfficeSourceFormat.fromName(selectedName)
-            val source = File.createTempFile("office_preview_", format.suffix, context.cacheDir)
-            previewFile = source
-            val input = context.contentResolver.openInputStream(uri)
-                ?: throw java.io.IOException("Cannot open selected document")
-            input.use { stream ->
-                source.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var bytes = 0L
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val n = stream.read(buffer)
-                        if (n < 0) break
-                        if (n == 0) throw java.io.IOException("Document stream made no read progress")
-                        bytes += n
-                        if (bytes > 128L * 1024 * 1024) throw java.io.IOException("Document exceeds 128 MiB preview limit")
-                        output.write(buffer, 0, n)
-                    }
-                }
-            }
-            coroutineContext.ensureActive()
-            require(source.length() > 0) { "Selected document is empty" }
+            val staged = OfficeSourceSnapshot.open(context,uri,format)
+            snapshot = staged
+            val source = staged.file
             val paragraphs = mutableListOf<String>()
             val grid = mutableListOf<List<String>>()
             val slides = mutableListOf<String>()
@@ -139,10 +122,10 @@ internal object OfficePreviewEngine {
             )
 
             coroutineContext.ensureActive()
-            return Preview(format,summary,previewText,previewBitmap).also { transferred = true }
+            return Preview(format,summary,previewText,previewBitmap,staged.identity).also { transferred = true }
         } finally {
             if (!transferred) previewBitmap?.recycle()
-            previewFile?.delete()
+            snapshot?.close()
         }
     }
 

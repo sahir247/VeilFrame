@@ -107,6 +107,7 @@ class PdfQuickToolController(
     private var selectionGeneration: Long = 0L
     private var pendingSaveGeneration: Long? = null
     private var officePreviewBitmap: Bitmap? = null
+    private var officePreviewIdentity: OfficeSourceSnapshot.Identity? = null
     private var mergePageRequest = 0L
     private var mergePageLoadJob: Job? = null
     private var mergePageReadySources: List<Uri>? = null
@@ -115,6 +116,7 @@ class PdfQuickToolController(
         binding.ivDocVisualPreview.setImageDrawable(null)
         officePreviewBitmap?.recycle()
         officePreviewBitmap = null
+        officePreviewIdentity = null
     }
 
     /** The document picker is not a save: only a completed SAF copy may mark the output saved. */
@@ -896,7 +898,9 @@ class PdfQuickToolController(
                 launchTransient {
                     try {
                         val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                            PDDocument.load(stream,com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                                doc.numberOfPages.also { count -> require(count in 1..10_000) { "Unsupported PDF page count" } }
+                            }
                         } ?: throw IllegalStateException("Cannot open PDF")
                         withContext(Dispatchers.Main) {
                             if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
@@ -968,6 +972,7 @@ class PdfQuickToolController(
                     binding.tvDocPreviewContent.text = result.text.ifBlank { "No text in this sample; conversion may contain graphical content." }
                     clearOfficePreview()
                     officePreviewBitmap = result.bitmap
+                    officePreviewIdentity = result.sourceIdentity
                     adopted = true
                     binding.ivDocVisualPreview.setImageBitmap(result.bitmap)
                     binding.cardDocVisualPreview.visibility = if (result.bitmap != null) View.VISIBLE else View.GONE
@@ -1845,6 +1850,7 @@ class PdfQuickToolController(
         val operationMode = activeMode
         val operationUris = selectedUris.toList()
         val operationFileName = primaryDocName
+        val officeIdentity = officePreviewIdentity
         val operationBase = primaryDocName.removeSuffix(".pdf")
         val generation = selectionGeneration
         val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked
@@ -2174,54 +2180,10 @@ class PdfQuickToolController(
                         }
                     }
                     QuickMode.DOC_TO_PDF -> {
-                        val uri = operationUris.first()
-                        val format = OfficeSourceFormat.fromName(operationFileName)
-                        val tempInput = File.createTempFile("office_input_", format.suffix, activity.cacheDir)
-                        val tempPdf = File(activity.cacheDir, "office_output_${java.util.UUID.randomUUID()}.pdf")
-                        var conversionError: String? = null
-                        var success = false
-                        var handedOff = false
-                        try {
-                            val source = activity.contentResolver.openInputStream(uri)
-                                ?: throw java.io.IOException("Cannot open selected document")
-                            source.use { input ->
-                                tempInput.outputStream().use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    while (true) {
-                                        ensureActive()
-                                        val n = input.read(buffer)
-                                        if (n < 0) break
-                                        output.write(buffer, 0, n)
-                                    }
-                                }
-                            }
-                            when (format) {
-                                OfficeSourceFormat.XLSX -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity, savedPrintLayout = xlsxPrintLayout == true)
-                                OfficeSourceFormat.PPTX -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
-                                OfficeSourceFormat.TEXT -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                OfficeSourceFormat.DOCX -> officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                            }
-                            success = tempPdf.exists() && tempPdf.length() > 0
-                            if (success) {
-                                handedOff = finishDiskExecution(true, tempPdf, "${base}.pdf", origText)
-                            }
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (t: Exception) {
-                            success = false
-                            conversionError = t.message ?: "Failed to convert document"
-                        } finally {
-                            tempInput.delete()
-                            if (!handedOff) tempPdf.delete()
-                        }
-                        if (!success) {
-                            withContext(Dispatchers.Main) {
-                                if (generation != selectionGeneration) return@withContext
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, conversionError ?: "Conversion failed. Please verify document format.", Toast.LENGTH_LONG).show()
-                            }
+                        val identity = requireNotNull(officeIdentity) { "Inspect the Office document again before converting" }
+                        OfficeQuickExport.generate(activity,operationUris.first(),operationFileName,identity,
+                            xlsxPrintLayout == true,officeConverter) { staged ->
+                            finishDiskExecution(true,staged,"${base}.pdf",origText)
                         }
                     }
                     QuickMode.PDF_TO_IMAGE -> {

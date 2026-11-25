@@ -1519,3 +1519,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A28 multilingual worksheet labels and print/chart text
 
 - Route natural/tiled titles, saved header/footer sections, cached chart labels and anchored chart titles/pie legends through the strict visible-font or shaped-line renderer. Match saved print transforms for invisible text, use actual widths and refuse overflow instead of dropping text. Preserve existing approximate chart labels and chart-type coverage. Extend native XLSX fixture to a Bengali sheet title/header and exact serialized text-layer digest. Chart labels still use prior display abbreviation limits; arbitrary original Office chart formatting, complex stacked graphemes, and printer/device reference comparisons remain unverified. CI pending.
+
+
+### 2026-11-26 — A21/A29 Office preview identity and export ownership
+
+- Extract shared OfficeSourceSnapshot (128 MiB byte cap, progress and cancellation checks, SHA-256) and OfficeQuickExport (scoped source/output, explicit handoff). Preview and export now compare exact bytes, rejecting same-size provider replacement instead of silently converting an uninspected document. Controller retains only the preview identity and snapshots it before background execution. Quick-tool PDF page inspection uses disk-backed PDFBox and admits at most 10,000 pages, matching existing bounded page controls. Regression tests cover same-size mutation, exact identity, empty/oversized/stalled provider input. No SAF provider transaction or physical lifecycle parity is claimed. CI pending.
