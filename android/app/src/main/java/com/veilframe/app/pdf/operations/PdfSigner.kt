@@ -11,7 +11,6 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
-import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
@@ -141,89 +140,25 @@ class PdfSigner(private val context: Context) {
         extras: SignatureExtras = SignatureExtras(),
         progressCallback: (Int) -> Unit = {}
     ): SignatureResult = withContext(Dispatchers.IO) {
-        var document: PDDocument? = null
-        
         try {
             progressCallback(0)
-            
-            // Load the PDF document
-            val inputStream = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Cannot open source PDF"
-                )
-            
-            document = PDDocument.load(inputStream)
-            inputStream.close()
-            
-            progressCallback(20)
-            
-            // Validate page index
-            if (placement.pageIndex < 0 || placement.pageIndex >= document.numberOfPages) {
-                document.close()
-                return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Invalid page number"
-                )
-            }
-            
-            // Create signature bitmap from drawing data
-            val signatureBitmap = createSignatureBitmap(
-                signatureData,
-                placement.width.toInt(),
-                placement.height.toInt()
-            ) ?: return@withContext SignatureResult(
-                success = false,
-                errorMessage = "Cannot create signature bitmap"
-            )
-            
-            progressCallback(40)
-            
-            // Get the target page
-            val page = document.getPage(placement.pageIndex)
-            
-            // Add signature image to the page
-            addSignatureToPage(document, page, signatureBitmap, placement)
-            
-            progressCallback(60)
-            
-            // Add extras (date, name, initials)
-            if (extras.addDate || extras.addName || extras.addInitials) {
-                addSignatureExtras(document, page, placement, extras)
-            }
-            
-            progressCallback(80)
-            
-            // Save the document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-                document.save(outputStream)
-            outputStream.flush()
-            }
-            
-            signatureBitmap.recycle()
-            document.close()
-            progressCallback(100)
-            
-            SignatureResult(success = true)
-            
-        } catch (e: IOException) {
-            document?.close()
-            SignatureResult(
-                success = false,
-                errorMessage = "IO Error: ${e.message}"
-            )
-        } catch (e: Exception) {
-            document?.close()
-            SignatureResult(
-                success = false,
-                errorMessage = "Error: ${e.message}"
-            )
+            val bitmap = createSignatureBitmap(signatureData,placement.width.toInt(),placement.height.toInt())
+                ?: return@withContext SignatureResult(false,"Cannot create signature bitmap")
+            try {
+                progressCallback(20)
+                renderAbsoluteSignatures(inputUri,bitmap,listOf(placement),extras) {
+                    context.contentResolver.openOutputStream(outputUri,"wt")
+                        ?: throw IOException("Cannot open signature destination")
+                }.also { if (it.success) progressCallback(100) }
+            } finally { bitmap.recycle() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            SignatureResult(false,failure.message ?: "Failed to sign PDF")
         }
     }
-    
-    /**
-     * Add signature from a saved signature.
-     */
+
+    /** Add a saved visual signature without resampling the source image. */
     suspend fun addSignatureFromSaved(
         inputUri: Uri,
         outputUri: Uri,
@@ -232,94 +167,29 @@ class PdfSigner(private val context: Context) {
         extras: SignatureExtras = SignatureExtras(),
         progressCallback: (Int) -> Unit = {}
     ): SignatureResult = withContext(Dispatchers.IO) {
-        var document: PDDocument? = null
-        
         try {
             progressCallback(0)
-            
-            // Load saved signature bitmap
             val signatureFile = File(savedSignature.bitmapPath)
-            if (!signatureFile.exists()) {
-                return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Saved signature not found"
-                )
-            }
-            
-            val signatureBitmap = android.graphics.BitmapFactory.decodeFile(signatureFile.absolutePath)
-                ?: return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Cannot load saved signature"
-                )
-            
-            progressCallback(20)
-            
-            // Load the PDF document
-            val inputStream = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Cannot open source PDF"
-                )
-            
-            document = PDDocument.load(inputStream)
-            inputStream.close()
-            
-            progressCallback(40)
-            
-            // Validate page index
-            if (placement.pageIndex < 0 || placement.pageIndex >= document.numberOfPages) {
-                signatureBitmap.recycle()
-                document.close()
-                return@withContext SignatureResult(
-                    success = false,
-                    errorMessage = "Invalid page number"
-                )
-            }
-            
-            val page = document.getPage(placement.pageIndex)
-            
-            // Scale bitmap to fit placement size
-            val scaledBitmap = Bitmap.createScaledBitmap(
-                signatureBitmap,
-                placement.width.toInt(),
-                placement.height.toInt(),
-                true
-            )
-            signatureBitmap.recycle()
-            
-            progressCallback(60)
-            
-            // Add signature to page
-            addSignatureToPage(document, page, scaledBitmap, placement)
-            
-            // Add extras
-            if (extras.addDate || extras.addName || extras.addInitials) {
-                addSignatureExtras(document, page, placement, extras)
-            }
-            
-            progressCallback(80)
-            
-            // Save the document
-            context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-                document.save(outputStream)
-            outputStream.flush()
-            }
-            
-            scaledBitmap.recycle()
-            document.close()
-            progressCallback(100)
-            
-            SignatureResult(success = true)
-            
-        } catch (e: Exception) {
-            document?.close()
-            SignatureResult(
-                success = false,
-                errorMessage = "Error: ${e.message}"
-            )
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(signatureFile.absolutePath,bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 &&
+                bounds.outWidth.toLong()*bounds.outHeight <= 4_000_000) { "Invalid or oversized saved signature" }
+            val bitmap = android.graphics.BitmapFactory.decodeFile(signatureFile.absolutePath)
+                ?: return@withContext SignatureResult(false,"Cannot load saved signature")
+            try {
+                progressCallback(20)
+                renderAbsoluteSignatures(inputUri,bitmap,listOf(placement),extras) {
+                    context.contentResolver.openOutputStream(outputUri,"wt")
+                        ?: throw IOException("Cannot open signature destination")
+                }.also { if (it.success) progressCallback(100) }
+            } finally { bitmap.recycle() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            SignatureResult(false,failure.message ?: "Failed to sign PDF")
         }
     }
-    
+
     private val indexFile: File by lazy {
         File(signaturesDir, "signatures_index.json")
     }
@@ -467,7 +337,10 @@ class PdfSigner(private val context: Context) {
         width: Int,
         height: Int
     ): Bitmap? {
-        if (width <= 0 || height <= 0) return null
+        if (width <= 0 || height <= 0 || width.toLong()*height > 4_000_000 ||
+            data.paths.none { it.points.isNotEmpty() } ||
+            !data.strokeWidth.isFinite() || data.strokeWidth <= 0f ||
+            data.paths.any { path -> path.points.any { !it.x.isFinite() || !it.y.isFinite() } }) return null
         
         val bitmap = try {
             Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -492,9 +365,9 @@ class PdfSigner(private val context: Context) {
         
         // Find bounds of the signature
         var minX = Float.MAX_VALUE
-        var maxX = Float.MIN_VALUE
+        var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE
-        var maxY = Float.MIN_VALUE
+        var maxY = -Float.MAX_VALUE
         
         for (path in data.paths) {
             for (point in path.points) {
@@ -509,9 +382,10 @@ class PdfSigner(private val context: Context) {
         val signatureWidth = maxX - minX
         val signatureHeight = maxY - minY
         
-        val scaleX = if (signatureWidth > 0) (width - 20f) / signatureWidth else 1f
-        val scaleY = if (signatureHeight > 0) (height - 20f) / signatureHeight else 1f
-        val scale = minOf(scaleX, scaleY)
+        val padding = minOf(10f,width/4f,height/4f)
+        val scaleX = if (signatureWidth > 0) (width - 2f*padding) / signatureWidth else Float.POSITIVE_INFINITY
+        val scaleY = if (signatureHeight > 0) (height - 2f*padding) / signatureHeight else Float.POSITIVE_INFINITY
+        val scale = minOf(scaleX,scaleY).let { if (it.isFinite()) it else 1f }
         
         val offsetX = (width - signatureWidth * scale) / 2 - minX * scale
         val offsetY = (height - signatureHeight * scale) / 2 - minY * scale
@@ -522,6 +396,10 @@ class PdfSigner(private val context: Context) {
             
             val path = Path()
             val firstPoint = signaturePath.points.first()
+            if (signaturePath.points.size == 1) {
+                canvas.drawPoint(firstPoint.x * scale + offsetX,firstPoint.y * scale + offsetY,paint)
+                continue
+            }
             path.moveTo(
                 firstPoint.x * scale + offsetX,
                 firstPoint.y * scale + offsetY
@@ -575,57 +453,35 @@ class PdfSigner(private val context: Context) {
             return
         }
 
-        val contentStream = PDPageContentStream(
-            document,
-            page,
-            PDPageContentStream.AppendMode.APPEND,
-            true,
-            true
-        )
-        
-        try {
-            val font = com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA
-            val fontSize = 10f
-            var yOffset = placement.y - 15f
-            
-            contentStream.setFont(font, fontSize)
-            contentStream.setNonStrokingColor(0, 0, 0) // Black
-            
-            // Add name
-            if (extras.addName && extras.name.isNotBlank()) {
-                contentStream.beginText()
-                contentStream.newLineAtOffset(placement.x, yOffset)
-                contentStream.showText(extras.name)
-                contentStream.endText()
-                yOffset -= 12f
+        val lines = buildList {
+            if (extras.addName && extras.name.isNotBlank()) add(extras.name)
+            if (extras.addDate) add("Date: ${SimpleDateFormat(extras.dateFormat,Locale.getDefault()).format(Date())}")
+            if (extras.addInitials && extras.initials.isNotBlank()) add("Initials: ${extras.initials}")
+        }
+        val fonts = OfficeVisibleFonts(context,document)
+        val selected = lines.map { text -> text to fonts.select(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,text) }
+        PDPageContentStream(document,page,PDPageContentStream.AppendMode.APPEND,true,true).use { stream ->
+            stream.setNonStrokingColor(0,0,0)
+            var y = placement.y - 15f
+            for ((text,font) in selected) {
+                stream.beginText()
+                stream.setFont(font,10f)
+                stream.newLineAtOffset(placement.x,y)
+                stream.showText(normalizeOfficeText(text))
+                stream.endText()
+                y -= 12f
             }
-            
-            // Add date
-            if (extras.addDate) {
-                val dateFormat = SimpleDateFormat(extras.dateFormat, Locale.getDefault())
-                val dateString = "Date: ${dateFormat.format(Date())}"
-                
-                contentStream.beginText()
-                contentStream.newLineAtOffset(placement.x, yOffset)
-                contentStream.showText(dateString)
-                contentStream.endText()
-                yOffset -= 12f
-            }
-            
-            // Add initials
-            if (extras.addInitials && extras.initials.isNotBlank()) {
-                contentStream.beginText()
-                contentStream.newLineAtOffset(placement.x, yOffset)
-                contentStream.showText("Initials: ${extras.initials}")
-                contentStream.endText()
-            }
-            
-        } catch (e: Exception) {
-            // Defensive: ensure font loading or text formatting exceptions do not abort PDF save
-        } finally {
-            contentStream.close()
         }
     }
+
+    /** The stream belongs to the caller; verified export must not close it. */
+    private fun borrowedOutput(output: java.io.OutputStream): java.io.OutputStream =
+        object : java.io.OutputStream() {
+            override fun write(value: Int) = output.write(value)
+            override fun write(bytes: ByteArray,offset: Int,length: Int) = output.write(bytes,offset,length)
+            override fun flush() = output.flush()
+            override fun close() = flush()
+        }
 
     suspend fun addSignatureBitmap(
         inputUri: Uri,
@@ -641,34 +497,38 @@ class PdfSigner(private val context: Context) {
         signatureBitmap: Bitmap,
         placements: List<SignaturePlacement>,
         extras: SignatureExtras = SignatureExtras()
+    ): SignatureResult = renderAbsoluteSignatures(inputUri,signatureBitmap,placements,extras) {
+        borrowedOutput(outputStream)
+    }
+
+    private suspend fun renderAbsoluteSignatures(
+        inputUri: Uri,
+        bitmap: Bitmap,
+        placements: List<SignaturePlacement>,
+        extras: SignatureExtras,
+        openDestination: () -> java.io.OutputStream
     ): SignatureResult = withContext(Dispatchers.IO) {
-        if (placements.isEmpty()) return@withContext SignatureResult(false, "No placement specified")
-        var document: PDDocument? = null
         try {
-            val inputStream = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext SignatureResult(false, "Cannot open source PDF")
-            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
-
-            require(placements.all { it.pageIndex in 0 until document.numberOfPages }) { "Invalid signature page number" }
-            for (placement in placements) {
-                ensureActive()
-                val page = document.getPage(placement.pageIndex)
-                addSignatureToPage(document, page, signatureBitmap, placement)
-                if (extras.addDate || (extras.addName && extras.name.isNotBlank()) || (extras.addInitials && extras.initials.isNotBlank())) {
-                    addSignatureExtras(document, page, placement, extras)
+            loadMergePdf(context,inputUri).use { loaded ->
+                val document = loaded.document
+                requirePdfRewriteAllowed(document)
+                val count = document.numberOfPages
+                require(placements.isNotEmpty() && placements.all { it.pageIndex in 0 until count }) {
+                    "Invalid signature page selection"
                 }
-             }
-
-            ensureActive()
-            document.save(outputStream)
-            outputStream.flush()
+                for (placement in placements) {
+                    ensureActive()
+                    val page = document.getPage(placement.pageIndex)
+                    addSignatureToPage(document,page,bitmap,placement)
+                    addSignatureExtras(document,page,placement,extras)
+                }
+                exportVerifiedPdf(context,document,count,openDestination = openDestination)
+            }
             SignatureResult(true)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (e: Exception) {
-            SignatureResult(false, e.message ?: "Failed to sign PDF")
-        } finally {
-            document?.close()
+        } catch (failure: Exception) {
+            SignatureResult(false,failure.message ?: "Failed to sign PDF")
         }
     }
 
@@ -711,6 +571,7 @@ class PdfSigner(private val context: Context) {
         try {
             loadMergePdf(context,inputUri).use { loaded ->
                 val document = loaded.document
+                requirePdfRewriteAllowed(document)
                 val items = placements(document)
                 require(items.all { it.sourceSha256 == null || it.sourceSha256 == loaded.sha256 }) {
                     "Signature source changed since preview; reopen the document"
@@ -726,9 +587,7 @@ class PdfSigner(private val context: Context) {
                         item.previewWidth ?: geometry.displayWidth,item.previewHeight ?: geometry.displayHeight)
                     drawSignatureImage(document,page,item.bitmap,affine)
                 }
-                ensureActive()
-                document.save(outputStream)
-                outputStream.flush()
+                exportVerifiedPdf(context,document,document.numberOfPages) { borrowedOutput(outputStream) }
             }
             SignatureResult(true)
         } catch (cancelled: CancellationException) {
