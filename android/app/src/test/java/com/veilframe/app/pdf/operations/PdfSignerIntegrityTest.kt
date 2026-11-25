@@ -30,7 +30,7 @@ class PdfSignerIntegrityTest {
         PDDocument().use { it.addPage(PDPage()); it.save(source) }
         val uri = Uri.fromFile(source)
         val hash = loadMergePdf(context,uri).use { it.sha256 }
-        PDDocument.load(source).use { doc ->
+        PDDocument.load(source.readBytes()).use { doc ->
             doc.documentInformation.title = "Changed bytes, unchanged page geometry"
             doc.save(source)
         }

@@ -216,4 +216,29 @@ class AiBundleSecretMaskingTest {
         val source = "fun add(a: Int, b: Int) = a + b"
         assertTrue(AiBundleEngine.maskSecrets(source) == source)
     }
+
+    @Test fun signedUrlsAndOAuthParametersDoNotLeakEncodedSuffixes() {
+        val examples = listOf(
+            "https://storage.example/test?X-Amz-Signature=synthetic%2Fsecret%3D&public=ok" to "synthetic%2Fsecret%3D",
+            "https://storage.example/test?sv=2020&amp;sig=synthetic%2Bsignature&amp;public=ok" to "synthetic%2Bsignature",
+            "https://example.invalid/callback?code=synthetic-code&state=public" to "synthetic-code",
+            "https://example.invalid/#access_token=example%2Ftoken" to "example%2Ftoken"
+        )
+        for ((input,secret) in examples) {
+            val masked = AiBundleEngine.maskSecrets(input)
+            assertFalse(masked.contains(secret))
+            assertTrue(masked.contains("[REDACTED_SECRET]"))
+        }
+    }
+
+    @Test fun pgpArmorAndAdditionalTokenPrefixesAreMasked() {
+        val samples = listOf(
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\nsynthetic-private-body\n-----END PGP PRIVATE KEY BLOCK-----",
+            "glrt-" + "x".repeat(24), "rk_live_" + "a".repeat(24),
+            "whsec_" + "b".repeat(24), "xapp-" + "c".repeat(24)
+        )
+        for (sample in samples) assertFalse(AiBundleEngine.maskSecrets(sample).contains(sample))
+        assertFalse(AiBundleEngine.maskSecrets(samples.first()).contains("synthetic-private-body"))
+        assertTrue(AiBundleEngine.isSensitiveFileName("work.ppk"))
+    }
 }

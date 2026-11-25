@@ -63,6 +63,15 @@ object AiBundleEngine {
 
     // Heuristics, not a guarantee that the bundle contains no credentials.
     private val SECRET_PATTERNS = listOf(
+        // Signed URLs and OAuth callback parameters may contain short or
+        // percent-encoded credentials. Consume the complete parameter value,
+        // before generic assignment patterns can leave encoded suffixes.
+        Pattern.compile("""(?i)(?:[?&#]|&amp;)(?:x-amz-signature|x-amz-security-token|x-goog-signature|sig|access_token|refresh_token|id_token|client_secret|api_key|apikey|oauth_token|code)=[^&\s"'<>#]++"""),
+        // PGP private key blocks have a different armor suffix from PEM.
+        Pattern.compile("""(?s)-----BEGIN PGP PRIVATE KEY BLOCK-----.*?(?:-----END PGP PRIVATE KEY BLOCK-----|\z)"""),
+        // Recognized modern provider credentials that are not necessarily
+        // assigned to a conventional secret-named variable.
+        Pattern.compile("""\b(?:glrt-[A-Za-z0-9_-]{15,}|rk_live_[A-Za-z0-9]{12,}|sk_test_[A-Za-z0-9]{12,}|whsec_[A-Za-z0-9]{12,}|xapp-[A-Za-z0-9-]{20,})\b"""),
         // YAML block scalars must be masked before scalar assignment rules consume
         // the indicator itself. Quoted keys and chomping/indent modifiers are valid YAML.
         Pattern.compile("""(?im)(?:^|[ \t])["']?(?:password|passwd|api[_-]?key|secret(?:[_-]?key)?|token|private[_-]?key|client[_-]?secret|refresh[_-]?token|access[_-]?token|aws[_-]?(?:secret[_-]?access[_-]?key|session[_-]?token)|db[_-]?password|database[_-]?(?:password|url)|github[_-]?token|openai[_-]?api[_-]?key|stripe[_-]?secret[_-]?key|smtp[_-]?password|redis[_-]?password|access[_-]?key|api[_-]?secret)["']?[ \t]*:[ \t]*[|>](?:[1-9][+-]?|[+-][1-9]?)?[ \t]*(?:#[^\r\n]*)?\r?\n(?:[ \t]+[^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n)++"""),
@@ -98,11 +107,13 @@ object AiBundleEngine {
                 "credentials", ".git-credentials", "auth.json", "kubeconfig", "terraform.tfvars",
                 "credentials.json", "service-account.json", ".npmrc", ".netrc", ".pypirc",
                 "google-services.json", "secrets.properties", "secrets.json", "local.settings.json",
-                "application-default-credentials.json", "application_default_credentials.json") ||
+                "application-default-credentials.json", "application_default_credentials.json",
+                "credentials.xml", "credentials.ini", "secrets.yaml", "secrets.yml",
+                "docker-config.json", "htpasswd", ".htpasswd", "private_key.json") ||
             lower.startsWith("secrets.") || lower.endsWith(".tfstate") || lower.endsWith(".tfstate.backup") ||
             lower.endsWith(".tfvars") || lower.endsWith(".tfvars.json") ||
             lower.startsWith("service-account-") && lower.endsWith(".json") ||
-            lower.substringAfterLast('.', "") in setOf("pem", "key", "p12", "pfx", "jks", "keystore", "kdbx")
+            lower.substringAfterLast('.', "") in setOf("pem", "key", "p12", "pfx", "jks", "keystore", "kdbx", "ppk")
     }
 
     fun maskSecrets(raw: String): String {
