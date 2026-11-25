@@ -1431,15 +1431,15 @@ object OpenXmlDocumentParser {
             else -> null
         }
         val gradient = flag("gradient",true) ?: return null
-        val midpoint = when (bar.getAttribute("axisPosition").ifEmpty { "automatic" }) {
-            "automatic" -> false
-            "middle" -> true
-            else -> return null
-        }
-        // Nonzero minimum and non-full maximum lengths need their own signed
-        // layout contract; do not infer them from the base rule.
-        if (bar.getAttribute("minLength").ifEmpty { "10" } != "0" ||
-            bar.getAttribute("maxLength").ifEmpty { "90" } != "100") return null
+        val axisPosition = bar.getAttribute("axisPosition").ifEmpty { "automatic" }
+        if (axisPosition !in setOf("automatic","middle","none")) return null
+        val noAxis = axisPosition == "none"
+        val midpoint = axisPosition == "middle"
+        val minimum = bar.getAttribute("minLength").ifEmpty { "10" }.toIntOrNull() ?: return null
+        val maximum = bar.getAttribute("maxLength").ifEmpty { "90" }.toIntOrNull() ?: return null
+        if (minimum !in 0..100 || maximum !in minimum..100) return null
+        // Signed nonstandard lengths require their own baseline geometry.
+        if (!noAxis && (minimum != 0 || maximum != 100)) return null
         fun color(node: Element?): Int? {
             val rgb = node?.getAttribute("rgb") ?: return null
             if (!rgb.matches(Regex("FF[0-9A-Fa-f]{6}",RegexOption.IGNORE_CASE)) ||
@@ -1459,7 +1459,10 @@ object OpenXmlDocumentParser {
         val positiveBorder = if (border) color("borderColor") ?: return null else null
         val sameBorder = flag("negativeBarBorderColorSameAsPositive",true) ?: return null
         val negativeBorder = if (!border || sameBorder) positiveBorder else color("negativeBorderColor") ?: return null
-        val axis = color("axisColor") ?: return null
+        val axis = if (noAxis) {
+            if (bar.childElements("axisColor").isNotEmpty()) return null
+            0 // No axis is emitted; this placeholder is never rendered.
+        } else color("axisColor") ?: return null
         val rtl = when(bar.getAttribute("direction").ifEmpty { "context" }) {
             "leftToRight" -> false
             "rightToLeft" -> true
@@ -1481,8 +1484,8 @@ object OpenXmlDocumentParser {
         val baseShow = baseBar?.getAttribute("showValue").orEmpty()
         if (baseShow !in setOf("","0","1","false","true")) return null
         val show = flag("showValue",baseShow !in setOf("0","false")) ?: return null
-        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,0,100,positive,
-            XlsxConditionalFormatting.SolidBarAppearance(negative,positiveBorder,negativeBorder,axis,rtl,gradient,midpoint))
+        return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,minimum,maximum,positive,
+            XlsxConditionalFormatting.SolidBarAppearance(negative,positiveBorder,negativeBorder,axis,rtl,gradient,midpoint,noAxis))
     }
 
     private fun parseConditionalIconSet(rule: Element, extended: Boolean = false): XlsxConditionalFormatting.IconSet? {

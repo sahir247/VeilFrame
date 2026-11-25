@@ -83,7 +83,7 @@ internal object XlsxConditionalFormatting {
             val lower = threshold(low.type, low.value, extent) ?: return null
             val upper = threshold(high.type, high.value, extent) ?: return null
             if (lower > upper) return null
-            appearance?.let { return it.visual(raw,lower,upper,rgb,showValue) }
+            appearance?.let { return it.visual(raw,lower,upper,rgb,showValue,minimumLength,maximumLength) }
             if (lower == upper) return XlsxDataBarVisual(0f, maximumLength / 100f, rgb, showValue)
             val span = upper.subtract(lower)
             val bounded = raw.max(lower).min(upper)
@@ -107,11 +107,22 @@ internal object XlsxConditionalFormatting {
         }
     }
 
-    /** x14 data bars with automatic or midpoint signed axes and a 0–100% length range. */
+    /** x14 data bars: signed axes (0–100%) or no-axis bars with explicit length limits. */
     data class SolidBarAppearance(val negativeRgb: Int, val borderRgb: Int?, val negativeBorderRgb: Int?,
         val axisRgb: Int, val rtl: Boolean, val gradient: Boolean = false,
-        val midpoint: Boolean = false) {
-        fun visual(raw: BigDecimal, lower: BigDecimal, upper: BigDecimal, rgb: Int, show: Boolean): XlsxDataBarVisual {
+        val midpoint: Boolean = false, val noAxis: Boolean = false) {
+        fun visual(raw: BigDecimal, lower: BigDecimal, upper: BigDecimal, rgb: Int, show: Boolean,
+            minimumLength: Int = 0, maximumLength: Int = 100): XlsxDataBarVisual {
+            if (noAxis) {
+                // Without a zero axis, numeric order (not absolute magnitude) sets length.
+                val fraction = if (lower == upper) 1f else raw.max(lower).min(upper).subtract(lower)
+                    .divide(upper.subtract(lower),java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
+                val length = (minimumLength + (maximumLength-minimumLength)*fraction)/100f
+                val negative = raw.signum() < 0
+                return XlsxDataBarVisual(if (rtl) 1f else 0f,if (rtl) 1f-length else length,
+                    if (negative) negativeRgb else rgb,show,
+                    if (negative) negativeBorderRgb else borderRgb,null,axisRgb,gradient)
+            }
             val lo = minOf(lower,BigDecimal.ZERO)
             val hi = maxOf(upper,BigDecimal.ZERO)
             val span = hi.subtract(lo)
