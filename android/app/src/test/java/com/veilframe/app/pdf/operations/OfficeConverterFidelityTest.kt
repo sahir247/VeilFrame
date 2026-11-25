@@ -2680,9 +2680,9 @@ class OfficeConverterFidelityTest {
         PDDocument.load(txtPdf).use { assertTrue(PDFTextStripper().getText(it).contains(value)) }
     }
 
-    @Test fun unsupportedComplexScriptOrBoldFallbackDoesNotReplaceDestination() = runBlocking<Unit> {
+    @Test fun unsupportedComplexScriptDoesNotReplaceDestination() = runBlocking<Unit> {
         val destination = File(tempFolder.root, "prior-visible.pdf").apply { writeText("previous") }
-        for ((value, bold) in listOf("বাংলা" to false, "Русский" to true)) {
+        for ((value, bold) in listOf("বাংলা" to false, "বাংলা" to true)) {
             val failure = runCatching {
                 OfficeConverter().convertDocxToPdf(visibleTextDocx(value, bold), destination, context)
             }.exceptionOrNull()
@@ -2692,5 +2692,38 @@ class OfficeConverterFidelityTest {
         val text = File(tempFolder.root, "complex.txt").apply { writeText("বাংলা") }
         assertTrue(runCatching { OfficeConverter().convertTextToPdf(text, destination, context) }.isFailure)
         assertEquals("previous", destination.readText())
+    }
+
+    @Test fun simpleUnicodeBoldDocxKeepsActualBoldFont() = runBlocking<Unit> {
+        val value = "Русский"
+        val out = File(tempFolder.root,"bold-unicode.pdf")
+        OfficeConverter().convertDocxToPdf(visibleTextDocx(value,true),out,context)
+        PDDocument.load(out).use { pdf ->
+            val fonts = mutableSetOf<String>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(position: com.tom_roush.pdfbox.text.TextPosition) {
+                    fonts.add(position.font.name)
+                    super.processTextPosition(position)
+                }
+            }
+            assertTrue(stripper.getText(pdf).contains(value))
+            assertTrue(fonts.any { it.contains("NotoSans-Bold") })
+        }
+    }
+
+    @Test fun simpleUnicodeSpreadsheetUsesSameFontForLayoutAndDrawing() = runBlocking<Unit> {
+        val value = "Café €42 Ελληνικά Русский"
+        val source = singleTextWorkbook(value)
+        for (saved in listOf(false,true)) {
+            val out = File(tempFolder.root,"simple-unicode-$saved.pdf")
+            OfficeConverter().convertXlsxToPdf(source,out,context,savedPrintLayout=saved)
+            PDDocument.load(out).use { pdf ->
+                assertTrue(PDFTextStripper().getText(pdf).replace(Regex("\\s+")," ").contains(value))
+                assertTrue((0 until pdf.numberOfPages).any { page ->
+                    val resources = pdf.getPage(page).resources
+                    resources.fontNames.any { resources.getFont(it).name.contains("NotoSans") }
+                })
+            }
+        }
     }
 }
