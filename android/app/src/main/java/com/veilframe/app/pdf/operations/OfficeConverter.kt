@@ -48,7 +48,7 @@ class OfficeConverter {
     var repeatFrozenColumnsInTiling: Boolean = false
 
     /** Stage, reopen and verify page count before atomically replacing the caller's destination. */
-    internal suspend fun publishOfficePdf(pdf: PDDocument, destination: File) {
+    internal suspend fun publishOfficePdf(pdf: PDDocument, destination: File, verify: (PDDocument)->Unit = {}) {
         val expected = pdf.numberOfPages
         require(expected > 0) { "Conversion produced no pages" }
         val parent = destination.absoluteFile.parentFile ?: error("No destination directory")
@@ -59,6 +59,7 @@ class OfficeConverter {
             pdf.save(staged)
             PDDocument.load(staged).use { reopened ->
                 check(reopened.numberOfPages == expected) { "Serialized Office PDF page count changed" }
+                verify(reopened)
             }
             currentCoroutineContext().ensureActive()
             java.nio.file.Files.move(
@@ -201,6 +202,8 @@ class OfficeConverter {
         }
 
         val pdf = PDDocument()
+        val shaped = OfficeShapedText(context,pdf)
+        val job = currentCoroutineContext()
         var contentStream: PDPageContentStream? = null
         try {
 
@@ -242,7 +245,23 @@ class OfficeConverter {
                             p.runs
                         }
 
-                        if (effectiveRuns.any { it.text.isNotBlank() }) {
+                        if (effectiveRuns.any { needsOfficeShaping(it.text) }) {
+                            val block = shaped.prepare(effectiveRuns,isHeading,fontSize,printableWidth,p.alignment)
+                            for (index in 0 until block.lines) {
+                                job.ensureActive()
+                                val h = block.lineHeight(index)
+                                require(h <= pageBounds.height-2*margin) { "Shaped line exceeds page height" }
+                                if (yPosition-h < margin) {
+                                    contentStream?.close()
+                                    currentPage = PDPage(pageBounds)
+                                    pdf.addPage(currentPage)
+                                    contentStream = PDPageContentStream(pdf,currentPage)
+                                    yPosition = pageBounds.height-margin
+                                }
+                                shaped.drawLine(currentPage,requireNotNull(contentStream),block,index,margin,yPosition)
+                                yPosition -= h
+                            }
+                        } else if (effectiveRuns.any { it.text.isNotBlank() }) {
                             val styledLines = wrapStyledDocxRuns(
                                 runs = effectiveRuns,
                                 isHeading = isHeading,
@@ -295,19 +314,25 @@ class OfficeConverter {
                         yPosition -= 8f
 
                         for (row in rows) {
+                            val rowShaped = Array(numCols) { c ->
+                                val value = row.getOrNull(c).orEmpty()
+                                if (needsOfficeShaping(value)) shaped.prepare(value,9f,colWidth-8f) else null
+                            }
                             val rowFonts = Array(numCols) { c ->
-                                visibleFonts.select(fontNormal, row.getOrNull(c).orEmpty())
+                                if (rowShaped[c] == null) visibleFonts.select(fontNormal,row.getOrNull(c).orEmpty()) else fontNormal
                             }
                             val rowLines = Array(numCols) { c ->
                                 val cellText = row.getOrNull(c) ?: ""
-                                if (cellText.isNotBlank()) {
+                                if (rowShaped[c] == null && cellText.isNotBlank()) {
                                     wrapText(cellText, rowFonts[c], 9f, colWidth - 8f)
                                 } else {
                                     emptyList()
                                 }
                             }
                             val maxLines = rowLines.maxOfOrNull { it.size } ?: 1
-                            val dynamicRowHeight = Math.max(20f, maxLines * 12f + 8f)
+                            val dynamicRowHeight = maxOf(20f,maxLines*12f+8f,
+                                (rowShaped.maxOfOrNull { it?.height ?: 0f } ?: 0f)+8f)
+                            require(dynamicRowHeight <= pageBounds.height-2*margin) { "Table row exceeds printable page height" }
 
                             if (yPosition - dynamicRowHeight < margin) {
                                 contentStream?.close()
@@ -330,6 +355,16 @@ class OfficeConverter {
                                 contentStream?.lineTo(cellX, yPosition)
                                 contentStream?.stroke()
 
+                                val block = rowShaped[c]
+                                if (block != null) {
+                                    var lineTop = yPosition-4f
+                                    for (index in 0 until block.lines) {
+                                        job.ensureActive()
+                                        shaped.drawLine(currentPage,requireNotNull(contentStream),block,index,cellX+4f,lineTop)
+                                        lineTop -= block.lineHeight(index)
+                                    }
+                                    continue
+                                }
                                 val lines = rowLines[c]
                                 var textY = yPosition - 4f - 9f
                                 for (lText in lines) {
@@ -351,9 +386,10 @@ class OfficeConverter {
             contentStream?.close()
         }
 
-        publishOfficePdf(pdf, pdfFile)
+        shaped.append { job.ensureActive() }
+        publishOfficePdf(pdf,pdfFile) { shaped.verify(it) { job.ensureActive() } }
         } finally {
-            pdf.close()
+            try { shaped.close() } finally { pdf.close() }
         }
     }
 
@@ -3286,6 +3322,7 @@ class OfficeConverter {
         PDFBoxResourceLoader.init(context)
         var pdf: PDDocument? = null
         var contentStream: PDPageContentStream? = null
+        var shapeOwner: OfficeShapedText? = null
 
         try {
             pdf = PDDocument()
@@ -3294,6 +3331,7 @@ class OfficeConverter {
             val printableWidth = pageBounds.width - (2 * margin)
 
             val fonts = OfficeVisibleFonts(context, pdf)
+            val shaped = OfficeShapedText(context,pdf).also { shapeOwner = it }
             val fontSize = 11f
             val leading = fontSize * 1.3f
             val job = currentCoroutineContext()
@@ -3308,6 +3346,23 @@ class OfficeConverter {
                     job.ensureActive()
                     require(rawLine.length <= 16384) { "Text line exceeds the PDF layout budget" }
                     val line = normalizeOfficeText(rawLine)
+                    if (needsOfficeShaping(line)) {
+                        val block = shaped.prepare(line,fontSize,printableWidth)
+                        for (index in 0 until block.lines) {
+                            job.ensureActive()
+                            val h = block.lineHeight(index)
+                            if (yPosition-h<margin) {
+                                contentStream?.close()
+                                currentPage = PDPage(pageBounds)
+                                pdf.addPage(currentPage)
+                                contentStream = PDPageContentStream(pdf,currentPage)
+                                yPosition = pageBounds.height-margin
+                            }
+                            shaped.drawLine(currentPage,requireNotNull(contentStream),block,index,margin,yPosition)
+                            yPosition -= h
+                        }
+                        return@forEach
+                    }
                     val font = fonts.select(PDType1Font.HELVETICA, line)
                     val wrapped = wrapText(line, font, fontSize, printableWidth)
                     for (part in wrapped) {
@@ -3333,10 +3388,11 @@ class OfficeConverter {
 
             contentStream?.close()
             contentStream = null
-            publishOfficePdf(pdf, pdfFile)
+            shaped.append { job.ensureActive() }
+            publishOfficePdf(pdf,pdfFile) { shaped.verify(it) { job.ensureActive() } }
         } finally {
             try { contentStream?.close() } catch (_: Exception) {}
-            try { pdf?.close() } catch (_: Exception) {}
+            try { shapeOwner?.close() } finally { try { pdf?.close() } catch (_: Exception) {} }
         }
     }
 }

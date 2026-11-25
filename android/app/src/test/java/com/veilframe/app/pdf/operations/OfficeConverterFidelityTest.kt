@@ -2680,16 +2680,16 @@ class OfficeConverterFidelityTest {
         PDDocument.load(txtPdf).use { assertTrue(PDFTextStripper().getText(it).contains(value)) }
     }
 
-    @Test fun unsupportedComplexScriptDoesNotReplaceDestination() = runBlocking<Unit> {
+    @Test fun unsupportedUnassignedGlyphDoesNotReplaceDestination() = runBlocking<Unit> {
         val destination = File(tempFolder.root, "prior-visible.pdf").apply { writeText("previous") }
-        for ((value, bold) in listOf("বাংলা" to false, "বাংলা" to true)) {
+        for ((value, bold) in listOf("\u0378" to false, "\u0378" to true)) {
             val failure = runCatching {
                 OfficeConverter().convertDocxToPdf(visibleTextDocx(value, bold), destination, context)
             }.exceptionOrNull()
             assertTrue("Expected explicit text admission failure: $failure", failure is OfficeTextEncodingException)
             assertEquals("previous", destination.readText())
         }
-        val text = File(tempFolder.root, "complex.txt").apply { writeText("বাংলা") }
+        val text = File(tempFolder.root, "complex.txt").apply { writeText("\u0378") }
         assertTrue(runCatching { OfficeConverter().convertTextToPdf(text, destination, context) }.isFailure)
         assertEquals("previous", destination.readText())
     }

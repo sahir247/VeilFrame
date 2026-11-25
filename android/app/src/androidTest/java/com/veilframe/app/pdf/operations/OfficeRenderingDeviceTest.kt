@@ -248,4 +248,29 @@ class OfficeRenderingDeviceTest {
             }
         }
     }
+
+    @Test fun shapedBengaliHindiArabicLinesRetainLogicalUnicode() = runBlocking<Unit> {
+        val directory = runDirectory("shaped_unicode")
+        val words = listOf("বাংলা","हिन्दी","العربية")
+        val source = File(directory,"source.txt").apply { writeText(words.joinToString("\n")) }
+        val out = File(directory,"shaped.pdf")
+        OfficeConverter().convertTextToPdf(source,out,context)
+        PDDocument.load(out).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            assertTrue(pdf.documentInformation.subject.contains("Complex-script"))
+            assertTrue(digestOcrWords(words.asSequence()).contentEquals(digestSerializedOcrLayer(pdf.getPage(0))))
+            assertTrue(pdf.getPage(0).resources.xObjectNames.iterator().hasNext())
+        }
+        // Pixel witness independent of the invisible text layer.
+        assertHardwarePdf(directory,"shaped",out,1,emptyList())
+        val docx = zip(directory,"styled-shaped",mapOf("word/document.xml" to
+            """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>বাংলা</w:t></w:r><w:r><w:t> हिन्दी</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>العربية</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"""))
+        val docOut = File(directory,"styled-shaped.pdf")
+        OfficeConverter().convertDocxToPdf(docx,docOut,context)
+        PDDocument.load(docOut).use { pdf ->
+            assertEquals(1,pdf.numberOfPages)
+            assertTrue(digestOcrWords(words.asSequence()).contentEquals(digestSerializedOcrLayer(pdf.getPage(0))))
+        }
+        assertHardwarePdf(directory,"styled-shaped",docOut,1,emptyList())
+    }
 }

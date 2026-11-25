@@ -20,6 +20,8 @@ internal class SearchableOcrFonts(private val context: Context, private val docu
         { context.assets.open("fonts/ocr/NotoSans-Regular.ttf").use { PDType0Font.load(document,it) } },
         { context.assets.open("fonts/ocr/NotoSansDevanagari-Regular.ttf").use { PDType0Font.load(document,it) } },
         { context.assets.open("fonts/ocr/NotoSansBengali-Regular.ttf").use { PDType0Font.load(document,it) } },
+        { context.assets.open("fonts/ocr/NotoSansArabic-Regular.ttf").use { PDType0Font.load(document,it) } },
+        { context.assets.open("fonts/ocr/NotoSansHebrew-Regular.ttf").use { PDType0Font.load(document,it) } },
         { context.resources.openRawResource(com.veilframe.app.R.font.font_sans).use { PDType0Font.load(document,it) } },
         { context.resources.openRawResource(com.veilframe.app.R.font.font_serif).use { PDType0Font.load(document,it) } },
         { context.resources.openRawResource(com.veilframe.app.R.font.font_mono).use { PDType0Font.load(document,it) } }
