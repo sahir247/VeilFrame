@@ -78,7 +78,8 @@ internal class MergeImageSource private constructor(
                 job.ensureActive()
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(file.absolutePath,options)
-                require(total>0 && options.outWidth>0 && options.outHeight>0 &&
+                require(total>0 && options.outMimeType?.startsWith("image/") == true &&
+                    options.outWidth>0 && options.outHeight>0 &&
                     options.outWidth <= 100_000 && options.outHeight <= 100_000) {
                     "Invalid or unsupported merge image geometry"
                 }

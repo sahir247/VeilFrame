@@ -76,6 +76,7 @@ class PdfMergePagePlannerTest {
         PDDocument.load(output.toByteArray()).use { assertEquals(2, it.numberOfPages) }
     }
 
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
     @Test fun sameSizeImageReplacementIsRejectedBeforeOutput() = runBlocking<Unit> {
         val context = RuntimeEnvironment.getApplication()
         PDFBoxResourceLoader.init(context)
@@ -95,6 +96,7 @@ class PdfMergePagePlannerTest {
         assertTrue(context.cacheDir.listFiles().orEmpty().none { it.name.startsWith("vf_merge_image_") })
     }
 
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
     @Test fun malformedImageCannotBecomeAReadyPagePlan() = runBlocking<Unit> {
         val context = RuntimeEnvironment.getApplication()
         val file = temp.newFile("broken.png").apply { writeText("not an image") }

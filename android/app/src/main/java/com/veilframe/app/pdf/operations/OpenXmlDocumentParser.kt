@@ -1430,11 +1430,15 @@ object OpenXmlDocumentParser {
             "1","true" -> true
             else -> null
         }
-        // The renderer implements vector solid bars with automatic signed
-        // baseline only. Do not approximate gradients, midpoint/none or
-        // proprietary length semantics as an exact saved appearance.
-        if (flag("gradient",true) != false || bar.getAttribute("axisPosition").ifEmpty { "automatic" } != "automatic" ||
-            bar.getAttribute("minLength").ifEmpty { "10" } != "0" ||
+        val gradient = flag("gradient",true) ?: return null
+        val midpoint = when (bar.getAttribute("axisPosition").ifEmpty { "automatic" }) {
+            "automatic" -> false
+            "middle" -> true
+            else -> return null
+        }
+        // Nonzero minimum and non-full maximum lengths need their own signed
+        // layout contract; do not infer them from the base rule.
+        if (bar.getAttribute("minLength").ifEmpty { "10" } != "0" ||
             bar.getAttribute("maxLength").ifEmpty { "90" } != "100") return null
         fun color(node: Element?): Int? {
             val rgb = node?.getAttribute("rgb") ?: return null
@@ -1478,7 +1482,7 @@ object OpenXmlDocumentParser {
         if (baseShow !in setOf("","0","1","false","true")) return null
         val show = flag("showValue",baseShow !in setOf("0","false")) ?: return null
         return XlsxConditionalFormatting.DataBar(stops[0],stops[1],show,0,100,positive,
-            XlsxConditionalFormatting.SolidBarAppearance(negative,positiveBorder,negativeBorder,axis,rtl))
+            XlsxConditionalFormatting.SolidBarAppearance(negative,positiveBorder,negativeBorder,axis,rtl,gradient,midpoint))
     }
 
     private fun parseConditionalIconSet(rule: Element, extended: Boolean = false): XlsxConditionalFormatting.IconSet? {

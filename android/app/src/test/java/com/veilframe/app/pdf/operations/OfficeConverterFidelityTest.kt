@@ -2726,4 +2726,25 @@ class OfficeConverterFidelityTest {
             }
         }
     }
+
+    @Test fun x14GradientMidpointBarsRenderAxialPdfShading() = runBlocking<Unit> {
+        val wb = """<workbook><sheets><sheet name="Gradient" sheetId="1"/></sheets></workbook>"""
+        val sheet = """<worksheet xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>-25</v></c></row><row r="2"><c r="A2"><v>75</v></c></row></sheetData><extLst><ext><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="dataBar" priority="1"><x14:dataBar minLength="0" maxLength="100" gradient="1" axisPosition="middle"><x14:cfvo type="autoMin"/><x14:cfvo type="autoMax"/><x14:fillColor rgb="FF2266AA"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor rgb="FF000000"/></x14:dataBar></x14:cfRule><xm:sqref>A1:A2</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings></ext></extLst></worksheet>"""
+        val input = createZip(mapOf("xl/workbook.xml" to wb,"xl/worksheets/sheet1.xml" to sheet))
+        val parsed = OpenXmlDocumentParser.parseXlsx(input).sheets.single()
+        assertEquals(0,parsed.unsupportedConditionalRules)
+        val negative = requireNotNull(parsed.styles.at(0,0).dataBar)
+        val positive = requireNotNull(parsed.styles.at(1,0).dataBar)
+        assertTrue(negative.gradient && positive.gradient)
+        assertEquals(0.5f,negative.start,0.001f)
+        assertEquals(0f,negative.end,0.001f)
+        assertEquals(1f,positive.end,0.001f)
+        val out = File(tempFolder.root,"x14-gradient.pdf")
+        OfficeConverter().convertXlsxToPdf(input,out,context)
+        PDDocument.load(out).use { pdf ->
+            assertTrue(pdf.getPage(0).resources.shadingNames.iterator().hasNext())
+            val operators = pdf.getPage(0).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""(?m)\bsh\s*$""").containsMatchIn(operators))
+        }
+    }
 }

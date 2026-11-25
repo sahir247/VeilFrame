@@ -107,22 +107,30 @@ internal object XlsxConditionalFormatting {
         }
     }
 
-    /** x14 solid, automatic-axis data bars with a 0–100% length range. */
+    /** x14 data bars with automatic or midpoint signed axes and a 0–100% length range. */
     data class SolidBarAppearance(val negativeRgb: Int, val borderRgb: Int?, val negativeBorderRgb: Int?,
-        val axisRgb: Int, val rtl: Boolean) {
+        val axisRgb: Int, val rtl: Boolean, val gradient: Boolean = false,
+        val midpoint: Boolean = false) {
         fun visual(raw: BigDecimal, lower: BigDecimal, upper: BigDecimal, rgb: Int, show: Boolean): XlsxDataBarVisual {
             val lo = minOf(lower,BigDecimal.ZERO)
             val hi = maxOf(upper,BigDecimal.ZERO)
             val span = hi.subtract(lo)
             val value = raw.max(lo).min(hi)
-            fun position(x: BigDecimal): Float = if (span.signum() == 0) 0f else
-                x.subtract(lo).divide(span,java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
+            val signed = lo.signum() < 0 && hi.signum() > 0
+            fun position(x: BigDecimal): Float {
+                if (midpoint && signed) {
+                    val limit = if (x.signum() < 0) lo.negate() else hi
+                    return (0.5 + 0.5*x.divide(limit,java.math.MathContext.DECIMAL64).toDouble()).toFloat().coerceIn(0f,1f)
+                }
+                return if (span.signum() == 0) 0f else
+                    x.subtract(lo).divide(span,java.math.MathContext.DECIMAL64).toFloat().coerceIn(0f,1f)
+            }
             fun orient(x: Float) = if (rtl) 1f-x else x
             val axis = orient(position(BigDecimal.ZERO))
             val negative = raw.signum() < 0
             return XlsxDataBarVisual(axis,orient(position(value)),if (negative) negativeRgb else rgb,show,
                 if (negative) negativeBorderRgb else borderRgb,
-                if (lo.signum() < 0 && hi.signum() > 0) axis else null,axisRgb)
+                if (signed) axis else null,axisRgb,gradient)
         }
     }
 

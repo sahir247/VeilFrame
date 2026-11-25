@@ -1973,14 +1973,7 @@ class OfficeConverter {
                 stream.saveGraphicsState()
                 try {
                     if (x2 > x1) {
-                        stream.setNonStrokingColor(bar.rgb ushr 16 and 255,bar.rgb ushr 8 and 255,bar.rgb and 255)
-                        stream.addRect(x1,top-height+3f,x2-x1,height-6f)
-                        val border = bar.borderRgb
-                        if (border != null) {
-                            stream.setStrokingColor(border ushr 16 and 255,border ushr 8 and 255,border and 255)
-                            stream.setLineWidth(0.5f)
-                            stream.fillAndStroke()
-                        } else stream.fill()
+                        XlsxDataBarPainter.draw(stream,bar,x1,x2,top-height+3f,height-6f)
                     }
                     val axis = bar.axis
                     val axisRgb = bar.axisRgb
