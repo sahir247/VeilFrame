@@ -862,6 +862,7 @@ class PdfQuickToolController(
         isSaved = false
         splitThumbnailAdapter?.clear()
         rotateThumbnailAdapter?.clear()
+        thumbnailLoader.clearCache()
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
             selectedUris.addAll(uris)
