@@ -39,9 +39,12 @@ class MotionLabTimingContractTest {
         assertEquals(8,plan.expectedOutputFrames)
         assertEquals(40.0,plan.outputFps,0.001)
         assertEquals(2,plan.pairFractions[0].size)
-        assertEquals(0.75,plan.pairFractions[0][1],0.001)
-        assertEquals(4,plan.pairFractions[2].size)
-        assertEquals(1,plan.tailFrames)
+        assertEquals(0.5,plan.pairFractions[0][1],0.001)
+        assertEquals(2,plan.pairFractions[2].size)
+        assertEquals(2,plan.tailFrames)
+        assertEquals(listOf(0L,16_666L,33_333L,50_000L,66_667L,116_667L,166_667L,183_333L),
+            plan.preservedPresentationUs)
+        assertEquals(200_000L,plan.preservedDurationUs)
         assertEquals(plan.expectedOutputFrames,plan.pairFractions.sumOf { it.size }+plan.tailFrames)
     }
 
@@ -101,5 +104,41 @@ class MotionLabTimingContractTest {
         assertThrows(IllegalArgumentException::class.java) {
             MotionLabTimingContract.plan(pts(1801, 33_333), 60_000, false, 2)
         }
+    }
+
+    @Test fun variableFourTimesKeepsEverySourceTimestampAndExactTail() {
+        val source = listOf(0L,31_111L,81_234L,120_001L)
+        val plan = MotionLabTimingContract.plan(source,160,false,4,160_001L)
+        assertEquals(source,plan.preservedPresentationUs.filterIndexed { i,_ -> i%4==0 })
+        assertEquals(16,plan.expectedOutputFrames)
+        assertEquals(160_001L,plan.preservedDurationUs)
+        assertEquals(4,plan.tailFrames)
+        assertEquals(0.25,plan.pairFractions[1][1],0.001)
+        MotionLabVfrMux.verify(plan.preservedPresentationUs,160_001L,plan)
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabVfrMux.verify(plan.preservedPresentationUs.mapIndexed { i,v -> if(i==3) v+1000 else v },160_001L,plan)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabVfrMux.verify(plan.preservedPresentationUs,160_003L,plan)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            MotionLabVfrMux.verify(plan.preservedPresentationUs.reversed(),160_001L,plan)
+        }
+    }
+
+    @Test fun subMicrosecondSubdivisionIsRefused() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MotionLabTimingContract.plan(listOf(0L,1L,70_000L),150,false,2)
+        }
+    }
+
+    @Test fun largeTimelineUsesBoundedBalancedExpression() {
+        val source = (0 until 1800).map { it*33_000L + (it%2)*1000L }
+        val plan = MotionLabTimingContract.plan(source,60_000,false,4)
+        val args = MotionLabVfrMux.arguments(plan)
+        assertEquals(7200,plan.expectedOutputFrames)
+        assertEquals(7200,plan.preservedPresentationUs.size)
+        org.junit.Assert.assertTrue(args.maxOf { it.length } < 128_000)
+        assertEquals(60.0,MotionLabVfrMux.durationSeconds(plan),0.0)
     }
 }

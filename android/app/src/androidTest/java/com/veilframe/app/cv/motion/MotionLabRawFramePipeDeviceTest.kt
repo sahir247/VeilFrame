@@ -280,4 +280,47 @@ class MotionLabRawFramePipeDeviceTest {
             }
         }
     }
+
+    @Test fun explicitMultiplierPreservesVariablePacketCadenceThroughAudioRemux() = runBlocking<Unit> {
+        withTimeout(60_000) {
+            CvRuntime.requireAvailable()
+            val dir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+            val video = File.createTempFile("vfr_preserve_",".mp4",dir)
+            val muxed = File.createTempFile("vfr_audio_",".mp4",dir)
+            val geometry = MotionLabRawFramePipe.Geometry(64,48)
+            val frame = Mat(48,64,CvType.CV_8UC3,Scalar(24.0,90.0,170.0))
+            val plan = MotionLabTimingContract.plan(listOf(0L,30_000L,100_000L,140_000L),150,false,2,150_000L)
+            try {
+                MotionLabRawFramePipe.encode(geometry,plan.outputFps,plan.expectedOutputFrames,arrayOf(
+                    "-map","0:v:0","-an","-c:v","libx264","-preset","ultrafast",
+                    "-pix_fmt","yuv420p","-fps_mode","passthrough") + MotionLabVfrMux.arguments(plan) +
+                    arrayOf(video.absolutePath)) { repeat(plan.expectedOutputFrames) { writeMat(frame) } }
+                fun verify(file: File, audio: Boolean) {
+                    val extractor = android.media.MediaExtractor()
+                    try {
+                        extractor.setDataSource(file.absolutePath)
+                        val formats = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+                        val index = formats.indexOfFirst { it.getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/")==true }
+                        assertTrue(index>=0)
+                        assertEquals(audio,formats.any { it.getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/")==true })
+                        val duration = formats[index].getLong(android.media.MediaFormat.KEY_DURATION)
+                        extractor.selectTrack(index)
+                        val pts = mutableListOf<Long>()
+                        while (extractor.sampleTime>=0) {
+                            pts.add(extractor.sampleTime)
+                            if (!extractor.advance()) break
+                        }
+                        MotionLabVfrMux.verify(pts,duration,plan)
+                    } finally { extractor.release() }
+                }
+                verify(video,false)
+                val result = com.veilframe.app.media.executeOwnedFfmpeg(arrayOf(
+                    "-nostdin","-y","-i",video.absolutePath,"-f","lavfi","-i","anullsrc=r=48000:cl=mono",
+                    "-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-t","0.150000",
+                    "-video_track_timescale","1000000","-movflags","+faststart",muxed.absolutePath))
+                assertTrue(com.arthenica.ffmpegkit.ReturnCode.isSuccess(result.returnCode))
+                verify(muxed,true)
+            } finally { frame.release(); video.delete(); muxed.delete() }
+        }
+    }
 }

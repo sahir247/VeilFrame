@@ -21,7 +21,7 @@ import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
 import com.veilframe.app.cv.motion.MotionLabTimingContract
-import com.veilframe.app.cv.motion.MotionLabSequenceVerifier
+import com.veilframe.app.cv.motion.MotionLabVfrMux
 import com.veilframe.app.cv.motion.MotionLabRawFramePipe
 import com.veilframe.app.cv.motion.MotionLabDiskBudget
 import com.veilframe.app.cv.motion.MotionLabAudioTimeline
@@ -524,7 +524,7 @@ class VeilFrameProcessingService : Service() {
                 retriever.release()
             }
             // Audit source packet presentation timestamps before extracting any frames.
-            // Resample the source presentation timeline onto the requested output grid.
+            // Resample to the requested CFR grid or preserve VFR interval subdivisions.
             val sourceVideoPts = readMotionVideoPtsUs(inFile)
             // Validate every audio track before expensive synthesis begins.
             val sourceAudioTracks = readMotionAudioTracks(inFile)
@@ -602,8 +602,8 @@ class VeilFrameProcessingService : Service() {
                         arrayOf("-map", "0:v:0", "-an", "-c:v", "libx264",
                             "-preset", "veryfast", "-crf", "21",
                             "-vf", plan.encodeFilter,
-                            "-pix_fmt", "yuv420p", "-fps_mode", "passthrough",
-                            videoOnly.absolutePath)
+                            "-pix_fmt", "yuv420p", "-fps_mode", "passthrough") +
+                            MotionLabVfrMux.arguments(timing) + arrayOf(videoOnly.absolutePath)
                     ) {
                         val output = this
                         MotionLabRawFramePipe.decode(geometry, timing.sourceFrames,
@@ -755,7 +755,7 @@ class VeilFrameProcessingService : Service() {
             // Verify the encoded video before remux. The remux must also pass
             // the same frame count/PTS contract, so it cannot truncate video.
             val encodedPts = readMotionVideoPtsUs(videoOnly, timing.expectedOutputFrames)
-            MotionLabSequenceVerifier.verifyPresentation(encodedPts, timing.expectedOutputFrames, timing.outputFps)
+            MotionLabVfrMux.verify(encodedPts,readMotionVideoDurationUs(videoOnly),timing)
             if (sourceAudioTracks.isNotEmpty()) {
                 updateNotificationProgress("Remuxing source audio…", 88)
                 jobCallback?.onProgress(jobId, 88, "Remuxing source audio…")
@@ -766,7 +766,8 @@ class VeilFrameProcessingService : Service() {
                     executeOwnedFfmpeg(arrayOf(
                         "-nostdin", "-y", "-i", videoOnly.absolutePath, "-i", inFile.absolutePath,
                         "-map", "0:v:0", "-map", "1:a", "-c", "copy",
-                        "-t", String.format(Locale.US, "%.6f", timing.expectedOutputFrames / timing.outputFps),
+                        "-t", String.format(Locale.US, "%.6f", MotionLabVfrMux.durationSeconds(timing)),
+                        "-video_track_timescale", "1000000",
                         "-movflags", "+faststart", stage.absolutePath
                     ))
                 }
@@ -777,11 +778,7 @@ class VeilFrameProcessingService : Service() {
             // Inspect the actual serialized MP4, not just a successful FFmpeg exit.
             // This also detects output-timeline truncation or extra CFR frames.
             val publishedPts = readMotionVideoPtsUs(stage, timing.expectedOutputFrames)
-            MotionLabSequenceVerifier.verifyPresentation(
-                publishedPts,
-                expectedFrames = timing.expectedOutputFrames,
-                expectedFps = timing.outputFps
-            )
+            MotionLabVfrMux.verify(publishedPts,readMotionVideoDurationUs(stage),timing)
             val outputRetriever = MediaMetadataRetriever()
             val outputDurationMs = try {
                 outputRetriever.setDataSource(stage.absolutePath)

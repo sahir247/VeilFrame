@@ -3,7 +3,7 @@ package com.veilframe.app.cv.motion
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Timestamp-aware resampling of decoded presentation-order frames to a CFR output grid. */
+/** Timestamp-aware interpolation: explicit 60 fps CFR or cadence-preserving VFR multipliers. */
 object MotionLabTimingContract {
     const val MAX_SOURCE_FRAMES = 1800
     const val MAX_DURATION_MS = 60_000L
@@ -18,7 +18,9 @@ object MotionLabTimingContract {
         val expectedOutputFrames: Int,
         val pairFractions: List<List<Double>>,
         val tailFrames: Int,
-        val variableCadence: Boolean
+        val variableCadence: Boolean,
+        val preservedPresentationUs: List<Long> = emptyList(),
+        val preservedDurationUs: Long? = null
     )
 
     fun plan(
@@ -43,7 +45,7 @@ object MotionLabTimingContract {
             "Input has duplicate timestamps or an unsupported presentation gap"
         }
         val nominalPeriod = deltas.sorted()[deltas.size/2].toDouble()
-        val variable = deltas.any { abs(it-nominalPeriod) > maxOf(3_000.0,nominalPeriod*0.10) }
+        val variable = deltas.any { abs(it-nominalPeriod) > 2.0 }
         val containerUs = durationMs*1000L
         val durationUs = videoDurationUs ?: containerUs
         require(durationUs in 1..MAX_DURATION_MS*1000L &&
@@ -73,6 +75,23 @@ object MotionLabTimingContract {
             else -> sourceFps*factor
         }
         require(outputFps in 10.0..120.0) { "Output would exceed supported FPS range" }
+        if (variable && !target60Fps) {
+            val boundaries = relative + durationUs
+            val count = relative.size * factor
+            require(count in 2..MAX_OUTPUT_FRAMES) { "Output frame count exceeds timing budget" }
+            val outputPts = ArrayList<Long>(count)
+            for (i in relative.indices) {
+                val delta = boundaries[i+1]-boundaries[i]
+                require(delta >= factor) { "Source interval is too short for distinct interpolated timestamps" }
+                repeat(factor) { sub -> outputPts.add(boundaries[i]+delta*sub/factor) }
+            }
+            val fractions = List(relative.size-1) { i ->
+                List(factor) { sub ->
+                    (outputPts[i*factor+sub]-relative[i]).toDouble()/(relative[i+1]-relative[i])
+                }
+            }
+            return Plan(sorted.size,sourceFps,factor,outputFps,count,fractions,factor,true,outputPts,durationUs)
+        }
         val count = (durationUs*outputFps/1_000_000.0).roundToInt()
         require(count in 2..MAX_OUTPUT_FRAMES) { "Output frame count exceeds timing budget" }
         val pairs = ArrayList<List<Double>>(relative.size-1)
