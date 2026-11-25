@@ -2662,4 +2662,35 @@ class OfficeConverterFidelityTest {
         }
         assertTrue(!noPdf.exists())
     }
+
+    private fun visibleTextDocx(value: String, bold: Boolean = false): File {
+        val properties = if (bold) "<w:rPr><w:b/></w:rPr>" else ""
+        return createZip(mapOf("word/document.xml" to """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r>$properties<w:t>$value</w:t></w:r></w:p></w:body></w:document>"""))
+    }
+
+    @Test fun simpleUnicodeDocxAndTextUseEmbeddedFont() = runBlocking<Unit> {
+        val value = "Café €42 – Ελληνικά Русский"
+        val docx = visibleTextDocx(value)
+        val docPdf = File(tempFolder.root, "simple-unicode.docx.pdf")
+        OfficeConverter().convertDocxToPdf(docx, docPdf, context)
+        PDDocument.load(docPdf).use { assertTrue(PDFTextStripper().getText(it).contains(value)) }
+        val txt = File(tempFolder.root, "simple-unicode.txt").apply { writeText(value) }
+        val txtPdf = File(tempFolder.root, "simple-unicode.txt.pdf")
+        OfficeConverter().convertTextToPdf(txt, txtPdf, context)
+        PDDocument.load(txtPdf).use { assertTrue(PDFTextStripper().getText(it).contains(value)) }
+    }
+
+    @Test fun unsupportedComplexScriptOrBoldFallbackDoesNotReplaceDestination() = runBlocking<Unit> {
+        val destination = File(tempFolder.root, "prior-visible.pdf").apply { writeText("previous") }
+        for ((value, bold) in listOf("বাংলা" to false, "Русский" to true)) {
+            val failure = runCatching {
+                OfficeConverter().convertDocxToPdf(visibleTextDocx(value, bold), destination, context)
+            }.exceptionOrNull()
+            assertTrue("Expected explicit text admission failure: $failure", failure is OfficeTextEncodingException)
+            assertEquals("previous", destination.readText())
+        }
+        val text = File(tempFolder.root, "complex.txt").apply { writeText("বাংলা") }
+        assertTrue(runCatching { OfficeConverter().convertTextToPdf(text, destination, context) }.isFailure)
+        assertEquals("previous", destination.readText())
+    }
 }

@@ -71,7 +71,7 @@ class OfficeConverter {
         }
     }
 
-    private data class DocxStyledSegment(val text: String, val font: PDType1Font, val width: Float)
+    private data class DocxStyledSegment(val text: String, val font: PDFont, val width: Float)
     private data class DocxStyledLine(val segments: List<DocxStyledSegment>, val totalWidth: Float)
 
     private fun wrapStyledDocxRuns(
@@ -80,21 +80,22 @@ class OfficeConverter {
         fontSize: Float,
         maxWidth: Float,
         fontNormal: PDType1Font,
-        fontBold: PDType1Font
+        fontBold: PDType1Font,
+        visibleFonts: OfficeVisibleFonts
     ): List<DocxStyledLine> {
         val lines = mutableListOf<DocxStyledLine>()
         val curSegments = mutableListOf<DocxStyledSegment>()
         var curLineWidth = 0f
 
         for (run in runs) {
-            val font = if (run.isBold || isHeading) fontBold else fontNormal
-            val clean = sanitizeText(run.text)
+            val clean = normalizeOfficeText(run.text)
+            val font = visibleFonts.select(if (run.isBold || isHeading) fontBold else fontNormal, clean)
             if (clean.isEmpty()) continue
 
             val words = clean.split(Regex("(?<=\\s)|(?=\\s+)"))
             for (w in words) {
                 if (w.isEmpty()) continue
-                val wordWidth = try { font.getStringWidth(w) / 1000f * fontSize } catch (_: Exception) { w.length * fontSize * 0.5f }
+                val wordWidth = font.getStringWidth(w) / 1000f * fontSize
                 if (curLineWidth + wordWidth > maxWidth && curSegments.isNotEmpty() && w.isNotBlank()) {
                     lines.add(DocxStyledLine(curSegments.toList(), curLineWidth))
                     curSegments.clear()
@@ -163,6 +164,8 @@ class OfficeConverter {
             convertDocxViaOpenXml(docxFile, pdfFile, context)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
+        } catch (unsupportedText: OfficeTextEncodingException) {
+            throw unsupportedText
         } catch (primary: Exception) {
             // Each renderer publishes only its verified staged PDF. Keep any prior destination intact.
             android.util.Log.w("OfficeConverter", "OpenXML DOCX conversion failed; trying POI", primary)
@@ -201,6 +204,7 @@ class OfficeConverter {
 
         val fontNormal = PDType1Font.HELVETICA
         val fontBold = PDType1Font.HELVETICA_BOLD
+        val visibleFonts = OfficeVisibleFonts(context, pdf)
 
         var currentPage = PDPage(pageBounds)
         pdf.addPage(currentPage)
@@ -239,7 +243,8 @@ class OfficeConverter {
                                 fontSize = fontSize,
                                 maxWidth = printableWidth,
                                 fontNormal = fontNormal,
-                                fontBold = fontBold
+                                fontBold = fontBold,
+                                visibleFonts = visibleFonts
                             )
 
                             for (line in styledLines) {
@@ -284,10 +289,13 @@ class OfficeConverter {
                         yPosition -= 8f
 
                         for (row in rows) {
+                            val rowFonts = Array(numCols) { c ->
+                                visibleFonts.select(fontNormal, row.getOrNull(c).orEmpty())
+                            }
                             val rowLines = Array(numCols) { c ->
                                 val cellText = row.getOrNull(c) ?: ""
                                 if (cellText.isNotBlank()) {
-                                    wrapText(sanitizeText(cellText), fontNormal, 9f, colWidth - 8f)
+                                    wrapText(cellText, rowFonts[c], 9f, colWidth - 8f)
                                 } else {
                                     emptyList()
                                 }
@@ -320,9 +328,9 @@ class OfficeConverter {
                                 var textY = yPosition - 4f - 9f
                                 for (lText in lines) {
                                     contentStream?.beginText()
-                                    contentStream?.setFont(fontNormal, 9f)
+                                    contentStream?.setFont(rowFonts[c], 9f)
                                     contentStream?.newLineAtOffset(cellX + 4f, textY)
-                                    safeShowText(contentStream, lText, fontNormal)
+                                    safeShowText(contentStream, lText, rowFonts[c])
                                     contentStream?.endText()
                                     textY -= 12f
                                 }
@@ -527,7 +535,7 @@ class OfficeConverter {
 
                             for (line in lines) {
                                 currentCellY -= line.leading
-                                val sanitizedLine = sanitizeText(line.text)
+                                val sanitizedLine = normalizeOfficeText(line.text)
                                 contentStream?.beginText()
                                 val colorHex = line.colorHex
                                 if (colorHex != null && colorHex.length == 6) {
@@ -845,7 +853,7 @@ class OfficeConverter {
                         }
 
                         // Check for text
-                        val runText = mapBulletChars(run.getText(0) ?: "")
+                        val runText = run.getText(0) ?: ""
                         if (runText.isNotEmpty()) {
                             val fontSizeHalfPoints = run.fontSize
                             // getFontSize() already returns whole points
@@ -866,14 +874,10 @@ class OfficeConverter {
                             for (word in words) {
                                 if (word.isEmpty()) continue
                                 val isSpace = word.isBlank()
-                                val sanitizedWord = sanitizeText(word)
+                                val sanitizedWord = normalizeOfficeText(word)
                                 val emitText = if (isSpace) " " else sanitizedWord
                                 if (!isSpace && emitText.isEmpty()) continue
-                                val wordWidth = try {
-                                    font.getStringWidth(emitText) / 1000f * actualFontSize
-                                } catch (e: Exception) {
-                                    0f
-                                }
+                                val wordWidth = officeTextWidth(font, emitText, actualFontSize)
 
                                 if (!isSpace && xCursor + wordWidth > rightEdge && lineBuf.any { !it.isSpace }) {
                                     emitLine(false)
@@ -3111,7 +3115,7 @@ class OfficeConverter {
      * Greedy word wrapping routine checking exact horizontal width budget constraint.
      * Preserves explicit newlines and breaks long unbroken tokens to prevent horizontal cell overflow.
      */
-    private fun wrapText(text: String, font: PDType1Font, fontSize: Float, maxWidth: Float): List<String> {
+    private fun wrapText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): List<String> {
         if (maxWidth <= 0f) return listOf(text)
         val rawParagraphs = text.split(Regex("\r\n|\r|\n"))
         val lines = mutableListOf<String>()
@@ -3127,8 +3131,8 @@ class OfficeConverter {
             for (word in words) {
                 if (word.isEmpty()) continue
                 // If a single word exceeds maxWidth, break it into chunks so it doesn't overflow
-                val cleanWord = sanitizeText(word)
-                val wordWidth = try { font.getStringWidth(cleanWord) / 1000f * fontSize } catch (_: Exception) { cleanWord.length * 5f }
+                val cleanWord = normalizeOfficeText(word)
+                val wordWidth = officeTextWidth(font, cleanWord, fontSize)
                 if (wordWidth > maxWidth && maxWidth > 10f) {
                     if (currentLine.isNotEmpty()) {
                         lines.add(currentLine.toString())
@@ -3136,13 +3140,15 @@ class OfficeConverter {
                     }
                     var remaining = word
                     while (remaining.isNotEmpty()) {
-                        var chunkLen = remaining.length
-                        while (chunkLen > 1) {
-                            val candidate = sanitizeText(remaining.substring(0, chunkLen))
-                            val w = try { font.getStringWidth(candidate) / 1000f * fontSize } catch (_: Exception) { candidate.length * 5f }
-                            if (w <= maxWidth) break
-                            chunkLen--
+                        var low = 1
+                        var high = remaining.length
+                        while (low < high) {
+                            val middle = low + (high - low + 1) / 2
+                            val candidate = normalizeOfficeText(remaining.substring(0, middle))
+                            if (officeTextWidth(font, candidate, fontSize) <= maxWidth) low = middle
+                            else high = middle - 1
                         }
+                        val chunkLen = low
                         lines.add(remaining.substring(0, chunkLen))
                         remaining = remaining.substring(chunkLen)
                     }
@@ -3150,8 +3156,8 @@ class OfficeConverter {
                 }
 
                 val testLine = if (currentLine.isEmpty()) word else "${currentLine} $word"
-                val cleanTestLine = sanitizeText(testLine)
-                val width = try { font.getStringWidth(cleanTestLine) / 1000f * fontSize } catch (_: Exception) { cleanTestLine.length * 5f }
+                val cleanTestLine = normalizeOfficeText(testLine)
+                val width = officeTextWidth(font, cleanTestLine, fontSize)
                 if (width <= maxWidth) {
                     if (currentLine.isNotEmpty()) currentLine.append(" ")
                     currentLine.append(word)
@@ -3227,52 +3233,6 @@ class OfficeConverter {
         }
     }
 
-    /**
-     * Maps Wingdings/Symbol/private-use bullet glyphs to WinAnsi-safe
-     * markers so list symbols survive PDFBox sanitization instead of
-     * being blanked to spaces.
-     */
-    private fun mapBulletChars(input: String): String {
-        if (input.isEmpty()) return input
-        val sb = StringBuilder(input.length)
-        for (ch in input) {
-            val code = ch.code
-            val mapped = when {
-                code in 0xF000..0xF0FF -> "•"
-                code in 0x2022..0x2024 -> "•"
-                code == 0x25AA || code == 0x25AB -> "·"
-                code == 0x25BA || code == 0x25B6 -> ">"
-                code == 0x25CA || code == 0x25C6 -> "•"
-                else -> ch.toString()
-            }
-            sb.append(mapped)
-        }
-        return sb.toString()
-    }
-
-    /**
-     * Filters glyphs outside WinAnsiEncoding to avoid PDFBox rendering exceptions.
-     * WinAnsi natively supports curly quotes, en/em dashes and the bullet,
-     * so those pass through instead of being ASCII-folded.
-     */
-    private fun sanitizeText(text: String): String {
-        val sb = StringBuilder()
-        for (char in text) {
-            val code = char.code
-            if (code in 32..126 || code in 160..255 ||
-                char == '‘' || char == '’' || char == '“' || char == '”' ||
-                char == '–' || char == '—' || char == '•'
-            ) {
-                sb.append(char)
-            } else if (char == '\n' || char == '\r' || char == '\t') {
-                sb.append(' ')
-            } else {
-                sb.append(' ')
-            }
-        }
-        return sb.toString().replace(Regex("\\s+"), " ")
-    }
-
     /** XLSX is a content-preserving export, not a best-effort text preview.
      * Unsupported visible glyphs must abort the staged PDF instead of disappearing. */
     private fun showSpreadsheetText(
@@ -3290,47 +3250,20 @@ class OfficeConverter {
         }
     }
 
-    private fun safeShowText(
-        stream: PDPageContentStream?,
-        text: String,
-        font: com.tom_roush.pdfbox.pdmodel.font.PDFont
-    ) {
-        if (stream == null || text.isEmpty()) return
-        val sb = StringBuilder()
-        for (char in text) {
-            val encodable = try {
-                font.encode(char.toString())
-                true
-            } catch (_: Exception) {
-                false
-            }
-            if (encodable) {
-                sb.append(char)
-            } else {
-                when (char) {
-                    '‘', '’' -> sb.append('\'')
-                    '“', '”' -> sb.append('"')
-                    '–', '—' -> sb.append('-')
-                    '•' -> sb.append('*')
-                    '…' -> sb.append("...")
-                    '→' -> sb.append("->")
-                    '←' -> sb.append("<-")
-                    '↓' -> sb.append("v")
-                    '\t', '\n', '\r' -> sb.append(' ')
-                    else -> {
-                        if (char.code in 32..126) sb.append(char) else sb.append(' ')
-                    }
-                }
-            }
+    private fun officeTextWidth(font: PDFont, text: String, size: Float): Float =
+        try { font.getStringWidth(text) / 1000f * size }
+        catch (failure: IllegalArgumentException) {
+            throw OfficeTextEncodingException("Visible text contains unsupported glyphs; export refused", failure)
         }
-        val out = sb.toString()
+
+    private fun safeShowText(stream: PDPageContentStream?, text: String, font: PDFont) {
+        if (text.isEmpty()) return
+        val normalized = normalizeOfficeText(text)
         try {
-            stream.showText(out)
-        } catch (_: Exception) {
-            val asciiOnly = out.filter { it.code in 32..126 }
-            try {
-                stream.showText(asciiOnly)
-            } catch (_: Exception) {}
+            font.encode(normalized)
+            requireNotNull(stream).showText(normalized)
+        } catch (failure: IllegalArgumentException) {
+            throw OfficeTextEncodingException("Visible text contains unsupported glyphs; export refused", failure)
         }
     }
 
@@ -3348,30 +3281,25 @@ class OfficeConverter {
             val margin = 50f
             val printableWidth = pageBounds.width - (2 * margin)
 
-            val font = PDType1Font.HELVETICA
+            val fonts = OfficeVisibleFonts(context, pdf)
             val fontSize = 11f
             val leading = fontSize * 1.3f
+            val job = currentCoroutineContext()
 
             var currentPage = PDPage(pageBounds)
             pdf.addPage(currentPage)
             contentStream = PDPageContentStream(pdf, currentPage)
-
             var yPosition = pageBounds.height - margin
 
-            textFile.forEachLine(Charsets.UTF_8) { rawLine ->
-                val line = rawLine.replace('\t', ' ')
-                val words = line.split(' ')
-                val currentLine = StringBuilder()
-
-                for (word in words) {
-                    val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
-                    val testW = try {
-                        font.getStringWidth(candidate.filter { it.code in 32..126 }) / 1000f * fontSize
-                    } catch (_: Exception) {
-                        candidate.length * fontSize * 0.5f
-                    }
-
-                    if (testW > printableWidth && currentLine.isNotEmpty()) {
+            java.nio.file.Files.newBufferedReader(textFile.toPath(), Charsets.UTF_8).useLines { lines ->
+                lines.forEach { rawLine ->
+                    job.ensureActive()
+                    require(rawLine.length <= 16384) { "Text line exceeds the PDF layout budget" }
+                    val line = normalizeOfficeText(rawLine)
+                    val font = fonts.select(PDType1Font.HELVETICA, line)
+                    val wrapped = wrapText(line, font, fontSize, printableWidth)
+                    for (part in wrapped) {
+                        job.ensureActive()
                         if (yPosition < margin + leading) {
                             contentStream?.close()
                             currentPage = PDPage(pageBounds)
@@ -3379,34 +3307,15 @@ class OfficeConverter {
                             contentStream = PDPageContentStream(pdf, currentPage)
                             yPosition = pageBounds.height - margin
                         }
-
-                        contentStream?.beginText()
-                        contentStream?.setFont(font, fontSize)
-                        contentStream?.newLineAtOffset(margin, yPosition)
-                        safeShowText(contentStream, currentLine.toString(), font)
-                        contentStream?.endText()
+                        if (part.isNotEmpty()) {
+                            contentStream?.beginText()
+                            contentStream?.setFont(font, fontSize)
+                            contentStream?.newLineAtOffset(margin, yPosition)
+                            safeShowText(contentStream, part, font)
+                            contentStream?.endText()
+                        }
                         yPosition -= leading
-                        currentLine.clear().append(word)
-                    } else {
-                        currentLine.clear().append(candidate)
                     }
-                }
-
-                if (currentLine.isNotEmpty()) {
-                    if (yPosition < margin + leading) {
-                        contentStream?.close()
-                        currentPage = PDPage(pageBounds)
-                        pdf.addPage(currentPage)
-                        contentStream = PDPageContentStream(pdf, currentPage)
-                        yPosition = pageBounds.height - margin
-                    }
-
-                    contentStream?.beginText()
-                    contentStream?.setFont(font, fontSize)
-                    contentStream?.newLineAtOffset(margin, yPosition)
-                    safeShowText(contentStream, currentLine.toString(), font)
-                    contentStream?.endText()
-                    yPosition -= leading
                 }
             }
 
