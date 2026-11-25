@@ -256,15 +256,16 @@ class OfficeRenderingDeviceTest {
             """<row r="${i+1}"><c r="A${i+1}" t="inlineStr"><is><t>$word</t></is></c></row>"""
         }.joinToString("")
         val input = zip(directory,"shaped",mapOf("xl/workbook.xml" to
-            """<workbook><sheets><sheet name="Unicode" sheetId="1"/></sheets></workbook>""",
+            """<workbook><sheets><sheet name="বাংলা" sheetId="1"/></sheets></workbook>""",
             "xl/styles.xml" to """<styleSheet><cellXfs><xf/><xf applyAlignment="1"><alignment textRotation="45"/></xf></cellXfs></styleSheet>""",
-            "xl/worksheets/sheet1.xml" to """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData>${rows.replace("r=\"A2\"","r=\"A2\" s=\"1\"")}</sheetData></worksheet>"""))
+            "xl/worksheets/sheet1.xml" to """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData>${rows.replace("r=\"A2\"","r=\"A2\" s=\"1\"")}</sheetData><headerFooter><oddHeader>&amp;Cবাংলা</oddHeader></headerFooter></worksheet>"""))
         for (saved in listOf(false,true)) {
             val out = File(directory,"shaped-$saved.pdf")
             OfficeConverter().convertXlsxToPdf(input,out,context,savedPrintLayout=saved)
             PDDocument.load(out).use { pdf ->
                 assertEquals(1,pdf.numberOfPages)
-                assertTrue(digestOcrWords(words.asSequence()).contentEquals(digestSerializedOcrLayer(pdf.getPage(0))))
+                val expected = if (saved) words + "বাংলা" else listOf("Spreadsheet:","বাংলা") + words
+                assertTrue(digestOcrWords(expected.asSequence()).contentEquals(digestSerializedOcrLayer(pdf.getPage(0))))
                 assertTrue(pdf.getPage(0).resources.xObjectNames.iterator().hasNext())
             }
             assertHardwarePdf(directory,"shaped-$saved",out,1,emptyList())

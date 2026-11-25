@@ -62,11 +62,12 @@ internal object XlsxAnchoredChartRenderer {
     }
 
     fun draw(stream: PDPageContentStream, chart: XlsxCachedChart, p: Placement,
-        checkpoint: () -> Unit) {
+        checkpoint: () -> Unit,
+        label: ((String,Float,Float,Float,Float)->Unit)? = null) {
         require(chart.series.size in 1..6 && chart.categories.size in 1..240)
         val font = PDType1Font.HELVETICA
         require(chart.title.all { it >= ' ' && it != '\u007f' }) { "Unsupported saved chart title" }
-        try {
+        if (label == null) try {
             font.encode(chart.title)
             require(font.getStringWidth(chart.title)*8f/1000f <= p.width-12f) {
                 "Saved chart title exceeds the verified drawing rectangle"
@@ -86,11 +87,14 @@ internal object XlsxAnchoredChartRenderer {
             stroke(0x9BA4AC); stream.setLineWidth(0.6f)
             stream.addRect(p.left+0.5f,bottom+0.5f,p.width-1f,p.height-1f); stream.stroke()
             if (chart.title.isNotEmpty()) {
-                color(0x222222); stream.beginText(); stream.setFont(font,8f)
-                stream.newLineAtOffset(p.left+6f,p.top-13f); stream.showText(chart.title); stream.endText()
+                if (label != null) label(chart.title,p.left+6f,p.top-13f,8f,p.width-12f)
+                else {
+                    color(0x222222); stream.beginText(); stream.setFont(font,8f)
+                    stream.newLineAtOffset(p.left+6f,p.top-13f); stream.showText(chart.title); stream.endText()
+                }
             }
             if (chart.kind == "pie") {
-                drawPie(stream,chart,p,font,checkpoint)
+                drawPie(stream,chart,p,font,checkpoint,label)
                 return
             }
             val x0=p.left+22f; val y0=bottom+17f
@@ -183,7 +187,7 @@ internal object XlsxAnchoredChartRenderer {
     }
 
     private fun drawPie(stream: PDPageContentStream,chart: XlsxCachedChart,p: Placement,
-        font: PDType1Font,checkpoint: ()->Unit) {
+        font: PDType1Font,checkpoint: ()->Unit,labelRenderer: ((String,Float,Float,Float,Float)->Unit)?) {
         val values=chart.series.single().values
         val shares=XlsxPieChartPainter.shares(values)
         require(chart.categories.size==values.size)
@@ -197,7 +201,7 @@ internal object XlsxAnchoredChartRenderer {
             val percent=if(values[i]==null) "missing" else String.format(java.util.Locale.US,"%.1f%%",shares[i]*100)
             "$category  $percent"
         }
-        for (label in labels) {
+        if (labelRenderer == null) for (label in labels) {
             font.encode(label)
             require(font.getStringWidth(label)*labelSize/1000f <= labelW) { "Saved pie legend exceeds chart width" }
         }
@@ -209,9 +213,12 @@ internal object XlsxAnchoredChartRenderer {
             val rgb=XlsxPieChartPainter.palette[index]
             stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
             stream.addRect(labelX,y-1f,7f,7f);stream.fill()
-            stream.setNonStrokingColor(0,0,0)
-            stream.beginText();stream.setFont(font,labelSize)
-            stream.newLineAtOffset(labelX+10f,y);stream.showText(label);stream.endText()
+            if (labelRenderer != null) labelRenderer(label,labelX+10f,y,labelSize,labelW)
+            else {
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText();stream.setFont(font,labelSize)
+                stream.newLineAtOffset(labelX+10f,y);stream.showText(label);stream.endText()
+            }
         }
     }
 }

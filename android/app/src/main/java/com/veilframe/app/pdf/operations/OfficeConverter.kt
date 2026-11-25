@@ -995,7 +995,7 @@ class OfficeConverter {
             val fontBold = PDType1Font.HELVETICA_BOLD
             val visibleFonts = OfficeVisibleFonts(context,pdf)
             val shaped = OfficeShapedText(context,pdf).also { shapeOwner = it }
-            val shapedCells = SpreadsheetShapedCells(shaped)
+            val shapedCells = SpreadsheetShapedCells(shaped,visibleFonts)
             // Unsupported glyphs outside the printed area must not prevent printing.
             val fontSelector: (PDFont,String) -> PDFont = { preferred,text ->
                 try { visibleFonts.select(preferred,text) }
@@ -1095,14 +1095,13 @@ class OfficeConverter {
                 }
                 }
                 if (!savedPrintLayout) for (chart in sheet.charts)
-                    renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint)
+                    renderCachedSpreadsheetChart(pdf, sheet.name, chart, checkpoint,shapedCells)
                 if (sheet.unsupportedDrawings > 0 && maxCol == 0 && sheet.mergedRegions.isEmpty()) {
                     require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
                     val page = PDPage(PDRectangle(842f, 595f))
                     pdf.addPage(page)
                     PDPageContentStream(pdf, page).use { stream ->
-                        stream.beginText(); stream.setFont(fontBold, 12f); stream.newLineAtOffset(30f, 550f)
-                        showSpreadsheetText(stream, sheet.name + ": unsupported drawing objects", fontBold); stream.endText()
+                        shapedCells.label(page,stream,sheet.name + ": unsupported drawing objects",30f,550f,12f,782f,bold=true)
                     }
                 }
             }
@@ -1203,7 +1202,10 @@ class OfficeConverter {
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
                     for ((chart,placement) in anchoredCharts) if (placement.plan == planIndex && placement.tile == tileIndex) {
                         checkpoint()
-                        XlsxAnchoredChartRenderer.draw(stream,chart,placement,checkpoint)
+                        XlsxAnchoredChartRenderer.draw(stream,chart,placement,checkpoint) { value,x,y,size,width ->
+                            shapedCells.label(page,stream,value,x,y,size,width,
+                                coordinateScale=plan.scale,offsetX=left,offsetY=top)
+                        }
                     }
                     if (settings.printHeadings) {
                         // Inverse font scaling keeps heading glyphs 8 pt even
@@ -1232,7 +1234,7 @@ class OfficeConverter {
                         }
                     }
                 } finally { stream.restoreGraphicsState() }
-                drawSavedPrintHeaderFooter(stream, settings, plan, sheet.name, sheetPageNumber, sheetPages)
+                drawSavedPrintHeaderFooter(stream, settings, plan, sheet.name, sheetPageNumber, sheetPages,page,shapedCells)
                 if (plan.bottom >= 12f) {
                     stream.beginText(); stream.setFont(font, 8f); stream.newLineAtOffset(plan.left, 5f)
                     val note = if (settings.unsupportedFeatures || sheet.unsupportedConditionalRules > 0 ||
@@ -1244,7 +1246,7 @@ class OfficeConverter {
     }
 
     private fun drawSavedPrintHeaderFooter(stream: PDPageContentStream, settings: XlsxSavedPrintSettings,
-        plan: XlsxSavedPrintLayout.Plan, sheet: String, page: Int, pages: Int) {
+        plan: XlsxSavedPrintLayout.Plan, sheet: String, page: Int, pages: Int,pdfPage: PDPage,shapedCells: SpreadsheetShapedCells) {
         val print = settings.headerFooter
         val numbered = when (settings.setup["useFirstPageNumber"]) {
             null, "", "0", "false" -> false
@@ -1257,7 +1259,6 @@ class OfficeConverter {
             "Excel printed page number exceeds supported budget"
         }
         val printedPage = firstPage + page - 1
-        val font = PDType1Font.HELVETICA
         fun draw(raw: String, header: Boolean) {
             if (raw.isEmpty()) return
             require(print.alignWithMargins) {
@@ -1281,24 +1282,8 @@ class OfficeConverter {
             val zone = plan.contentWidth / 3f
             for ((i,value) in listOf(sections.left, sections.center, sections.right).withIndex()) {
                 if (value.isEmpty()) continue
-                val width = try {
-                    // Do not size sanitized text and then emit a silently changed
-                    // header/footer. The exact expanded value must be encodable.
-                    font.encode(value)
-                    font.getStringWidth(value) * fontSize / 1000f
-                } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved $edge glyphs") }
-                require(width <= zone - 8f) { "Saved $edge text exceeds its page section" }
-                val x = plan.left + i*zone + when (i) {
-                    0 -> 4f
-                    1 -> (zone - width) / 2f
-                    else -> zone - width - 4f
-                }
-                stream.setNonStrokingColor(0,0,0)
-                stream.beginText()
-                stream.setFont(font,fontSize)
-                stream.newLineAtOffset(x,y)
-                stream.showText(value)
-                stream.endText()
+                shapedCells.label(pdfPage,stream,value,plan.left+i*zone+4f,y,fontSize,zone-8f,
+                    alignment=when(i) { 1 -> "center"; 2 -> "right"; else -> "left" })
             }
         }
         draw(print.headerFor(page, printedPage), true)
@@ -1306,13 +1291,14 @@ class OfficeConverter {
     }
 
     /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
-    private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+    private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit,
+        shapedCells: SpreadsheetShapedCells) {
         if (chart.kind == "pie") {
-            renderCachedPieChart(pdf, sheet, chart, checkpoint)
+            renderCachedPieChart(pdf, sheet, chart, checkpoint,shapedCells)
             return
         }
         if (chart.kind == "scatter") {
-            renderCachedScatterChart(pdf, sheet, chart, checkpoint)
+            renderCachedScatterChart(pdf, sheet, chart, checkpoint,shapedCells)
             return
         }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
@@ -1336,12 +1322,8 @@ class OfficeConverter {
             val page = PDPage(PDRectangle(842f, 595f))
             pdf.addPage(page)
             PDPageContentStream(pdf, page).use { stream ->
-                val font = PDType1Font.HELVETICA
                 fun label(value: String, x: Float, y: Float, size: Float = 9f, bold: Boolean = false) {
-                    val f = if (bold) PDType1Font.HELVETICA_BOLD else font
-                    stream.setNonStrokingColor(0, 0, 0)
-                    stream.beginText(); stream.setFont(f, size); stream.newLineAtOffset(x, y)
-                    showSpreadsheetText(stream, value, f); stream.endText()
+                    shapedCells.label(page,stream,value,x,y,size,812f-x,bold)
                 }
                 fun color(rgb: Int) { stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
                 fun stroke(rgb: Int) { stream.setStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255) }
@@ -1434,7 +1416,7 @@ class OfficeConverter {
 
     /** Saved numerical pairs are drawn on actual XY axes; no categorical spacing. */
     private fun renderCachedScatterChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart,
-        checkpoint: () -> Unit) {
+        checkpoint: () -> Unit,shapedCells: SpreadsheetShapedCells) {
         val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715)
         require(chart.series.size in 1..6 && chart.scatterStyle in setOf("marker","line","lineMarker"))
         val pairs = chart.series.flatMap { series ->
@@ -1453,11 +1435,8 @@ class OfficeConverter {
             val page = PDPage(PDRectangle(842f,595f))
             pdf.addPage(page)
             PDPageContentStream(pdf,page).use { stream ->
-                val font = PDType1Font.HELVETICA
                 fun textAt(s: String, x: Float, y: Float, size: Float = 9f) {
-                    stream.setNonStrokingColor(0,0,0)
-                    stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
-                    showSpreadsheetText(stream,s,font); stream.endText()
+                    shapedCells.label(page,stream,s,x,y,size,812f-x)
                 }
                 textAt(sheet.take(70) + " / XY scatter (cached) " + (panel+1),30f,565f,11f)
                 textAt(chart.title.take(95),30f,545f,13f)
@@ -1515,7 +1494,8 @@ class OfficeConverter {
     }
 
     /** Render a single complete pie; splitting the denominator across pages would mislead. */
-    private fun renderCachedPieChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit) {
+    private fun renderCachedPieChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit,
+        shapedCells: SpreadsheetShapedCells) {
         checkpoint()
         val values = chart.series.single().values
         val shares = XlsxPieChartPainter.shares(values)
@@ -1524,11 +1504,8 @@ class OfficeConverter {
         val page = PDPage(PDRectangle(842f, 595f))
         pdf.addPage(page)
         PDPageContentStream(pdf, page).use { stream ->
-            val font = PDType1Font.HELVETICA
             fun label(text: String, x: Float, y: Float, size: Float = 10f) {
-                stream.setNonStrokingColor(0,0,0)
-                stream.beginText(); stream.setFont(font,size); stream.newLineAtOffset(x,y)
-                showSpreadsheetText(stream,text,font); stream.endText()
+                shapedCells.label(page,stream,text,x,y,size,812f-x)
             }
             fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
             label(sheet.take(70) + " / Cached pie chart", 30f,565f,12f)
@@ -1575,11 +1552,8 @@ class OfficeConverter {
                 stream.transform(Matrix.getScaleInstance(1f / plan.userUnit, 1f / plan.userUnit))
             }
             val naturalHeight = layout.naturalPageHeight
-            stream.beginText()
-            stream.setFont(fontBold, 12f)
-            stream.newLineAtOffset(limits.margin, naturalHeight - limits.margin + 12f)
-            showSpreadsheetText(stream, "Spreadsheet: ${layout.name}", fontBold)
-            stream.endText()
+            shapedCells.label(page,stream,"Spreadsheet: ${layout.name}",limits.margin,naturalHeight-limits.margin+12f,
+                12f,layout.naturalPageWidth-2*limits.margin,bold=true,coordinateScale=1f/plan.userUnit)
             val tableTop = naturalHeight - limits.margin - 20f
             fun rowTop(row: Int) = tableTop - layout.rowY[row]
             for (r in 0 until layout.rowCount) {
@@ -1645,11 +1619,7 @@ class OfficeConverter {
 
                 val headerText = "Spreadsheet: ${layout.name} | Rows $startRowDisplay–$endRowDisplay | Columns $startColRef–$endColRef | Panel $panelNum of $totalPanels"
 
-                contentStream.beginText()
-                contentStream.setFont(fontBold, 11f)
-                contentStream.newLineAtOffset(margin, pageH - margin + 10f)
-                showSpreadsheetText(contentStream, headerText, fontBold)
-                contentStream.endText()
+                shapedCells.label(page,contentStream,headerText,margin,pageH-margin+10f,11f,pageW-2*margin,bold=true)
 
                 // 2. Horizontal Continuation Banners
                 val topOffset = margin + 14f

@@ -1514,3 +1514,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A28 rotated complex-script cells and CJK admission
 
 - Measure shaped line width/height and rotate visual image strips with a PDF affine transform, mapping the verified invisible word layer through the identical rotation and outer print/UserUnit scale. Extend script detection to Han/Hangul/Hiragana/Katakana; system font and embeddability checks still determine admission. Explicitly refuse stacked complex graphemes (rotation 255), fragmented rows and out-of-cell overflow. Update the prior unsupported-glyph fixture to use an unassigned Unicode codepoint, because Bengali now has a positive native rendering acceptance test; retain destination preservation assertions. Native spreadsheet test includes a 45-degree Hindi cell in both modes. CI pending; no cross-device CJK coverage or printer-exact claim.
+
+
+### 2026-11-26 — A28 multilingual worksheet labels and print/chart text
+
+- Route natural/tiled titles, saved header/footer sections, cached chart labels and anchored chart titles/pie legends through the strict visible-font or shaped-line renderer. Match saved print transforms for invisible text, use actual widths and refuse overflow instead of dropping text. Preserve existing approximate chart labels and chart-type coverage. Extend native XLSX fixture to a Bengali sheet title/header and exact serialized text-layer digest. Chart labels still use prior display abbreviation limits; arbitrary original Office chart formatting, complex stacked graphemes, and printer/device reference comparisons remain unverified. CI pending.

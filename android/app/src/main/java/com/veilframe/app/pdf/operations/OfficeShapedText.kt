@@ -41,6 +41,7 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
         val height: Float get() = layout.height/scale
         val width: Float get() = layout.width/scale
         val widestLine: Float get() = (0 until lines).maxOf { layout.getLineWidth(it) }/scale
+        fun baseline(index: Int): Float = layout.getLineBaseline(index)/scale
         fun lineHeight(index: Int): Float =
             (layout.getLineBottom(index)-layout.getLineTop(index))/scale
     }
