@@ -58,20 +58,21 @@ class PdfThumbnailLoader(context: Context) {
         }
     }
 
-    suspend fun loadPageThumbnail(uri: Uri, pageIndex: Int, targetWidth: Int = DEFAULT_WIDTH): Bitmap? =
+    suspend fun loadPageThumbnail(uri: Uri, pageIndex: Int, targetWidth: Int = DEFAULT_WIDTH,
+        useCache: Boolean = true): Bitmap? =
         withContext(Dispatchers.IO) {
             if (pageIndex < 0) return@withContext null
             val boundedWidth = targetWidth.coerceIn(MIN_WIDTH, MAX_WIDTH)
-            val key = "$uri-page-$pageIndex-width-$boundedWidth"
-            memoryCache.get(key)?.let { return@withContext it }
+            val key = if (useCache) "$uri-page-$pageIndex-width-$boundedWidth" else null
+            key?.let { memoryCache.get(it) }?.let { return@withContext it }
 
             renderSemaphore.withPermit {
-                memoryCache.get(key)?.let { return@withPermit it }
+                key?.let { memoryCache.get(it) }?.let { return@withPermit it }
                 renderThumbnail(uri, pageIndex, boundedWidth, key)
             }
         }
 
-    private fun renderThumbnail(uri: Uri, pageIndex: Int, targetWidth: Int, key: String): Bitmap? {
+    private fun renderThumbnail(uri: Uri, pageIndex: Int, targetWidth: Int, key: String?): Bitmap? {
         var descriptor: ParcelFileDescriptor? = null
         var renderer: PdfRenderer? = null
         var page: PdfRenderer.Page? = null
@@ -89,7 +90,7 @@ class PdfThumbnailLoader(context: Context) {
             bitmap = Bitmap.createBitmap(dimensions.first, dimensions.second, Bitmap.Config.ARGB_8888)
             Canvas(bitmap).drawColor(Color.WHITE)
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            memoryCache.put(key, bitmap)
+            if (key != null) memoryCache.put(key, bitmap)
             return bitmap
         } catch (cancelled: CancellationException) {
             bitmap?.takeUnless { it.isRecycled }?.recycle()

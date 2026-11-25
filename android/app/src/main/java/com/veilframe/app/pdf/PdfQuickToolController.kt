@@ -4,10 +4,8 @@ import android.annotation.SuppressLint
 import android.util.Log
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -15,7 +13,6 @@ import android.content.res.ColorStateList
 import com.veilframe.app.qr.ui.QrColorPickerDialog
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -168,6 +165,7 @@ class PdfQuickToolController(
     private val imageConverter by lazy { ImageConverter() }
     private val metadataManager by lazy { PdfMetadataManager() }
     private val thumbnailLoader by lazy { PdfThumbnailLoader(activity) }
+    private val pagePreviews by lazy { PdfQuickPagePreviews(activity,scope,thumbnailLoader) }
 
     private var splitThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var rotateThumbnailAdapter: PdfPageThumbnailAdapter? = null
@@ -188,6 +186,7 @@ class PdfQuickToolController(
 
     override fun discardAndReleaseAllResources() {
         formEditor.dismiss()
+        pagePreviews.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         activeJob?.cancel()
@@ -212,6 +211,7 @@ class PdfQuickToolController(
         binding.ivSignMiniaturePreview.visibility = View.GONE
         binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
         binding.ivSignPagePreview.setImageDrawable(null)
+        binding.pbSignPreviewLoading.visibility = View.GONE
         binding.containerQuickToolDocInfo.visibility = View.GONE
         binding.containerQuickToolEmptyState.visibility = View.VISIBLE
         binding.btnPdfQuickToolReset.visibility = View.GONE
@@ -842,6 +842,7 @@ class PdfQuickToolController(
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
         formEditor.dismiss()
+        pagePreviews.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         val generation = selectionGeneration
@@ -1251,32 +1252,19 @@ class PdfQuickToolController(
     private fun refreshSignPagePreview() {
         val uri = selectedUris.firstOrNull() ?: return
         if (primaryDocPages <= 0) return
-        val generation = selectionGeneration
         val targetPageIdx = when {
-            binding.chipSignPageFirst.isChecked -> 0
-            binding.chipSignPageAll.isChecked -> 0
+            binding.chipSignPageFirst.isChecked || binding.chipSignPageAll.isChecked -> 0
             binding.chipSignPageCustom.isChecked -> {
-                val p = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                (p - 1).coerceIn(0, primaryDocPages - 1)
-            }
-            else -> (primaryDocPages - 1).coerceAtLeast(0)
-        }
-
-        binding.pbSignPreviewLoading.visibility = View.VISIBLE
-        launchTransient {
-            val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    return@withContext
+                val p = binding.etSignCustomPage.text?.toString()?.toIntOrNull()
+                if (p == null || p !in 1..primaryDocPages) {
+                    pagePreviews.clearSignature(binding.ivSignPagePreview,binding.pbSignPreviewLoading)
+                    return
                 }
-                binding.pbSignPreviewLoading.visibility = View.GONE
-                if (bmp != null) {
-                    binding.ivSignPagePreview.setImageBitmap(bmp)
-                } else {
-                    binding.ivSignPagePreview.setImageResource(R.drawable.ic_pdf_file)
-                }
+                p - 1
             }
+            else -> primaryDocPages - 1
         }
+        pagePreviews.showSignature(uri,targetPageIdx,binding.ivSignPagePreview,binding.pbSignPreviewLoading)
     }
 
     private fun openPdfSignCanvas() {
@@ -2481,39 +2469,7 @@ class PdfQuickToolController(
     }
 
     private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {
-        val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_pdf_page_preview, null)
-        val dialog = AlertDialog.Builder(activity)
-            .setView(dialogView)
-            .create()
-
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-
-        val tvTitle = dialogView.findViewById<TextView>(R.id.tvPreviewPageTitle)
-        val btnClose = dialogView.findViewById<View>(R.id.btnPreviewClose)
-        val ivPreview = dialogView.findViewById<ImageView>(R.id.ivPreviewFullPage)
-        val pbLoading = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
-
-        val generation = selectionGeneration
-        tvTitle.text = "Page ${pageIndex + 1} Preview"
-        btnClose.setOnClickListener { dialog.dismiss() }
-
-        pbLoading.visibility = View.VISIBLE
-        launchTransient {
-            val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || !dialog.isShowing) {
-                    return@withContext
-                }
-                pbLoading.visibility = View.GONE
-                if (highResBitmap != null) {
-                    ivPreview.setImageBitmap(highResBitmap)
-                } else {
-                    ivPreview.setImageResource(R.drawable.ic_pdf_file)
-                }
-            }
-        }
-
-        dialog.show()
+        pagePreviews.showDialog(uri,pageIndex)
     }
 
     private fun resetWorkspace() {
