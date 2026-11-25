@@ -1504,3 +1504,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A28 conditional visual workbook palette resolution
 
 - Pass workbook theme and custom indexed palette to conditional visual parsing (including theme-only workbooks). Resolve explicit, theme, indexed and HSL-tinted colors for base and extended scales/data bars; reject ambiguous color sources, invalid tint/index, unresolved system colors and nonopaque explicit x14 colors rather than guessing. Existing cell color resolution is unchanged. Regression uses theme accent tint and default indexed negative/axis colors in a standalone x14 rule. CI pending; exact color/gradient and Excel reference-rendering parity remain unverified.
+
+
+### 2026-11-26 — A28 complex-script XLSX cell shaping and searchable export
+
+- Wire existing Android StaticLayout shaping into full-content natural/extended/tiled spreadsheet and saved-print cell rendering, including merged anchors. Preserve source line breaks, emphasis, text color, horizontal/vertical alignment and actual line-height measurement. Map invisible logical-word coordinates through UserUnit and saved print scale/translation; verify serialized per-page Unicode digest before publication. Existing native simple text and unprinted-cell admission remain unchanged. Explicitly refuse complex rotated/fragmented cells or fixed nonwrap/height overflow rather than clipping meaningful text; wide shaped strips capped at 1200pt and existing cumulative bitmap/word budgets. Native fixture exercises Bengali, Hindi and Arabic in both export modes and checks PDF image resources and logical layer. CJK, rotated complex text, Unicode chart/print headings and exact Excel reference parity remain separate. CI pending.

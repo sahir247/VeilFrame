@@ -986,6 +986,7 @@ class OfficeConverter {
         }
 
         var pdf: PDDocument? = null
+        var shapeOwner: OfficeShapedText? = null
 
         try {
             pdf = PDDocument()
@@ -993,6 +994,8 @@ class OfficeConverter {
             val fontNormal = PDType1Font.HELVETICA
             val fontBold = PDType1Font.HELVETICA_BOLD
             val visibleFonts = OfficeVisibleFonts(context,pdf)
+            val shaped = OfficeShapedText(context,pdf).also { shapeOwner = it }
+            val shapedCells = SpreadsheetShapedCells(shaped)
             // Unsupported glyphs outside the printed area must not prevent printing.
             val fontSelector: (PDFont,String) -> PDFont = { preferred,text ->
                 try { visibleFonts.select(preferred,text) }
@@ -1049,9 +1052,9 @@ class OfficeConverter {
                 }
                 val displayedSheet = if (notes.isEmpty()) sheet else sheet.copy(name = sheet.name + " [" + notes.joinToString("; ") + "]")
                 if (savedPrintLayout && (maxCol > 0 || sheet.mergedRegions.isNotEmpty() || sheet.printSettings.area != null)) {
-                    renderSavedPrintSheet(pdf, sheet, sheetIdx, fontNormal, limits, checkpoint, fontSelector)
+                    renderSavedPrintSheet(pdf, sheet, sheetIdx, fontNormal, limits, checkpoint, fontSelector,shapedCells)
                 } else if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
-                val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits, fontSelector)
+                val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits, fontSelector,shapedCells::measure)
                 require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
                     "Workbook exceeds PDF page budget"
                 }
@@ -1065,7 +1068,7 @@ class OfficeConverter {
                             fontBold = fontBold,
                             limits = limits,
                             isExtended = false,
-                            checkpoint = checkpoint
+                            checkpoint = checkpoint, shapedCells = shapedCells
                         )
                     }
                     ExportStrategy.EXTENDED_SIZE -> {
@@ -1076,7 +1079,7 @@ class OfficeConverter {
                             fontBold = fontBold,
                             limits = limits,
                             isExtended = true,
-                            checkpoint = checkpoint
+                            checkpoint = checkpoint, shapedCells = shapedCells
                         )
                     }
                     ExportStrategy.TILED -> {
@@ -1086,7 +1089,7 @@ class OfficeConverter {
                             fontNormal = fontNormal,
                             fontBold = fontBold,
                             limits = limits,
-                            checkpoint = checkpoint
+                            checkpoint = checkpoint, shapedCells = shapedCells
                         )
                     }
                 }
@@ -1109,15 +1112,16 @@ class OfficeConverter {
                 else "Workbook contains no printable worksheet content"
             }
             require(pdf.numberOfPages <= SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
-            publishOfficePdf(pdf, pdfFile)
+            shaped.append(checkpoint)
+            publishOfficePdf(pdf, pdfFile) { shaped.verify(it,checkpoint) }
         } finally {
-            try { pdf?.close() } catch (_: Exception) {}
+            try { shapeOwner?.close() } finally { pdf?.close() }
         }
     }
 
     private fun renderSavedPrintSheet(pdf: PDDocument, sheet: OpenXmlDocumentParser.XlsxSheetData, index: Int,
         font: PDType1Font, limits: LayoutLimits, checkpoint: () -> Unit,
-        fontSelector: (PDFont,String) -> PDFont) {
+        fontSelector: (PDFont,String) -> PDFont, shapedCells: SpreadsheetShapedCells) {
         val settings = sheet.printSettings
         val areas = XlsxSavedPrintLayout.areas(sheet.name, settings, sheet.rows, sheet.mergedRegions)
         val titles = XlsxSavedPrintLayout.titles(sheet.name, settings)
@@ -1132,7 +1136,7 @@ class OfficeConverter {
         }
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
             styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits,
-            respectSavedDimensions = true, fontSelector = fontSelector)
+            respectSavedDimensions = true, fontSelector = fontSelector,shapedHeight = shapedCells::measure)
         val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
         val anchoredCharts = sheet.charts.filter { chart -> chart.printsWithSheet &&
             areas.any { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }
@@ -1178,7 +1182,8 @@ class OfficeConverter {
                             if (merges.at(r,c) >= 0) continue
                             drawCellChunk(stream, x(c), y(r), layout.colWidths[c], layout.rowHeights[r],
                                 layout.rowWrappedLines[r][c], font, limits.fontSizeCell, limits.lineHeight, layout.cellStyles.at(r,c),
-                                fontOverride = layout.fontAt(r,c,font))
+                                fontOverride = layout.fontAt(r,c,font),shapedCells = shapedCells,page = page,
+                                coordinateScale = plan.scale,offsetX = left,offsetY = top,savedPrint = true)
                         }
                     }
                     for (geom in layout.mergedGeometries) {
@@ -1191,7 +1196,8 @@ class OfficeConverter {
                         drawCellChunk(stream, x(geom.firstCol), y(geom.firstRow), geom.totalWidth, geom.totalHeight,
                             geom.wrappedLines, font, limits.fontSizeCell, limits.lineHeight,
                             layout.cellStyles.at(geom.firstRow,geom.firstCol),
-                            fontOverride = layout.fontAt(geom.firstRow,geom.firstCol,font))
+                            fontOverride = layout.fontAt(geom.firstRow,geom.firstCol,font),shapedCells = shapedCells,page = page,
+                            coordinateScale = plan.scale,offsetX = left,offsetY = top,savedPrint = true)
                     }
                     renderSpreadsheetEdges(stream, layout, merges, rowRange, colRange, { y(it) },
                         { y(it) - layout.rowHeights[it] }, { x(it) }, true, true, checkpoint)
@@ -1551,7 +1557,7 @@ class OfficeConverter {
         fontBold: PDType1Font,
         limits: LayoutLimits,
         isExtended: Boolean,
-        checkpoint: () -> Unit
+        checkpoint: () -> Unit, shapedCells: SpreadsheetShapedCells
     ) {
         val layout = plan.sheetLayout
         val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
@@ -1585,7 +1591,8 @@ class OfficeConverter {
                     if (mergeIndex.at(r, c) >= 0) continue
                     drawCellChunk(stream, layout.colX[c], top, layout.colWidths[c], height,
                         layout.rowWrappedLines[r][c], fontNormal, limits.fontSizeCell, limits.lineHeight,
-                        layout.cellStyles.at(r, c), fontOverride = layout.fontAt(r,c,fontNormal))
+                        layout.cellStyles.at(r, c), fontOverride = layout.fontAt(r,c,fontNormal),
+                        shapedCells = shapedCells,page = page,coordinateScale = 1f/plan.userUnit)
                 }
             }
             for (geom in layout.mergedGeometries) {
@@ -1594,7 +1601,8 @@ class OfficeConverter {
                     geom.totalWidth, geom.totalHeight, geom.wrappedLines,
                     fontNormal, limits.fontSizeCell, limits.lineHeight,
                     layout.cellStyles.at(geom.firstRow, geom.firstCol),
-                    fontOverride = layout.fontAt(geom.firstRow,geom.firstCol,fontNormal))
+                    fontOverride = layout.fontAt(geom.firstRow,geom.firstCol,fontNormal),
+                    shapedCells = shapedCells,page = page,coordinateScale = 1f/plan.userUnit)
             }
             renderSpreadsheetEdges(stream, layout, mergeIndex, 0 until layout.rowCount,
                 (0 until layout.colCount).toList(), { rowTop(it) },
@@ -1609,7 +1617,7 @@ class OfficeConverter {
         fontNormal: PDType1Font,
         fontBold: PDType1Font,
         limits: LayoutLimits,
-        checkpoint: () -> Unit
+        checkpoint: () -> Unit, shapedCells: SpreadsheetShapedCells
     ) {
         val layout = plan.sheetLayout
         val mergeIndex = SpreadsheetMergeIndex(layout.rowCount, layout.colCount,
@@ -1748,7 +1756,7 @@ class OfficeConverter {
                             lineHeight = limits.lineHeight,
                             style = layout.cellStyles.at(rIdx, colIndex),
                             completeCell = tile.rowGroup.linesInStartRow == -1,
-                            fontOverride = layout.fontAt(rIdx,colIndex,fontNormal)
+                            fontOverride = layout.fontAt(rIdx,colIndex,fontNormal),shapedCells = shapedCells,page = page
                         )
                     }
                 }
@@ -1778,10 +1786,12 @@ class OfficeConverter {
 
                     // Text rendering: only on anchor slice to prevent duplicate text across panels
                     val isAnchor = (isLeftTrueEdge && isTopTrueEdge && geom.firstCol in tile.colGroup.activeCols)
-                    if (isAnchor && geom.wrappedLines.isNotEmpty() && style.textRotation != 0) {
+                    if (isAnchor && geom.wrappedLines.isNotEmpty() &&
+                        (style.textRotation != 0 || needsOfficeShaping(geom.text))) {
                         drawCellChunk(contentStream, sliceLeft, sliceTop, sliceWidth, sliceHeight,
                             geom.wrappedLines, fontNormal, limits.fontSizeCell, limits.lineHeight, style,
-                            fontOverride = font)
+                            fontOverride = font,shapedCells = shapedCells,page = page,
+                            completeCell = tile.rowGroup.linesInStartRow == -1)
                     } else if (isAnchor && geom.wrappedLines.isNotEmpty()) {
                         // Wrapping across the entire merge is invalid on a narrower
                         // anchor tile. Rewrap inside its actual visible rectangle.
@@ -1842,7 +1852,8 @@ class OfficeConverter {
         lineHeight: Float,
         style: XlsxCellStyle,
         completeCell: Boolean = true,
-        fontOverride: PDFont? = null
+        fontOverride: PDFont? = null,shapedCells: SpreadsheetShapedCells? = null,page: PDPage? = null,
+        coordinateScale: Float = 1f,offsetX: Float = 0f,offsetY: Float = 0f,savedPrint: Boolean = false
     ) {
         if (contentStream == null) return
         val font = fontOverride ?: style.font(fontNormal)
@@ -1851,6 +1862,12 @@ class OfficeConverter {
         fillSpreadsheetCell(contentStream, cellLeft, cellTop, cellW, cellH, style)
 
         if (style.dataBar?.showValue == false || style.icon?.showValue == false) return
+        if (shapedCells != null && chunkLines.any(::needsOfficeShaping)) {
+            require(completeCell && style.textRotation == 0) { "Complex-script rotated or fragmented spreadsheet cell is unsupported" }
+            shapedCells.draw(requireNotNull(page),contentStream,chunkLines.joinToString("\n"),style,
+                cellSize,cellLeft,cellTop,cellW,cellH,coordinateScale,offsetX,offsetY,savedPrint)
+            return
+        }
         if (style.textRotation != 0 && chunkLines.isNotEmpty()) {
             require(completeCell) { "Cannot split rotated cell text across row fragments" }
             drawRotatedSpreadsheetText(contentStream, cellLeft, cellTop, cellW, cellH,

@@ -249,6 +249,27 @@ class OfficeRenderingDeviceTest {
         }
     }
 
+    @Test fun shapedSpreadsheetCellsRetainLogicalUnicodeInBothExportModes() = runBlocking<Unit> {
+        val directory = runDirectory("shaped_xlsx")
+        val words = listOf("বাংলা","हिन्दी","العربية")
+        val rows = words.mapIndexed { i,word ->
+            """<row r="${i+1}"><c r="A${i+1}" t="inlineStr"><is><t>$word</t></is></c></row>"""
+        }.joinToString("")
+        val input = zip(directory,"shaped",mapOf("xl/workbook.xml" to
+            """<workbook><sheets><sheet name="Unicode" sheetId="1"/></sheets></workbook>""",
+            "xl/worksheets/sheet1.xml" to """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData>$rows</sheetData></worksheet>"""))
+        for (saved in listOf(false,true)) {
+            val out = File(directory,"shaped-$saved.pdf")
+            OfficeConverter().convertXlsxToPdf(input,out,context,savedPrintLayout=saved)
+            PDDocument.load(out).use { pdf ->
+                assertEquals(1,pdf.numberOfPages)
+                assertTrue(digestOcrWords(words.asSequence()).contentEquals(digestSerializedOcrLayer(pdf.getPage(0))))
+                assertTrue(pdf.getPage(0).resources.xObjectNames.iterator().hasNext())
+            }
+            assertHardwarePdf(directory,"shaped-$saved",out,1,emptyList())
+        }
+    }
+
     @Test fun shapedBengaliHindiArabicLinesRetainLogicalUnicode() = runBlocking<Unit> {
         val directory = runDirectory("shaped_unicode")
         val words = listOf("বাংলা","हिन्दी","العربية")

@@ -43,11 +43,13 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
     }
 
     fun prepare(runs: List<OpenXmlDocumentParser.DocxRun>,heading: Boolean,size: Float,
-        width: Float,alignment: String = "left"): Block {
+        width: Float,alignment: String = "left",textRgb: Int = Color.BLACK,
+        preserveLineBreaks: Boolean = false): Block {
         val text = SpannableStringBuilder()
         for (run in runs) {
             val start = text.length
-            text.append(normalizeOfficeText(run.text))
+            text.append(if (preserveLineBreaks) run.text.replace("\r\n","\n").replace('\r','\n').replace('\t',' ')
+                else normalizeOfficeText(run.text))
             val style = (if (heading || run.isBold) Typeface.BOLD else 0) or
                 (if(run.isItalic) Typeface.ITALIC else 0)
             if (text.length>start && style != 0) text.setSpan(StyleSpan(style),start,text.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -56,7 +58,7 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
         if (!size.isFinite() || size !in 1f..144f || !width.isFinite() || width !in 4f..1200f)
             throw OfficeTextEncodingException("Unsupported shaped text geometry")
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-            color = Color.BLACK
+            color = textRgb or 0xff000000.toInt()
             textSize = size*scale
             typeface = Typeface.create("sans-serif",Typeface.NORMAL)
         }
@@ -97,7 +99,8 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
     fun prepare(text: String,size: Float,width: Float) =
         prepare(listOf(OpenXmlDocumentParser.DocxRun(text)),false,size,width)
 
-    fun drawLine(page: PDPage,stream: PDPageContentStream,block: Block,index: Int,left: Float,top: Float) {
+    fun drawLine(page: PDPage,stream: PDPageContentStream,block: Block,index: Int,left: Float,top: Float,
+        coordinateScale: Float = 1f, offsetX: Float = 0f, offsetY: Float = 0f) {
         val layout = block.layout
         val start = layout.getLineStart(index)
         val end = layout.getLineEnd(index)
@@ -124,14 +127,16 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
             val x1 = layout.getPrimaryHorizontal(start+match.range.first)
             val x2 = layout.getPrimaryHorizontal(start+match.range.last+1)
             val baseline = top-(layout.getLineBaseline(index)-y)/scale
-            list.add(Word(match.value,left+minOf(x1,x2)/scale,baseline,
-                (abs(x2-x1)/scale).coerceAtLeast(1f),height/scale*0.7f))
+            list.add(Word(match.value,offsetX+(left+minOf(x1,x2)/scale)*coordinateScale,
+                offsetY+baseline*coordinateScale,
+                (abs(x2-x1)/scale).coerceAtLeast(1f)*coordinateScale,height/scale*0.7f*coordinateScale))
         }
     }
 
     fun append(checkpoint: ()->Unit) {
         if (layers.isEmpty()) return
-        pdf.documentInformation.subject = "Complex-script passages use shaped 216 dpi line images and a verified logical Unicode search layer; visual layout is approximate."
+        pdf.documentInformation.subject = listOfNotNull(pdf.documentInformation.subject,
+            "Complex-script passages use shaped 216 dpi line images and a verified logical Unicode search layer; visual layout is approximate.").joinToString(" ")
         val fonts = fontOwner.value
         for ((page,entries) in layers) {
             checkpoint()
