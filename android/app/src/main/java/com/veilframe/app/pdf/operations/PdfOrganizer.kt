@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
@@ -54,7 +56,7 @@ class PdfOrganizer {
             val inputStream = context.contentResolver.openInputStream(inputUri)
                 ?: return@withContext Result.failure(IllegalStateException("Cannot open input file"))
             
-            document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            document = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
             val originalPageCount = document.numberOfPages
             if (originalPageCount == 0) return@withContext Result.failure(IllegalStateException("PDF has no pages"))
             
@@ -71,11 +73,13 @@ class PdfOrganizer {
             onProgress(0.3f)
             val sortedPagesToRemove = pagesToRemove.sortedDescending()
             sortedPagesToRemove.forEachIndexed { index, pageNum ->
+                ensureActive()
                 document.removePage(pageNum - 1)
                 onProgress(0.3f + (0.5f * (index + 1).toFloat() / sortedPagesToRemove.size))
             }
             
             onProgress(0.9f)
+            ensureActive()
             document.save(outputStream)
             outputStream.flush()
             onProgress(1.0f)
@@ -88,6 +92,8 @@ class PdfOrganizer {
                     pagesReordered = false
                 )
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -112,7 +118,7 @@ class PdfOrganizer {
             val inputStream = context.contentResolver.openInputStream(inputUri)
                 ?: return@withContext Result.failure(IllegalStateException("Cannot open input file"))
             
-            sourceDocument = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
+            sourceDocument = inputStream.use { PDDocument.load(it, MemoryUsageSetting.setupTempFileOnly()) }
             val originalPageCount = sourceDocument.numberOfPages
             if (originalPageCount == 0) return@withContext Result.failure(IllegalStateException("PDF has no pages"))
             
@@ -125,14 +131,16 @@ class PdfOrganizer {
             }
             
             onProgress(0.2f)
-            resultDocument = PDDocument()
+            resultDocument = PDDocument(MemoryUsageSetting.setupTempFileOnly())
             newOrder.forEachIndexed { index, pageNum ->
+                ensureActive()
                 val page = sourceDocument.getPage(pageNum - 1)
-                resultDocument.importPage(page)
+                resultDocument.importPageWithResources(page)
                 onProgress(0.2f + (0.7f * (index + 1).toFloat() / newOrder.size))
             }
             
             onProgress(0.95f)
+            ensureActive()
             resultDocument.save(outputStream)
             outputStream.flush()
             onProgress(1.0f)
@@ -145,11 +153,12 @@ class PdfOrganizer {
                     pagesReordered = true
                 )
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
-            sourceDocument?.close()
-            resultDocument?.close()
+            try { resultDocument?.close() } finally { sourceDocument?.close() }
         }
     }
 

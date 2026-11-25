@@ -4,10 +4,14 @@ import android.content.Context
 import android.net.Uri
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
-import com.tom_roush.pdfbox.pdmodel.PDPage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
+import java.io.File
+import java.io.InputStream
 import com.veilframe.app.pdf.util.MemoryGuard
 
 /**
@@ -90,20 +94,13 @@ class PdfSplitter {
             }
             
             for (pageIndex in 0 until totalPages) {
+                ensureActive()
                 // Create new document with single page
-                PDDocument().use { newDoc ->
+                PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { newDoc ->
                     val page = loadedDocument.getPage(pageIndex)
-                    newDoc.importPage(page)
+                    newDoc.importPageWithResources(page)
                     
-                    // Save to byte array first, then pass to callback
-                    val byteArrayOutputStream = java.io.ByteArrayOutputStream()
-                    newDoc.save(byteArrayOutputStream)
-                    val byteArray = byteArrayOutputStream.toByteArray()
-                    
-                    // Pass bytes to callback
-                    java.io.ByteArrayInputStream(byteArray).use { inputStream ->
-                        outputCallback(pageIndex + 1, inputStream)
-                    }
+                    publishPart(context, newDoc, pageIndex + 1, outputCallback)
                 }
                 
                 onProgress((pageIndex + 1).toFloat() / totalPages)
@@ -111,6 +108,8 @@ class PdfSplitter {
             
             Result.success(SplitResult(totalPages, totalPages))
             
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -146,30 +145,21 @@ class PdfSplitter {
             val totalPages = loadedDocument.numberOfPages
             var totalPagesProcessed = 0
             
+            require(ranges.isNotEmpty() && ranges.all { it.start <= totalPages && it.end <= totalPages }) {
+                "All split ranges must be within the $totalPages source pages"
+            }
             ranges.forEachIndexed { rangeIndex, range ->
-                // Validate range
-                if (range.start > totalPages || range.end > totalPages) {
-                    return@withContext Result.failure(
-                        IllegalArgumentException("Page range ${range.start}-${range.end} exceeds document pages ($totalPages)")
-                    )
-                }
+                ensureActive()
                 
-                PDDocument().use { newDoc ->
+                PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { newDoc ->
                     for (pageNum in range.start..range.end) {
+                        ensureActive()
                         val page = loadedDocument.getPage(pageNum - 1) // 0-indexed
-                        newDoc.importPage(page)
+                        newDoc.importPageWithResources(page)
                         totalPagesProcessed++
                     }
                     
-                    // Save to byte array first, then pass to callback
-                    val byteArrayOutputStream = java.io.ByteArrayOutputStream()
-                    newDoc.save(byteArrayOutputStream)
-                    val byteArray = byteArrayOutputStream.toByteArray()
-                    
-                    // Pass bytes to callback
-                    java.io.ByteArrayInputStream(byteArray).use { inputStream ->
-                        outputCallback(rangeIndex + 1, inputStream)
-                    }
+                    publishPart(context, newDoc, rangeIndex + 1, outputCallback)
                 }
                 
                 onProgress((rangeIndex + 1).toFloat() / ranges.size)
@@ -177,6 +167,8 @@ class PdfSplitter {
             
             Result.success(SplitResult(ranges.size, totalPagesProcessed))
             
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -211,6 +203,7 @@ class PdfSplitter {
             )
             val totalPages = loadedDocument.numberOfPages
             
+            require(pageNumbers.isNotEmpty()) { "No pages selected" }
             // Validate page numbers
             val invalidPages = pageNumbers.filter { it < 1 || it > totalPages }
             if (invalidPages.isNotEmpty()) {
@@ -219,18 +212,22 @@ class PdfSplitter {
                 )
             }
             
-            PDDocument().use { newDoc ->
+            PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { newDoc ->
                 pageNumbers.forEachIndexed { index, pageNum ->
+                    ensureActive()
                     val page = loadedDocument.getPage(pageNum - 1) // 0-indexed
-                    newDoc.importPage(page)
+                    newDoc.importPageWithResources(page)
                     onProgress((index + 1).toFloat() / pageNumbers.size)
                 }
                 
+                ensureActive()
                 newDoc.save(outputStream)
             }
             
             Result.success(pageNumbers.size)
             
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         } finally {
@@ -252,6 +249,8 @@ class PdfSplitter {
                 document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
                 document?.numberOfPages ?: 0
             } ?: 0
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             0
         } finally {
@@ -259,13 +258,22 @@ class PdfSplitter {
         }
     }
     
-    /**
-     * Extension to save PDDocument to an OutputStream.
-     */
-    private suspend fun PDDocument.saveToOutputStream(): java.io.ByteArrayInputStream {
-        val byteArrayOutputStream = java.io.ByteArrayOutputStream()
-        save(byteArrayOutputStream)
-        val bytes = byteArrayOutputStream.toByteArray()
-        return java.io.ByteArrayInputStream(bytes)
+    /** A callback may consume the staged file only during its invocation. */
+    private suspend fun publishPart(
+        context: Context,
+        document: PDDocument,
+        index: Int,
+        callback: suspend (Int, InputStream) -> Unit
+    ) {
+        val staged = File.createTempFile("vf_split_part_", ".pdf", context.cacheDir)
+        try {
+            currentCoroutineContext().ensureActive()
+            document.save(staged)
+            currentCoroutineContext().ensureActive()
+            staged.inputStream().buffered().use { callback(index, it) }
+            currentCoroutineContext().ensureActive()
+        } finally {
+            staged.delete()
+        }
     }
 }

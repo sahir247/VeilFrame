@@ -363,7 +363,7 @@ class PdfMerger {
                         "Selected PDF page plan no longer matches ${pageItem.sourceItem.name}"
                     }
                     val page = srcDoc.getPage(pageItem.sourcePageIndex)
-                    destination.importPage(page)
+                    destination.importPageWithResources(page)
                 }
                 onProgress((index + 1).toFloat() / pageItems.size)
             }
