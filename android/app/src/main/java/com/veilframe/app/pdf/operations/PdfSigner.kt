@@ -71,7 +71,8 @@ data class SignatureItemPlacement(
     val rotationDegrees: Float = 0f,
     val bitmap: Bitmap,
     val previewWidth: Float? = null,
-    val previewHeight: Float? = null
+    val previewHeight: Float? = null,
+    val sourceSha256: String? = null
 )
 
 /**
@@ -708,12 +709,12 @@ class PdfSigner(private val context: Context) {
         placements: (PDDocument) -> List<SignatureItemPlacement>
     ): SignatureResult = withContext(Dispatchers.IO) {
         try {
-            val source = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext SignatureResult(false,"Cannot open source PDF")
-            source.use { input ->
-                PDDocument.load(input,MemoryUsageSetting.setupTempFileOnly())
-            }.use { document ->
+            loadMergePdf(context,inputUri).use { loaded ->
+                val document = loaded.document
                 val items = placements(document)
+                require(items.all { it.sourceSha256 == null || it.sourceSha256 == loaded.sha256 }) {
+                    "Signature source changed since preview; reopen the document"
+                }
                 require(items.isNotEmpty() && items.all { it.pageIndex in 0 until document.numberOfPages }) {
                     "Invalid signature page selection"
                 }
