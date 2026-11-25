@@ -1054,7 +1054,7 @@ class OfficeConverter {
                 if (savedPrintLayout && (maxCol > 0 || sheet.mergedRegions.isNotEmpty() || sheet.printSettings.area != null)) {
                     renderSavedPrintSheet(pdf, sheet, sheetIdx, fontNormal, limits, checkpoint, fontSelector,shapedCells)
                 } else if (maxCol > 0 || sheet.mergedRegions.isNotEmpty()) {
-                val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits, fontSelector,shapedCells::measure)
+                val plan = SpreadsheetLayoutEngine.createExportPlan(displayedSheet, sheetIdx, fontNormal, limits, fontSelector,shapedCells::measure,shapedCells::measureWidth)
                 require(pdf.numberOfPages.toLong() + maxOf(1, plan.tiles.size) <= SpreadsheetGeometry.MAX_PAGES) {
                     "Workbook exceeds PDF page budget"
                 }
@@ -1136,7 +1136,7 @@ class OfficeConverter {
         }
         val layout = SpreadsheetLayoutEngine.buildSheetLayout(sheet.copy(rows = rows,
             styles = sheet.styles.copy(showGridLines = settings.gridLines)), index, font, limits,
-            respectSavedDimensions = true, fontSelector = fontSelector,shapedHeight = shapedCells::measure)
+            respectSavedDimensions = true, fontSelector = fontSelector,shapedHeight = shapedCells::measure,shapedWidth = shapedCells::measureWidth)
         val plans = areas.map { XlsxSavedPrintLayout.plan(layout, it, settings, titles) }
         val anchoredCharts = sheet.charts.filter { chart -> chart.printsWithSheet &&
             areas.any { XlsxSavedPrintLayout.chartMayIntersectPrintArea(chart.sourceAnchor,it) }
@@ -1863,7 +1863,7 @@ class OfficeConverter {
 
         if (style.dataBar?.showValue == false || style.icon?.showValue == false) return
         if (shapedCells != null && chunkLines.any(::needsOfficeShaping)) {
-            require(completeCell && style.textRotation == 0) { "Complex-script rotated or fragmented spreadsheet cell is unsupported" }
+            require(completeCell) { "Complex-script fragmented spreadsheet cell is unsupported" }
             shapedCells.draw(requireNotNull(page),contentStream,chunkLines.joinToString("\n"),style,
                 cellSize,cellLeft,cellTop,cellW,cellH,coordinateScale,offsetX,offsetY,savedPrint)
             return

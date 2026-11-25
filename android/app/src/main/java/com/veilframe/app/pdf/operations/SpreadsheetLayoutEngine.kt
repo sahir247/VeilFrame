@@ -183,7 +183,8 @@ object SpreadsheetLayoutEngine {
         limits: LayoutLimits,
         respectSavedDimensions: Boolean = false,
         fontSelector: ((PDFont,String) -> PDFont)? = null,
-        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null
+        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null,
+        shapedWidth: ((String,XlsxCellStyle,Float) -> Float?)? = null
     ): SheetLayout {
         val extent = SpreadsheetGeometry.inspect(sheet.rows, sheet.mergedRegions)
         // Preserve blank geometry covered by declared merge ranges.
@@ -222,10 +223,12 @@ object SpreadsheetLayoutEngine {
                     if (style.textRotation != 0) {
                         val block = XlsxRotatedText.measure(cellVal, style.textRotation, cellFont,
                             cellSize, cellLeading)
-                        require(block.width + 16f <= maxAllowedColWidth) {
+                        val width = if (needsOfficeShaping(cellVal)) shapedWidth?.invoke(cellVal,style,cellSize) ?: block.width
+                            else block.width
+                        require(width + 16f <= maxAllowedColWidth) {
                             "Rotated cell exceeds available tile width; use wider export settings"
                         }
-                        maxW = maxOf(maxW, block.width)
+                        maxW = maxOf(maxW, width)
                         continue
                     }
                     val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
@@ -273,7 +276,7 @@ object SpreadsheetLayoutEngine {
                 val text = row.getOrNull(c) ?: ""
                 if (text.isNotBlank()) {
                     val style = sheet.styles.at(rIdx, c)
-                    if (shapedHeight != null && needsOfficeShaping(text) && style.textRotation == 0)
+                    if (shapedHeight != null && needsOfficeShaping(text))
                         listOf(text)
                     else if (style.textRotation != 0) XlsxRotatedText.lines(text, style.textRotation)
                     else if (respectSavedDimensions && !style.wrapText)
@@ -294,11 +297,11 @@ object SpreadsheetLayoutEngine {
                 val style = sheet.styles.at(rIdx, c)
                 val size = style.fontSizePt ?: limits.fontSizeCell
                 val leading = limits.lineHeight * size / limits.fontSizeCell
-                val shaped = if (style.textRotation == 0 && shapedHeight != null &&
+                val shaped = if (shapedHeight != null &&
                     needsOfficeShaping(lines.joinToString("")) && style.dataBar?.showValue != false &&
                     style.icon?.showValue != false)
                     shapedHeight(lines.joinToString("\n"),style,colWidths[c]-8f-(if (style.icon != null) 13f else 0f)) else null
-                val height = if (style.textRotation == 0) shaped ?: (lines.size * leading)
+                val height = shaped ?: if (style.textRotation == 0) lines.size * leading
                 else XlsxRotatedText.measureLines(lines, style.textRotation, fontAt(rIdx,c),
                     size, leading).height
                 required = maxOf(required, height + limits.paddingVertical)
@@ -335,7 +338,7 @@ object SpreadsheetLayoutEngine {
             val mText = rows.getOrNull(fRow)?.getOrNull(fCol) ?: ""
             val mWrapped = if (mText.isNotBlank()) {
                 val style = sheet.styles.at(fRow, fCol)
-                if (shapedHeight != null && needsOfficeShaping(mText) && style.textRotation == 0) listOf(mText)
+                if (shapedHeight != null && needsOfficeShaping(mText)) listOf(mText)
                 else if (style.textRotation != 0) XlsxRotatedText.lines(mText, style.textRotation)
                 else wrapCellText(mText, fontAt(fRow,fCol), style.fontSizePt ?: limits.fontSizeCell,
                     (mWidth - 8f).coerceAtLeast(10f))
@@ -431,9 +434,10 @@ object SpreadsheetLayoutEngine {
         fontNormal: PDFont,
         limits: LayoutLimits,
         fontSelector: ((PDFont,String) -> PDFont)? = null,
-        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null
+        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null,
+        shapedWidth: ((String,XlsxCellStyle,Float) -> Float?)? = null
     ): ExportPlan {
-        val layout = buildSheetLayout(sheet, sheetIndex, fontNormal, limits, fontSelector = fontSelector,shapedHeight = shapedHeight)
+        val layout = buildSheetLayout(sheet, sheetIndex, fontNormal, limits, fontSelector = fontSelector,shapedHeight = shapedHeight,shapedWidth = shapedWidth)
         val strategy = selectStrategy(layout, limits)
 
         return when (strategy) {

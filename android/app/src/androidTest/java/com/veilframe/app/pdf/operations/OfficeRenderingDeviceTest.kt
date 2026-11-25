@@ -257,7 +257,8 @@ class OfficeRenderingDeviceTest {
         }.joinToString("")
         val input = zip(directory,"shaped",mapOf("xl/workbook.xml" to
             """<workbook><sheets><sheet name="Unicode" sheetId="1"/></sheets></workbook>""",
-            "xl/worksheets/sheet1.xml" to """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData>$rows</sheetData></worksheet>"""))
+            "xl/styles.xml" to """<styleSheet><cellXfs><xf/><xf applyAlignment="1"><alignment textRotation="45"/></xf></cellXfs></styleSheet>""",
+            "xl/worksheets/sheet1.xml" to """<worksheet><cols><col min="1" max="1" width="40"/></cols><sheetData>${rows.replace("r=\"A2\"","r=\"A2\" s=\"1\"")}</sheetData></worksheet>"""))
         for (saved in listOf(false,true)) {
             val out = File(directory,"shaped-$saved.pdf")
             OfficeConverter().convertXlsxToPdf(input,out,context,savedPrintLayout=saved)

@@ -31,13 +31,16 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
     private val scale = 3f
     private var pixels = 0L
     private var words = 0
-    private data class Word(val text: String,val x: Float,val y: Float,val width: Float,val size: Float)
+    private data class Word(val text: String,val x: Float,val y: Float,val width: Float,val size: Float,
+        val cosine: Float,val sine: Float)
     private val layers = linkedMapOf<PDPage,MutableList<Word>>()
     private val expected = linkedMapOf<Int,ByteArray>()
 
     class Block internal constructor(internal val layout: StaticLayout,private val scale: Float) {
         val lines: Int get() = layout.lineCount
         val height: Float get() = layout.height/scale
+        val width: Float get() = layout.width/scale
+        val widestLine: Float get() = (0 until lines).maxOf { layout.getLineWidth(it) }/scale
         fun lineHeight(index: Int): Float =
             (layout.getLineBottom(index)-layout.getLineTop(index))/scale
     }
@@ -100,7 +103,8 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
         prepare(listOf(OpenXmlDocumentParser.DocxRun(text)),false,size,width)
 
     fun drawLine(page: PDPage,stream: PDPageContentStream,block: Block,index: Int,left: Float,top: Float,
-        coordinateScale: Float = 1f, offsetX: Float = 0f, offsetY: Float = 0f) {
+        coordinateScale: Float = 1f, offsetX: Float = 0f, offsetY: Float = 0f,
+        cosine: Float = 1f,sine: Float = 0f) {
         val layout = block.layout
         val start = layout.getLineStart(index)
         val end = layout.getLineEnd(index)
@@ -127,9 +131,11 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
             val x1 = layout.getPrimaryHorizontal(start+match.range.first)
             val x2 = layout.getPrimaryHorizontal(start+match.range.last+1)
             val baseline = top-(layout.getLineBaseline(index)-y)/scale
-            list.add(Word(match.value,offsetX+(left+minOf(x1,x2)/scale)*coordinateScale,
-                offsetY+baseline*coordinateScale,
-                (abs(x2-x1)/scale).coerceAtLeast(1f)*coordinateScale,height/scale*0.7f*coordinateScale))
+            val x = left+minOf(x1,x2)/scale
+            list.add(Word(match.value,offsetX+(cosine*x-sine*baseline)*coordinateScale,
+                offsetY+(sine*x+cosine*baseline)*coordinateScale,
+                (abs(x2-x1)/scale).coerceAtLeast(1f)*coordinateScale,height/scale*0.7f*coordinateScale,
+                cosine,sine))
         }
     }
 
@@ -154,7 +160,7 @@ internal class OfficeShapedText(context: Context, private val pdf: PDDocument) :
                     stream.beginText()
                     stream.setFont(font,word.size)
                     stream.setRenderingMode(RenderingMode.NEITHER)
-                    stream.setTextMatrix(Matrix(stretch,0f,0f,1f,word.x,word.y))
+                    stream.setTextMatrix(Matrix(word.cosine*stretch,word.sine*stretch,-word.sine,word.cosine,word.x,word.y))
                     stream.showText(word.text)
                     stream.endText()
                 }
@@ -188,5 +194,7 @@ internal fun needsOfficeShaping(text: String): Boolean = text.codePoints().anyMa
             Character.UnicodeScript.TAMIL,Character.UnicodeScript.TELUGU,
             Character.UnicodeScript.KANNADA,Character.UnicodeScript.MALAYALAM,
             Character.UnicodeScript.ORIYA,Character.UnicodeScript.THAI,
-            Character.UnicodeScript.MYANMAR,Character.UnicodeScript.KHMER)
+            Character.UnicodeScript.MYANMAR,Character.UnicodeScript.KHMER,
+            Character.UnicodeScript.HAN,Character.UnicodeScript.HANGUL,
+            Character.UnicodeScript.HIRAGANA,Character.UnicodeScript.KATAKANA)
 }

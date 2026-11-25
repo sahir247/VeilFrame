@@ -35,6 +35,10 @@ internal object XlsxRotatedText {
             catch (_: Exception) { clean.length * size }
         } ?: 0f
         val h = size + (lines.size - 1).coerceAtLeast(0) * lineHeight
+        return geometry(w,h,rotation)
+    }
+
+    fun geometry(w: Float,h: Float,rotation: Int): Block {
         val angle = when (rotation) { 255 -> 0; in 0..90 -> rotation; else -> 90 - rotation }
         val radians = Math.toRadians(angle.toDouble())
         val c = cos(radians).toFloat().let { if (kotlin.math.abs(it) < 0.000001f) 0f else it }

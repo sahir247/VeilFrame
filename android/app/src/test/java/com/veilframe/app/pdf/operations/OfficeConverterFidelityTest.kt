@@ -127,7 +127,7 @@ class OfficeConverterFidelityTest {
 
     @Test
     fun unsupportedSpreadsheetGlyphsDoNotOverwriteDestination() = runBlocking {
-        val input = singleTextWorkbook("Invoice বাংলা 42")
+        val input = singleTextWorkbook("Invoice \u0378 42")
         val destination = File(tempFolder.root, "existing_unicode.pdf")
         destination.writeText("previous artifact")
         for (saved in listOf(false, true)) {
