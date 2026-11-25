@@ -75,4 +75,31 @@ class PdfMergePagePlannerTest {
         assertTrue(PdfMerger().mergePageItems(context, refreshed, output).isSuccess)
         PDDocument.load(output.toByteArray()).use { assertEquals(2, it.numberOfPages) }
     }
+
+    @Test fun sameSizeImageReplacementIsRejectedBeforeOutput() = runBlocking<Unit> {
+        val context = RuntimeEnvironment.getApplication()
+        PDFBoxResourceLoader.init(context)
+        val file = temp.newFile("same-size.png")
+        val red = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII=")
+        val green = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGNk+M/wn4GBgYGJAQoAHhgCAu/QjeYAAAAASUVORK5CYII=")
+        assertEquals(red.size,green.size)
+        file.writeBytes(red)
+        val uri = Uri.fromFile(file)
+        val plan = PdfMergePagePlanner.build(context,listOf(uri)) { "same-size.png" }
+        assertTrue(plan.single().isImage)
+        assertEquals(64,plan.single().sourceItem.sourceSha256?.length)
+        file.writeBytes(green)
+        val output = ByteArrayOutputStream()
+        assertTrue(PdfMerger().mergePageItems(context,plan,output).isFailure)
+        assertEquals(0,output.size())
+        assertTrue(context.cacheDir.listFiles().orEmpty().none { it.name.startsWith("vf_merge_image_") })
+    }
+
+    @Test fun malformedImageCannotBecomeAReadyPagePlan() = runBlocking<Unit> {
+        val context = RuntimeEnvironment.getApplication()
+        val file = temp.newFile("broken.png").apply { writeText("not an image") }
+        assertTrue(runCatching {
+            PdfMergePagePlanner.build(context,listOf(Uri.fromFile(file))) { "broken.png" }
+        }.isFailure)
+    }
 }

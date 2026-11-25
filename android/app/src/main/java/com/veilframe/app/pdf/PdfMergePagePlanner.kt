@@ -7,6 +7,7 @@ import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
 import com.veilframe.app.pdf.operations.PdfMerger
 import com.veilframe.app.pdf.operations.loadMergePdf
+import com.veilframe.app.pdf.operations.MergeImageSource
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -22,7 +23,9 @@ internal object PdfMergePagePlanner {
             val mime = context.contentResolver.getType(uri).orEmpty()
             val image = mime.startsWith("image/") || listOf(".jpg", ".jpeg", ".png", ".webp")
                 .any { uri.toString().endsWith(it, ignoreCase = true) }
-            val (count, sha256) = if (image) 1 to null else {
+            val (count, sha256) = if (image) {
+                MergeImageSource.open(context,uri).use { 1 to it.sha256 }
+            } else {
                 loadMergePdf(context, uri).use { it.document.numberOfPages to it.sha256 }
             }
             require(count > 0) { "A selected PDF has no pages" }

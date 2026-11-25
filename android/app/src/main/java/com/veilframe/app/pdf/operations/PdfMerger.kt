@@ -2,7 +2,6 @@ package com.veilframe.app.pdf.operations
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
@@ -143,15 +142,7 @@ class PdfMerger {
                         )
                     }
                     MergeItemType.IMAGE -> {
-                        val bitmap = loadBitmap(context, item.uri)
-                            ?: return@withContext Result.failure(
-                                IllegalStateException("Cannot load image: ${item.uri}")
-                            )
-                        try {
-                            addImagePageToDocument(destination, bitmap)
-                        } finally {
-                            bitmap.recycle()
-                        }
+                        appendMergeImage(context,destination,item)
                     }
                 }
 
@@ -176,35 +167,14 @@ class PdfMerger {
         }
     }
 
-    /**
-     * Helper to load bitmap cleanly from Uri with memory safety.
-     */
-    private fun loadBitmap(context: Context, uri: Uri): Bitmap? {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                BitmapFactory.decodeStream(inputStream, null, options)
-
-                val maxDimension = 3072
-                var sampleSize = 1
-                while (options.outWidth / sampleSize > maxDimension ||
-                    options.outHeight / sampleSize > maxDimension
-                ) {
-                    sampleSize *= 2
-                }
-
-                context.contentResolver.openInputStream(uri)?.use { stream2 ->
-                    val decodeOptions = BitmapFactory.Options().apply {
-                        inSampleSize = sampleSize
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }
-                    BitmapFactory.decodeStream(stream2, null, decodeOptions)
-                }
+    private suspend fun appendMergeImage(context: Context, destination: PDDocument, item: MergeItem) {
+        MergeImageSource.open(context,item.uri).use { source ->
+            check(item.sourceSha256 == null || item.sourceSha256 == source.sha256) {
+                "Selected image changed since page ordering: ${item.name}"
             }
-        } catch (e: Exception) {
-            null
+            val bitmap = source.decode()
+            try { addImagePageToDocument(destination,bitmap) }
+            finally { bitmap.recycle() }
         }
     }
 
@@ -217,7 +187,7 @@ class PdfMerger {
         document.addPage(page)
 
         val pixelCount = bitmap.width * bitmap.height
-        val pdImage = if (pixelCount > 1024 * 1024) {
+        val pdImage = if (pixelCount > 1024 * 1024 && !bitmap.hasAlpha()) {
             JPEGFactory.createFromImage(document, bitmap, 0.9f)
         } else {
             LosslessFactory.createFromImage(document, bitmap)
@@ -343,13 +313,10 @@ class PdfMerger {
             pageItems.forEachIndexed { index, pageItem ->
                 ensureActive()
                 if (pageItem.isImage) {
-                    val bitmap = loadBitmap(context, pageItem.sourceItem.uri)
-                        ?: throw IllegalStateException("Cannot load selected image: ${pageItem.sourceItem.name}")
-                    try {
-                        addImagePageToDocument(destination, bitmap)
-                    } finally {
-                        bitmap.recycle()
+                    require(pageItem.sourcePageIndex == 0 && pageItem.sourceItem.pageCount == 1) {
+                        "Invalid image page plan"
                     }
+                    appendMergeImage(context,destination,pageItem.sourceItem)
                 } else {
                     val uri = pageItem.sourceItem.uri
                     val loaded = openedDocs[uri] ?: loadMergePdf(context, uri).also { openedDocs[uri] = it }
