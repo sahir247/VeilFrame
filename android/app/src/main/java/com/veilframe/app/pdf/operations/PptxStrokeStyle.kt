@@ -9,8 +9,10 @@ import java.io.IOException
  * Uses POI's empirically determined PowerPoint dash ratios, not Java2D paints.
  */
 internal object PptxStrokeStyle {
+    data class End(val type: String="none",val width: String="med",val length: String="med")
     data class Spec(val width: Float,val cap: String="flat",val join: String="miter",
-        val miter: Float=4f,val dash: List<Float> = emptyList()) {
+        val miter: Float=4f,val dash: List<Float> = emptyList(),val compound: String="sng",
+        val head: End=End(),val tail: End=End()) {
         fun paint(rgb: Int)=Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color=rgb; style=Paint.Style.STROKE; strokeWidth=width
             strokeCap=when(cap) { "rnd" -> Paint.Cap.ROUND; "sq" -> Paint.Cap.SQUARE; else -> Paint.Cap.BUTT }
@@ -46,12 +48,12 @@ internal object PptxStrokeStyle {
         require(number.isFinite() && number in 0.0..100.0)
         return number.toFloat()
     }
-    fun fromShape(root: Node,scale: Float,defaultWidth: Float): Spec {
+    fun fromShape(root: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false): Spec {
         val element=if(root.nodeType==Node.DOCUMENT_NODE) children(root).singleOrNull() ?: return Spec(defaultWidth) else root
         val line=one(element,"spPr",p)?.let { one(it,"ln") } ?: return Spec(defaultWidth)
-        return parse(line,scale,defaultWidth)
+        return parse(line,scale,defaultWidth,straightConnector)
     }
-    fun parse(line: Node,scale: Float,defaultWidth: Float): Spec {
+    fun parse(line: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false): Spec {
         require(scale.isFinite() && scale>0f && defaultWidth.isFinite() && defaultWidth>=0f)
         val width=attr(line,"w")?.let {
             val emu=it.toLongOrNull() ?: throw IOException("Invalid outline width")
@@ -61,14 +63,22 @@ internal object PptxStrokeStyle {
         require(width.isFinite() && width in 0f..8192f)
         val cap=attr(line,"cap") ?: "flat" // Office default, per MS-OI29500
         require(cap in setOf("flat","rnd","sq")) { "Unsupported outline cap" }
-        require(attr(line,"cmpd") in setOf(null,"sng") && attr(line,"algn") in setOf(null,"ctr")) {
-            "Compound or inset outline unsupported"
+        val compound=attr(line,"cmpd") ?: "sng"
+        require(compound in setOf("sng","dbl","thickThin","thinThick","tri")) { "Unknown compound outline" }
+        require(attr(line,"algn") in setOf(null,"ctr")) { "Inset outline unsupported" }
+        fun endpoint(name: String): End {
+            val e=one(line,name) ?: return End()
+            val result=End(attr(e,"type") ?: "none",attr(e,"w") ?: "med",attr(e,"len") ?: "med")
+            require(result.type in setOf("none","triangle","stealth","diamond","oval","arrow") &&
+                result.width in setOf("sm","med","lg") && result.length in setOf("sm","med","lg")) {
+                "Unknown outline endpoint"
+            }
+            return result
         }
-        for(end in listOf("headEnd","tailEnd")) {
-            val e=one(line,end)
-            if(e!=null && attr(e,"type") !in setOf(null,"none"))
-                throw IOException("Arrowhead outline geometry unsupported")
-        }
+        val head=endpoint("headEnd")
+        val tail=endpoint("tailEnd")
+        if(!straightConnector && (compound!="sng" || head.type!="none" || tail.type!="none"))
+            throw IOException("Decorated/compound non-straight outline unsupported")
         val joins=children(line).filter { it.namespaceURI in a && it.localName in setOf("miter","round","bevel") }
         require(joins.size<=1) { "Ambiguous outline join" }
         val join=joins.singleOrNull()?.localName ?: "miter"
@@ -94,6 +104,6 @@ internal object PptxStrokeStyle {
         } else emptyList()
         val dash=ratios.map { it*width.coerceAtLeast(1f) }
         require(dash.all { it.isFinite() && it in 0.001f..819200f }) { "Outline dash exceeds budget" }
-        return Spec(width,cap,join,miter,dash)
+        return Spec(width,cap,join,miter,dash,compound,head,tail)
     }
 }
