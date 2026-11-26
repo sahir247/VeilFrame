@@ -2253,8 +2253,14 @@ class OfficeConverter {
                 collectBitmapShapes(slide.shapes)
 
                 // Shared attributed text path for both ordinary shapes and table cells.
+                val tableColors by lazy {
+                    val layout=slide.slideLayout
+                    PptxTableStyle.themeColors(slide.theme?.xmlObject?.domNode,slide.xmlObject.domNode,
+                        layout?.xmlObject?.domNode,layout?.slideMaster?.xmlObject?.domNode)
+                }
                 fun drawShapeText(shape: XSLFTextShape,px: Float,py: Float,pw: Float,ph: Float,
-                    pixelMatrix: PptxShapeTransform.Affine,defaultSize: Float) {
+                    pixelMatrix: PptxShapeTransform.Affine,defaultSize: Float,
+                    tableText: PptxTableStyle.TextStyle?=null) {
                         val paragraphs = shape.textParagraphs
                          val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK,themeColors)
                         val rendered = mutableListOf<PptxTextLayout.Paragraph>()
@@ -2262,8 +2268,23 @@ class OfficeConverter {
                             work.ensureActive()
                             val runs = paragraph.textRuns.map { run ->
                                 val size = run.fontSize?.toFloat() ?: defaultSize
+                                val cellStyle=tableText?.let {
+                                    PptxTableStyle.runStyle(it,paragraph.xmlObject.domNode,run.xmlObject.domNode,tableColors::get)
+                                }
+                                val font=when(cellStyle?.fontRef) {
+                                    "major","minor" -> {
+                                        val scheme=slide.theme?.xmlObject?.themeElements?.fontScheme
+                                        val set=if(cellStyle.fontRef=="major") scheme?.majorFont else scheme?.minorFont
+                                        val direct=PptxTableStyle.one(PptxTableStyle.one(run.xmlObject.domNode,"rPr"),"latin")
+                                            ?: PptxTableStyle.one(PptxTableStyle.one(PptxTableStyle.one(paragraph.xmlObject.domNode,"pPr"),"defRPr"),"latin")
+                                        PptxTableStyle.attr(direct,"typeface")?.takeUnless { it.startsWith("+") }
+                                            ?: set?.latin?.typeface ?: run.fontFamily
+                                    }
+                                    else -> run.fontFamily
+                                }
                                 PptxTextLayout.Run(run.rawText.orEmpty(),size*fontScale,
-                                    extractRunColor(run,defaultColor),run.fontFamily,run.isBold,run.isItalic,
+                                    cellStyle?.color ?: extractRunColor(run,defaultColor),font,
+                                    cellStyle?.bold ?: run.isBold,cellStyle?.italic ?: run.isItalic,
                                     run.isUnderlined,run.isStrikethrough,run.isSuperscript,run.isSubscript)
                             }.toMutableList()
                             if (runs.isEmpty()) runs.add(PptxTextLayout.Run("",defaultSize*fontScale,defaultColor))
@@ -2379,10 +2400,10 @@ class OfficeConverter {
                     }
                     if(shape is org.apache.poi.xslf.usermodel.XSLFTable) {
                         PptxTableRenderer.draw(canvas,shape,RectF(px,py,px+pw,py+ph),fontScale,
-                            { key -> resolveColor(key,android.graphics.Color.BLACK,themeColors) },
-                            { work.ensureActive() }) { cell,rect ->
+                            tableColors::get,
+                            { work.ensureActive() }) { cell,rect,style ->
                             drawShapeText(cell,rect.left,rect.top,rect.width(),rect.height(),
-                                matrix.pixelAffine(sx,sy),14f)
+                                matrix.pixelAffine(sx,sy),14f,style)
                         }
                         continue
                     }
