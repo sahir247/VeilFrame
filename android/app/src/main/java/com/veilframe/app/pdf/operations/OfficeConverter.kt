@@ -2337,11 +2337,13 @@ class OfficeConverter {
                             box.width/slideWidthEmu,box.height/slideHeightEmu)
                             ?: throw java.io.IOException("Slide shape bounds exceed rendering limits")
                     } else getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
+                    val chartFrame = (shape as? org.apache.poi.xslf.usermodel.XSLFGraphicFrame)
+                        ?.takeIf { it !is org.apache.poi.xslf.usermodel.XSLFTable && it.hasChart() }
                     if (shape is org.apache.poi.xslf.usermodel.XSLFGraphicFrame &&
-                        shape !is org.apache.poi.xslf.usermodel.XSLFTable)
+                        shape !is org.apache.poi.xslf.usermodel.XSLFTable && chartFrame==null)
                         throw java.io.IOException("Unsupported PowerPoint graphic frame: "+shape.shapeName)
-                    if(shape is org.apache.poi.xslf.usermodel.XSLFTable && normBounds==null)
-                        throw java.io.IOException("Cannot locate slide table")
+                    if((shape is org.apache.poi.xslf.usermodel.XSLFTable || chartFrame!=null) && normBounds==null)
+                        throw java.io.IOException("Cannot locate slide table or chart")
                     val picture = if (shape is XSLFSimpleShape)
                         PptxPictureRenderer.reference(shape.xmlObject.domNode) else null
                     if (shape is XSLFPictureShape && picture == null)
@@ -2362,6 +2364,15 @@ class OfficeConverter {
                     val shapeSave = canvas.save()
                     try {
                     canvas.concat(android.graphics.Matrix().apply { setValues(matrix.pixels(sx,sy)) })
+                    if(chartFrame!=null) {
+                        val chart=chartFrame.chart ?: throw java.io.IOException("Missing slide chart relationship")
+                        val colors=themeColors.mapNotNull { (key,value) ->
+                            runCatching { key to android.graphics.Color.parseColor(value) }.getOrNull()
+                        }.toMap()
+                        val data=chart.packagePart.inputStream.use { OpenXmlDocumentParser.readPresentationChart(it,colors) }
+                        PptxChartRenderer.draw(canvas,data,RectF(px,py,px+pw,py+ph),fontScale) { work.ensureActive() }
+                        continue
+                    }
                     if(shape is org.apache.poi.xslf.usermodel.XSLFTable) {
                         PptxTableRenderer.draw(canvas,shape,RectF(px,py,px+pw,py+ph),fontScale,
                             { key -> resolveColor(key,android.graphics.Color.BLACK,themeColors) },

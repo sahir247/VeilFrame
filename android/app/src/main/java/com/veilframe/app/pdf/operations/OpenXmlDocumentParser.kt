@@ -694,6 +694,16 @@ object OpenXmlDocumentParser {
         return ChartAnchor(null, false)
     }
 
+    /** The cached chart grammar is shared by PresentationML and SpreadsheetML.
+     * Never open the chart's embedded workbook or external data connection.
+     */
+    internal fun readPresentationChart(input: InputStream,theme: Map<String,Int>): XlsxCachedChart {
+        val xml=XmlReadBudget(totalLimit=2L*1024*1024,partLimit=2L*1024*1024).read(input)
+        val root=parseXml(xml).documentElement
+        return parseCachedChart(root,theme)
+            ?: throw IOException("Unsupported or incomplete PowerPoint chart cache")
+    }
+
     private fun parseCachedChart(root: Element, theme: Map<String, Int>): XlsxCachedChart? {
         require(root.localName() == "chartSpace") { "Invalid spreadsheet chart root" }
         val chart = root.childElements("chart").singleOrNull() ?: return null
