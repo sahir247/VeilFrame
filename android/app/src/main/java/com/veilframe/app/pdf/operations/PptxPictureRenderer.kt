@@ -92,8 +92,10 @@ internal object PptxPictureRenderer {
         return result
     }
 
-    fun read(owner: XSLFSheet,reference: Reference,checkpoint: ()->Unit): ByteArray {
-        val ownerPart = owner.packagePart
+    fun read(owner: XSLFSheet,reference: Reference,checkpoint: ()->Unit): ByteArray =
+        read(owner.packagePart,reference,checkpoint)
+
+    fun read(ownerPart: org.apache.poi.openxml4j.opc.PackagePart,reference: Reference,checkpoint: ()->Unit): ByteArray {
         val relation = ownerPart.getRelationship(reference.relationship)
             ?: throw IOException("Slide picture relationship is missing")
         if (relation.targetMode != TargetMode.INTERNAL || !relation.relationshipType.endsWith("/image"))
