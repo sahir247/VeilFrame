@@ -1301,6 +1301,9 @@ class OfficeConverter {
             return
         }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
+        val dual=SharedChartValueAxes.build(chart)
+        val primary=dual.values.singleOrNull { it.axis.position=="l" }
+        val secondary=dual.values.singleOrNull { it.axis.position=="r" }
         val combo = chart.kind == "combo"
         val comboBarCount = if (combo) chart.series.count { it.chartKind == "column" } else 0
         val stacked = chart.kind in setOf("bar", "column") && chart.grouping in setOf("stacked", "percentStacked")
@@ -1334,25 +1337,36 @@ class OfficeConverter {
                     if (stacked) (if (percentStacked) " [100% stacked]" else " [stacked]") else "", 30f, 545f, 13f, true)
                 label("Saved chart cache; reconstructed appearance, not recalculated" +
                     (chart.sourceAnchor?.let { " / cells $it" } ?: ""), 30f, 529f)
-                val left = 100f; val bottom = 270f; val width = 680f; val height = 235f
+                val left = 100f; val bottom = 270f; val width = if(secondary!=null) 635f else 680f; val height = 235f
                 val horizontal = chart.kind == "bar"
                 val slot = (if (horizontal) height else width) / indices.size
-                val zero = if (horizontal) left + normalizedFraction(0.0)*width else bottom + normalizedFraction(0.0)*height
+                val zero = if (horizontal) left + normalizedFraction(0.0)*width else bottom + (primary?.zero() ?: normalizedFraction(0.0))*height
                 stroke(0xB0B0B0); stream.setLineWidth(0.5f)
                 if (horizontal) line(zero,bottom,zero,bottom+height) else line(left,zero,left+width,zero)
                 for (tick in 0..4) {
                     val f = tick / 4f
                     val normalized = min + (high - min)*f
                     val v = normalized * maxAbs
-                    val value = if (percentStacked) String.format(java.util.Locale.US, "%.0f%%", normalized*100)
+                    val value = primary?.tick(f) ?: if (percentStacked) String.format(java.util.Locale.US, "%.0f%%", normalized*100)
                         else if (v.isFinite()) String.format(java.util.Locale.US, "%.4g", v)
                         else String.format(java.util.Locale.US, "%.4g x %.4g", normalized, maxAbs)
                     stroke(0xE0E0E0)
                     if (horizontal) { val x = left + f*width; line(x,bottom,x,bottom+height); label(value,x-10f,bottom-25f,8f) }
-                    else { val y = bottom + f*height; line(left,y,left+width,y); label(value,30f,y-3f,8f) }
+                    else {
+                        val y = bottom + f*height
+                        line(left,y,left+width,y); label(value,30f,y-3f,8f)
+                        secondary?.let { label(it.tick(f),left+width+5f,y-3f,8f) }
+                    }
+                }
+                stream.saveGraphicsState()
+                try {
+                if(dual.isNotEmpty()) {
+                    stream.addRect(left,bottom,width,height)
+                    stream.clip()
                 }
                 for ((seriesIndex, series) in chart.series.withIndex()) {
                     checkpoint()
+                    val axis=dual[series.valueAxisId]
                     var previous: Pair<Float,Float>? = null
                     val bar = slot * 0.8f / (if (stacked) 1 else if (combo) comboBarCount else chart.series.size)
                     for ((local, index) in indices.withIndex()) {
@@ -1365,7 +1379,7 @@ class OfficeConverter {
                         }
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
                         if (isLine) {
-                            val y = bottom + fraction(v)*height
+                            val y = bottom + (axis?.fraction(v) ?: fraction(v))*height
                             stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
                             previous?.let { line(it.first,it.second,position,y) }
                             color(series.rgb ?: palette[seriesIndex])
@@ -1377,8 +1391,8 @@ class OfficeConverter {
                             val offset = position - slot*0.4f + (if (stacked) 0 else ordinal)*bar
                             val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
                                 XlsxStackedChart.Segment(0.0, v / maxAbs)
-                            val start = normalizedFraction(segment.start)
-                            val end = normalizedFraction(segment.end)
+                            val start = axis?.zero() ?: normalizedFraction(segment.start)
+                            val end = axis?.fraction(v) ?: normalizedFraction(segment.end)
                             if (horizontal) {
                                 val x1 = left + start*width; val x2 = left + end*width
                                 stream.addRect(minOf(x1,x2),offset,kotlin.math.abs(x2-x1),bar*0.9f)
@@ -1390,6 +1404,7 @@ class OfficeConverter {
                         }
                     }
                 }
+                } finally { stream.restoreGraphicsState() }
                 for ((local,index) in indices.withIndex()) {
                     if (horizontal) label((index+1).toString(),80f,bottom+height-slot*(local+0.5f)-3f,8f)
                     else label((index+1).toString(),left+slot*(local+0.5f)-3f,bottom-12f,8f)
@@ -1399,7 +1414,8 @@ class OfficeConverter {
                 val column = 570f / chart.series.size
                 for ((i,series) in chart.series.withIndex()) {
                     color(series.rgb ?: palette[i]); stream.addRect(230f+i*column,231f,8f,8f); stream.fill()
-                    label(series.name.take(14),241f+i*column,231f,8f)
+                    label(series.name.take(if(dual.isEmpty()) 14 else 10)+(dual[series.valueAxisId]?.let {
+                        if(it.axis.position=="r") " (R)" else " (L)" } ?: ""),241f+i*column,231f,8f)
                 }
                 for ((local,index) in indices.withIndex()) {
                     val y = 213f-local*14f
