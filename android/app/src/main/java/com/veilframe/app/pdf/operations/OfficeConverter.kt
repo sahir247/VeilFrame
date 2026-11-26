@@ -26,7 +26,6 @@ import org.apache.poi.xslf.usermodel.XSLFSlide
 import org.apache.poi.xslf.usermodel.XSLFShape
 import org.apache.poi.xslf.usermodel.XSLFTextShape
 import org.apache.poi.xslf.usermodel.XSLFSimpleShape
-import org.apache.poi.xslf.usermodel.XSLFPictureData
 import org.apache.poi.xslf.usermodel.XSLFPictureShape
 import org.apache.poi.xslf.usermodel.XSLFGroupShape
 import org.apache.poi.sl.usermodel.Placeholder
@@ -2072,141 +2071,6 @@ class OfficeConverter {
 
     data class PicCrop(val l: Float = 0f, val t: Float = 0f, val r: Float = 0f, val b: Float = 0f)
 
-    private fun extractBlipCrop(xml: Any): PicCrop? {
-        val xmlStr = try { xml.toString() } catch (_: Throwable) { "" }
-        if (xmlStr.isBlank()) return null
-        val match = Regex("""<[^>]*srcRect[^>]*>""", RegexOption.IGNORE_CASE).find(xmlStr)
-        if (match != null) {
-            val tag = match.value
-            fun getAttr(attr: String): Float {
-                val m = Regex("""$attr=["'](\d+)["']""", RegexOption.IGNORE_CASE).find(tag)
-                val v = m?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                return (v.toFloat() / 100000f).coerceIn(0f, 0.99f)
-            }
-            val l = getAttr("l")
-            val t = getAttr("t")
-            val r = getAttr("r")
-            val b = getAttr("b")
-            if (l > 0f || t > 0f || r > 0f || b > 0f) {
-                return PicCrop(l, t, r, b)
-            }
-        }
-        return null
-    }
-
-    private fun extractBlipEmbedId(xml: Any): String? {
-        val xmlStr = try { xml.toString() } catch (_: Throwable) { "" }
-        if (xmlStr.isNotBlank()) {
-            val svgMatch = Regex("""(?:asvg:svgBlip|svgBlip)[^>]*(?:r:embed|embed|r:link|link)=["'](rId\d+)["']""", RegexOption.IGNORE_CASE).find(xmlStr)
-            if (svgMatch != null) return svgMatch.groupValues[1]
-        }
-        try {
-            var blipFill: Any? = null
-            try { blipFill = xml.javaClass.getMethod("getBlipFill").invoke(xml) } catch (_: Throwable) {}
-            if (blipFill == null) {
-                try {
-                    val spPr = xml.javaClass.getMethod("getSpPr").invoke(xml)
-                    if (spPr != null) blipFill = spPr.javaClass.getMethod("getBlipFill").invoke(spPr)
-                } catch (_: Throwable) {}
-            }
-            if (blipFill != null) {
-                val blip = try { blipFill.javaClass.getMethod("getBlip").invoke(blipFill) } catch (_: Throwable) { null }
-                if (blip != null) {
-                    val blipXmlStr = try { blip.toString() } catch (_: Throwable) { "" }
-                    if (blipXmlStr.isNotBlank()) {
-                        val svgMatch = Regex("""(?:asvg:svgBlip|svgBlip)[^>]*(?:r:embed|embed|r:link|link)=["'](rId\d+)["']""", RegexOption.IGNORE_CASE).find(blipXmlStr)
-                        if (svgMatch != null) return svgMatch.groupValues[1]
-                    }
-                    val embed = try { blip.javaClass.getMethod("getEmbed").invoke(blip) as? String } catch (_: Throwable) { null }
-                    if (!embed.isNullOrBlank()) return embed
-                }
-            }
-        } catch (_: Throwable) { }
-        if (xmlStr.isNotBlank()) {
-            val match = Regex("""(?:r:embed|embed|r:link|link)=["'](rId\d+)["']""", RegexOption.IGNORE_CASE).find(xmlStr)
-            if (match != null) return match.groupValues[1]
-        }
-        return null
-    }
-
-    private fun resolvePictureBytesFromBlipId(slide: Any, blipId: String): Pair<ByteArray, String?>? {
-        if (slide !is XSLFSlide) return null
-        try {
-            val relDoc = slide.getRelationById(blipId)
-            if (relDoc is XSLFPictureData) {
-                return Pair(relDoc.data, relDoc.contentType)
-            }
-        } catch (_: Throwable) { }
-        try {
-            val sheetPart = slide.packagePart
-            val rel = sheetPart?.getRelationship(blipId)
-            if (rel != null) {
-                val part = sheetPart.getRelatedPart(rel) ?: sheetPart.getPackage()?.getPart(rel)
-                val bytes = part?.inputStream?.use { stream -> stream.readBytes() }
-                if (bytes != null && bytes.isNotEmpty()) {
-                    return Pair(bytes, part.contentType)
-                }
-            }
-        } catch (_: Throwable) { }
-        try {
-            val slideShow = slide.slideShow
-            for (pd in slideShow.pictureData) {
-                if (pd.packagePart?.partName?.name?.contains(blipId, ignoreCase = true) == true) {
-                    return Pair(pd.data, pd.contentType)
-                }
-            }
-        } catch (_: Throwable) { }
-        return null
-    }
-
-    private fun extractPictureDataFromShape(shape: Any, slide: Any): Triple<ByteArray, String?, PicCrop?>? {
-        try {
-            val xml = try { shape.javaClass.getMethod("getXmlObject").invoke(shape) } catch (_: Throwable) {
-                try {
-                    val m = shape.javaClass.getDeclaredMethod("fetchXmlObject")
-                    m.isAccessible = true
-                    m.invoke(shape)
-                } catch (_: Throwable) { null }
-            }
-            if (xml != null) {
-                val crop = extractBlipCrop(xml)
-                val blipId = extractBlipEmbedId(xml)
-                if (!blipId.isNullOrBlank()) {
-                    val resolved = resolvePictureBytesFromBlipId(slide, blipId)
-                    if (resolved != null) return Triple(resolved.first, resolved.second, crop)
-                }
-            }
-        } catch (_: Throwable) { }
-
-        if (shape is XSLFPictureShape) {
-            try {
-                val pd = shape.pictureData
-                val data = pd?.data
-                if (data != null && data.isNotEmpty()) {
-                    val xml = try { shape.javaClass.getMethod("getXmlObject").invoke(shape) } catch (_: Throwable) { null }
-                    val crop = if (xml != null) extractBlipCrop(xml) else null
-                    return Triple(data, pd.contentType, crop)
-                }
-            } catch (_: Throwable) { }
-        }
-
-        try {
-            val method = shape.javaClass.getMethod("getPictureData")
-            val pd = method.invoke(shape)
-            if (pd != null) {
-                val data = pd.javaClass.getMethod("getData").invoke(pd) as? ByteArray
-                if (data != null && data.isNotEmpty()) {
-                    val ct = try { pd.javaClass.getMethod("getContentType").invoke(pd) as? String } catch (_: Throwable) { null }
-                    val xml = try { shape.javaClass.getMethod("getXmlObject").invoke(shape) } catch (_: Throwable) { null }
-                    val crop = if (xml != null) extractBlipCrop(xml) else null
-                    return Triple(data, ct, crop)
-                }
-            }
-        } catch (_: Throwable) { }
-
-        return null
-    }
-
     private fun extractThemeColorScheme(slide: Any?): Map<String, String> {
         val colorMap = mutableMapOf<String, String>()
         if (slide !is XSLFSlide) return colorMap
@@ -2270,27 +2134,6 @@ class OfficeConverter {
         return defaultColor
     }
 
-    private fun cropAndDrawBitmap(canvas: android.graphics.Canvas, dataBytes: ByteArray, crop: PicCrop?, destRect: android.graphics.Rect) {
-        try {
-            val bitmap = BitmapFactory.decodeByteArray(dataBytes, 0, dataBytes.size) ?: return
-            val origW = bitmap.width
-            val origH = bitmap.height
-            val finalBmp = if (crop != null && (crop.l > 0f || crop.t > 0f || crop.r > 0f || crop.b > 0f)) {
-                val startX = (crop.l * origW).toInt().coerceIn(0, origW - 1)
-                val startY = (crop.t * origH).toInt().coerceIn(0, origH - 1)
-                val cropW = ((1f - crop.l - crop.r) * origW).toInt().coerceIn(1, origW - startX)
-                val cropH = ((1f - crop.t - crop.b) * origH).toInt().coerceIn(1, origH - startY)
-                val cropped = Bitmap.createBitmap(bitmap, startX, startY, cropW, cropH)
-                if (cropped != bitmap) bitmap.recycle()
-                cropped
-            } else {
-                bitmap
-            }
-            canvas.drawBitmap(finalBmp, null, destRect, null)
-            finalBmp.recycle()
-        } catch (_: Throwable) { }
-    }
-
     /**
      * Renders supported PowerPoint slide content to bounded bitmaps; layout and font substitution are approximate.
      * Returns a list of Bitmaps, one per slide.
@@ -2334,9 +2177,7 @@ class OfficeConverter {
             val slideWidthPt = if (slideWidthEmu > 0) (slideWidthEmu / 12700f) else 720f
             val fontScale = targetWidth.toFloat() / slideWidthPt
 
-            val themeColors = if (ppt.slides.isNotEmpty()) extractThemeColorScheme(ppt.slides[0]) else emptyMap()
-
-            fun resolveColor(schemeOrHex: String?, fallback: Int): Int {
+            fun resolveColor(schemeOrHex: String?, fallback: Int,themeColors: Map<String,String>): Int {
                 if (schemeOrHex == null) return fallback
                 if (schemeOrHex.startsWith("#")) {
                     return try { android.graphics.Color.parseColor(schemeOrHex) } catch (_: Throwable) { fallback }
@@ -2355,8 +2196,10 @@ class OfficeConverter {
                 }
             }
 
-            for ((slideIndex, slide) in ppt.slides.withIndex()) {
-                currentCoroutineContext().ensureActive()
+            val work = currentCoroutineContext()
+            for (slide in ppt.slides) {
+                work.ensureActive()
+                val themeColors = extractThemeColorScheme(slide)
                 val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
                 pending = bitmap
                 val canvas = android.graphics.Canvas(bitmap) // isRecycled checked above
@@ -2370,34 +2213,29 @@ class OfficeConverter {
                     } catch (_: Throwable) { }
                 }
 
-                // Background picture if present
-                try {
-                    val ctSlide = try { slide.javaClass.getMethod("getXmlObject").invoke(slide) } catch (_: Throwable) { null }
-                    if (ctSlide != null) {
-                        val cSld = try { ctSlide.javaClass.getMethod("getCSld").invoke(ctSlide) } catch (_: Throwable) { null }
-                        val bg = try { cSld?.javaClass?.getMethod("getBg")?.invoke(cSld) } catch (_: Throwable) { null }
-                        if (bg != null) {
-                            val bgBlipId = extractBlipEmbedId(bg)
-                            if (!bgBlipId.isNullOrBlank()) {
-                                val resolved = resolvePictureBytesFromBlipId(slide, bgBlipId)
-                                if (resolved != null && resolved.first.isNotEmpty()) {
-                                    cropAndDrawBitmap(canvas, resolved.first, null, android.graphics.Rect(0, 0, targetWidth, targetHeight))
-                                }
-                            }
-                        }
+                // The background's image relationship belongs to this slide, not the entire deck.
+                slide.xmlObject.cSld.bg?.let { background ->
+                    PptxPictureRenderer.reference(background.domNode)?.let { reference ->
+                        val bytes = PptxPictureRenderer.read(slide,reference) { work.ensureActive() }
+                        PptxPictureRenderer.draw(canvas,bytes,reference.crop,RectF(0f,0f,targetWidth.toFloat(),targetHeight.toFloat()))
                     }
-                } catch (_: Throwable) { }
+                }
 
                 // 2. Flatten all shapes (including nested group children and Slide Master / Layout background shapes)
                 val allSlideShapes = mutableListOf<org.apache.poi.xslf.usermodel.XSLFShape>()
-                fun collectBitmapShapes(shapes: List<org.apache.poi.xslf.usermodel.XSLFShape>, isMasterOrLayout: Boolean = false) {
+                var shapeCount = 0
+                fun collectBitmapShapes(shapes: List<org.apache.poi.xslf.usermodel.XSLFShape>,
+                    isMasterOrLayout: Boolean = false,depth: Int = 0) {
+                    require(depth<=64) { "Slide group nesting exceeds rendering budget" }
                     for (s in shapes) {
+                        work.ensureActive()
+                        require(++shapeCount<=10000) { "Slide shape count exceeds rendering budget" }
                         if (isMasterOrLayout && s is XSLFSimpleShape && s.isPlaceholder) {
                             // Skip master/layout text placeholders so placeholder prompt text doesn't render
                             continue
                         }
                         if (s is XSLFGroupShape) {
-                            try { collectBitmapShapes(s.shapes, isMasterOrLayout) } catch (_: Throwable) { }
+                            collectBitmapShapes(s.shapes,isMasterOrLayout,depth+1)
                         } else {
                             allSlideShapes.add(s)
                         }
@@ -2407,32 +2245,24 @@ class OfficeConverter {
                     (slide.javaClass.getMethod("getDisplayMasterShapes").invoke(slide) as? Boolean) ?: true
                 } catch (_: Throwable) { true }
                 if (showMaster) {
-                    try {
-                        val masterShapes = slide.slideLayout?.slideMaster?.shapes ?: emptyList()
-                        collectBitmapShapes(masterShapes, isMasterOrLayout = true)
-                    } catch (_: Throwable) { }
-                    try {
-                        val layoutShapes = slide.slideLayout?.shapes ?: emptyList()
-                        collectBitmapShapes(layoutShapes, isMasterOrLayout = true)
-                    } catch (_: Throwable) { }
+                    val masterShapes = slide.slideLayout?.slideMaster?.shapes ?: emptyList()
+                    collectBitmapShapes(masterShapes,isMasterOrLayout = true)
+                    val layoutShapes = slide.slideLayout?.shapes ?: emptyList()
+                    collectBitmapShapes(layoutShapes,isMasterOrLayout = true)
                 }
-                try { collectBitmapShapes(slide.shapes, isMasterOrLayout = false) } catch (_: Throwable) { }
+                collectBitmapShapes(slide.shapes)
 
                 // 3. Draw all shapes in z-order
                 for (shape in allSlideShapes) {
                     val normBounds = getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
 
-                    // Priority: PictureShape / blipFill
-                    val picTriple = extractPictureDataFromShape(shape, slide)
-                    if (picTriple != null && picTriple.first.isNotEmpty()) {
-                        val fb = normBounds ?: floatArrayOf(0.05f, 0.3f, 0.6f, 0.4f)
-                        val destRect = android.graphics.Rect(
-                            (fb[0] * targetWidth).toInt(), (fb[1] * targetHeight).toInt(),
-                            ((fb[0] + fb[2]) * targetWidth).toInt(), ((fb[1] + fb[3]) * targetHeight).toInt()
-                        )
-                        cropAndDrawBitmap(canvas, picTriple.first, picTriple.third, destRect)
-                        continue
-                    }
+                    work.ensureActive()
+                    val picture = if (shape is XSLFSimpleShape)
+                        PptxPictureRenderer.reference(shape.xmlObject.domNode) else null
+                    if (shape is XSLFPictureShape && picture == null)
+                        throw java.io.IOException("Picture shape has no embedded image")
+                    if (picture != null && normBounds == null)
+                        throw java.io.IOException("Cannot locate slide picture shape")
 
                     if (normBounds == null) {
                         if (shape is XSLFTextShape && shape.text.isNotBlank())
@@ -2445,10 +2275,17 @@ class OfficeConverter {
                     val ph = normBounds[3] * targetHeight.toFloat()
 
                     val geomType = getShapeGeometryType(shape)
+                    if (picture != null) {
+                        if (geomType != ShapeGeom.RECTANGLE)
+                            throw java.io.IOException("Nonrectangular slide picture fill is unsupported")
+                        val bytes = PptxPictureRenderer.read(shape.sheet,picture) { work.ensureActive() }
+                        PptxPictureRenderer.draw(canvas,bytes,picture.crop,RectF(px,py,px+pw,py+ph))
+                        if (shape is XSLFPictureShape) continue
+                    }
 
                     // Draw geometry fill & stroke
                     if (shape is XSLFSimpleShape) {
-                        val fillColor = getShapeFillColor(shape, themeColors)
+                        val fillColor = if (picture == null) getShapeFillColor(shape, themeColors) else null
                         if (fillColor != null) {
                             val fillPaint = Paint().apply { color = fillColor; style = Paint.Style.FILL; isAntiAlias = true }
                             drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
@@ -2469,7 +2306,7 @@ class OfficeConverter {
                         val isTitle = shape.isPlaceholder &&
                             (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
                         val defaultSize = if (isTitle) 26f else if (geomType == ShapeGeom.ELLIPSE) 12f else 14f
-                        val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK)
+                        val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK,themeColors)
                         val rendered = mutableListOf<PptxTextLayout.Paragraph>()
                         for (paragraph in paragraphs) {
                             currentCoroutineContext().ensureActive()
@@ -2650,6 +2487,12 @@ class OfficeConverter {
         return null
     }
 
+    private fun admitSlideBounds(x: Double,y: Double,w: Double,h: Double): FloatArray? {
+        if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite() ||
+            x !in -100.0..100.0 || y !in -100.0..100.0 || w<=0 || h<=0 || w>100 || h>100) return null
+        return floatArrayOf(x.toFloat(),y.toFloat(),w.toFloat(),h.toFloat())
+    }
+
     private fun getShapeNormalizedBounds(
         shape: Any,
         slide: Any?,
@@ -2697,12 +2540,7 @@ class OfficeConverter {
                 val slideHPt = if (slideHeightEmu > 0) slideHeightEmu / 12700.0 else 540.0
 
                 if (x != null && y != null && w != null && h != null && w > 0 && h > 0) {
-                    return floatArrayOf(
-                        (x / slideWPt).toFloat().coerceIn(0f, 1f),
-                        (y / slideHPt).toFloat().coerceIn(0f, 1f),
-                        (w / slideWPt).toFloat().coerceIn(0.01f, 1f),
-                        (h / slideHPt).toFloat().coerceIn(0.01f, 1f)
-                    )
+                    return admitSlideBounds(x/slideWPt,y/slideHPt,w/slideWPt,h/slideHPt)
                 }
             }
         } catch (_: Throwable) { }
@@ -2796,12 +2634,8 @@ class OfficeConverter {
                     parentShape = parentShape.parent
                 }
 
-                return floatArrayOf(
-                    (curX.toFloat() / slideWidthEmu.toFloat()).coerceIn(0f, 1f),
-                    (curY.toFloat() / slideHeightEmu.toFloat()).coerceIn(0f, 1f),
-                    (curCx.toFloat() / slideWidthEmu.toFloat()).coerceIn(0.001f, 1f),
-                    (curCy.toFloat() / slideHeightEmu.toFloat()).coerceIn(0.001f, 1f)
-                )
+                return admitSlideBounds(curX.toDouble()/slideWidthEmu,curY.toDouble()/slideHeightEmu,
+                    curCx.toDouble()/slideWidthEmu,curCy.toDouble()/slideHeightEmu)
             }
         } catch (_: Throwable) { }
         return null

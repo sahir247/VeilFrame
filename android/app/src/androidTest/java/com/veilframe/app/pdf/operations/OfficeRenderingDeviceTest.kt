@@ -64,6 +64,22 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun slidePicturesCropWithoutCopiesAndRefuseCorruptPayload() {
+        val source = Bitmap.createBitmap(10,10,Bitmap.Config.ARGB_8888)
+        val output = Bitmap.createBitmap(20,20,Bitmap.Config.ARGB_8888)
+        try {
+            for(y in 0 until 10) for(x in 0 until 10) source.setPixel(x,y,if(x<5) Color.RED else Color.BLUE)
+            val bytes = java.io.ByteArrayOutputStream().also { check(source.compress(Bitmap.CompressFormat.PNG,100,it)) }.toByteArray()
+            val canvas = android.graphics.Canvas(output)
+            val rect = android.graphics.RectF(0f,0f,20f,20f)
+            PptxPictureRenderer.draw(canvas,bytes,PptxPictureRenderer.Crop(left=0.5f),rect)
+            assertEquals(Color.BLUE,output.getPixel(10,10))
+            assertTrue(runCatching { PptxPictureRenderer.draw(canvas,byteArrayOf(1,2,3),
+                PptxPictureRenderer.Crop(),rect) }.exceptionOrNull() is java.io.IOException)
+            assertEquals(4,PptxPictureRenderer.sampleSize(16000,16000))
+        } finally { source.recycle(); output.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
