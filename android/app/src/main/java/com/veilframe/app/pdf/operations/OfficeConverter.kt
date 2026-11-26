@@ -1289,6 +1289,21 @@ class OfficeConverter {
         draw(print.footerFor(page, printedPage), false)
     }
 
+    private fun drawCachedSeriesLine(stream: PDPageContentStream,series: XlsxCachedChart.Series,
+        fallback: Int,defaultWidth: Float,x1: Float,y1: Float,x2: Float,y2: Float,phase: Float) {
+        val ink=SharedChartInk.resolved(series.stroke?.ink,fallback) ?: return
+        val width=series.stroke?.widthPt ?: series.strokeWidthPt ?: defaultWidth
+        stream.saveGraphicsState()
+        try {
+            stream.setStrokingColor(ink ushr 16 and 255,ink ushr 8 and 255,ink and 255)
+            stream.setLineWidth(width)
+            stream.setLineCapStyle(when(series.stroke?.cap) { "rnd" -> 1; "sq" -> 2; else -> 0 })
+            val dash=SharedChartInk.dashes(series.stroke,width)
+            stream.setLineDashPattern(dash,if(dash.isEmpty()) 0f else phase%dash.sum())
+            stream.moveTo(x1,y1); stream.lineTo(x2,y2); stream.stroke()
+        } finally { stream.restoreGraphicsState() }
+    }
+
     /** Cached-data appendix: preserve worksheet cells and never claim the original chart appearance. */
     private fun renderCachedSpreadsheetChart(pdf: PDDocument, sheet: String, chart: XlsxCachedChart, checkpoint: () -> Unit,
         shapedCells: SpreadsheetShapedCells) {
@@ -1368,25 +1383,30 @@ class OfficeConverter {
                     checkpoint()
                     val axis=dual[series.valueAxisId]
                     var previous: Pair<Float,Float>? = null
+                    var phase=0f
                     val bar = slot * 0.8f / (if (stacked) 1 else if (combo) comboBarCount else chart.series.size)
                     for ((local, index) in indices.withIndex()) {
                         val isLine = chart.kind == "line" || (combo && series.chartKind == "line")
                         val raw = series.values[index]
                         val v = if (isLine) chart.blankDisplay.lineValue(raw) else raw
                         if (v == null) {
-                            if (!isLine || chart.blankDisplay.breakOnMissing()) previous = null
+                            if (!isLine || chart.blankDisplay.breakOnMissing()) { previous = null; phase=0f }
                             continue
                         }
                         val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
                         if (isLine) {
                             val y = bottom + (axis?.fraction(v) ?: fraction(v))*height
-                            stroke(series.rgb ?: palette[seriesIndex]); stream.setLineWidth(series.strokeWidthPt ?: 1.4f)
-                            previous?.let { line(it.first,it.second,position,y) }
-                            color(series.rgb ?: palette[seriesIndex])
-                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,position,y,4f)
+                            val fallback=series.rgb ?: palette[seriesIndex]
+                            previous?.let {
+                                drawCachedSeriesLine(stream,series,fallback,1.4f,it.first,it.second,position,y,phase)
+                                phase+=kotlin.math.hypot(position-it.first,y-it.second)
+                            }
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,position,y,4f,
+                                series.markerFill,series.markerStroke,fallback)
                             previous = position to y
                         } else {
-                            color(series.rgb ?: palette[seriesIndex])
+                            val ink=SharedChartInk.pointFill(series,index,series.rgb ?: palette[seriesIndex]) ?: continue
+                            color(ink)
                             val ordinal = if (combo) chart.series.take(seriesIndex).count { it.chartKind == "column" } else seriesIndex
                             val offset = position - slot*0.4f + (if (stacked) 0 else ordinal)*bar
                             val segment = if (stacked) stacks[seriesIndex][index] ?: continue else
@@ -1475,18 +1495,21 @@ class OfficeConverter {
                     stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setLineWidth(series.strokeWidthPt ?: 1.3f)
                     var prev: Pair<Float,Float>? = null
+                    var phase=0f
                     for (index in indices) {
                         checkpoint()
                         val x = series.xValues.getOrNull(index)
                         val y = series.values.getOrNull(index)
-                        if (x == null || y == null) { prev = null; continue }
+                        if (x == null || y == null) { prev = null; phase=0f; continue }
                         val px = left+xAxis.fraction(x)*width
                         val py = bottom+yAxis.fraction(y)*height
                         if (chart.scatterStyle != "marker") prev?.let {
-                            stream.moveTo(it.first,it.second); stream.lineTo(px,py); stream.stroke()
+                            drawCachedSeriesLine(stream,series,rgb,1.3f,it.first,it.second,px,py,phase)
+                            phase+=kotlin.math.hypot(px-it.first,py-it.second)
                         }
                         if (chart.scatterStyle != "line") {
-                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,px,py,4f)
+                            XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,px,py,4f,
+                                series.markerFill,series.markerStroke,rgb)
                         }
                         prev = px to py
                     }
@@ -1514,7 +1537,7 @@ class OfficeConverter {
         checkpoint()
         val values = chart.series.single().values
         val shares = XlsxPieChartPainter.shares(values)
-        val colors = XlsxPieChartPainter.palette
+        val colors = values.indices.map { SharedChartInk.pointFill(chart.series.single(),it,XlsxPieChartPainter.palette[it]) }
         require(pdf.numberOfPages < SpreadsheetGeometry.MAX_PAGES) { "Workbook exceeds PDF page budget" }
         val page = PDPage(PDRectangle(842f, 595f))
         pdf.addPage(page)
@@ -1527,12 +1550,12 @@ class OfficeConverter {
             label(chart.title.take(85),30f,543f,14f)
             label("Saved chart cache; reconstructed appearance, not recalculated",30f,523f)
             val cx = 225f; val cy = 300f; val radius = 170f
-            XlsxPieChartPainter.draw(stream,shares,cx,cy,radius,checkpoint)
+            XlsxPieChartPainter.draw(stream,shares,cx,cy,radius,checkpoint,colors,chart.firstSliceAngle)
             for ((i,v) in values.withIndex()) {
                 checkpoint()
                 val share=shares[i]
                 val y = 481f - i * 26f
-                color(colors[i]); stream.addRect(430f,y-3f,10f,10f); stream.fill()
+                colors[i]?.let { color(it); stream.addRect(430f,y-3f,10f,10f); stream.fill() }
                 label((i+1).toString() + " " + (chart.categories[i] ?: "(missing category)").take(27),447f,y)
                 label(v?.let { String.format(java.util.Locale.US,"%.7g",it) } ?: "(missing)",650f,y,9f)
                 label(if (v == null) "-" else String.format(java.util.Locale.US,"%.2f%%",share*100),750f,y,9f)
