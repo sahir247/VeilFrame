@@ -960,8 +960,14 @@ object OpenXmlDocumentParser {
                 strokeWidthPt = seriesStrokeWidth(ser), markerSymbol = markerSymbol,
                 markerSizePt = marker.second,valueAxisId=seriesAxisIds[index]))
         }
-        return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
+        val result=XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
             grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes)
+        if(valueAxes.isNotEmpty()) {
+            try { SharedChartValueAxes.build(result) }
+            catch (_: IllegalArgumentException) { return null }
+            catch (_: IOException) { return null }
+        }
+        return result
     }
 
     private data class ParsedXlsxStyles(
