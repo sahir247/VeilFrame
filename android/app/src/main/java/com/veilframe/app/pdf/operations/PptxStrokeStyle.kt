@@ -53,22 +53,26 @@ internal object PptxStrokeStyle {
         val line=one(element,"spPr",p)?.let { one(it,"ln") } ?: return Spec(defaultWidth)
         return parse(line,scale,defaultWidth,straightConnector)
     }
-    fun parse(line: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false): Spec {
+    fun parse(line: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false,inherited: Node?=null): Spec {
+        fun attribute(key: String): String? = attr(line,key) ?: inherited?.let { attr(it,key) }
         require(scale.isFinite() && scale>0f && defaultWidth.isFinite() && defaultWidth>=0f)
-        val width=attr(line,"w")?.let {
+        val width=attribute("w")?.let {
             val emu=it.toLongOrNull() ?: throw IOException("Invalid outline width")
             require(emu in 0..20116800) { "Outline width exceeds budget" }
             emu/12700f*scale
         } ?: defaultWidth
         require(width.isFinite() && width in 0f..8192f)
-        val cap=attr(line,"cap") ?: "flat" // Office default, per MS-OI29500
+        val cap=attribute("cap") ?: "flat" // Office default, per MS-OI29500
         require(cap in setOf("flat","rnd","sq")) { "Unsupported outline cap" }
-        val compound=attr(line,"cmpd") ?: "sng"
+        val compound=attribute("cmpd") ?: "sng"
         require(compound in setOf("sng","dbl","thickThin","thinThick","tri")) { "Unknown compound outline" }
-        require(attr(line,"algn") in setOf(null,"ctr")) { "Inset outline unsupported" }
+        require(attribute("algn") in setOf(null,"ctr")) { "Inset outline unsupported" }
         fun endpoint(name: String): End {
-            val e=one(line,name) ?: return End()
-            val result=End(attr(e,"type") ?: "none",attr(e,"w") ?: "med",attr(e,"len") ?: "med")
+            val local=one(line,name)
+            val base=inherited?.let { one(it,name) }
+            if(local==null && base==null) return End()
+            fun endAttr(key: String)=local?.let { attr(it,key) } ?: base?.let { attr(it,key) }
+            val result=End(endAttr("type") ?: "none",endAttr("w") ?: "med",endAttr("len") ?: "med")
             require(result.type in setOf("none","triangle","stealth","diamond","oval","arrow") &&
                 result.width in setOf("sm","med","lg") && result.length in setOf("sm","med","lg")) {
                 "Unknown outline endpoint"
@@ -79,13 +83,16 @@ internal object PptxStrokeStyle {
         val tail=endpoint("tailEnd")
         if(!straightConnector && (compound!="sng" || head.type!="none" || tail.type!="none"))
             throw IOException("Decorated/compound non-straight outline unsupported")
-        val joins=children(line).filter { it.namespaceURI in a && it.localName in setOf("miter","round","bevel") }
+        fun joinsOf(n: Node)=children(n).filter { it.namespaceURI in a && it.localName in setOf("miter","round","bevel") }
+        val joins=joinsOf(line).ifEmpty { inherited?.let(::joinsOf).orEmpty() }
         require(joins.size<=1) { "Ambiguous outline join" }
         val join=joins.singleOrNull()?.localName ?: "miter"
         val miter=joins.singleOrNull()?.let { if(join=="miter") attr(it,"lim")?.let(::percentage) else null } ?: 4f
         require(miter>=1f) { "Invalid outline miter limit" }
-        val preset=one(line,"prstDash")
-        val custom=one(line,"custDash")
+        val localPreset=one(line,"prstDash")
+        val localCustom=one(line,"custDash")
+        val preset=if(localPreset==null && localCustom==null) inherited?.let { one(it,"prstDash") } else localPreset
+        val custom=if(localPreset==null && localCustom==null) inherited?.let { one(it,"custDash") } else localCustom
         require(preset==null || custom==null) { "Ambiguous outline dashing" }
         val ratios=if(custom!=null) {
             val stops=children(custom)
