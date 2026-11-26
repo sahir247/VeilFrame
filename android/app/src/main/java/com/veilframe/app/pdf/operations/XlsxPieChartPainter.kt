@@ -20,15 +20,17 @@ internal object XlsxPieChartPainter {
         return values.map { (it ?: 0.0)/max/total }
     }
 
-    fun draw(stream: PDPageContentStream,shares: List<Double>,cx: Float,cy: Float,radius: Float,checkpoint: ()->Unit) {
-        require(radius.isFinite() && radius>0f)
-        var angle = Math.PI/2
+    fun draw(stream: PDPageContentStream,shares: List<Double>,cx: Float,cy: Float,radius: Float,checkpoint: ()->Unit,
+        colors: List<Int?> = shares.indices.map { palette[it] },firstSliceAngle: Int=0) {
+        require(radius.isFinite() && radius>0f && colors.size==shares.size && firstSliceAngle in 0..360)
+        var angle = Math.PI/2-Math.toRadians(firstSliceAngle.toDouble())
         for ((index,share) in shares.withIndex()) {
             checkpoint()
             if (share<=0.0) continue
-            val rgb=palette[index]
-            stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
             val sweep = -2*Math.PI*share
+            val rgb=colors[index]
+            if(rgb==null) { angle+=sweep; continue }
+            stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
             val segments = ceil(abs(sweep)/(Math.PI/2)).toInt().coerceAtLeast(1)
             val delta=sweep/segments
             stream.moveTo(cx,cy)
