@@ -91,14 +91,15 @@ internal object PptxShapeTransform {
         return around(bounds,angle%360.0,flag(node,"flipH"),flag(node,"flipV"))
     }
     fun shape(root: Node): Transform? {
-        val properties = properties(root,"spPr") ?: return null
-        val node = one(properties,"xfrm",drawing) ?: return null
+        val shapeProperties = properties(root,"spPr")
+        val node = if(shapeProperties!=null) one(shapeProperties,"xfrm",drawing) else properties(root,"xfrm")
+        if(node==null) return null
         val bounds = rect(node,"off","ext")
         return Transform(bounds,orientation(node,bounds))
     }
     data class TextBody(val upright: Boolean,val direction: String?,val rotation: Double? = null)
     private fun bodyAttribute(root: Node,key: String): String? =
-        properties(root,"txBody")?.let { one(it,"bodyPr",drawing) }?.let { attr(it,key) }
+        (properties(root,"txBody") ?: one(root,"txBody",drawing))?.let { one(it,"bodyPr",drawing) }?.let { attr(it,key) }
 
     internal fun resolveTextBody(resolve: (String)->String?): TextBody {
         val upright = when(resolve("upright")) {

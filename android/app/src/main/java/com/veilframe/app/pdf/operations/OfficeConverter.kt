@@ -2252,83 +2252,14 @@ class OfficeConverter {
                 }
                 collectBitmapShapes(slide.shapes)
 
-                // 3. Draw all shapes in z-order
-                for (shape in allSlideShapes) {
-                    work.ensureActive()
-                    val sx = targetWidth.toDouble()/slideWidthEmu
-                    val sy = targetHeight.toDouble()/slideHeightEmu
-                    val direct = PptxShapeTransform.shape(shape.xmlObject.domNode)
-                    var matrix = direct?.matrix ?: PptxShapeTransform.Affine()
-                    var parentShape = shape.parent
-                    var transformDepth = 0
-                    while (parentShape is XSLFGroupShape) {
-                        require(++transformDepth<=64) { "Slide group transform exceeds depth budget" }
-                        require(direct != null) { "Grouped slide shape has no explicit transform" }
-                        matrix = PptxShapeTransform.group(parentShape.xmlObject.domNode)*matrix
-                        parentShape = parentShape.parent
-                    }
-                    val normBounds = if (direct != null) {
-                        val box = direct.bounds
-                        admitSlideBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
-                            box.width/slideWidthEmu,box.height/slideHeightEmu)
-                            ?: throw java.io.IOException("Slide shape bounds exceed rendering limits")
-                    } else getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
-                    val picture = if (shape is XSLFSimpleShape)
-                        PptxPictureRenderer.reference(shape.xmlObject.domNode) else null
-                    if (shape is XSLFPictureShape && picture == null)
-                        throw java.io.IOException("Picture shape has no embedded image")
-                    if (picture != null && normBounds == null)
-                        throw java.io.IOException("Cannot locate slide picture shape")
-
-                    if (normBounds == null) {
-                        if (shape is XSLFTextShape && shape.text.isNotBlank())
-                            throw OfficeTextEncodingException("Cannot locate slide text shape")
-                        continue
-                    }
-                    val px = normBounds[0] * targetWidth.toFloat()
-                    val py = normBounds[1] * targetHeight.toFloat()
-                    val pw = normBounds[2] * targetWidth.toFloat()
-                    val ph = normBounds[3] * targetHeight.toFloat()
-
-                    val shapeSave = canvas.save()
-                    try {
-                    canvas.concat(android.graphics.Matrix().apply { setValues(matrix.pixels(sx,sy)) })
-                    val geomType = getShapeGeometryType(shape)
-                    if (picture != null) {
-                        if (geomType != ShapeGeom.RECTANGLE)
-                            throw java.io.IOException("Nonrectangular slide picture fill is unsupported")
-                        val bytes = PptxPictureRenderer.read(shape.sheet,picture) { work.ensureActive() }
-                        PptxPictureRenderer.draw(canvas,bytes,picture.crop,RectF(px,py,px+pw,py+ph))
-                        if (shape is XSLFPictureShape) continue
-                    }
-
-                    // Draw geometry fill & stroke
-                    if (shape is XSLFSimpleShape) {
-                        val fillColor = if (picture == null) getShapeFillColor(shape, themeColors) else null
-                        if (fillColor != null) {
-                            val fillPaint = Paint().apply { color = fillColor; style = Paint.Style.FILL; isAntiAlias = true }
-                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
-                        }
-                        val lineColor = getShapeLineColor(shape, themeColors)
-                        if (lineColor != null) {
-                            val strokePaint = Paint().apply { color = lineColor; style = Paint.Style.STROKE; strokeWidth = 2f * (targetWidth / 960f); isAntiAlias = true }
-                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
-                        } else if (geomType == ShapeGeom.ELLIPSE) {
-                            val strokePaint = Paint().apply { color = android.graphics.Color.rgb(30, 41, 59); style = Paint.Style.STROKE; strokeWidth = 1.5f * (targetWidth / 960f); isAntiAlias = true }
-                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
-                        }
-                    }
-
-                    // Draw attributed text with Android's contextual shaping and bidi layout.
-                    if (shape is XSLFTextShape) {
+                // Shared attributed text path for both ordinary shapes and table cells.
+                fun drawShapeText(shape: XSLFTextShape,px: Float,py: Float,pw: Float,ph: Float,
+                    pixelMatrix: PptxShapeTransform.Affine,defaultSize: Float) {
                         val paragraphs = shape.textParagraphs
-                        val isTitle = shape.isPlaceholder &&
-                            (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
-                        val defaultSize = if (isTitle) 26f else if (geomType == ShapeGeom.ELLIPSE) 12f else 14f
-                        val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK,themeColors)
+                         val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK,themeColors)
                         val rendered = mutableListOf<PptxTextLayout.Paragraph>()
                         for (paragraph in paragraphs) {
-                            currentCoroutineContext().ensureActive()
+                            work.ensureActive()
                             val runs = paragraph.textRuns.map { run ->
                                 val size = run.fontSize?.toFloat() ?: defaultSize
                                 PptxTextLayout.Run(run.rawText.orEmpty(),size*fontScale,
@@ -2363,8 +2294,9 @@ class OfficeConverter {
                             val r = shape.rightInset.toFloat()*fontScale
                             val top = shape.topInset.toFloat()*fontScale
                             val bottom = shape.bottomInset.toFloat()*fontScale
-                            val body = PptxShapeTransform.textBody(shape)
-                            val frame = PptxShapeTransform.textFrame(matrix.pixelAffine(sx,sy),
+                            val body = if(shape is org.apache.poi.xslf.usermodel.XSLFTableCell)
+                                PptxShapeTransform.textBody(shape.xmlObject.domNode) else PptxShapeTransform.textBody(shape)
+                            val frame = PptxShapeTransform.textFrame(pixelMatrix,
                                 PptxShapeTransform.Rect(px.toDouble(),py.toDouble(),pw.toDouble(),ph.toDouble()),
                                 body,body.rotation ?: 0.0,shape.textDirection?.name)
                             val box = frame.bounds
@@ -2383,6 +2315,93 @@ class OfficeConverter {
                                 else PptxTextLayout.draw(canvas,rendered,textLeft,textTop,textWidth,textHeight,vertical)
                             } finally { canvas.restoreToCount(textSave) }
                         }
+                    }
+                // 3. Draw all shapes in z-order
+                for (shape in allSlideShapes) {
+                    work.ensureActive()
+                    val sx = targetWidth.toDouble()/slideWidthEmu
+                    val sy = targetHeight.toDouble()/slideHeightEmu
+                    val direct = PptxShapeTransform.shape(shape.xmlObject.domNode)
+                    var matrix = direct?.matrix ?: PptxShapeTransform.Affine()
+                    var parentShape = shape.parent
+                    var transformDepth = 0
+                    while (parentShape is XSLFGroupShape) {
+                        require(++transformDepth<=64) { "Slide group transform exceeds depth budget" }
+                        require(direct != null) { "Grouped slide shape has no explicit transform" }
+                        matrix = PptxShapeTransform.group(parentShape.xmlObject.domNode)*matrix
+                        parentShape = parentShape.parent
+                    }
+                    val normBounds = if (direct != null) {
+                        val box = direct.bounds
+                        admitSlideBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
+                            box.width/slideWidthEmu,box.height/slideHeightEmu)
+                            ?: throw java.io.IOException("Slide shape bounds exceed rendering limits")
+                    } else getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
+                    if (shape is org.apache.poi.xslf.usermodel.XSLFGraphicFrame &&
+                        shape !is org.apache.poi.xslf.usermodel.XSLFTable)
+                        throw java.io.IOException("Unsupported PowerPoint graphic frame: "+shape.shapeName)
+                    if(shape is org.apache.poi.xslf.usermodel.XSLFTable && normBounds==null)
+                        throw java.io.IOException("Cannot locate slide table")
+                    val picture = if (shape is XSLFSimpleShape)
+                        PptxPictureRenderer.reference(shape.xmlObject.domNode) else null
+                    if (shape is XSLFPictureShape && picture == null)
+                        throw java.io.IOException("Picture shape has no embedded image")
+                    if (picture != null && normBounds == null)
+                        throw java.io.IOException("Cannot locate slide picture shape")
+
+                    if (normBounds == null) {
+                        if (shape is XSLFTextShape && shape.text.isNotBlank())
+                            throw OfficeTextEncodingException("Cannot locate slide text shape")
+                        continue
+                    }
+                    val px = normBounds[0] * targetWidth.toFloat()
+                    val py = normBounds[1] * targetHeight.toFloat()
+                    val pw = normBounds[2] * targetWidth.toFloat()
+                    val ph = normBounds[3] * targetHeight.toFloat()
+
+                    val shapeSave = canvas.save()
+                    try {
+                    canvas.concat(android.graphics.Matrix().apply { setValues(matrix.pixels(sx,sy)) })
+                    if(shape is org.apache.poi.xslf.usermodel.XSLFTable) {
+                        PptxTableRenderer.draw(canvas,shape,RectF(px,py,px+pw,py+ph),fontScale,
+                            { key -> resolveColor(key,android.graphics.Color.BLACK,themeColors) },
+                            { work.ensureActive() }) { cell,rect ->
+                            drawShapeText(cell,rect.left,rect.top,rect.width(),rect.height(),
+                                matrix.pixelAffine(sx,sy),14f)
+                        }
+                        continue
+                    }
+                    val geomType = getShapeGeometryType(shape)
+                    if (picture != null) {
+                        if (geomType != ShapeGeom.RECTANGLE)
+                            throw java.io.IOException("Nonrectangular slide picture fill is unsupported")
+                        val bytes = PptxPictureRenderer.read(shape.sheet,picture) { work.ensureActive() }
+                        PptxPictureRenderer.draw(canvas,bytes,picture.crop,RectF(px,py,px+pw,py+ph))
+                        if (shape is XSLFPictureShape) continue
+                    }
+
+                    // Draw geometry fill & stroke
+                    if (shape is XSLFSimpleShape) {
+                        val fillColor = if (picture == null) getShapeFillColor(shape, themeColors) else null
+                        if (fillColor != null) {
+                            val fillPaint = Paint().apply { color = fillColor; style = Paint.Style.FILL; isAntiAlias = true }
+                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
+                        }
+                        val lineColor = getShapeLineColor(shape, themeColors)
+                        if (lineColor != null) {
+                            val strokePaint = Paint().apply { color = lineColor; style = Paint.Style.STROKE; strokeWidth = 2f * (targetWidth / 960f); isAntiAlias = true }
+                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
+                        } else if (geomType == ShapeGeom.ELLIPSE) {
+                            val strokePaint = Paint().apply { color = android.graphics.Color.rgb(30, 41, 59); style = Paint.Style.STROKE; strokeWidth = 1.5f * (targetWidth / 960f); isAntiAlias = true }
+                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
+                        }
+                    }
+
+                    if (shape is XSLFTextShape) {
+                        val isTitle = shape.isPlaceholder &&
+                            (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
+                        drawShapeText(shape,px,py,pw,ph,matrix.pixelAffine(sx,sy),
+                            if(isTitle) 26f else if(geomType==ShapeGeom.ELLIPSE) 12f else 14f)
                     }
                     } finally { canvas.restoreToCount(shapeSave) }
                 }
