@@ -38,16 +38,41 @@ internal object PptxConnectorRenderer {
         val preset=one(props,"prstGeom",drawing) ?: return false
         return preset.attributes?.getNamedItem("prst")?.nodeValue in setOf("line","straightConnector1")
     }
-    fun explicitlyInvisible(root: Node): Boolean {
-        val props=properties(root) ?: return false
-        val line=one(props,"ln",drawing) ?: return false
-        return one(line,"noFill",drawing)!=null
+    data class Resolved(val spec: PptxStrokeStyle.Spec,val color: Int)
+    private fun attr(node: Node,key: String)=node.attributes?.getNamedItem(key)?.nodeValue
+    private fun fill(line: Node?): Node? {
+        if(line==null) return null
+        val fills=listOf("noFill","solidFill","gradFill","pattFill","blipFill","grpFill")
+            .mapNotNull { one(line,it,drawing) }
+        require(fills.size<=1) { "Ambiguous connector line fill" }
+        return fills.singleOrNull()
+    }
+    fun resolve(root: Node,scale: Float,defaultWidth: Float,themeLine: (Int)->Node?,
+        theme: (String)->Int?): Resolved? {
+        val element=if(root is org.w3c.dom.Document) root.documentElement else root
+        val props=properties(root) ?: throw IOException("Missing connector properties")
+        val direct=one(props,"ln",drawing)
+        val localFill=fill(direct)
+        if(localFill?.localName=="noFill") return null
+        val ref=one(element,"style",presentation)?.let { one(it,"lnRef",drawing) }
+        val index=ref?.let {
+            attr(it,"idx")?.toIntOrNull() ?: throw IOException("Invalid connector style index")
+        }
+        require(index==null || index in 0..999) { "Invalid connector style index" }
+        val inherited=if(index!=null && index>0)
+            themeLine(index) ?: throw IOException("Missing connector theme line style") else null
+        val selected=localFill ?: fill(inherited)
+        if(selected?.localName=="noFill" || (selected==null && index==0)) return null
+        if(selected?.localName!="solidFill")
+            throw IOException("Non-solid or unresolved connector stroke unsupported")
+        val spec=PptxStrokeStyle.parse(direct ?: requireNotNull(inherited),scale,defaultWidth,true,inherited)
+        val color=readColor(selected) { key ->
+            if(key=="phClr") ref?.let { readColor(it,theme) } else theme(key)
+        }
+        return Resolved(spec,color)
     }
 
-    fun explicitColor(root: Node,theme: (String)->Int?): Int {
-        val props=properties(root) ?: throw IOException("Missing connector properties")
-        val line=one(props,"ln",drawing) ?: throw IOException("Inherited connector stroke unsupported")
-        val fill=one(line,"solidFill",drawing) ?: throw IOException("Non-solid or inherited connector stroke unsupported")
+    private fun readColor(fill: Node,theme: (String)->Int?): Int {
         val colors=mutableListOf<Node>()
         var child=fill.firstChild
         while(child!=null) {
