@@ -35,15 +35,15 @@ buildscript {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        // CI resolves Robolectric's framework and native runtime artifacts
-        // through Google's public Maven Central mirror first to avoid Central
-        // rate limits. Keep the mirror scoped to Robolectric; unrelated app
-        // dependencies and local developer repository selection are unchanged.
+        // CI resolves the observed rate-limited artifacts through Google's
+        // public Maven Central mirror first. Keep the filter narrow; unrelated
+        // app dependencies and local developer repository selection are unchanged.
         if (System.getenv("CI").equals("true", ignoreCase = true)) {
             maven {
                 url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
                 content {
                     includeGroup("org.robolectric")
+                    includeModule("com.knuddels", "jtokkit")
                 }
             }
         }
