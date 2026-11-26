@@ -2292,7 +2292,7 @@ class OfficeConverter {
     }
 
     /**
-     * Renders a PowerPoint PPTX file to high-resolution bitmaps with full layout, image, and typography fidelity.
+     * Renders supported PowerPoint slide content to bounded bitmaps; layout and font substitution are approximate.
      * Returns a list of Bitmaps, one per slide.
      */
     suspend fun renderPptxToBitmaps(pptxFile: File, targetWidth: Int = 1920): List<Bitmap> =
@@ -2434,7 +2434,11 @@ class OfficeConverter {
                         continue
                     }
 
-                    if (normBounds == null) continue
+                    if (normBounds == null) {
+                        if (shape is XSLFTextShape && shape.text.isNotBlank())
+                            throw OfficeTextEncodingException("Cannot locate slide text shape")
+                        continue
+                    }
                     val px = normBounds[0] * targetWidth.toFloat()
                     val py = normBounds[1] * targetHeight.toFloat()
                     val pw = normBounds[2] * targetWidth.toFloat()
@@ -2459,61 +2463,54 @@ class OfficeConverter {
                         }
                     }
 
-                    // Draw text content
+                    // Draw attributed text with Android's contextual shaping and bidi layout.
                     if (shape is XSLFTextShape) {
-                        val paragraphs = try { shape.textParagraphs } catch (t: Throwable) { emptyList() }
-                        val isTitle = try {
-                            shape.isPlaceholder && (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
-                        } catch (_: Throwable) { shape.shapeName.contains("title", ignoreCase = true) }
-
-                        val defaultTextColor = resolveColor(if (isTitle) "accent1" else "tx1", if (isTitle) android.graphics.Color.rgb(30, 58, 138) else android.graphics.Color.rgb(15, 23, 42))
-
-                        if (paragraphs.isNotEmpty()) {
-                            var curY = py
-                            for (p in paragraphs) {
-                                val pRuns = try { p.textRuns } catch (_: Throwable) { emptyList() }
-                                val pText = try { pRuns.joinToString("") { it.rawText ?: "" } } catch (_: Throwable) { "" }
-                                if (pText.isBlank()) continue
-
-                                val isEllipseGeom = (geomType == ShapeGeom.ELLIPSE)
-                                val maxFontPt = pRuns.mapNotNull {
-                                    val fs = try { it.fontSize } catch (_: Throwable) { null }
-                                    if (fs != null && fs > 0) fs.toFloat() else null
-                                }.maxOrNull() ?: (if (isTitle) 26f else (if (isEllipseGeom) 12f else 14f))
-
-                                val scaledFontSize = maxFontPt * fontScale
-                                val runColor = extractRunColor(pRuns.firstOrNull(), defaultTextColor)
-
-                                val textPaint = Paint().apply {
-                                    color = runColor
-                                    textSize = scaledFontSize
-                                    isAntiAlias = true
-                                    isFakeBoldText = pRuns.any { try { it.isBold } catch (_: Throwable) { false } } || isTitle
-                                }
-
-                                curY += textPaint.textSize + (4f * fontScale)
-
-                                val bulletLevel = try { p.indentLevel } catch (_: Throwable) { 0 }
-                                val hasBullet = bulletLevel > 0 || (paragraphs.size > 1 && !isTitle && !isEllipseGeom)
-                                val bulletPrefix = if (hasBullet) "• " else ""
-                                val indentOffset = (bulletLevel * 16f * fontScale)
-                                val fullLine = bulletPrefix + pText.trim()
-                                val maxLineWidth = (pw - 12f * fontScale - indentOffset).coerceAtLeast(50f)
-                                val lines = wrapTextForCanvas(fullLine, textPaint, maxLineWidth)
-
-                                for (line in lines) {
-                                    if (curY <= py + ph + (20f * fontScale)) {
-                                        val drawX = if (isEllipseGeom || (isTitle && pw >= targetWidth * 0.4f)) {
-                                            (px + (pw - textPaint.measureText(line)) / 2f)
-                                        } else {
-                                            (px + 6f * fontScale + indentOffset)
-                                        }
-                                        canvas.drawText(line, drawX, curY, textPaint)
-                                        curY += textPaint.textSize * 1.35f
-                                    }
-                                }
-                                curY += 2f * fontScale
+                        val paragraphs = shape.textParagraphs
+                        val isTitle = shape.isPlaceholder &&
+                            (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
+                        val defaultSize = if (isTitle) 26f else if (geomType == ShapeGeom.ELLIPSE) 12f else 14f
+                        val defaultColor = resolveColor("tx1",android.graphics.Color.BLACK)
+                        val rendered = mutableListOf<PptxTextLayout.Paragraph>()
+                        for (paragraph in paragraphs) {
+                            currentCoroutineContext().ensureActive()
+                            val runs = paragraph.textRuns.map { run ->
+                                val size = run.fontSize?.toFloat() ?: defaultSize
+                                PptxTextLayout.Run(run.rawText.orEmpty(),size*fontScale,
+                                    extractRunColor(run,defaultColor),run.fontFamily,run.isBold,run.isItalic,
+                                    run.isUnderlined,run.isStrikethrough,run.isSuperscript,run.isSubscript)
+                            }.toMutableList()
+                            if (runs.isEmpty()) runs.add(PptxTextLayout.Run("",defaultSize*fontScale,defaultColor))
+                            if (paragraph.isBullet && runs.any { it.text.isNotBlank() }) {
+                                if (paragraph.autoNumberingScheme != null)
+                                    throw OfficeTextEncodingException("Automatic slide list numbering is unsupported; export refused")
+                                val bullet = paragraph.bulletCharacter?.takeIf { it.isNotEmpty() } ?: "•"
+                                runs.add(0,runs.first().copy(text=bullet+" ",family=paragraph.bulletFont ?: runs.first().family))
                             }
+                            val largest = runs.maxOf { it.size }
+                            fun spacing(raw: Double?): Float = when {
+                                raw == null -> 0f
+                                raw >= 0 -> (raw/100*largest).toFloat()
+                                else -> (-raw*fontScale).toFloat()
+                            }
+                            val lineSpace = paragraph.lineSpacing
+                            val multiplier = if (lineSpace == null) 1f else if (lineSpace >= 0)
+                                (lineSpace/100).toFloat() else (-lineSpace*fontScale/largest).toFloat()
+                            rendered.add(PptxTextLayout.Paragraph(runs,
+                                paragraph.textAlign?.name ?: "LEFT",
+                                (paragraph.leftMargin ?: 0.0).toFloat()*fontScale,
+                                (paragraph.rightMargin ?: 0.0).toFloat()*fontScale,
+                                spacing(paragraph.spaceBefore),spacing(paragraph.spaceAfter),multiplier,
+                                (paragraph.indent ?: 0.0).toFloat()*fontScale))
+                        }
+                        if (rendered.any { it.runs.any { run -> run.text.isNotBlank() } }) {
+                            if (shape.textDirection?.name !in setOf(null,"HORIZONTAL"))
+                                throw OfficeTextEncodingException("Vertical slide text is unsupported")
+                            val l = shape.leftInset.toFloat()*fontScale
+                            val r = shape.rightInset.toFloat()*fontScale
+                            val top = shape.topInset.toFloat()*fontScale
+                            val bottom = shape.bottomInset.toFloat()*fontScale
+                            PptxTextLayout.draw(canvas,rendered,px+l,py+top,pw-l-r,ph-top-bottom,
+                                shape.verticalAlignment?.name ?: "TOP")
                         }
                     }
                 }
@@ -2538,7 +2535,7 @@ class OfficeConverter {
     }
 
     /**
-     * Converts a PPTX presentation file slide-by-slide to A4 PDF with high visual fidelity.
+     * Converts a PPTX presentation file slide-by-slide to a raster PDF with approximate supported layout.
      */
     suspend fun convertPptxToPdf(pptxFile: File, pdfFile: File, renderMode: String, context: android.content.Context) = withContext(Dispatchers.IO) {
         PDFBoxResourceLoader.init(context)
@@ -2547,6 +2544,7 @@ class OfficeConverter {
         try {
             pdf = PDDocument()
             val document = pdf
+            document.documentInformation.subject = "Raster PowerPoint rendering; supported shapes and attributed text use approximate layout and platform fonts. Text is not searchable."
             renderPptxSlides(pptxFile, targetWidth = 1920) { bitmap ->
                 // Calculate page bounds matching the slide aspect ratio
                 val aspect = if (bitmap.height > 0) bitmap.width.toFloat() / bitmap.height.toFloat() else (16f / 9f)

@@ -37,6 +37,33 @@ import java.util.zip.ZipOutputStream
 class OfficeRenderingDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun attributedPptxTextShapesScriptsAndRejectsOverflowBeforeDrawing() {
+        val bitmap = Bitmap.createBitmap(600,300,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val canvas = android.graphics.Canvas(bitmap)
+            val runs = listOf(
+                PptxTextLayout.Run("বাংলা हिन्दी ",34f,Color.RED,bold=true),
+                PptxTextLayout.Run("العربية",28f,Color.BLUE,italic=true))
+            val paragraph = PptxTextLayout.Paragraph(runs,"CENTER")
+            PptxTextLayout.draw(canvas,listOf(paragraph),20f,20f,560f,250f)
+            var red = 0; var blue = 0
+            for(y in 0 until bitmap.height) for(x in 0 until bitmap.width) {
+                val p = bitmap.getPixel(x,y)
+                if (Color.red(p)>150 && Color.green(p)<100 && Color.blue(p)<100) red++
+                if (Color.blue(p)>150 && Color.green(p)<100 && Color.red(p)<100) blue++
+            }
+            assertTrue("Missing styled Bengali/Hindi pixels",red>10)
+            assertTrue("Missing styled Arabic pixels",blue>10)
+            bitmap.eraseColor(Color.WHITE)
+            val failure = runCatching {
+                PptxTextLayout.draw(canvas,listOf(paragraph,paragraph),0f,0f,300f,5f)
+            }.exceptionOrNull()
+            assertTrue(failure is OfficeTextEncodingException)
+            assertEquals(Color.WHITE,bitmap.getPixel(25,25))
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
