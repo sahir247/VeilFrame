@@ -163,6 +163,52 @@ class OfficeRenderingDeviceTest {
         Unit
     }
 
+    @Test fun powerPointTableRendersMergedCellAndDistinctFills(): Unit = runBlocking {
+        val dir=runDirectory("pptx_table")
+        val fixture=File(dir,"table.pptx")
+        val p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        val a="http://schemas.openxmlformats.org/drawingml/2006/main"
+        val r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        fun cell(text: String,rgb: String,attrs: String="") =
+            """<a:tc $attrs><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1600"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>$text</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="$rgb"/></a:solidFill></a:tcPr></a:tc>"""
+        val table="""<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="2540000"/><a:gridCol w="2540000"/></a:tblGrid>
+            <a:tr h="1270000">${cell("Merged title","FF0000", "gridSpan=\"2\"")}${cell("","FF0000","hMerge=\"1\"")}</a:tr>
+            <a:tr h="1270000">${cell("Left","00FF00")}${cell("Right","0000FF")}</a:tr></a:tbl>"""
+        val slide="""<p:sld xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:cSld><p:spTree>
+            <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
+            <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="Fixture table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+            <p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="5080000" cy="2540000"/></p:xfrm>
+            <a:graphic><a:graphicData uri="$a/table">$table</a:graphicData></a:graphic></p:graphicFrame>
+            </p:spTree></p:cSld></p:sld>"""
+        val entries=mapOf(
+            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>""",
+            "_rels/.rels" to """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="$r/officeDocument" Target="ppt/presentation.xml"/></Relationships>""",
+            "ppt/presentation.xml" to """<p:presentation xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>""",
+            "ppt/_rels/presentation.xml.rels" to """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="$r/slide" Target="slides/slide1.xml"/></Relationships>""",
+            "ppt/slides/slide1.xml" to slide)
+        java.util.zip.ZipOutputStream(fixture.outputStream()).use { zip ->
+            for((name,value) in entries) {
+                zip.putNextEntry(java.util.zip.ZipEntry(name)); zip.write(value.toByteArray(Charsets.UTF_8)); zip.closeEntry()
+            }
+        }
+        val images=OfficeConverter().renderPptxToBitmaps(fixture,720)
+        try {
+            assertEquals(1,images.size)
+            val bitmap=images.single()
+            assertEquals(Color.RED,bitmap.getPixel(115,115))
+            assertEquals(Color.RED,bitmap.getPixel(495,115))
+            assertEquals(Color.GREEN,bitmap.getPixel(115,215))
+            assertEquals(Color.BLUE,bitmap.getPixel(495,215))
+            var dark=0
+            for(y in 102 until 195) for(x in 102 until 495) {
+                val c=bitmap.getPixel(x,y)
+                if(Color.red(c)<35 && Color.green(c)<35 && Color.blue(c)<35) dark++
+            }
+            assertTrue("Merged cell must contain visible text",dark>10)
+        } finally { images.forEach { it.recycle() } }
+        Unit
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
