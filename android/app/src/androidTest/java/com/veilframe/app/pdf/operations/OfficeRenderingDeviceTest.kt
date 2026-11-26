@@ -188,6 +188,11 @@ class OfficeRenderingDeviceTest {
             <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="Fixture table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
             <p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="5080000" cy="2540000"/></p:xfrm>
             <a:graphic><a:graphicData uri="$a/table">$table</a:graphicData></a:graphic></p:graphicFrame>
+            <p:cxnSp><p:nvCxnSpPr><p:cNvPr id="3" name="Horizontal double arrow"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+            <p:spPr><a:xfrm><a:off x="1270000" y="4445000"/><a:ext cx="6350000" cy="0"/></a:xfrm>
+            <a:prstGeom prst="line"><a:avLst/></a:prstGeom>
+            <a:ln w="152400" cmpd="dbl"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:tailEnd type="triangle" w="med" len="med"/></a:ln>
+            </p:spPr></p:cxnSp>
             </p:spTree></p:cSld></p:sld>"""
         val emptyTree="""<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree>"""
         val clrMap="""<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>"""
@@ -233,8 +238,29 @@ class OfficeRenderingDeviceTest {
                 if(Color.red(c)<35 && Color.green(c)<35 && Color.blue(c)<35) dark++
             }
             assertTrue("Merged cell must contain visible text",dark>10)
+            // A zero-height real OPC connector must reach the native renderer.
+            assertEquals("Upper compound band",Color.RED,bitmap.getPixel(350,346))
+            assertEquals("Transparent center gap",Color.WHITE,bitmap.getPixel(350,350))
+            assertEquals("Lower compound band",Color.RED,bitmap.getPixel(350,354))
+            assertEquals("Filled arrowhead",Color.RED,bitmap.getPixel(580,350))
         } finally { images.forEach { it.recycle() } }
         Unit
+    }
+
+    @Test fun connectorInkPreservesUnderlyingPixelsAndSingleAlpha() {
+        val bitmap=Bitmap.createBitmap(240,100,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.GREEN)
+            val spec=PptxStrokeStyle.Spec(18f,compound="dbl",
+                tail=PptxStrokeStyle.End("triangle","med","med"))
+            val color=Color.argb(128,255,0,0)
+            PptxConnectorRenderer.draw(android.graphics.Canvas(bitmap),20f,50f,220f,50f,spec,color)
+            assertEquals(Color.GREEN,bitmap.getPixel(100,50))
+            val band=bitmap.getPixel(100,44)
+            assertTrue(Color.red(band) in 126..129 && Color.green(band) in 126..129)
+            val head=bitmap.getPixel(190,50)
+            assertTrue(Color.red(head) in 126..129 && Color.green(head) in 126..129)
+        } finally { bitmap.recycle() }
     }
 
     @Test fun customPathUsesCurvesAndDoesNotPaintBoundingRectangle() {
