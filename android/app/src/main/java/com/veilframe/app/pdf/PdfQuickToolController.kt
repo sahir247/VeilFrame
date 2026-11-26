@@ -11,16 +11,12 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.content.res.ColorStateList
 import com.veilframe.app.qr.ui.QrColorPickerDialog
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.veilframe.app.pdf.ui.SignaturePadView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -168,6 +164,7 @@ class PdfQuickToolController(
     private val metadataManager by lazy { PdfMetadataManager() }
     private val thumbnailLoader by lazy { PdfThumbnailLoader(activity) }
     private val pagePreviews by lazy { PdfQuickPagePreviews(activity,scope,thumbnailLoader) }
+    private val signatureDialogs by lazy { PdfQuickSignatureDialogs(activity,scope,pdfSigner) }
 
     private var splitThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var rotateThumbnailAdapter: PdfPageThumbnailAdapter? = null
@@ -189,6 +186,7 @@ class PdfQuickToolController(
     override fun discardAndReleaseAllResources() {
         formEditor.dismiss()
         pagePreviews.invalidate()
+        signatureDialogs.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         activeJob?.cancel()
@@ -845,6 +843,7 @@ class PdfQuickToolController(
         if (uris.isEmpty()) return
         formEditor.dismiss()
         pagePreviews.invalidate()
+        signatureDialogs.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         val generation = selectionGeneration
@@ -1294,7 +1293,9 @@ class PdfQuickToolController(
 
     private fun setupSignCanvasOverlay() {
         binding.btnSignCanvasClose.setOnClickListener {
+            signatureDialogs.invalidate()
             binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+            binding.pdfSignCanvasView.reset()
         }
 
         binding.btnSignCanvasPen.setOnClickListener {
@@ -1327,92 +1328,12 @@ class PdfQuickToolController(
 
     private fun showDrawSignatureDialog() {
         if (selectedUris.isEmpty()) {
-            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity,"Please select a PDF document first",Toast.LENGTH_SHORT).show()
             return
         }
-        val padContainer = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 16)
-        }
-
-        val currentThickness = binding.sliderSignStrokeThickness.value
-        val pad = SignaturePadView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                (200 * activity.resources.displayMetrics.density).toInt()
-            )
-            setBackgroundColor(Color.parseColor("#18181C"))
-            setInkColor(selectedSignColor)
-            setStrokeThicknessDp(currentThickness)
-        }
-
-        val thicknessHeader = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(0, (10 * activity.resources.displayMetrics.density).toInt(), 0, 0)
-        }
-        val tvThicknessTitle = TextView(activity).apply {
-            text = "STROKE THICKNESS"
-            setTextColor(activity.getColor(R.color.vf_secondary))
-            textSize = 11f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            letterSpacing = 0.08f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val tvThicknessVal = TextView(activity).apply {
-            text = "${currentThickness} dp"
-            setTextColor(activity.getColor(R.color.vf_text_primary))
-            textSize = 12f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        }
-        thicknessHeader.addView(tvThicknessTitle)
-        thicknessHeader.addView(tvThicknessVal)
-
-        val dialogThicknessSlider = com.google.android.material.slider.Slider(activity).apply {
-            valueFrom = 1.0f
-            valueTo = 12.0f
-            value = currentThickness
-            stepSize = 0.5f
-            addOnChangeListener { _, value, _ ->
-                tvThicknessVal.text = "${value} dp"
-                pad.setStrokeThicknessDp(value)
-                binding.sliderSignStrokeThickness.value = value
-            }
-        }
-
-        val btnClear = com.google.android.material.button.MaterialButton(
-            activity,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
-            text = "Clear Ink"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = (4 * activity.resources.displayMetrics.density).toInt()
-            }
-            setOnClickListener { pad.clear() }
-        }
-
-        padContainer.addView(pad)
-        padContainer.addView(thicknessHeader)
-        padContainer.addView(dialogThicknessSlider)
-        padContainer.addView(btnClear)
-
-        MaterialAlertDialogBuilder(activity)
-            .setTitle("Draw New Signature")
-            .setView(padContainer)
-            .setPositiveButton("Add to PDF") { _, _ ->
-                val bmp = pad.getSignatureBitmap(targetColor = selectedSignColor)
-                if (bmp != null) {
-                    binding.pdfSignCanvasView.addSignature(bmp)
-                } else {
-                    Toast.makeText(activity, "Signature is empty", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        signatureDialogs.draw(selectedSignColor,binding.sliderSignStrokeThickness.value,
+            { binding.sliderSignStrokeThickness.value=it },
+            { binding.pdfSignCanvasView.addSignature(it) })
     }
 
     private fun addNewOrDuplicateSignature() {
@@ -1432,261 +1353,13 @@ class PdfQuickToolController(
         }
     }
 
-    private fun showSaveSignatureNameDialog(bitmap: Bitmap) {
-        val existingCount = pdfSigner.getSavedSignatures().size
-        val editText = com.google.android.material.textfield.TextInputEditText(activity).apply {
-            setText("Signature ${existingCount + 1}")
-            selectAll()
-        }
-        val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
-            hint = "Signature Name"
-            setPadding(48, 16, 48, 16)
-            addView(editText)
-        }
+    private fun showSaveSignatureNameDialog(bitmap: Bitmap) = signatureDialogs.save(bitmap)
 
-        MaterialAlertDialogBuilder(activity)
-            .setTitle("Save Signature to Library")
-            .setView(til)
-            .setPositiveButton("Save") { _, _ ->
-                val name = editText.text?.toString()?.trim().orEmpty()
-                val generation = selectionGeneration
-                launchTransient {
-                    try {
-                        pdfSigner.saveSignatureBitmap(bitmap, name)
-                        withContext(Dispatchers.Main) {
-                            if (generation == selectionGeneration)
-                                Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        throw cancelled
-                    } catch (failure: Exception) {
-                        withContext(Dispatchers.Main) {
-                            if (generation == selectionGeneration)
-                                Toast.makeText(activity, failure.message ?: "Signature save failed", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun showReuseSavedSignaturesMenu() = signatureDialogs.reuse {
+        binding.pdfSignCanvasView.addSignature(it)
     }
 
-    private fun showReuseSavedSignaturesMenu() {
-        val signatures = pdfSigner.getSavedSignatures()
-        if (signatures.isEmpty()) {
-            Toast.makeText(activity, "No saved signatures. Draw and save one first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val container = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-        }
-        val scroll = ScrollView(activity).apply {
-            addView(container)
-        }
-
-        val dialog = MaterialAlertDialogBuilder(activity)
-            .setTitle("Reuse Saved Signature")
-            .setView(scroll)
-            .setNegativeButton("Cancel", null)
-            .create()
-
-        for (sig in signatures) {
-            val itemRow = LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(16, 16, 16, 16)
-                isClickable = true
-                isFocusable = true
-                setBackgroundResource(android.R.drawable.list_selector_background)
-            }
-
-            val thumb = ImageView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    (72 * activity.resources.displayMetrics.density).toInt(),
-                    (40 * activity.resources.displayMetrics.density).toInt()
-                ).apply {
-                    marginEnd = (16 * activity.resources.displayMetrics.density).toInt()
-                }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(Color.parseColor("#26262B"))
-                val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath, thumbnail = true)
-                if (bmp != null) setImageBitmap(bmp)
-            }
-
-            val textLayout = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val title = TextView(activity).apply {
-                text = sig.name
-                textSize = 14f
-                setTextColor(Color.WHITE)
-                setTypeface(null, android.graphics.Typeface.BOLD)
-            }
-            val date = TextView(activity).apply {
-                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-                text = sdf.format(java.util.Date(sig.createdAt))
-                textSize = 11f
-                setTextColor(Color.parseColor("#9E9E9E"))
-            }
-
-            textLayout.addView(title)
-            textLayout.addView(date)
-            itemRow.addView(thumb)
-            itemRow.addView(textLayout)
-
-            itemRow.setOnClickListener {
-                val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath)
-                if (bmp != null) {
-                    binding.pdfSignCanvasView.addSignature(bmp)
-                    dialog.dismiss()
-                } else {
-                    Toast.makeText(activity, "Cannot read saved signature", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            container.addView(itemRow)
-        }
-
-        dialog.show()
-    }
-
-    private fun showManageSignaturesDialog() {
-        fun buildDialog() {
-            val signatures = pdfSigner.getSavedSignatures()
-            val container = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(16, 16, 16, 16)
-            }
-
-            val scroll = ScrollView(activity).apply {
-                addView(container)
-            }
-
-            val dialog = MaterialAlertDialogBuilder(activity)
-                .setTitle("Manage Saved Signatures (${signatures.size})")
-                .setView(scroll)
-                .setPositiveButton("Done", null)
-                .create()
-
-            if (signatures.isEmpty()) {
-                val emptyTv = TextView(activity).apply {
-                    text = "No saved signatures yet. Sign a PDF and tap the save button beside any signature."
-                    setTextColor(Color.parseColor("#9E9E9E"))
-                    textSize = 13f
-                    setPadding(32, 32, 32, 32)
-                    gravity = android.view.Gravity.CENTER
-                }
-                container.addView(emptyTv)
-            } else {
-                for (sig in signatures) {
-                    val row = LinearLayout(activity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                        setPadding(12, 12, 12, 12)
-                    }
-
-                    val thumb = ImageView(activity).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            (64 * activity.resources.displayMetrics.density).toInt(),
-                            (36 * activity.resources.displayMetrics.density).toInt()
-                        ).apply {
-                            marginEnd = (12 * activity.resources.displayMetrics.density).toInt()
-                        }
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(Color.parseColor("#26262B"))
-                        val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath, thumbnail = true)
-                        if (bmp != null) setImageBitmap(bmp)
-                    }
-
-                    val textLayout = LinearLayout(activity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    }
-
-                    val title = TextView(activity).apply {
-                        text = sig.name
-                        textSize = 13f
-                        setTextColor(Color.WHITE)
-                        setTypeface(null, android.graphics.Typeface.BOLD)
-                    }
-                    val date = TextView(activity).apply {
-                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                        text = sdf.format(java.util.Date(sig.createdAt))
-                        textSize = 10f
-                        setTextColor(Color.parseColor("#9E9E9E"))
-                    }
-
-                    textLayout.addView(title)
-                    textLayout.addView(date)
-
-                    val btnRename = com.google.android.material.button.MaterialButton(
-                        activity,
-                        null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle
-                    ).apply {
-                        text = "Rename"
-                        textSize = 11f
-                        setOnClickListener {
-                            val editName = com.google.android.material.textfield.TextInputEditText(activity).apply {
-                                setText(sig.name)
-                                selectAll()
-                            }
-                            val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
-                                hint = "Rename Signature"
-                                setPadding(48, 16, 48, 16)
-                                addView(editName)
-                            }
-                            MaterialAlertDialogBuilder(activity)
-                                .setTitle("Rename Signature")
-                                .setView(til)
-                                .setPositiveButton("Save") { _, _ ->
-                                    val newName = editName.text?.toString()?.trim().orEmpty()
-                                    if (newName.isNotBlank()) {
-                                        if (pdfSigner.renameSignature(sig.id, newName)) {
-                                            dialog.dismiss()
-                                            buildDialog()
-                                        } else Toast.makeText(activity, "Signature rename failed", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
-                        }
-                    }
-
-                    val btnDelete = com.google.android.material.button.MaterialButton(
-                        activity,
-                        null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle
-                    ).apply {
-                        text = "Delete"
-                        textSize = 11f
-                        setTextColor(Color.parseColor("#EF4444"))
-                        setStrokeColorResource(android.R.color.holo_red_dark)
-                        setOnClickListener {
-                            if (pdfSigner.deleteSignatureById(sig.id)) {
-                                dialog.dismiss()
-                                buildDialog()
-                            } else Toast.makeText(activity, "Signature deletion failed", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-
-                    row.addView(thumb)
-                    row.addView(textLayout)
-                    row.addView(btnRename)
-                    row.addView(btnDelete)
-                    container.addView(row)
-                }
-            }
-
-            dialog.show()
-        }
-
-        buildDialog()
-    }
+    private fun showManageSignaturesDialog() = signatureDialogs.manage()
 
     private fun executeCanvasSignExport() {
         val uri = selectedUris.firstOrNull() ?: return
