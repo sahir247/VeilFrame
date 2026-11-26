@@ -2367,6 +2367,18 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bf\s*$""").containsMatchIn(stream))
         }
         PDDocument.load(withoutMarker).use { doc -> assertEquals(2,doc.numberOfPages) }
+        val styled=source(chart("circle",8).replace("<c:marker>","""<c:spPr><a:ln w="25400"><a:solidFill><a:srgbClr val="112233"/></a:solidFill><a:custDash><a:ds d="200000" sp="100000"/></a:custDash></a:ln></c:spPr><c:marker>""")
+            .replace("</c:marker>","""<c:spPr><a:noFill/><a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr></c:marker>"""))
+        val ink=OpenXmlDocumentParser.parseXlsx(styled).sheets.single().charts.single().series.single()
+        assertEquals(XlsxCachedChart.Ink(null),ink.markerFill)
+        assertEquals(XlsxCachedChart.Ink(0xff0000),ink.markerStroke?.ink)
+        val styledPdf=File(tempFolder.root,"styled-markers.pdf")
+        OfficeConverter().convertXlsxToPdf(styled,styledPdf,context)
+        PDDocument.load(styledPdf).use { doc ->
+            val stream=doc.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+            assertTrue(Regex("""\[4(?:\.0+)?\s+2(?:\.0+)?\]\s+0(?:\.0+)?\s+d""").containsMatchIn(stream))
+            assertTrue(Regex("""(?m)^1(?:\.0+)? 0(?:\.0+)? 0(?:\.0+)? RG\s*$""").containsMatchIn(stream))
+        }
         // Standard DrawingML vector symbols must parse and survive PDF conversion.
         for (symbol in listOf("dash", "dot", "plus", "x", "star")) {
             val input = source(chart(symbol, 7))
