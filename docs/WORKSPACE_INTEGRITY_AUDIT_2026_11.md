@@ -1561,3 +1561,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A21/A29 quick-sign dialog lifecycle and bounded library UI
 
 - Extract drawing, save-name, reuse and manage dialogs into PdfQuickSignatureDialogs. One active dialog/job generation; dismiss/cancel on source change, mode retirement and canvas close. Page saved signatures in 16-item windows, decode thumbnails and load/rename/delete in IO, guard UI adoption, keep displayed bitmaps GC-owned. Confirm deletion and prevent duplicate in-flight mutations. Name validation and failure feedback preserved. Close canvas retires native preview resources (closing previously hid a canvas that was reset on next open anyway). Pure pagination test covers empty, final page, deletion and full index. Physical dialog behavior and save/cancel races still require device acceptance; completed explicitly authorized persistence may outlive a cancelled UI result. CI pending.
+
+
+### Signature canvas placement admission (2026-11-26)
+- Queue every admitted signature during document loading instead of replacing an earlier pending signature. Preserve explicit page indices; invalid page requests fail visibly rather than redirecting to page one. Reset and load failure clear the queue.
+- Preserve bitmap aspect ratio on small and large pages. Bound placement count (256), individual bitmap pixels (4M), unique retained bitmap pixels (16M), and preview cache (8–32 MiB); copies are counted by bitmap identity, not as new allocations. Regression tests cover placement and pixel limits and extreme aspect ratios. Actual interactive device verification remains pending.
