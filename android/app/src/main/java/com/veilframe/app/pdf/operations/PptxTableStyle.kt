@@ -86,10 +86,10 @@ internal object PptxTableStyle {
     internal fun priority(name: String): Int = listOf("wholeTbl","band1H","band2H","band1V","band2V",
         "lastCol","firstCol","lastRow","seCell","swCell","firstRow","neCell","nwCell").indexOf(name)+1
 
-    data class Region(val name: String,val cell: Node?)
+    data class Region(val name: String,val cell: Node?,val text: Node?)
     fun layers(style: Node?,row: Int,col: Int,rows: Int,cols: Int,f: Flags): List<Region> =
         regions(row,col,rows,cols,f).mapNotNull { name ->
-            one(style,name)?.let { Region(name,one(it,"tcStyle")) }
+            one(style,name)?.let { Region(name,one(it,"tcStyle"),one(it,"tcTxStyle")) }
         }
 
     private val fillNames=setOf("solidFill","noFill","gradFill","pattFill","blipFill","grpFill")
@@ -98,7 +98,7 @@ internal object PptxTableStyle {
         require(fills.size<=1) { "Ambiguous table style fill" }
         return fills.singleOrNull()
     }
-    private fun colorNode(n: Node,theme: (String)->Int?,placeholder: Int?=null): Int {
+    internal fun colorNode(n: Node,theme: (String)->Int?,placeholder: Int?=null): Int {
         val raw=attr(n,"val") ?: throw IOException("Missing table style color")
         val base=when(n.localName) {
             "srgbClr" -> if(raw.matches(Regex("[0-9A-Fa-f]{6}"))) raw.toInt(16) or 0xff000000.toInt()
@@ -137,6 +137,18 @@ internal object PptxTableStyle {
     private fun reference(ref: Node,lookup: (Int)->Node?,theme: (String)->Int?): Fill {
         val index=attr(ref,"idx")?.toIntOrNull() ?: throw IOException("Invalid table theme style index")
         require(index in 0..9999)
+        if(index==0 || (ref.localName=="fillRef" && index==1000)) {
+            // Explicit no style, not absence. Use an isolated DOM element so
+            // the inherited cascade cannot mistake it for an unspecified fill.
+            val doc=javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument()
+            val noFill=doc.createElementNS(ns.first(),"a:noFill")
+            if(ref.localName=="lnRef") {
+                val line=doc.createElementNS(ns.first(),"a:ln")
+                line.appendChild(noFill)
+                return Fill(line)
+            }
+            return Fill(noFill)
+        }
         val node=lookup(index) ?: throw IOException("Unresolved table theme style index: "+index)
         val ph=children(ref).singleOrNull()?.let { colorNode(it,theme) }
         return Fill(node,ph)
@@ -156,6 +168,39 @@ internal object PptxTableStyle {
         require(line==null || ref==null) { "Ambiguous inherited table border" }
         if(line!=null) return Border(line)
         return ref?.let { reference(it,lookup,theme) }?.let { Border(it.node,it.placeholder) }
+    }
+
+    data class TextStyle(val color: Int?=null,val bold: Boolean?=null,val italic: Boolean?=null,
+        val fontRef: String?=null)
+    private fun toggle(raw: String?): Boolean? = when(raw) {
+        null,"def" -> null
+        "on","1","true" -> true
+        "off","0","false" -> false
+        else -> throw IOException("Invalid table text toggle")
+    }
+    fun textStyle(layers: List<Region>,theme: (String)->Int?): TextStyle {
+        var result=TextStyle()
+        for(layer in layers) {
+            val n=layer.text ?: continue
+            val fontRef=one(n,"fontRef")
+            val ph=fontRef?.let { children(it).singleOrNull() }?.let { colorNode(it,theme) }
+            val color=children(n).filter { it.localName in setOf("srgbClr","schemeClr","scrgbClr","prstClr","sysClr","hslClr") }
+            require(color.size<=1) { "Ambiguous table text color" }
+            val font=attr(fontRef,"idx")
+            require(font in setOf(null,"major","minor","none")) { "Invalid table font reference" }
+            result=TextStyle(color.singleOrNull()?.let { colorNode(it,theme,ph) } ?: ph ?: result.color,
+                toggle(attr(n,"b")) ?: result.bold,toggle(attr(n,"i")) ?: result.italic,font ?: result.fontRef)
+        }
+        return result
+    }
+    fun runStyle(style: TextStyle,paragraph: Node?,run: Node?,theme: (String)->Int?): TextStyle {
+        var result=style
+        for(n in listOfNotNull(one(one(paragraph,"pPr"),"defRPr"),one(run,"rPr"))) {
+            val fill=directFill(n)
+            result=result.copy(color=if(fill!=null) solid(fill,theme) ?: 0 else result.color,
+                bold=toggle(attr(n,"b")) ?: result.bold,italic=toggle(attr(n,"i")) ?: result.italic)
+        }
+        return result
     }
 
     /** Side roles depend on the region's perimeter, not the individual cell.
