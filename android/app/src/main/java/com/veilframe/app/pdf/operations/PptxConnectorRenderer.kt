@@ -44,6 +44,43 @@ internal object PptxConnectorRenderer {
         return one(line,"noFill",drawing)!=null
     }
 
+    fun explicitColor(root: Node,theme: (String)->Int?): Int {
+        val props=properties(root) ?: throw IOException("Missing connector properties")
+        val line=one(props,"ln",drawing) ?: throw IOException("Inherited connector stroke unsupported")
+        val fill=one(line,"solidFill",drawing) ?: throw IOException("Non-solid or inherited connector stroke unsupported")
+        val colors=mutableListOf<Node>()
+        var child=fill.firstChild
+        while(child!=null) {
+            if(child.nodeType==Node.ELEMENT_NODE) colors.add(child)
+            child=child.nextSibling
+        }
+        val c=colors.singleOrNull() ?: throw IOException("Invalid connector stroke color")
+        val value=c.attributes?.getNamedItem("val")?.nodeValue ?: throw IOException("Missing connector color")
+        val rgb=when {
+            c.namespaceURI !in drawing -> throw IOException("Invalid connector color namespace")
+            c.localName=="srgbClr" && value.matches(Regex("[0-9A-Fa-f]{6}")) ->
+                value.toInt(16) or 0xff000000.toInt()
+            c.localName=="schemeClr" -> theme(value) ?: throw IOException("Unresolved connector theme color")
+            else -> throw IOException("Unsupported connector stroke color")
+        }
+        var effect=c.firstChild
+        var alpha: Int?=null
+        while(effect!=null) {
+            if(effect.nodeType==Node.ELEMENT_NODE) {
+                if(effect.namespaceURI !in drawing || effect.localName!="alpha" || alpha!=null)
+                    throw IOException("Unsupported connector color transform")
+                val raw=effect.attributes?.getNamedItem("val")?.nodeValue
+                    ?: throw IOException("Missing connector alpha")
+                val fraction=if(raw.endsWith("%")) raw.dropLast(1).toDoubleOrNull()?.div(100)
+                    else raw.toLongOrNull()?.toDouble()?.div(100000)
+                require(fraction!=null && fraction.isFinite() && fraction in 0.0..1.0) { "Invalid connector alpha" }
+                alpha=kotlin.math.round(fraction*255).toInt()
+            }
+            effect=effect.nextSibling
+        }
+        return (rgb and 0xffffff) or ((alpha ?: (rgb ushr 24)) shl 24)
+    }
+
     data class Band(val center: Float,val fraction: Float)
     // Fractions of the total stroke envelope; asymmetry is directed
     // consistently along the source path. Ratios are approximations.
