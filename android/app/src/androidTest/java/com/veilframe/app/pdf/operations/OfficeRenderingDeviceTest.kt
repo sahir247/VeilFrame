@@ -304,6 +304,24 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun secondaryAxisSlideChartPaintsIndependentScale() {
+        val bitmap=Bitmap.createBitmap(800,480,Bitmap.Config.ARGB_8888)
+        try {
+            val chart=XlsxCachedChart("Dual","combo",listOf("A","B"),listOf(
+                XlsxCachedChart.Series("Volume",listOf(500.0,1000.0),chartKind="column",rgb=0xff0000,valueAxisId="1"),
+                XlsxCachedChart.Series("Rate",listOf(0.5,1.0),chartKind="line",rgb=0x0000ff,markerSymbol="square",valueAxisId="2")),
+                valueAxes=listOf(XlsxCachedChart.ValueAxis("1","l",0.0,2000.0),
+                    XlsxCachedChart.ValueAxis("2","r",0.0,1.0,numberFormat="0%")))
+            PptxChartRenderer.draw(android.graphics.Canvas(bitmap),chart,android.graphics.RectF(0f,0f,800f,480f),1f) {}
+            // The secondary 100% endpoint must be near the top, not flattened
+            // against zero by the primary 2000-unit value scale.
+            var blue=0
+            for(y in 40 until 200) for(x in 400 until 680)
+                if(bitmap.getPixel(x,y)==Color.BLUE) blue++
+            assertTrue("Secondary line must reach its independently scaled upper plot",blue>10)
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
