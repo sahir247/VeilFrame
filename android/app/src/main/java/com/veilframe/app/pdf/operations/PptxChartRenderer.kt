@@ -24,6 +24,9 @@ internal object PptxChartRenderer {
         require(box.width() in 100f..8192f && box.height() in 70f..8192f &&
             scale.isFinite() && scale>0f && chart.series.size in 1..6 &&
             chart.categories.size in 1..240) { "Slide chart exceeds supported frame geometry" }
+        val dual=SharedChartValueAxes.build(chart)
+        val primary=dual.values.singleOrNull { it.axis.position=="l" }
+        val secondary=dual.values.singleOrNull { it.axis.position=="r" }
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
         val w=box.width(); val h=box.height()
         val font=(9f*scale).coerceIn(7f,minOf(w,h)/8)
@@ -113,12 +116,12 @@ internal object PptxChartRenderer {
             for((i,s) in chart.series.withIndex()) {
                 val x=box.left+pad+legendWidth*i
                 rect(x,legendTop+pad,x+font,legendTop+pad+font,color(s,i))
-                label(s.name,x+font+pad,legendTop,legendWidth-font-2*pad)
+                label(s.name+(dual[s.valueAxisId]?.let { if(it.axis.position=="r") " (R)" else " (L)" } ?: ""),x+font+pad,legendTop,legendWidth-font-2*pad)
             }
             val horizontal=chart.kind=="bar"
             val left=box.left+maxOf(font*5f,w*0.16f)
             val top=legendTop+lineH+pad
-            val right=box.right-pad-font
+            val right=box.right-if(secondary!=null) maxOf(font*5f,w*0.16f) else pad+font
             val bottom=box.bottom-pad-lineH
             val pw=right-left; val ph=bottom-top
             require(pw>12f && ph>12f)
@@ -142,7 +145,7 @@ internal object PptxChartRenderer {
                 for(i in 0..4) {
                     val ratio=i/4f
                     val value=low+span*ratio
-                    val v=if(percent) "${(value*100).toInt()}%" else {
+                    val v=primary?.tick(ratio) ?: if(percent) "${(value*100).toInt()}%" else {
                         val absolute=value*maxAbs
                         if(absolute.isFinite()) format(absolute) else format(value)+" x "+format(maxAbs)
                     }
@@ -154,6 +157,7 @@ internal object PptxChartRenderer {
                         val y=bottom-ratio*ph
                         line(left,y,right,y,0xffd8dde2.toInt())
                         label(v,box.left+pad,y-lineH/2,left-box.left-2*pad,lineH,"RIGHT")
+                        secondary?.let { label(it.tick(ratio),right+pad,y-lineH/2,box.right-right-2*pad,lineH,"LEFT") }
                     }
                 }
             } else {
@@ -177,7 +181,12 @@ internal object PptxChartRenderer {
             val barCount=if(chart.kind=="combo") chart.series.count { it.chartKind=="column" } else chart.series.size
             val thickness=slot*0.78f/(if(stacked) 1 else barCount.coerceAtLeast(1))
             var barIndex=0
+            val plotSave=canvas.save()
+            try {
+            if(dual.isNotEmpty()) canvas.clipRect(left,top,right,bottom)
             for((i,s) in chart.series.withIndex()) {
+                val axis=dual[s.valueAxisId]
+                fun seriesFraction(v: Double)=axis?.fraction(v) ?: f(v/maxAbs)
                 val rgb=color(s,i)
                 val stroke=((s.strokeWidthPt ?: 1.2f)*scale).coerceIn(0.5f,20f)
                 var previous: Pair<Float,Float>?=null
@@ -197,7 +206,7 @@ internal object PptxChartRenderer {
                     val v=if(isLine) chart.blankDisplay.lineValue(cached) else cached
                     if(v==null) { if(!isLine || chart.blankDisplay.breakOnMissing()) previous=null; continue }
                     if(isLine) {
-                        val px=left+slot*(j+0.5f); val py=bottom-f(v/maxAbs)*ph
+                        val px=left+slot*(j+0.5f); val py=bottom-seriesFraction(v)*ph
                         previous?.let { line(it.first,it.second,px,py,rgb,stroke) }
                         marker(px,py,s,rgb)
                         previous=px to py
@@ -205,11 +214,16 @@ internal object PptxChartRenderer {
                         val segment=if(stacked) stacks[i][j] ?: continue else XlsxStackedChart.Segment(0.0,v/maxAbs)
                         val offset=slot*j+slot*0.11f+if(stacked) 0f else barIndex*thickness
                         if(horizontal) rect(left+f(segment.start)*pw,top+offset,left+f(segment.end)*pw,top+offset+thickness,rgb)
-                        else rect(left+offset,bottom-f(segment.start)*ph,left+offset+thickness,bottom-f(segment.end)*ph,rgb)
+                        else {
+                            val start=axis?.zero() ?: f(segment.start)
+                            val end=axis?.fraction(v) ?: f(segment.end)
+                            rect(left+offset,bottom-start*ph,left+offset+thickness,bottom-end*ph,rgb)
+                        }
                     }
                 }
                 if(!isLine && !scatter) barIndex++
             }
+            } finally { canvas.restoreToCount(plotSave) }
         } finally { canvas.restoreToCount(saved) }
     }
 }
