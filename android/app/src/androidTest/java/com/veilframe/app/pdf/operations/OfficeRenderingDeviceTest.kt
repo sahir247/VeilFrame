@@ -189,12 +189,31 @@ class OfficeRenderingDeviceTest {
             <p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="5080000" cy="2540000"/></p:xfrm>
             <a:graphic><a:graphicData uri="$a/table">$table</a:graphicData></a:graphic></p:graphicFrame>
             </p:spTree></p:cSld></p:sld>"""
+        val emptyTree="""<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree>"""
+        val clrMap="""<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>"""
+        val master="""<p:sldMaster xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:cSld>$emptyTree</p:cSld>$clrMap<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>"""
+        val layout="""<p:sldLayout xmlns:p="$p" xmlns:a="$a" xmlns:r="$r" type="blank" preserve="1"><p:cSld name="Blank">$emptyTree</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"""
+        val colors=linkedMapOf("dk1" to "000000","lt1" to "FFFFFF","dk2" to "203040","lt2" to "EEEEEE","accent1" to "4472C4","accent2" to "ED7D31","accent3" to "A5A5A5","accent4" to "FFC000","accent5" to "5B9BD5","accent6" to "70AD47","hlink" to "0563C1","folHlink" to "954F72")
+        val scheme=colors.entries.joinToString("") { (key,value) -> """<a:$key><a:srgbClr val="$value"/></a:$key>""" }
+        val font="""<a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/>"""
+        val solid="""<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>"""
+        val line="""<a:ln w="12700">$solid<a:prstDash val="solid"/></a:ln>"""
+        val theme="""<a:theme xmlns:a="$a" name="Fixture"><a:themeElements><a:clrScheme name="Fixture">$scheme</a:clrScheme><a:fontScheme name="Fixture"><a:majorFont>$font</a:majorFont><a:minorFont>$font</a:minorFont></a:fontScheme><a:fmtScheme name="Fixture"><a:fillStyleLst>${solid.repeat(3)}</a:fillStyleLst><a:lnStyleLst>${line.repeat(3)}</a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst>${solid.repeat(3)}</a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>"""
+        val relNs="http://schemas.openxmlformats.org/package/2006/relationships"
+        fun rels(vararg targets: Pair<String,String>) = """<Relationships xmlns="$relNs">"""+
+            targets.mapIndexed { index,(kind,target) -> """<Relationship Id="rId${index+1}" Type="$r/$kind" Target="$target"/>""" }.joinToString("")+"</Relationships>"
         val entries=mapOf(
-            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>""",
-            "_rels/.rels" to """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="$r/officeDocument" Target="ppt/presentation.xml"/></Relationships>""",
-            "ppt/presentation.xml" to """<p:presentation xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>""",
-            "ppt/_rels/presentation.xml.rels" to """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="$r/slide" Target="slides/slide1.xml"/></Relationships>""",
-            "ppt/slides/slide1.xml" to slide)
+            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>""",
+            "_rels/.rels" to rels("officeDocument" to "ppt/presentation.xml"),
+            "ppt/presentation.xml" to """<p:presentation xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId2"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>""",
+            "ppt/_rels/presentation.xml.rels" to rels("slide" to "slides/slide1.xml","slideMaster" to "slideMasters/slideMaster1.xml"),
+            "ppt/slides/slide1.xml" to slide,
+            "ppt/slides/_rels/slide1.xml.rels" to rels("slideLayout" to "../slideLayouts/slideLayout1.xml"),
+            "ppt/slideLayouts/slideLayout1.xml" to layout,
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels" to rels("slideMaster" to "../slideMasters/slideMaster1.xml"),
+            "ppt/slideMasters/slideMaster1.xml" to master,
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels" to rels("slideLayout" to "../slideLayouts/slideLayout1.xml","theme" to "../theme/theme1.xml"),
+            "ppt/theme/theme1.xml" to theme)
         java.util.zip.ZipOutputStream(fixture.outputStream()).use { zip ->
             for((name,value) in entries) {
                 zip.putNextEntry(java.util.zip.ZipEntry(name)); zip.write(value.toByteArray(Charsets.UTF_8)); zip.closeEntry()
