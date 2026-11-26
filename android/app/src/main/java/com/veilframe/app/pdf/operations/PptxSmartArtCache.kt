@@ -107,6 +107,54 @@ internal object PptxSmartArtCache {
         if(group.shapes.isEmpty()) throw IOException("Empty SmartArt saved layout")
         return Loaded(group,drawing,transform.matrix*normalized.mapping)
     }
+    data class PaintStyle(val fill: Int?,val line: Int?,val stroke: PptxStrokeStyle.Spec?,
+        val text: PptxTableStyle.TextStyle)
+    fun paintStyle(shape: Node,sheet: XSLFSheet,scale: Float,theme: (String)->Int?,picture: Boolean): PaintStyle {
+        val element=root(shape)
+        val props=required(element,p,"spPr")
+        val style=one(element,p,"style")
+        val format=sheet.theme?.xmlObject?.themeElements?.fmtScheme
+        fun fillLookup(index: Int): Node? {
+            val list=if(index>1000) format?.bgFillStyleLst?.domNode else format?.fillStyleLst?.domNode
+            return list?.let { PptxTableStyle.children(it).getOrNull(if(index>1000) index-1001 else index-1) }
+        }
+        fun lineLookup(index: Int): Node? {
+            val list=format?.lnStyleLst
+            return if(list!=null && index in 1..list.sizeOfLnArray()) list.getLnArray(index-1).domNode else null
+        }
+        if(elements(props).any { it.namespaceURI==a && it.localName in setOf("scene3d","sp3d","effectDag") } ||
+            elements(one(props,a,"effectLst")).isNotEmpty())
+            throw IOException("Unsupported SmartArt shape effects")
+        val effectRef=one(style,a,"effectRef")
+        val effectIndex=effectRef?.getAttribute("idx")?.toIntOrNull() ?: 0
+        if(effectIndex!=0 && one(props,a,"effectLst")==null) {
+            val effect=format?.effectStyleLst?.domNode?.let { PptxTableStyle.children(it).getOrNull(effectIndex-1) }
+                ?: throw IOException("Unresolved SmartArt effect style")
+            if(elements(effect).any { it.localName!="effectLst" || elements(it).isNotEmpty() })
+                throw IOException("Unsupported SmartArt inherited effects")
+        }
+        val direct=PptxTableStyle.directFill(props)
+        val inherited=if(direct==null && !picture) PptxTableStyle.inheritedFill(style,::fillLookup,theme) else null
+        val fill=if(picture) null else when {
+            direct!=null -> PptxTableStyle.solid(direct,theme)
+            inherited!=null -> PptxTableStyle.solid(inherited.node,theme,inherited.placeholder)
+            else -> null
+        }
+        val localLine=one(props,a,"ln")
+        val localLineFill=PptxTableStyle.directFill(localLine)
+        val base=if(localLineFill?.localName=="noFill") null else style?.let {
+            PptxTableStyle.inheritedBorder(it,::lineLookup,theme)
+        }
+        val lineFill=localLineFill ?: PptxTableStyle.directFill(base?.node)
+        val line=lineFill?.let { PptxTableStyle.solid(it,theme,if(localLineFill!=null) null else base?.placeholder) }
+        val stroke=if(line!=null) PptxStrokeStyle.parse(localLine ?: requireNotNull(base).node,scale,scale,
+            inherited=base?.node) else null
+        val font=one(style,a,"fontRef")
+        val color=font?.let { PptxTableStyle.children(it).singleOrNull() }?.let { PptxTableStyle.colorNode(it,theme) }
+        val fontRef=font?.getAttribute("idx")?.takeIf { it in setOf("major","minor","none") }
+        return PaintStyle(fill,line,stroke,PptxTableStyle.TextStyle(color=color,fontRef=fontRef))
+    }
+
     data class Normalized(val document: Document,val mapping: PptxShapeTransform.Affine,val shapeCount: Int)
     internal fun normalize(source: Document,frame: PptxShapeTransform.Rect): Normalized {
         val original=source.documentElement
@@ -125,7 +173,11 @@ internal object PptxSmartArtCache {
             while(c!=null) { dest.appendChild(out.importNode(c,true)); c=c.nextSibling }
             return dest
         }
-        val slide=add(out,p,"sld")
+        val slide=add(out,p,"sld").apply {
+            setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:p",p)
+            setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:a",a)
+            setAttributeNS("http://www.w3.org/2000/xmlns/","xmlns:r",r)
+        }
         val target=add(add(slide,p,"cSld"),p,"spTree")
         var nextId=1
         var count=0
@@ -164,6 +216,9 @@ internal object PptxSmartArtCache {
                         require(++count<=4096) { "SmartArt shape budget exceeded" }
                         val props=required(child,dsp,"spPr")
                         required(props,a,"xfrm")
+                        if(elements(child).any { it.namespaceURI!=dsp || it.localName !in
+                            setOf("nvSpPr","spPr","style","txBody","txXfrm") })
+                            throw IOException("Unsupported saved SmartArt shape extension")
                         val nv=one(one(child,dsp,"nvSpPr"),dsp,"cNvPr")
                         if(nv?.getAttribute("hidden") in setOf("1","true")) continue
                         val name=nv?.getAttribute("name")?.take(256)?.ifBlank { "SmartArt shape" } ?: "SmartArt shape"
@@ -194,7 +249,9 @@ internal object PptxSmartArtCache {
         }
         val rootProps=one(tree,dsp,"grpSpPr")
         supportedGroupProperties(rootProps)
-        val rootXfrm=one(rootProps,a,"xfrm")
+        val rootXfrm=one(rootProps,a,"xfrm")?.takeIf {
+            elements(it).isNotEmpty() || it.attributes.length>0
+        }
         val frameMapping=if(rootXfrm==null) PptxShapeTransform.Affine(tx=frame.x,ty=frame.y) else {
             fun number(n: Element,name: String)=n.getAttribute(name).toLongOrNull()?.toDouble()
                 ?: throw IOException("Invalid SmartArt root coordinate")
