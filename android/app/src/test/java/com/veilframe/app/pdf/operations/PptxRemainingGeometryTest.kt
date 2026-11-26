@@ -53,4 +53,63 @@ class PptxRemainingGeometryTest {
         assertEquals("merged",PptxTableRenderer.sharedBorder("merged",null,false,false))
         assertNull(PptxTableRenderer.sharedBorder<String>(null,null,true,true))
     }
+
+    private fun xml(source: String) = DocumentBuilderFactory.newInstance().apply { isNamespaceAware=true }
+        .newDocumentBuilder().parse(InputSource(StringReader(source)))
+
+    @Test fun straightConnectorsAdmitZeroAxisButNotZeroLengthOrAreaShapes() {
+        val source="""<p:cxnSp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:spPr>
+            <a:xfrm flipH="1"><a:off x="100" y="200"/><a:ext cx="400" cy="0"/></a:xfrm>
+            <a:prstGeom prst="line"/></p:spPr></p:cxnSp>"""
+        val root=xml(source)
+        assertTrue(PptxConnectorRenderer.isStraight(root))
+        val transform=requireNotNull(PptxShapeTransform.shape(root,true))
+        assertEquals(500.0 to 200.0,transform.matrix.point(100.0,200.0))
+        assertEquals(100.0 to 200.0,transform.matrix.point(500.0,200.0))
+        assertThrows(IllegalArgumentException::class.java) { PptxShapeTransform.shape(root) }
+        assertThrows(IllegalArgumentException::class.java) {
+            PptxShapeTransform.shape(xml(source.replace("cx=\"400\"","cx=\"0\"")),true)
+        }
+    }
+
+    @Test fun connectorStyleInheritsThemeAndResolvesDirectOverridesAndPlaceholderColor() {
+        val a="http://schemas.openxmlformats.org/drawingml/2006/main"
+        val p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        val base=xml("""<a:ln xmlns:a="$a" w="38100" cap="rnd" cmpd="dbl">
+            <a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:headEnd type="diamond" w="lg" len="sm"/>
+            </a:ln>""").documentElement
+        val source="""<p:cxnSp xmlns:p="$p" xmlns:a="$a"><p:spPr><a:prstGeom prst="line"/>
+            <a:ln w="50800"><a:tailEnd type="triangle" len="lg"/></a:ln></p:spPr>
+            <p:style><a:lnRef idx="1"><a:srgbClr val="ABCDEF"/></a:lnRef></p:style></p:cxnSp>"""
+        fun resolve(value: String)=PptxConnectorRenderer.resolve(xml(value),2f,1f,
+            { idx -> if(idx==1) base else null },{ null })
+        val result=requireNotNull(resolve(source))
+        assertEquals(8f,result.spec.width,0.001f)
+        assertEquals("rnd",result.spec.cap)
+        assertEquals("dbl",result.spec.compound)
+        assertEquals(PptxStrokeStyle.End("diamond","lg","sm"),result.spec.head)
+        assertEquals(PptxStrokeStyle.End("triangle","med","lg"),result.spec.tail)
+        assertEquals(0xffabcdef.toInt(),result.color)
+        assertNull(resolve(source.replace("<a:tailEnd","<a:noFill/><a:tailEnd")))
+        assertThrows(java.io.IOException::class.java) { resolve(source.replace("idx=\"1\"","idx=\"2\"")) }
+    }
+
+    @Test fun compoundBandsStayInsideEnvelopeWithoutOverlappingAndArrowDimensionsAreIndependent() {
+        for(kind in listOf("sng","dbl","thickThin","thinThick","tri")) {
+            val bands=PptxConnectorRenderer.bands(kind)
+            for(band in bands) {
+                assertTrue(band.fraction>0)
+                assertTrue(band.center-band.fraction/2>=-0.50001f)
+                assertTrue(band.center+band.fraction/2<=0.50001f)
+            }
+            for((first,next) in bands.zipWithNext())
+                assertTrue(first.center+first.fraction/2 < next.center-next.fraction/2)
+        }
+        assertEquals(2f,PptxConnectorRenderer.multiplier("sm"),0f)
+        assertEquals(3f,PptxConnectorRenderer.multiplier("med"),0f)
+        assertEquals(5f,PptxConnectorRenderer.multiplier("lg"),0f)
+        assertEquals(0f,PptxConnectorRenderer.trim("arrow",20f),0f)
+        assertEquals(13f,PptxConnectorRenderer.trim("stealth",20f),0.001f)
+    }
 }
