@@ -179,10 +179,16 @@ class OfficeRenderingDeviceTest {
         val a="http://schemas.openxmlformats.org/drawingml/2006/main"
         val r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
         fun cell(text: String,rgb: String,attrs: String="") =
-            """<a:tc $attrs><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1600"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>$text</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="$rgb"/></a:solidFill></a:tcPr></a:tc>"""
-        val table="""<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="2540000"/><a:gridCol w="2540000"/></a:tblGrid>
+            """<a:tc $attrs><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1600"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>$text</a:t></a:r><a:endParaRPr lang="en-US"/></a:p></a:txBody><a:tcPr>${if(rgb.isEmpty()) "" else """<a:solidFill><a:srgbClr val="$rgb"/></a:solidFill>"""}</a:tcPr></a:tc>"""
+        val styleId="{12345678-1234-1234-1234-123456789ABC}"
+        val styles="""<a:tblStyleLst xmlns:a="$a" def="$styleId"><a:tblStyle styleId="$styleId" styleName="Fixture">
+            <a:wholeTbl><a:tcStyle><a:tcBdr><a:insideV><a:ln w="50800"><a:solidFill><a:srgbClr val="FF00FF"/></a:solidFill></a:ln></a:insideV></a:tcBdr>
+            <a:fillRef idx="1"><a:srgbClr val="00FF00"/></a:fillRef></a:tcStyle></a:wholeTbl>
+            <a:firstRow><a:tcStyle><a:fill><a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill></a:fill></a:tcStyle></a:firstRow>
+            </a:tblStyle></a:tblStyleLst>"""
+        val table="""<a:tbl><a:tblPr firstRow="1"><a:tableStyleId>$styleId</a:tableStyleId></a:tblPr><a:tblGrid><a:gridCol w="2540000"/><a:gridCol w="2540000"/></a:tblGrid>
             <a:tr h="1270000">${cell("Merged title","FF0000", "gridSpan=\"2\"")}${cell("","FF0000","hMerge=\"1\"")}</a:tr>
-            <a:tr h="1270000">${cell("Left","00FF00")}${cell("Right","0000FF")}</a:tr></a:tbl>"""
+            <a:tr h="1270000">${cell("Left","")}${cell("Right","0000FF")}</a:tr></a:tbl>"""
         val slide="""<p:sld xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:cSld><p:spTree>
             <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
             <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="Fixture table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
@@ -208,17 +214,17 @@ class OfficeRenderingDeviceTest {
         fun rels(vararg targets: Pair<String,String>) = """<Relationships xmlns="$relNs">"""+
             targets.mapIndexed { index,(kind,target) -> """<Relationship Id="rId${index+1}" Type="$r/$kind" Target="$target"/>""" }.joinToString("")+"</Relationships>"
         val entries=mapOf(
-            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>""",
+            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/></Types>""",
             "_rels/.rels" to rels("officeDocument" to "ppt/presentation.xml"),
             "ppt/presentation.xml" to """<p:presentation xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId2"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>""",
-            "ppt/_rels/presentation.xml.rels" to rels("slide" to "slides/slide1.xml","slideMaster" to "slideMasters/slideMaster1.xml"),
+            "ppt/_rels/presentation.xml.rels" to rels("slide" to "slides/slide1.xml","slideMaster" to "slideMasters/slideMaster1.xml","tableStyles" to "tableStyles.xml"),
             "ppt/slides/slide1.xml" to slide,
             "ppt/slides/_rels/slide1.xml.rels" to rels("slideLayout" to "../slideLayouts/slideLayout1.xml"),
             "ppt/slideLayouts/slideLayout1.xml" to layout,
             "ppt/slideLayouts/_rels/slideLayout1.xml.rels" to rels("slideMaster" to "../slideMasters/slideMaster1.xml"),
             "ppt/slideMasters/slideMaster1.xml" to master,
             "ppt/slideMasters/_rels/slideMaster1.xml.rels" to rels("slideLayout" to "../slideLayouts/slideLayout1.xml","theme" to "../theme/theme1.xml"),
-            "ppt/theme/theme1.xml" to theme)
+            "ppt/theme/theme1.xml" to theme,"ppt/tableStyles.xml" to styles)
         java.util.zip.ZipOutputStream(fixture.outputStream()).use { zip ->
             for((name,value) in entries) {
                 zip.putNextEntry(java.util.zip.ZipEntry(name)); zip.write(value.toByteArray(Charsets.UTF_8)); zip.closeEntry()
@@ -232,6 +238,8 @@ class OfficeRenderingDeviceTest {
             assertEquals(Color.RED,bitmap.getPixel(495,115))
             assertEquals(Color.GREEN,bitmap.getPixel(115,215))
             assertEquals(Color.BLUE,bitmap.getPixel(495,215))
+            assertEquals("Inherited internal border",Color.MAGENTA,bitmap.getPixel(300,270))
+            assertEquals("Merged header suppresses internal border",Color.RED,bitmap.getPixel(300,170))
             var dark=0
             for(y in 102 until 195) for(x in 102 until 495) {
                 val c=bitmap.getPixel(x,y)
