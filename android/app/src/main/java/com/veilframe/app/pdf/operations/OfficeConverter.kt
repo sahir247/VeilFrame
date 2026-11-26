@@ -2321,7 +2321,8 @@ class OfficeConverter {
                     work.ensureActive()
                     val sx = targetWidth.toDouble()/slideWidthEmu
                     val sy = targetHeight.toDouble()/slideHeightEmu
-                    val direct = PptxShapeTransform.shape(shape.xmlObject.domNode)
+                    val straightConnector = PptxConnectorRenderer.isStraight(shape.xmlObject.domNode)
+                    val direct = PptxShapeTransform.shape(shape.xmlObject.domNode,straightConnector)
                     var matrix = direct?.matrix ?: PptxShapeTransform.Affine()
                     var parentShape = shape.parent
                     var transformDepth = 0
@@ -2333,8 +2334,10 @@ class OfficeConverter {
                     }
                     val normBounds = if (direct != null) {
                         val box = direct.bounds
-                        admitSlideBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
+                        (if(straightConnector) admitLineBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
                             box.width/slideWidthEmu,box.height/slideHeightEmu)
+                        else admitSlideBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
+                            box.width/slideWidthEmu,box.height/slideHeightEmu))
                             ?: throw java.io.IOException("Slide shape bounds exceed rendering limits")
                     } else getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
                     val chartFrame = (shape as? org.apache.poi.xslf.usermodel.XSLFGraphicFrame)
@@ -2352,6 +2355,7 @@ class OfficeConverter {
                         throw java.io.IOException("Cannot locate slide picture shape")
 
                     if (normBounds == null) {
+                        if(straightConnector) throw java.io.IOException("Cannot locate straight slide connector")
                         if (shape is XSLFTextShape && shape.text.isNotBlank())
                             throw OfficeTextEncodingException("Cannot locate slide text shape")
                         continue
@@ -2379,6 +2383,19 @@ class OfficeConverter {
                             { work.ensureActive() }) { cell,rect ->
                             drawShapeText(cell,rect.left,rect.top,rect.width(),rect.height(),
                                 matrix.pixelAffine(sx,sy),14f)
+                        }
+                        continue
+                    }
+                    if(straightConnector) {
+                        if(shape is XSLFTextShape && shape.text.isNotBlank())
+                            throw OfficeTextEncodingException("Text on a straight connector is unsupported")
+                        if(!PptxConnectorRenderer.explicitlyInvisible(shape.xmlObject.domNode)) {
+                            val line=PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
+                                2f*(targetWidth/960f),straightConnector=true)
+                            val color=PptxConnectorRenderer.explicitColor(shape.xmlObject.domNode) { key ->
+                                resolveSchemeColorName(key,themeColors)?.let(android.graphics.Color::parseColor)
+                            }
+                            PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line,color)
                         }
                         continue
                     }
@@ -2566,6 +2583,12 @@ class OfficeConverter {
     private fun admitSlideBounds(x: Double,y: Double,w: Double,h: Double): FloatArray? {
         if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite() ||
             x !in -100.0..100.0 || y !in -100.0..100.0 || w<=0 || h<=0 || w>100 || h>100) return null
+        return floatArrayOf(x.toFloat(),y.toFloat(),w.toFloat(),h.toFloat())
+    }
+
+    private fun admitLineBounds(x: Double,y: Double,w: Double,h: Double): FloatArray? {
+        if(!listOf(x,y,w,h).all { it.isFinite() } || x !in -100.0..100.0 || y !in -100.0..100.0 ||
+            w !in 0.0..100.0 || h !in 0.0..100.0 || (w==0.0 && h==0.0)) return null
         return floatArrayOf(x.toFloat(),y.toFloat(),w.toFloat(),h.toFloat())
     }
 
