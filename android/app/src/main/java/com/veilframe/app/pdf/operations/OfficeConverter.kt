@@ -2254,9 +2254,25 @@ class OfficeConverter {
 
                 // 3. Draw all shapes in z-order
                 for (shape in allSlideShapes) {
-                    val normBounds = getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
-
                     work.ensureActive()
+                    val sx = targetWidth.toDouble()/slideWidthEmu
+                    val sy = targetHeight.toDouble()/slideHeightEmu
+                    val direct = PptxShapeTransform.shape(shape.xmlObject.domNode)
+                    var matrix = direct?.matrix ?: PptxShapeTransform.Affine()
+                    var parentShape = shape.parent
+                    var transformDepth = 0
+                    while (parentShape is XSLFGroupShape) {
+                        require(++transformDepth<=64) { "Slide group transform exceeds depth budget" }
+                        require(direct != null) { "Grouped slide shape has no explicit transform" }
+                        matrix = PptxShapeTransform.group(parentShape.xmlObject.domNode)*matrix
+                        parentShape = parentShape.parent
+                    }
+                    val normBounds = if (direct != null) {
+                        val box = direct.bounds
+                        admitSlideBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
+                            box.width/slideWidthEmu,box.height/slideHeightEmu)
+                            ?: throw java.io.IOException("Slide shape bounds exceed rendering limits")
+                    } else getShapeNormalizedBounds(shape, slide, slideWidthEmu, slideHeightEmu)
                     val picture = if (shape is XSLFSimpleShape)
                         PptxPictureRenderer.reference(shape.xmlObject.domNode) else null
                     if (shape is XSLFPictureShape && picture == null)
@@ -2274,6 +2290,9 @@ class OfficeConverter {
                     val pw = normBounds[2] * targetWidth.toFloat()
                     val ph = normBounds[3] * targetHeight.toFloat()
 
+                    val shapeSave = canvas.save()
+                    try {
+                    canvas.concat(android.graphics.Matrix().apply { setValues(matrix.pixels(sx,sy)) })
                     val geomType = getShapeGeometryType(shape)
                     if (picture != null) {
                         if (geomType != ShapeGeom.RECTANGLE)
@@ -2350,6 +2369,7 @@ class OfficeConverter {
                                 shape.verticalAlignment?.name ?: "TOP")
                         }
                     }
+                    } finally { canvas.restoreToCount(shapeSave) }
                 }
                 currentCoroutineContext().ensureActive()
                 if (consume == null) {
