@@ -2389,14 +2389,12 @@ class OfficeConverter {
                     if(straightConnector) {
                         if(shape is XSLFTextShape && shape.text.isNotBlank())
                             throw OfficeTextEncodingException("Text on a straight connector is unsupported")
-                        if(!PptxConnectorRenderer.explicitlyInvisible(shape.xmlObject.domNode)) {
-                            val line=PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
-                                2f*(targetWidth/960f),straightConnector=true)
-                            val color=PptxConnectorRenderer.explicitColor(shape.xmlObject.domNode) { key ->
-                                resolveSchemeColorName(key,themeColors)?.let(android.graphics.Color::parseColor)
-                            }
-                            PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line,color)
-                        }
+                        val line=PptxConnectorRenderer.resolve(shape.xmlObject.domNode,fontScale,
+                            2f*(targetWidth/960f),{ index ->
+                                val styles=shape.sheet.theme?.xmlObject?.themeElements?.fmtScheme?.lnStyleLst
+                                if(styles!=null && index<=styles.sizeOfLnArray()) styles.getLnArray(index-1).domNode else null
+                            },{ key -> resolveSchemeColorName(key,themeColors)?.let { android.graphics.Color.parseColor(it) } })
+                        if(line!=null) PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line.spec,line.color)
                         continue
                     }
                     val custom = PptxCustomGeometry.parse(shape.xmlObject.domNode,pw/sx,ph/sy,includePresets=true)
