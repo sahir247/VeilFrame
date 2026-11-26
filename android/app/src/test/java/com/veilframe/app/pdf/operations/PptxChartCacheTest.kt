@@ -34,4 +34,30 @@ class PptxChartCacheTest {
             SharedChartValueAxes.build(chart.copy(series=listOf(chart.series.first())))
         }
     }
+
+    @Test fun sharedChartInkPreservesNoFillMarkerOutlineDashAndPointOverrides() {
+        val series="""<c:ser xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <c:spPr><a:ln cap="rnd" w="25400"><a:solidFill><a:srgbClr val="123456"/></a:solidFill><a:custDash><a:ds d="200000" sp="100000"/></a:custDash></a:ln></c:spPr>
+            <c:marker><c:symbol val="circle"/><c:size val="8"/><c:spPr><a:noFill/><a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr></c:marker>
+            <c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strLit></c:cat>
+            <c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numLit></c:val></c:ser>"""
+        val chart=OpenXmlDocumentParser.readPresentationChart(xml("<c:lineChart>$series</c:lineChart>").byteInputStream(),emptyMap())
+        val s=chart.series.single()
+        assertEquals(XlsxCachedChart.Ink(0x123456),s.stroke?.ink)
+        assertEquals("rnd",s.stroke?.cap)
+        assertArrayEquals(floatArrayOf(4f,2f),SharedChartInk.dashes(s.stroke,2f),0.001f)
+        assertEquals(XlsxCachedChart.Ink(null),s.markerFill)
+        assertEquals(XlsxCachedChart.Ink(0xff0000),s.markerStroke?.ink)
+        assertNull(SharedChartInk.resolved(s.markerFill,0x123456))
+        val bare=series.replace(Regex("<c:spPr>.*?</c:spPr>",RegexOption.DOT_MATCHES_ALL),"")
+            .replace(Regex("<c:marker>.*?</c:marker>",RegexOption.DOT_MATCHES_ALL),"")
+        val pie=bare.replace("<c:cat>","""<c:dPt><c:idx val="0"/><c:spPr><a:noFill/></c:spPr></c:dPt>
+            <c:dPt><c:idx val="1"/><c:spPr><a:solidFill><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:solidFill></c:spPr></c:dPt><c:cat>""")
+        val parsed=OpenXmlDocumentParser.readPresentationChart(xml("<c:pieChart>$pie<c:firstSliceAng val=\"90\"/></c:pieChart>").byteInputStream(),mapOf("accent1" to 0x204060))
+        assertEquals(90,parsed.firstSliceAngle)
+        assertNull(SharedChartInk.pointFill(parsed.series.single(),0,0xffffff))
+        assertEquals(0x102030,SharedChartInk.pointFill(parsed.series.single(),1,0xffffff))
+        val invalid=pie.replace("idx val=\"1\"","idx val=\"0\"")
+        assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(xml("<c:pieChart>$invalid</c:pieChart>").byteInputStream(),mapOf("accent1" to 0x204060)) }.isFailure)
+    }
 }
