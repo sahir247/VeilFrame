@@ -16,7 +16,10 @@ internal object SharedChartValueAxes {
             require(raw.isFinite() && abs(raw)<=100000) { "Chart axis coordinate exceeds budget" }
             return (if(axis.reversed) 1-raw else raw).toFloat()
         }
-        fun zero(): Float=fraction(0.0).coerceIn(0f,1f)
+        fun zero(): Float {
+            val raw=when { low>=0.0 -> 0.0; high<=0.0 -> 1.0; else -> -low/(high-low) }
+            return (if(axis.reversed) 1-raw else raw).toFloat()
+        }
         fun tick(ratio: Float): String {
             val normalized=low+(high-low)*(if(axis.reversed) 1-ratio else ratio)
             val v=normalized*unit
