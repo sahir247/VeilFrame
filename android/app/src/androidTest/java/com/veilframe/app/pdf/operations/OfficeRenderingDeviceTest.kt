@@ -37,6 +37,15 @@ import java.util.zip.ZipOutputStream
 class OfficeRenderingDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun javaStreamToListSupportsPoiOnPreApi34Runtime() {
+        // Java 16 Stream.toList is not a Kotlin collection extension: its
+        // unmodifiable result distinguishes it from Collectors.toList.
+        val values = java.util.stream.Stream.of("slide","table").toList()
+        assertEquals(listOf("slide","table"),values)
+        assertTrue(runCatching { (values as MutableList<String>).add("unexpected") }
+            .exceptionOrNull() is UnsupportedOperationException)
+    }
+
     @Test fun attributedPptxTextShapesScriptsAndRejectsOverflowBeforeDrawing() {
         val bitmap = Bitmap.createBitmap(600,300,Bitmap.Config.ARGB_8888)
         try {

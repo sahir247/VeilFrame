@@ -123,6 +123,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // POI 6 uses JDK library APIs absent on older Android (e.g. Stream.toList).
+        // D8 must desugar dependency bytecode as well as application bytecode.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
@@ -282,6 +285,9 @@ androidComponents {
 }
 
 dependencies {
+    // 2.1.5 explicitly adds Stream.toList() (Android API 34 / Java 16).
+    // Use the standard library, not the minimal flavor which excludes streams.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // Bundled, offline byte-pair tokenizer; exact named-encoding artifact counts.
     implementation("com.knuddels:jtokkit:1.1.0")
     implementation("androidx.core:core-ktx:1.19.1")
