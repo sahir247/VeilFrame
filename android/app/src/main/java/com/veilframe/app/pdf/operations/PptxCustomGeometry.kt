@@ -48,32 +48,76 @@ internal object PptxCustomGeometry {
         "0","false" -> false
         else -> throw IOException("Invalid custom path flag")
     }
-    fun parse(root: Node): List<Subpath>? {
+    // Read the Apache POI resource as XML data, never instantiate its Java2D path objects.
+    // DOM is shared read-only and accesses are serialized by parsePreset.
+    private val presets: Node by lazy {
+        val stream=PptxCustomGeometry::class.java.getResourceAsStream(
+            "/org/apache/poi/sl/draw/geom/presetShapeDefinitions.xml")
+            ?: throw IOException("Bundled DrawingML preset definitions are unavailable")
+        val xml=stream.use { OpenXmlDocumentParser.XmlReadBudget(4L*1024*1024,4L*1024*1024).read(it) }
+        val factory=javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware=true
+            isValidating=false
+        }
+        factory.newDocumentBuilder().apply {
+            setEntityResolver { _,_ -> throw org.xml.sax.SAXException("External preset entities forbidden") }
+        }.parse(org.xml.sax.InputSource(java.io.StringReader(xml))).documentElement
+    }
+    private fun definitions(node: Node,name: String): List<Pair<String,String>> {
+        val list=one(node,name) ?: return emptyList()
+        val entries=children(list)
+        if(entries.size>1024) throw IOException("DrawingML guide list exceeds budget")
+        return entries.map { entry ->
+            if(entry.namespaceURI !in ns || entry.localName!="gd") throw IOException("Invalid geometry guide list")
+            val key=attr(entry,"name") ?: throw IOException("Unnamed geometry guide")
+            val formula=attr(entry,"fmla") ?: throw IOException("Missing geometry guide formula")
+            key to formula
+        }
+    }
+    @Synchronized
+    private fun parsePreset(preset: Node,width: Double?,height: Double?): List<Subpath>? {
+        val name=attr(preset,"prst") ?: throw IOException("Missing slide preset name")
+        if(name=="rect") return null // ordinary rectangular shapes and picture fills
+        if(!name.matches(Regex("[A-Za-z][A-Za-z0-9]{0,63}"))) throw IOException("Invalid preset name")
+        val geometry=children(presets).filter { it.localName==name }.singleOrNull()
+            ?: throw IOException("Unknown DrawingML preset: "+name)
+        val defaults=definitions(geometry,"avLst")
+        val supplied=definitions(preset,"avLst")
+        val overrides=supplied.toMap()
+        require(overrides.size==supplied.size && overrides.keys.all { key -> defaults.any { it.first==key } }) {
+            "Invalid preset adjustment values"
+        }
+        val guides=defaults.map { (key,value) -> key to (overrides[key] ?: value) }+definitions(geometry,"gdLst")
+        return parsePaths(geometry,width,height,guides)
+    }
+
+    fun parse(root: Node,fallbackWidth: Double?=null,fallbackHeight: Double?=null,
+        includePresets: Boolean=false): List<Subpath>? {
         val element=if(root.nodeType==Node.DOCUMENT_NODE) children(root).singleOrNull() ?: return null else root
         val sp=one(element,"spPr",pres) ?: return null
-        val geom=one(sp,"custGeom") ?: return null
-        val paths=one(geom,"pathLst") ?: throw IOException("Missing custom shape path list")
         val extent=one(sp,"xfrm")?.let { one(it,"ext") }
-        val definitions=mutableListOf<Pair<String,String>>()
-        for(listName in listOf("avLst","gdLst")) {
-            val list=one(geom,listName) ?: continue
-            for(entry in children(list)) {
-                if(definitions.size>=1024 || entry.namespaceURI !in ns || entry.localName!="gd")
-                    throw IOException("Invalid custom geometry guide list")
-                val name=attr(entry,"name") ?: throw IOException("Unnamed custom geometry guide")
-                val formula=attr(entry,"fmla") ?: throw IOException("Missing custom geometry guide formula")
-                definitions.add(name to formula)
-            }
+        val width=extent?.let { number(it,"cx") } ?: fallbackWidth
+        val height=extent?.let { number(it,"cy") } ?: fallbackHeight
+        val geom=one(sp,"custGeom")
+        if(geom!=null) {
+            val guides=definitions(geom,"avLst")+definitions(geom,"gdLst")
+            return parsePaths(geom,width,height,guides)
         }
+        if(includePresets) return one(sp,"prstGeom")?.let { parsePreset(it,width,height) }
+        return null
+    }
+
+    private fun parsePaths(geom: Node,shapeWidth: Double?,shapeHeight: Double?,definitions: List<Pair<String,String>>): List<Subpath> {
+        val paths=one(geom,"pathLst") ?: throw IOException("Missing shape path list")
         val nodes=children(paths)
         if(nodes.size !in 1..64) throw IOException("Custom path count exceeds budget")
         var commandCount=0
         return nodes.map { node ->
             if(node.namespaceURI !in ns || node.localName!="path") throw IOException("Unexpected custom geometry element")
             val width=if(attr(node,"w")!=null) number(node,"w") else
-                extent?.let { number(it,"cx") } ?: throw IOException("Missing custom path width")
+                shapeWidth ?: throw IOException("Missing shape path width")
             val height=if(attr(node,"h")!=null) number(node,"h") else
-                extent?.let { number(it,"cy") } ?: throw IOException("Missing custom path height")
+                shapeHeight ?: throw IOException("Missing shape path height")
             if(width<=0 || height<=0) throw IOException("Invalid custom path coordinate space")
             val guides=DrawingMlGuides(width,height,definitions)
             val resolve=guides::value

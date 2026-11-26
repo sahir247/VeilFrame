@@ -30,6 +30,15 @@ class PptxCustomGeometryTest {
         assertTrue(runCatching { DrawingMlGuides(10.0,10.0,listOf("a" to "val a")) }.isFailure)
     }
 
+    @Test fun bundledPresetUsesSavedAdjustmentWithoutJava2D() {
+        fun shape(adj: String) = DocumentBuilderFactory.newInstance().apply { isNamespaceAware=true }
+            .newDocumentBuilder().parse("""<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="20000" cy="10000"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val $adj"/></a:avLst></a:prstGeom></p:spPr></p:sp>""".byteInputStream())
+        val a=requireNotNull(PptxCustomGeometry.parse(shape("10000"),includePresets=true))
+        val b=requireNotNull(PptxCustomGeometry.parse(shape("30000"),includePresets=true))
+        assertTrue(a.any { path -> path.commands.any { it.kind=="arcTo" } })
+        assertNotEquals(a,b)
+    }
+
     @Test fun ellipticalRayAngleDiffersFromParametricAngle() {
         assertEquals(63.4349488,PptxCustomGeometry.ellipseAngle(2.0,1.0,45.0),1e-6)
     }

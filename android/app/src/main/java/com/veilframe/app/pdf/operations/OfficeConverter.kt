@@ -2382,7 +2382,7 @@ class OfficeConverter {
                         }
                         continue
                     }
-                    val custom = PptxCustomGeometry.parse(shape.xmlObject.domNode)
+                    val custom = PptxCustomGeometry.parse(shape.xmlObject.domNode,pw/sx,ph/sy,includePresets=true)
                     val geomType = if(custom!=null) ShapeGeom.FREEFORM else getShapeGeometryType(shape)
                     if (picture != null) {
                         if (geomType != ShapeGeom.RECTANGLE)
