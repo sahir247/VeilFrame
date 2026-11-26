@@ -99,10 +99,24 @@ internal object PptxTableStyle {
         return fills.singleOrNull()
     }
     internal fun colorNode(n: Node,theme: (String)->Int?,placeholder: Int?=null): Int {
-        val raw=attr(n,"val") ?: throw IOException("Missing table style color")
+        val raw=attr(n,"val").orEmpty()
         val base=when(n.localName) {
             "srgbClr" -> if(raw.matches(Regex("[0-9A-Fa-f]{6}"))) raw.toInt(16) or 0xff000000.toInt()
                 else throw IOException("Invalid table style RGB")
+            "sysClr" -> attr(n,"lastClr")?.takeIf { it.matches(Regex("[0-9A-Fa-f]{6}")) }?.let {
+                it.toInt(16) or 0xff000000.toInt()
+            } ?: throw IOException("Missing saved system color")
+            "scrgbClr" -> {
+                fun channel(name: String): Int {
+                    val rawValue=attr(n,name) ?: throw IOException("Missing scRGB component")
+                    val v=if(rawValue.endsWith("%")) rawValue.dropLast(1).toDoubleOrNull()?.div(100)
+                        else rawValue.toLongOrNull()?.toDouble()?.div(100000)
+                    require(v!=null && v.isFinite() && v in 0.0..1.0)
+                    val srgb=if(v<=0.0031308) v*12.92 else 1.055*Math.pow(v,1.0/2.4)-0.055
+                    return (srgb*255).roundToInt()
+                }
+                0xff000000.toInt() or (channel("r") shl 16) or (channel("g") shl 8) or channel("b")
+            }
             "schemeClr" -> (if(raw=="phClr") placeholder else theme(raw))
                 ?: throw IOException("Unresolved table theme color: "+raw)
             else -> throw IOException("Unsupported table style color: "+n.localName)
@@ -115,8 +129,8 @@ internal object PptxTableStyle {
                 else v.toLongOrNull()?.toDouble()?.div(100000)
             require(fraction!=null && fraction.isFinite() && fraction in -1.0..10.0) { "Invalid table color transform" }
             when(effect.localName) {
-                "alpha" -> alpha=fraction
-                "alphaMod" -> alpha*=fraction
+                "alpha" -> { require(fraction in 0.0..1.0); alpha=fraction }
+                "alphaMod" -> { require(fraction>=0.0); alpha*=fraction }
                 "alphaOff" -> alpha+=fraction
                 "tint" -> { require(fraction in 0.0..1.0); rgb=rgb.map { 1-(1-it)*fraction }.toDoubleArray() }
                 "shade" -> { require(fraction in 0.0..1.0); rgb=rgb.map { it*fraction }.toDoubleArray() }
@@ -127,6 +141,39 @@ internal object PptxTableStyle {
         fun byte(x: Double)=(x.coerceIn(0.0,1.0)*255).roundToInt()
         return (byte(alpha) shl 24) or (byte(rgb[0]) shl 16) or (byte(rgb[1]) shl 8) or byte(rgb[2])
     }
+    /** Resolve the actual slide/layout/master color map, not an invented fallback palette. */
+    fun themeColors(theme: Node?,slide: Node?,layout: Node?,master: Node?): Map<String,Int> {
+        val pres=setOf("http://schemas.openxmlformats.org/presentationml/2006/main",
+            "http://purl.oclc.org/ooxml/presentationml/main")
+        fun pChild(n: Node?,name: String): Node? {
+            var result: Node?=null
+            var c=n?.firstChild
+            while(c!=null) {
+                if(c.localName==name && c.namespaceURI in pres) {
+                    require(result==null) { "Ambiguous color mapping" }
+                    result=c
+                }
+                c=c.nextSibling
+            }
+            return result
+        }
+        fun override(n: Node?)=one(pChild(n,"clrMapOvr"),"overrideClrMapping")
+        val mapping=override(slide) ?: override(layout) ?: pChild(master,"clrMap")
+        val scheme=one(one(theme,"themeElements"),"clrScheme") ?: return emptyMap()
+        val base=children(scheme).associate { entry ->
+            entry.localName to colorNode(children(entry).singleOrNull()
+                ?: throw IOException("Invalid theme scheme color"),{ null })
+        }
+        val defaults=mapOf("bg1" to "lt1","bg2" to "lt2","tx1" to "dk1","tx2" to "dk2")
+        val keys=defaults.keys+listOf("accent1","accent2","accent3","accent4","accent5","accent6","hlink","folHlink")
+        val result=base.toMutableMap()
+        for(key in keys) {
+            val name=attr(mapping,key) ?: defaults[key] ?: key
+            base[name]?.let { result[key]=it }
+        }
+        return result
+    }
+
     fun solid(fill: Node,theme: (String)->Int?,placeholder: Int?=null): Int? {
         if(fill.localName=="noFill") return null
         if(fill.localName!="solidFill") throw IOException("Unsupported non-solid table style fill")
