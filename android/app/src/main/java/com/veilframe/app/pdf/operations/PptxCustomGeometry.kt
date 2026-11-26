@@ -74,8 +74,8 @@ internal object PptxCustomGeometry {
             key to formula
         }
     }
-    @Synchronized
-    private fun parsePreset(preset: Node,width: Double?,height: Double?): List<Subpath>? {
+    private data class Geometry(val node: Node,val guides: List<Pair<String,String>>)
+    private fun presetGeometry(preset: Node): Geometry? {
         val name=attr(preset,"prst") ?: throw IOException("Missing slide preset name")
         if(name=="rect") return null // ordinary rectangular shapes and picture fills
         if(!name.matches(Regex("[A-Za-z][A-Za-z0-9]{0,63}"))) throw IOException("Invalid preset name")
@@ -88,11 +88,12 @@ internal object PptxCustomGeometry {
             "Invalid preset adjustment values"
         }
         val guides=defaults.map { (key,value) -> key to (overrides[key] ?: value) }+definitions(geometry,"gdLst")
-        return parsePaths(geometry,width,height,guides)
+        return Geometry(geometry,guides)
     }
 
-    fun parse(root: Node,fallbackWidth: Double?=null,fallbackHeight: Double?=null,
-        includePresets: Boolean=false): List<Subpath>? {
+    private data class Resolved(val geometry: Geometry,val width: Double?,val height: Double?)
+    private fun resolveGeometry(root: Node,fallbackWidth: Double?,fallbackHeight: Double?,
+        includePresets: Boolean): Resolved? {
         val element=if(root.nodeType==Node.DOCUMENT_NODE) children(root).singleOrNull() ?: return null else root
         val sp=one(element,"spPr",pres) ?: return null
         val extent=one(sp,"xfrm")?.let { one(it,"ext") }
@@ -101,10 +102,41 @@ internal object PptxCustomGeometry {
         val geom=one(sp,"custGeom")
         if(geom!=null) {
             val guides=definitions(geom,"avLst")+definitions(geom,"gdLst")
-            return parsePaths(geom,width,height,guides)
+            return Resolved(Geometry(geom,guides),width,height)
         }
-        if(includePresets) return one(sp,"prstGeom")?.let { parsePreset(it,width,height) }
+        if(includePresets) return one(sp,"prstGeom")?.let { presetGeometry(it) }?.let { Resolved(it,width,height) }
         return null
+    }
+
+    @Synchronized
+    fun parse(root: Node,fallbackWidth: Double?=null,fallbackHeight: Double?=null,
+        includePresets: Boolean=false): List<Subpath>? {
+        val resolved=resolveGeometry(root,fallbackWidth,fallbackHeight,includePresets) ?: return null
+        return parsePaths(resolved.geometry.node,resolved.width,resolved.height,resolved.geometry.guides)
+    }
+
+    /** Shape text rectangle is evaluated in the shape coordinate space, NOT
+     * the arbitrary w/h of an individual path. Keep this independent of paint.
+     */
+    data class TextBounds(val left: Double,val top: Double,val right: Double,val bottom: Double) {
+        fun mapped(x: Float,y: Float,w: Float,h: Float): FloatArray =
+            floatArrayOf(x+(left*w).toFloat(),y+(top*h).toFloat(),
+                ((right-left)*w).toFloat(),((bottom-top)*h).toFloat())
+    }
+    @Synchronized
+    fun textBounds(root: Node,width: Double,height: Double): TextBounds? {
+        val resolved=resolveGeometry(root,width,height,true) ?: return null
+        val rect=one(resolved.geometry.node,"rect") ?: return null
+        val w=resolved.width ?: width
+        val h=resolved.height ?: height
+        val guides=DrawingMlGuides(w,h,resolved.geometry.guides)
+        val l=number(rect,"l",guides::value)/w
+        val t=number(rect,"t",guides::value)/h
+        val r=number(rect,"r",guides::value)/w
+        val b=number(rect,"b",guides::value)/h
+        if(listOf(l,t,r,b).any { !it.isFinite() || abs(it)>16 } || r<=l || b<=t)
+            throw OfficeTextEncodingException("Shape has no valid text rectangle")
+        return TextBounds(l,t,r,b)
     }
 
     private fun parsePaths(geom: Node,shapeWidth: Double?,shapeHeight: Double?,definitions: List<Pair<String,String>>): List<Subpath> {

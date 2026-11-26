@@ -39,6 +39,22 @@ class PptxCustomGeometryTest {
         assertNotEquals(a,b)
     }
 
+    @Test fun textRectangleUsesShapeCoordinatesNotPathCoordinates() {
+        val doc=DocumentBuilderFactory.newInstance().apply { isNamespaceAware=true }
+            .newDocumentBuilder().parse("""<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="20000" cy="10000"/></a:xfrm><a:custGeom><a:gdLst><a:gd name="leftInset" fmla="*/ w 1 4"/></a:gdLst><a:rect l="leftInset" t="hd4" r="w" b="h"/><a:pathLst><a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="100" y="100"/></a:lnTo></a:path></a:pathLst></a:custGeom></p:spPr></p:sp>""".byteInputStream())
+        val bounds=requireNotNull(PptxCustomGeometry.textBounds(doc,20000.0,10000.0))
+        assertEquals(PptxCustomGeometry.TextBounds(0.25,0.25,1.0,1.0),bounds)
+        assertArrayEquals(floatArrayOf(60f,45f,150f,75f),bounds.mapped(10f,20f,200f,100f),0.001f)
+    }
+
+    @Test fun adjustedRoundRectTextInsetChangesWithAdjustment() {
+        fun doc(adj: String)=DocumentBuilderFactory.newInstance().apply { isNamespaceAware=true }
+            .newDocumentBuilder().parse("""<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:spPr><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val $adj"/></a:avLst></a:prstGeom></p:spPr></p:sp>""".byteInputStream())
+        val a=requireNotNull(PptxCustomGeometry.textBounds(doc("10000"),20000.0,10000.0))
+        val b=requireNotNull(PptxCustomGeometry.textBounds(doc("30000"),20000.0,10000.0))
+        assertTrue(b.left>a.left && b.top>a.top && b.right<a.right && b.bottom<a.bottom)
+    }
+
     @Test fun ellipticalRayAngleDiffersFromParametricAngle() {
         assertEquals(63.4349488,PptxCustomGeometry.ellipseAngle(2.0,1.0,45.0),1e-6)
     }

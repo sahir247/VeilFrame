@@ -2414,8 +2414,14 @@ class OfficeConverter {
                     if (shape is XSLFTextShape) {
                         val isTitle = shape.isPlaceholder &&
                             (shape.textType == Placeholder.TITLE || shape.textType == Placeholder.CENTERED_TITLE)
-                        drawShapeText(shape,px,py,pw,ph,matrix.pixelAffine(sx,sy),
-                            if(isTitle) 26f else if(geomType==ShapeGeom.ELLIPSE) 12f else 14f)
+                        // Geometry may define an inscribed text rectangle separate
+                        // from the outer path; body insets are applied after this.
+                        if(shape.text.isNotBlank()) {
+                            val textRect=PptxCustomGeometry.textBounds(shape.xmlObject.domNode,pw/sx,ph/sy)
+                                ?.mapped(px,py,pw,ph) ?: floatArrayOf(px,py,pw,ph)
+                            drawShapeText(shape,textRect[0],textRect[1],textRect[2],textRect[3],matrix.pixelAffine(sx,sy),
+                                if(isTitle) 26f else if(geomType==ShapeGeom.ELLIPSE) 12f else 14f)
+                        }
                     }
                     } finally { canvas.restoreToCount(shapeSave) }
                 }
