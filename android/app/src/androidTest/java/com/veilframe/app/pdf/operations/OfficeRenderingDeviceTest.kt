@@ -362,6 +362,26 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun chartFormattingDrawsHollowMarkersAndRespectsInvisibleSeriesLine() {
+        val bitmap=Bitmap.createBitmap(640,420,Bitmap.Config.ARGB_8888)
+        try {
+            val chart=XlsxCachedChart("Styled","line",listOf("A","B"),listOf(
+                XlsxCachedChart.Series("Series",listOf(0.5,1.0),rgb=0x0000ff,markerSymbol="circle",
+                    markerSizePt=18f,stroke=XlsxCachedChart.Stroke(XlsxCachedChart.Ink(null)),
+                    markerFill=XlsxCachedChart.Ink(null),
+                    markerStroke=XlsxCachedChart.Stroke(XlsxCachedChart.Ink(0xff0000),3f))))
+            PptxChartRenderer.draw(android.graphics.Canvas(bitmap),chart,android.graphics.RectF(0f,0f,640f,420f),1f) {}
+            var red=0; var blue=0
+            for(y in 55 until 400) for(x in 120 until 620) {
+                val c=bitmap.getPixel(x,y)
+                if(c==Color.RED) red++
+                if(c==Color.BLUE) blue++
+            }
+            assertTrue("Explicit marker outline must reach the canvas",red>20)
+            assertEquals("Explicit no-fill line and marker must not use series fallback ink",0,blue)
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
