@@ -16,4 +16,22 @@ class PptxChartCacheTest {
         for(kind in listOf("<c:radarChart/>","<c:lineChart/>"))
             assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(xml(kind).byteInputStream(),emptyMap()) }.isFailure)
     }
+
+    @Test fun dualAxisScaleHandlesReversedAxesPercentTicksAndIndependentZero() {
+        val chart=XlsxCachedChart("Dual","combo",listOf("A","B"),listOf(
+            XlsxCachedChart.Series("Volume",listOf(-500.0,1000.0),chartKind="column",valueAxisId="10"),
+            XlsxCachedChart.Series("Rate",listOf(0.25,0.75),chartKind="line",valueAxisId="20")),
+            valueAxes=listOf(XlsxCachedChart.ValueAxis("10","l",-1000.0,1000.0),
+                XlsxCachedChart.ValueAxis("20","r",0.0,1.0,true,"0.0%")))
+        val scales=SharedChartValueAxes.build(chart)
+        assertEquals(0.25f,scales.getValue("10").fraction(-500.0),0.001f)
+        assertEquals(0.5f,scales.getValue("10").zero(),0.001f)
+        assertEquals(0.75f,scales.getValue("20").fraction(0.25),0.001f)
+        assertEquals("100.0%",scales.getValue("20").tick(0f))
+        assertEquals("0.0%",scales.getValue("20").tick(1f))
+        assertFalse(SharedChartValueAxes.supportedFormat("0.0E+00"))
+        assertThrows(java.io.IOException::class.java) {
+            SharedChartValueAxes.build(chart.copy(series=listOf(chart.series.first())))
+        }
+    }
 }
