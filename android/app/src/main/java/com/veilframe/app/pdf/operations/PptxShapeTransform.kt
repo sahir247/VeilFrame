@@ -14,10 +14,10 @@ internal object PptxShapeTransform {
         "http://purl.oclc.org/ooxml/drawingml/main")
     private val presentation = setOf("http://schemas.openxmlformats.org/presentationml/2006/main",
         "http://purl.oclc.org/ooxml/presentationml/main")
-    data class Rect(val x: Double,val y: Double,val width: Double,val height: Double) {
+    data class Rect(val x: Double,val y: Double,val width: Double,val height: Double,val allowLine: Boolean=false) {
         init {
             require(listOf(x,y,width,height).all { it.isFinite() && kotlin.math.abs(it)<=1e10 } &&
-                width>0 && height>0) { "Invalid slide shape rectangle" }
+                (if(allowLine) width>=0 && height>=0 && (width>0 || height>0) else width>0 && height>0)) { "Invalid slide shape rectangle" }
         }
     }
     /** Column-vector matrix: this * inner applies inner first. */
@@ -74,10 +74,11 @@ internal object PptxShapeTransform {
         "1","true" -> true
         else -> throw IOException("Invalid slide transform flag: $key")
     }
-    private fun rect(node: Node,offset: String,extent: String): Rect {
+    private fun rect(node: Node,offset: String,extent: String,allowLine: Boolean=false): Rect {
         val off = one(node,offset,drawing) ?: throw IOException("Missing slide transform offset")
         val ext = one(node,extent,drawing) ?: throw IOException("Missing slide transform extent")
-        return Rect(number(off,"x"),number(off,"y"),number(ext,"cx"),number(ext,"cy"))
+        val w=number(ext,"cx"); val h=number(ext,"cy")
+        return Rect(number(off,"x"),number(off,"y"),w,h,allowLine && (w==0.0 || h==0.0))
     }
     private fun properties(root: Node,name: String): Node? {
         val element = if(root.nodeType==Node.DOCUMENT_NODE)
@@ -90,11 +91,12 @@ internal object PptxShapeTransform {
         } ?: 0.0
         return around(bounds,angle%360.0,flag(node,"flipH"),flag(node,"flipV"))
     }
-    fun shape(root: Node): Transform? {
+    fun shape(root: Node): Transform? = shape(root,false)
+    fun shape(root: Node,allowLine: Boolean): Transform? {
         val shapeProperties = properties(root,"spPr")
         val node = if(shapeProperties!=null) one(shapeProperties,"xfrm",drawing) else properties(root,"xfrm")
         if(node==null) return null
-        val bounds = rect(node,"off","ext")
+        val bounds = rect(node,"off","ext",allowLine)
         return Transform(bounds,orientation(node,bounds))
     }
     data class TextBody(val upright: Boolean,val direction: String?,val rotation: Double? = null)
