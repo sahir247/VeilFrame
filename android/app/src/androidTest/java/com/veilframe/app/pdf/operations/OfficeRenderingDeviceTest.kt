@@ -237,6 +237,39 @@ class OfficeRenderingDeviceTest {
         Unit
     }
 
+    @Test fun customPathUsesCurvesAndDoesNotPaintBoundingRectangle() {
+        val bitmap=Bitmap.createBitmap(120,120,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val shape=PptxCustomGeometry.Subpath(100.0,100.0,true,false,listOf(
+                PptxCustomGeometry.Command("moveTo",listOf(0.0,0.0)),
+                PptxCustomGeometry.Command("lnTo",listOf(100.0,0.0)),
+                PptxCustomGeometry.Command("quadBezTo",listOf(50.0,100.0,0.0,100.0)),
+                PptxCustomGeometry.Command("close",emptyList())))
+            PptxCustomGeometry.draw(android.graphics.Canvas(bitmap),listOf(shape),android.graphics.RectF(10f,10f,110f,110f),
+                android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=Color.RED })
+            assertEquals(Color.RED,bitmap.getPixel(20,20))
+            assertEquals(Color.WHITE,bitmap.getPixel(100,100))
+        } finally { bitmap.recycle() }
+    }
+
+    @Test fun slideChartDrawsSignedBarsAndSeriesColor() {
+        val bitmap=Bitmap.createBitmap(640,420,Bitmap.Config.ARGB_8888)
+        try {
+            val data=XlsxCachedChart("Revenue","column",listOf("Alpha","Beta"),
+                listOf(XlsxCachedChart.Series("Series",listOf(-3.0,7.0),rgb=0xFF0000)))
+            PptxChartRenderer.draw(android.graphics.Canvas(bitmap),data,android.graphics.RectF(0f,0f,640f,420f),1f) {}
+            var left=0; var right=0
+            for(y in 60 until 390) for(x in 110 until 620) {
+                if(bitmap.getPixel(x,y)==Color.RED) {
+                    if(x<360) left++ else right++
+                }
+            }
+            assertTrue("Missing signed column marks",left>100 && right>100)
+            assertTrue("Positive value should occupy more area",right>left)
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {

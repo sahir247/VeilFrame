@@ -142,7 +142,10 @@ internal object PptxChartRenderer {
                 for(i in 0..4) {
                     val ratio=i/4f
                     val value=low+span*ratio
-                    val v=if(percent) "${(value*100).toInt()}%" else format(value*maxAbs)
+                    val v=if(percent) "${(value*100).toInt()}%" else {
+                        val absolute=value*maxAbs
+                        if(absolute.isFinite()) format(absolute) else format(value)+" x "+format(maxAbs)
+                    }
                     if(horizontal) {
                         val x=left+ratio*pw
                         line(x,top,x,bottom,0xffd8dde2.toInt())
@@ -157,13 +160,14 @@ internal object PptxChartRenderer {
                 line(left,bottom,right,bottom,Color.DKGRAY)
                 line(left,top,left,bottom,Color.DKGRAY)
                 // Numeric tick endpoints are rendered from the actual saved data.
-                label(format(pairs.minOf { it.first }),left,bottom+pad,font*5)
-                label(format(pairs.maxOf { it.first }),right-font*5,bottom+pad,font*5,lineH,"RIGHT")
-                label(format(pairs.maxOf { it.second }),box.left+pad,top,left-box.left-2*pad,lineH,"RIGHT")
-                label(format(pairs.minOf { it.second }),box.left+pad,bottom-lineH/2,left-box.left-2*pad,lineH,"RIGHT")
+                label(requireNotNull(xAxis).label(0f),left,bottom+pad,font*5)
+                label(xAxis.label(1f),right-font*5,bottom+pad,font*5,lineH,"RIGHT")
+                label(requireNotNull(yAxis).label(1f),box.left+pad,top,left-box.left-2*pad,lineH,"RIGHT")
+                label(yAxis.label(0f),box.left+pad,bottom-lineH/2,left-box.left-2*pad,lineH,"RIGHT")
             }
             val slot=(if(horizontal) ph else pw)/chart.categories.size
             if(!scatter) {
+                if(horizontal && slot<lineH) throw IOException("Slide chart category labels overlap")
                 // No silent category truncation: reject frames too small for their labels.
                 for((i,category) in chart.categories.withIndex()) {
                     if(horizontal) label(category.orEmpty(),box.left+pad,top+slot*i+(slot-lineH)/2,left-box.left-2*pad,lineH,"RIGHT")

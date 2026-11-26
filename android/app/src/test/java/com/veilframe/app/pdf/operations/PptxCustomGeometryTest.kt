@@ -19,6 +19,17 @@ class PptxCustomGeometryTest {
             """<a:path w="10" h="10"><a:moveTo><a:pt x="adj1" y="0"/></a:moveTo><a:lnTo><a:pt x="0" y="0"/></a:lnTo></a:path>"""))
             assertTrue(runCatching { PptxCustomGeometry.parse(xml(path)) }.isFailure)
     }
+    @Test fun guidesUseOfficeAngleAndSqrtRulesAndRejectInvalidReferences() {
+        val guides=DrawingMlGuides(200.0,100.0,listOf("adjust" to "val 25","pos" to "*/ w adjust 100",
+            "angle" to "at2 -1 1","root" to "sqrt -16","len" to "mod 3 4 12"))
+        assertEquals(50.0,guides.value("pos"),1e-6)
+        assertEquals(8100000.0,guides.value("angle"),1e-6)
+        assertEquals(4.0,guides.value("root"),1e-6)
+        assertEquals(13.0,guides.value("len"),1e-6)
+        assertTrue(runCatching { DrawingMlGuides(10.0,10.0,listOf("a" to "*/ 1 2 0")) }.isFailure)
+        assertTrue(runCatching { DrawingMlGuides(10.0,10.0,listOf("a" to "val a")) }.isFailure)
+    }
+
     @Test fun ellipticalRayAngleDiffersFromParametricAngle() {
         assertEquals(63.4349488,PptxCustomGeometry.ellipseAngle(2.0,1.0,45.0),1e-6)
     }

@@ -36,9 +36,10 @@ internal object PptxCustomGeometry {
         return found.singleOrNull()
     }
     private fun attr(n: Node,key: String)=n.attributes?.getNamedItem(key)?.nodeValue
-    private fun number(n: Node,key: String): Double {
-        val v=attr(n,key)?.toLongOrNull()?.toDouble()
-            ?: throw IOException("Unsupported guide or missing custom path coordinate: "+key)
+    private fun number(n: Node,key: String,guide: ((String)->Double)? = null): Double {
+        val raw=attr(n,key) ?: throw IOException("Missing custom path coordinate: "+key)
+        val v=raw.toLongOrNull()?.toDouble() ?: guide?.invoke(raw)
+            ?: throw IOException("Invalid custom path coordinate: "+key)
         if(!v.isFinite() || abs(v)>1e10) throw IOException("Custom shape coordinate exceeds budget")
         return v
     }
@@ -52,14 +53,30 @@ internal object PptxCustomGeometry {
         val sp=one(element,"spPr",pres) ?: return null
         val geom=one(sp,"custGeom") ?: return null
         val paths=one(geom,"pathLst") ?: throw IOException("Missing custom shape path list")
+        val extent=one(sp,"xfrm")?.let { one(it,"ext") }
+        val definitions=mutableListOf<Pair<String,String>>()
+        for(listName in listOf("avLst","gdLst")) {
+            val list=one(geom,listName) ?: continue
+            for(entry in children(list)) {
+                if(definitions.size>=1024 || entry.namespaceURI !in ns || entry.localName!="gd")
+                    throw IOException("Invalid custom geometry guide list")
+                val name=attr(entry,"name") ?: throw IOException("Unnamed custom geometry guide")
+                val formula=attr(entry,"fmla") ?: throw IOException("Missing custom geometry guide formula")
+                definitions.add(name to formula)
+            }
+        }
         val nodes=children(paths)
         if(nodes.size !in 1..64) throw IOException("Custom path count exceeds budget")
         var commandCount=0
         return nodes.map { node ->
             if(node.namespaceURI !in ns || node.localName!="path") throw IOException("Unexpected custom geometry element")
-            val width=number(node,"w")
-            val height=number(node,"h")
+            val width=if(attr(node,"w")!=null) number(node,"w") else
+                extent?.let { number(it,"cx") } ?: throw IOException("Missing custom path width")
+            val height=if(attr(node,"h")!=null) number(node,"h") else
+                extent?.let { number(it,"cy") } ?: throw IOException("Missing custom path height")
             if(width<=0 || height<=0) throw IOException("Invalid custom path coordinate space")
+            val guides=DrawingMlGuides(width,height,definitions)
+            val resolve=guides::value
             val fill=when(attr(node,"fill")) {
                 null,"norm" -> true
                 "none" -> false
@@ -85,8 +102,8 @@ internal object PptxCustomGeometry {
                 if(kind!="moveTo" && !started) throw IOException("Custom path must start at an explicit point")
                 if(kind=="moveTo") started=true
                 else if(kind!="close") hasSegment=true
-                val args=if(kind=="arcTo") listOf(number(command,"wR"),number(command,"hR"),number(command,"stAng"),number(command,"swAng"))
-                    else pts.flatMap { listOf(number(it,"x"),number(it,"y")) }
+                val args=if(kind=="arcTo") listOf(number(command,"wR",resolve),number(command,"hR",resolve),number(command,"stAng",resolve),number(command,"swAng",resolve))
+                    else pts.flatMap { listOf(number(it,"x",resolve),number(it,"y",resolve)) }
                 if(kind=="arcTo" && (args[0]<=0 || args[1]<=0 || abs(args[3])>21600000))
                     throw IOException("Invalid custom ellipse arc")
                 Command(kind,args)
