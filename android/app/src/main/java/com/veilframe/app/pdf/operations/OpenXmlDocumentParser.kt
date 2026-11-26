@@ -721,9 +721,7 @@ object OpenXmlDocumentParser {
                 bar.childElements("ser").isEmpty() || line.childElements("ser").isEmpty()) return null
             fun axes(type: Element) = type.childElements("axId").map { it.getAttribute("val") }
             val barAxes = axes(bar); val lineAxes = axes(line)
-            // Secondary-axis charts cannot be mapped to one value scale.
-            if (barAxes.size != 2 || barAxes.any { it.isBlank() } || barAxes.distinct().size != 2 ||
-                barAxes.toSet() != lineAxes.toSet()) return null
+            if (listOf(barAxes,lineAxes).any { ids -> ids.size!=2 || ids.any { it.isBlank() } || ids.distinct().size!=2 }) return null
         } else if (chartTypes.size != 1) return null
         val type = chartTypes.firstOrNull() ?: return null
         val grouping = type.childElements("grouping").singleOrNull()?.getAttribute("val")
@@ -845,7 +843,61 @@ object OpenXmlDocumentParser {
             return points
         }
         val seriesTypes = if (combo) chartTypes else listOf(type)
+        // Secondary categorical value axes must resolve by identity, not by
+        // chart order or the magnitude of their data. Legacy caches with
+        // one common axis pair and no declarations retain the old behavior.
+        val valueAxes=mutableListOf<XlsxCachedChart.ValueAxis>()
+        val axisByType=mutableMapOf<Element,String>()
+        if(combo) {
+            fun ids(t: Element)=t.childElements("axId").map { it.getAttribute("val") }
+            val different=ids(seriesTypes[0]).toSet()!=ids(seriesTypes[1]).toSet()
+            if(different) {
+                val cat=plot.childElements("catAx")
+                val value=plot.childElements("valAx")
+                if(value.size!=2 || cat.size !in 1..2) return null
+                fun id(e: Element)=e.childElements("axId").singleOrNull()?.getAttribute("val")
+                val all=cat+value
+                if(all.any { id(it)?.matches(Regex("[0-9]{1,10}"))!=true } || all.map(::id).distinct().size!=all.size) return null
+                val byId=all.associateBy(::id)
+                for(t in seriesTypes) {
+                    val pair=ids(t).map { byId[it] ?: return null }
+                    val c=pair.singleOrNull { it.localName()=="catAx" } ?: return null
+                    val v=pair.singleOrNull { it.localName()=="valAx" } ?: return null
+                    if(v.childElements("crossAx").singleOrNull()?.getAttribute("val")!=id(c)) return null
+                    // A shared category axis may cross either value axis; a
+                    // distinct one must cross its own value axis.
+                    val cross=c.childElements("crossAx").singleOrNull()?.getAttribute("val")
+                    if(cross !in value.map(::id) || (cat.size==2 && cross!=id(v))) return null
+                    val cScale=c.childElements("scaling").singleOrNull()
+                    if(cScale?.childElements("orientation")?.singleOrNull()?.getAttribute("val") !in setOf(null,"minMax")) return null
+                    if(c.childElements("axPos").singleOrNull()?.getAttribute("val") !in setOf("b","t")) return null
+                    axisByType[t]=requireNotNull(id(v))
+                }
+                if(axisByType.values.distinct().size!=2) return null
+                for(v in value) {
+                    val pos=v.childElements("axPos").singleOrNull()?.getAttribute("val") ?: return null
+                    if(pos !in setOf("l","r")) return null
+                    val scaling=v.childElements("scaling").singleOrNull() ?: return null
+                    if(scaling.childElements("logBase").isNotEmpty()) return null
+                    val orientation=scaling.childElements("orientation").singleOrNull()?.getAttribute("val") ?: "minMax"
+                    if(orientation !in setOf("minMax","maxMin")) return null
+                    val minNodes=scaling.childElements("min")
+                    val maxNodes=scaling.childElements("max")
+                    if(minNodes.size>1 || maxNodes.size>1) return null
+                    val min=minNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
+                    val max=maxNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
+                    if(minNodes.isNotEmpty() && (min==null || !min.isFinite()) ||
+                        maxNodes.isNotEmpty() && (max==null || !max.isFinite()) ||
+                        min!=null && max!=null && min>=max) return null
+                    val format=v.childElements("numFmt").singleOrNull()?.getAttribute("formatCode")?.takeIf { it.isNotBlank() }
+                    if(!SharedChartValueAxes.supportedFormat(format)) return null
+                    valueAxes.add(XlsxCachedChart.ValueAxis(requireNotNull(id(v)),pos,min,max,orientation=="maxMin",format))
+                }
+                if(valueAxes.map { it.position }.toSet()!=setOf("l","r")) return null
+            }
+        }
         val series = seriesTypes.flatMap { it.childElements("ser") }
+        val seriesAxisIds=seriesTypes.flatMap { t -> t.childElements("ser").map { axisByType[t] } }
         val seriesKinds = seriesTypes.flatMap { t ->
             t.childElements("ser").map { if (t.localName() == "lineChart") "line" else "column" }
         }
@@ -906,10 +958,10 @@ object OpenXmlDocumentParser {
             parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
                 values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser),
                 strokeWidthPt = seriesStrokeWidth(ser), markerSymbol = markerSymbol,
-                markerSizePt = marker.second))
+                markerSizePt = marker.second,valueAxisId=seriesAxisIds[index]))
         }
         return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
-            grouping ?: "clustered", blankDisplay = blankDisplay)
+            grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes)
     }
 
     private data class ParsedXlsxStyles(
