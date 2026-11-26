@@ -15,7 +15,7 @@ import kotlin.math.PI
 /** Bounded DrawingML custom paths. Coordinates are local to each path, not slide EMUs. */
 internal object PptxCustomGeometry {
     data class Command(val kind: String,val args: List<Double>)
-    data class Subpath(val width: Double,val height: Double,val fill: Boolean,val stroke: Boolean,val commands: List<Command>)
+    data class Subpath(val width: Double,val height: Double,val fill: Boolean,val stroke: Boolean,val commands: List<Command>,val fillMode: String=if(fill) "norm" else "none")
     private val ns=setOf("http://schemas.openxmlformats.org/drawingml/2006/main","http://purl.oclc.org/ooxml/drawingml/main")
     private val pres=setOf("http://schemas.openxmlformats.org/presentationml/2006/main","http://purl.oclc.org/ooxml/presentationml/main")
     private fun children(n: Node): List<Node> {
@@ -153,11 +153,10 @@ internal object PptxCustomGeometry {
             if(width<=0 || height<=0) throw IOException("Invalid custom path coordinate space")
             val guides=DrawingMlGuides(width,height,definitions)
             val resolve=guides::value
-            val fill=when(attr(node,"fill")) {
-                null,"norm" -> true
-                "none" -> false
-                else -> throw IOException("Unsupported custom path fill effect")
-            }
+            val fillMode=attr(node,"fill") ?: "norm"
+            if(fillMode !in setOf("none","norm","lighten","lightenLess","darken","darkenLess"))
+                throw IOException("Unsupported custom path fill effect")
+            val fill=fillMode!="none"
             val stroke=flag(node,"stroke")
             var started=false
             var hasSegment=false
@@ -185,7 +184,7 @@ internal object PptxCustomGeometry {
                 Command(kind,args)
             }
             if(!hasSegment) throw IOException("Empty custom shape path")
-            Subpath(width,height,fill,stroke,commands)
+            Subpath(width,height,fill,stroke,commands,fillMode)
         }
     }
 
@@ -195,6 +194,26 @@ internal object PptxCustomGeometry {
         val rad=degrees*PI/180
         return atan2(rx*sin(rad),ry*cos(rad))*180/PI
     }
+    /** Relative solid face shading. The 20/40 percent strengths are an
+     * interoperability convention; independent Office raster parity is not assumed.
+     * Keep alpha and the caller's Paint unchanged across overlapping faces.
+     */
+    internal fun shadeColor(argb: Int,mode: String): Int {
+        val amount=when(mode) {
+            "norm" -> return argb
+            "lightenLess","darkenLess" -> 20
+            "lighten","darken" -> 40
+            else -> throw IOException("Unsupported solid path shading")
+        }
+        val target=if(mode.startsWith("lighten")) 255 else 0
+        fun channel(shift: Int): Int {
+            val original=(argb ushr shift) and 255
+            return (original*(100-amount)+target*amount+50)/100
+        }
+        return (argb and 0xff000000.toInt()) or (channel(16) shl 16) or
+            (channel(8) shl 8) or channel(0)
+    }
+
     fun draw(canvas: Canvas,paths: List<Subpath>,bounds: RectF,paint: Paint) {
         require(bounds.width()>0 && bounds.height()>0)
         for(spec in paths) {
@@ -241,7 +260,11 @@ internal object PptxCustomGeometry {
                     }
                 }
             }
-            canvas.drawPath(path,paint)
+            val facePaint=if(paint.style==Paint.Style.FILL && spec.fillMode!="norm") {
+                if(paint.shader!=null) throw IOException("Non-solid shaded path fill unsupported")
+                Paint(paint).apply { color=shadeColor(paint.color,spec.fillMode) }
+            } else paint
+            canvas.drawPath(path,facePaint)
         }
     }
 }
