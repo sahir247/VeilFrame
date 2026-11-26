@@ -130,7 +130,7 @@ class OfficeRenderingDeviceTest {
     }
 
     /** Opt-in capture of a supplied, synthetic PowerPoint corpus file; not an ordinary CI pass. */
-    @Test fun capturePowerPointReferenceCandidate() = runBlocking {
+    @Test fun capturePowerPointReferenceCandidate(): Unit = runBlocking {
         val args=InstrumentationRegistry.getArguments()
         val name=args.getString("pptxReferenceFixture")
         org.junit.Assume.assumeTrue("No external reference fixture requested",!name.isNullOrBlank())
@@ -160,6 +160,7 @@ class OfficeRenderingDeviceTest {
                 .put("slide_count",slides.size).toString(2))
             Log.i("VeilFrame.OfficeDevice","PPTX reference candidate: ${folder.absolutePath}")
         } finally { slides.forEach { if(!it.isRecycled) it.recycle() } }
+        Unit
     }
 
     private fun runDirectory(name: String): File {

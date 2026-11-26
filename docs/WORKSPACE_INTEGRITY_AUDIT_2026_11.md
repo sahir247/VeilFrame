@@ -1596,3 +1596,5 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### 2026-11-26 — A28 independent PowerPoint reference acceptance tooling
 
 - Add opt-in Android capture of exact fixture bytes and tested git SHA, native 1920-wide slide rasters, device metadata, and Microsoft PowerPoint Windows COM capture script for licensed local Office. Strict comparator validates same source identity, slide count and native dimensions, records raster hashes, changed pixels and error metrics, exits nonzero on any mismatch; no scaling or tolerance is allowed to manufacture a pass. Synthetic comparator regression covers exact equality, one-pixel mutation, mismatched source/dimensions. See docs/PPTX_REFERENCE_ACCEPTANCE.md. No actual PowerPoint reference was available in this session; exact parity remains UNVERIFIED, not a release claim. CI pending.
+
+- Reference capture explicitly returns Kotlin Unit (JUnit void contract), rather than inferring the integer Android log return value. The opt-in capture is still not evidence of completed reference comparison.
