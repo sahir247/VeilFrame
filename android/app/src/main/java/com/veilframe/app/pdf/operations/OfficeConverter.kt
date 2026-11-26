@@ -2363,17 +2363,22 @@ class OfficeConverter {
                             val r = shape.rightInset.toFloat()*fontScale
                             val top = shape.topInset.toFloat()*fontScale
                             val bottom = shape.bottomInset.toFloat()*fontScale
-                            val body = PptxShapeTransform.textBody(shape.xmlObject.domNode)
+                            val body = PptxShapeTransform.textBody(shape)
                             val frame = PptxShapeTransform.textFrame(matrix.pixelAffine(sx,sy),
                                 PptxShapeTransform.Rect(px.toDouble(),py.toDouble(),pw.toDouble(),ph.toDouble()),
-                                body,shape.textRotation ?: 0.0,shape.textDirection?.name)
+                                body,body.rotation ?: 0.0,shape.textDirection?.name)
                             val box = frame.bounds
                             val textSave = canvas.save()
                             try {
                                 canvas.concat(android.graphics.Matrix().apply { setValues(frame.correction.pixels(1.0,1.0)) })
-                                PptxTextLayout.draw(canvas,rendered,box.x.toFloat()+l,box.y.toFloat()+top,
-                                    box.width.toFloat()-l-r,box.height.toFloat()-top-bottom,
-                                    shape.verticalAlignment?.name ?: "TOP")
+                                val textLeft = box.x.toFloat()+l
+                                val textTop = box.y.toFloat()+top
+                                val textWidth = box.width.toFloat()-l-r
+                                val textHeight = box.height.toFloat()-top-bottom
+                                val vertical = shape.verticalAlignment?.name ?: "TOP"
+                                if(frame.stacked) PptxTextLayout.drawStacked(canvas,rendered,textLeft,textTop,
+                                    textWidth,textHeight,vertical,frame.columnsRtl)
+                                else PptxTextLayout.draw(canvas,rendered,textLeft,textTop,textWidth,textHeight,vertical)
                             } finally { canvas.restoreToCount(textSave) }
                         }
                     }

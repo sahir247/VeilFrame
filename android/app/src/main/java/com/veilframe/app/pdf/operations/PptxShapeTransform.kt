@@ -96,13 +96,39 @@ internal object PptxShapeTransform {
         val bounds = rect(node,"off","ext")
         return Transform(bounds,orientation(node,bounds))
     }
-    data class TextBody(val upright: Boolean,val direction: String?)
-    fun textBody(root: Node): TextBody {
-        val body = properties(root,"txBody")?.let { one(it,"bodyPr",drawing) }
-            ?: return TextBody(false,null)
-        return TextBody(flag(body,"upright"),attr(body,"vert"))
+    data class TextBody(val upright: Boolean,val direction: String?,val rotation: Double? = null)
+    private fun bodyAttribute(root: Node,key: String): String? =
+        properties(root,"txBody")?.let { one(it,"bodyPr",drawing) }?.let { attr(it,key) }
+
+    internal fun resolveTextBody(resolve: (String)->String?): TextBody {
+        val upright = when(resolve("upright")) {
+            null,"0","false" -> false
+            "1","true" -> true
+            else -> throw IOException("Invalid upright text flag")
+        }
+        val rotation = resolve("rot")?.let {
+            (it.toLongOrNull() ?: throw IOException("Invalid slide text rotation"))/60000.0
+        }
+        return TextBody(upright,resolve("vert"),rotation)
     }
-    data class TextFrame(val bounds: Rect,val correction: Affine)
+    fun textBody(root: Node): TextBody = resolveTextBody { bodyAttribute(root,it) }
+
+    /** Resolve each property separately: a local empty bodyPr does not erase inheritance.
+     * POI uses slide -> matching layout placeholder -> master placeholder precedence.
+     */
+    fun textBody(shape: org.apache.poi.xslf.usermodel.XSLFShape): TextBody = resolveTextBody { key ->
+        var found: String? = null
+        shape.fetchShapeProperty(object: org.apache.poi.xslf.model.PropertyFetcher<String>() {
+            override fun fetch(candidate: org.apache.poi.xslf.usermodel.XSLFShape): Boolean {
+                val value = bodyAttribute(candidate.xmlObject.domNode,key) ?: return false
+                found = value
+                return true
+            }
+        })
+        found
+    }
+    data class TextFrame(val bounds: Rect,val correction: Affine,val stacked: Boolean = false,
+        val columnsRtl: Boolean = false)
 
     /**
      * Shape canvas already has its pixel affine. Return a relative correction
@@ -134,17 +160,19 @@ internal object PptxShapeTransform {
         } else {
             desired = desired*around(bounds,rotation%360.0,false,false)
         }
-        val flow = when(body.direction ?: inheritedDirection ?: "horz") {
-            "horz","HORIZONTAL" -> 0.0
+        val direction = body.direction ?: inheritedDirection ?: "horz"
+        val stacked = direction in setOf("wordArtVert","wordArtVertRtl","STACKED")
+        val flow = when(direction) {
+            "horz","HORIZONTAL","wordArtVert","wordArtVertRtl","STACKED" -> 0.0
             "vert","VERTICAL" -> 90.0
             "vert270","VERTICAL_270" -> -90.0
-            else -> throw OfficeTextEncodingException("Stacked or native vertical-script slide text is unsupported")
+            else -> throw OfficeTextEncodingException("Native vertical-script slide text is unsupported")
         }
         if (flow!=0.0) {
             desired = desired*around(bounds,flow,false,false)
             frame=swapped(frame)
         }
-        return TextFrame(frame,shape.inverse()*desired)
+        return TextFrame(frame,shape.inverse()*desired,stacked,direction=="wordArtVertRtl")
     }
 
     fun group(root: Node): Affine {

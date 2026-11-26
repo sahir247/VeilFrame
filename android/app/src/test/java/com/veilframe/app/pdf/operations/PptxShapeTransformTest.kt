@@ -63,6 +63,20 @@ class PptxShapeTransformTest {
             PptxShapeTransform.TextBody(true,null),0.0) }.isFailure)
     }
 
+    @Test fun textBodyAttributesResolveIndependentlyIncludingExplicitFalse() {
+        val local = mapOf("upright" to "0")
+        val layout = mapOf("upright" to "1","vert" to "wordArtVertRtl")
+        val master = mapOf("rot" to "5400000")
+        val body = PptxShapeTransform.resolveTextBody { local[it] ?: layout[it] ?: master[it] }
+        assertEquals(false,body.upright)
+        assertEquals("wordArtVertRtl",body.direction)
+        assertEquals(90.0,requireNotNull(body.rotation),0.0001)
+        val frame = PptxShapeTransform.textFrame(PptxShapeTransform.Affine(),
+            PptxShapeTransform.Rect(0.0,0.0,40.0,80.0),body,requireNotNull(body.rotation))
+        assertTrue(frame.stacked && frame.columnsRtl)
+        assertEquals(40.0,frame.bounds.width,0.0001)
+    }
+
     @Test fun missingOrZeroChildExtentFailsWithoutInventingGeometry() {
         assertTrue(runCatching { PptxShapeTransform.group(xml("""<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="20"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="10"/></a:xfrm></p:grpSpPr>""")) }.isFailure)
     }

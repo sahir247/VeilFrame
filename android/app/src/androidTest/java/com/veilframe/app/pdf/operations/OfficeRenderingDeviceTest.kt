@@ -80,6 +80,33 @@ class OfficeRenderingDeviceTest {
         } finally { source.recycle(); output.recycle() }
     }
 
+    @Test fun stackedWordArtPreservesClustersAndColumnDirection() {
+        val first = PptxTextLayout.Run("A",26f,Color.RED)
+        val mark = PptxTextLayout.Run("\u0301B",26f,Color.BLUE)
+        val clusters = PptxTextLayout.stackedRuns(listOf(first,mark))
+        assertEquals(listOf("A\u0301","B"),clusters.map { parts -> parts.joinToString("") { it.text } })
+        assertEquals(2,clusters.first().size)
+        val bitmap = Bitmap.createBitmap(240,200,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val paragraphs = listOf(PptxTextLayout.Paragraph(listOf(first.copy(text="AB"))),
+                PptxTextLayout.Paragraph(listOf(mark.copy(text="CD"))))
+            PptxTextLayout.drawStacked(android.graphics.Canvas(bitmap),paragraphs,10f,10f,220f,180f,"TOP",true)
+            var redX=0L; var blueX=0L; var reds=0; var blues=0
+            for(y in 0 until bitmap.height) for(x in 0 until bitmap.width) {
+                val pixel=bitmap.getPixel(x,y)
+                if(Color.red(pixel)>150 && Color.blue(pixel)<100 && Color.green(pixel)<100) { redX+=x; reds++ }
+                if(Color.blue(pixel)>150 && Color.red(pixel)<100 && Color.green(pixel)<100) { blueX+=x; blues++ }
+            }
+            assertTrue(reds>0 && blues>0)
+            assertTrue(redX.toDouble()/reds>blueX.toDouble()/blues)
+            bitmap.eraseColor(Color.WHITE)
+            assertTrue(runCatching { PptxTextLayout.drawStacked(android.graphics.Canvas(bitmap),
+                paragraphs,10f,10f,5f,180f,"TOP",true) }.isFailure)
+            assertEquals(Color.WHITE,bitmap.getPixel(20,20))
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
