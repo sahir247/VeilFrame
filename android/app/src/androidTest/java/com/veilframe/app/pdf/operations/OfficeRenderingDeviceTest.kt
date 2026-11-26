@@ -129,6 +129,39 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    /** Opt-in capture of a supplied, synthetic PowerPoint corpus file; not an ordinary CI pass. */
+    @Test fun capturePowerPointReferenceCandidate() = runBlocking {
+        val args=InstrumentationRegistry.getArguments()
+        val name=args.getString("pptxReferenceFixture")
+        org.junit.Assume.assumeTrue("No external reference fixture requested",!name.isNullOrBlank())
+        requireNotNull(name)
+        require(name.matches(Regex("[A-Za-z0-9_-]+\\.pptx"))) { "Invalid fixture filename" }
+        val commit=args.getString("pptxReferenceCommit").orEmpty()
+        require(commit.matches(Regex("[0-9a-f]{40}"))) { "Pass the exact tested commit SHA" }
+        val root=requireNotNull(context.getExternalFilesDir(null))
+        val input=File(File(root,"pptx_reference_inputs"),name)
+        require(input.isFile && input.length() in 1L..134217728L) { "Missing or oversized reference fixture" }
+        val before=digest(input)
+        val folder=runDirectory("pptx_reference_candidate")
+        val slides=OfficeConverter().renderPptxToBitmaps(input,1920)
+        try {
+            check(slides.isNotEmpty())
+            for((index,bitmap) in slides.withIndex()) {
+                val filename=String.format(java.util.Locale.ROOT,"slide-%04d.png",index+1)
+                File(folder,filename).outputStream().use {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))
+                }
+            }
+            check(before==digest(input)) { "Fixture mutated during candidate capture" }
+            File(folder,"manifest.json").writeText(JSONObject()
+                .put("schema",1).put("source_sha256",before).put("source_name",name)
+                .put("renderer","VeilFrame Android").put("renderer_version",commit)
+                .put("device_fingerprint",Build.FINGERPRINT).put("sdk",Build.VERSION.SDK_INT)
+                .put("slide_count",slides.size).toString(2))
+            Log.i("VeilFrame.OfficeDevice","PPTX reference candidate: ${folder.absolutePath}")
+        } finally { slides.forEach { if(!it.isRecycled) it.recycle() } }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
