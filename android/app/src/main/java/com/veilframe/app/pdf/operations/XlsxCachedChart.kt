@@ -8,7 +8,8 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     val printsWithSheet: Boolean = true,
     val drawingOffsets: DrawingOffsets? = null,
     val blankDisplay: BlankDisplay = BlankDisplay.GAP,
-    val valueAxes: List<ValueAxis> = emptyList()) {
+    val valueAxes: List<ValueAxis> = emptyList(),
+    val firstSliceAngle: Int = 0) {
     /** Applies to drawing categorical lines only; cached worksheet values remain unchanged. */
     enum class BlankDisplay {
         GAP, ZERO, SPAN;
@@ -24,9 +25,15 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     data class DrawingOffsets(val fromColEmu: Long, val fromRowEmu: Long,
         val toColEmu: Long, val toRowEmu: Long) {
     }
+    /** Null Ink means unspecified; Ink(null) means explicitly no paint. */
+    data class Ink(val rgb: Int?)
+    data class Stroke(val ink: Ink?=null,val widthPt: Float?=null,
+        val dashRatios: List<Float> = emptyList(),val cap: String="flat")
     data class Series(val name: String, val values: List<Double?>,
         val xValues: List<Double?> = emptyList(), val chartKind: String? = null,
         val rgb: Int? = null, val strokeWidthPt: Float? = null,
         val markerSymbol: String? = null, val markerSizePt: Float? = null,
-        val valueAxisId: String? = null)
+        val valueAxisId: String? = null,
+        val fill: Ink? = null,val stroke: Stroke? = null,val markerFill: Ink? = null,
+        val markerStroke: Stroke? = null,val pointFills: Map<Int,Ink> = emptyMap())
 }
