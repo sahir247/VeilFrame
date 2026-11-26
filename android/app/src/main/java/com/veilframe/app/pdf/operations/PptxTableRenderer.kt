@@ -93,7 +93,7 @@ internal object PptxTableRenderer {
         } ?: (rgb ushr 24)
         return (rgb and 0xffffff) or (alpha shl 24)
     }
-    private data class Border(val edge: String,val color: Int,val width: Float)
+    private data class Border(val edge: String,val color: Int,val style: PptxStrokeStyle.Spec)
     private data class Visual(val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: List<Border>)
     fun draw(canvas: Canvas,table: XSLFTable,bounds: RectF,fontScale: Float,
         theme: (String)->Int,checkpoint: ()->Unit,text: (XSLFTableCell,RectF)->Unit) {
@@ -115,11 +115,8 @@ internal object PptxTableRenderer {
                 for(edge in listOf("lnL","lnR","lnT","lnB","lnTlToBr","lnBlToTr")) {
                     val line=one(properties,edge) ?: continue
                     val lineColor=fill(line,theme) ?: continue
-                    if(children(line).any { it.localName in setOf("prstDash","custDash","headEnd","tailEnd") })
-                        throw IOException("Unsupported slide table border style")
-                    val raw=attr(line,"w")?.toLongOrNull() ?: 12700L
-                    require(raw in 0..1270000) { "Invalid slide table border width" }
-                    if(raw>0) borders.add(Border(edge,lineColor,raw/12700f*fontScale))
+                    val style=PptxStrokeStyle.parse(line,fontScale,fontScale)
+                    if(style.width>0f) borders.add(Border(edge,lineColor,style))
                 }
             }
             Visual(cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders)
@@ -134,15 +131,15 @@ internal object PptxTableRenderer {
             text(v.cell,v.box)
         }
         for(v in visuals) for(line in v.borders) {
-            paint.color=line.color; paint.strokeWidth=line.width
+            val stroke=line.style.paint(line.color)
             val r=v.box
             when(line.edge) {
-                "lnL" -> canvas.drawLine(r.left,r.top,r.left,r.bottom,paint)
-                "lnR" -> canvas.drawLine(r.right,r.top,r.right,r.bottom,paint)
-                "lnT" -> canvas.drawLine(r.left,r.top,r.right,r.top,paint)
-                "lnB" -> canvas.drawLine(r.left,r.bottom,r.right,r.bottom,paint)
-                "lnTlToBr" -> canvas.drawLine(r.left,r.top,r.right,r.bottom,paint)
-                "lnBlToTr" -> canvas.drawLine(r.left,r.bottom,r.right,r.top,paint)
+                "lnL" -> canvas.drawLine(r.left,r.top,r.left,r.bottom,stroke)
+                "lnR" -> canvas.drawLine(r.right,r.top,r.right,r.bottom,stroke)
+                "lnT" -> canvas.drawLine(r.left,r.top,r.right,r.top,stroke)
+                "lnB" -> canvas.drawLine(r.left,r.bottom,r.right,r.bottom,stroke)
+                "lnTlToBr" -> canvas.drawLine(r.left,r.top,r.right,r.bottom,stroke)
+                "lnBlToTr" -> canvas.drawLine(r.left,r.bottom,r.right,r.top,stroke)
             }
         }
     }

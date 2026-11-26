@@ -2402,7 +2402,9 @@ class OfficeConverter {
                         }
                         val lineColor = getShapeLineColor(shape, themeColors)
                         if (lineColor != null) {
-                            val strokePaint = Paint().apply { color = lineColor; style = Paint.Style.STROKE; strokeWidth = 2f * (targetWidth / 960f); isAntiAlias = true }
+                            val line=PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
+                                2f*(targetWidth/960f))
+                            val strokePaint=line.paint(lineColor)
                             if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),strokePaint)
                             else drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
                         } else if (geomType == ShapeGeom.ELLIPSE) {
