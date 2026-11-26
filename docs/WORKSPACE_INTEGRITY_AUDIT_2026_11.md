@@ -1566,3 +1566,8 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 ### Signature canvas placement admission (2026-11-26)
 - Queue every admitted signature during document loading instead of replacing an earlier pending signature. Preserve explicit page indices; invalid page requests fail visibly rather than redirecting to page one. Reset and load failure clear the queue.
 - Preserve bitmap aspect ratio on small and large pages. Bound placement count (256), individual bitmap pixels (4M), unique retained bitmap pixels (16M), and preview cache (8–32 MiB); copies are counted by bitmap identity, not as new allocations. Regression tests cover placement and pixel limits and extreme aspect ratios. Actual interactive device verification remains pending.
+
+
+### Quick PDF execution and archive integrity (2026-11-26)
+- Extract immutable requests and all merge/split/delete/rotate/reorder/image conversion/compression/encryption/visual-signature/HTML/Office export execution from the quick-tool controller into a view-independent executor. Existing generation-guarded picker handoff remains the publication boundary. Engine error causes propagate rather than collapsing into a generic boolean.
+- Reject unsafe provider display-name path components; enforce sequential unique archive part numbers, exact expected/reported counts, nonempty PDF streams and bounded split output pages. Check cancellation during chunked copies and delete every untransferred temporary archive. Pure tests cover unsafe names, missing, duplicate, out-of-order and excess entries. UI/device acceptance and fresh CI still required.

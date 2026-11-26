@@ -27,22 +27,12 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.ItemPdfMergeFileBinding
 import com.veilframe.app.databinding.LayoutPdfQuickToolBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
-import com.veilframe.app.pdf.operations.HtmlToPdfConverter
-import com.veilframe.app.pdf.operations.ImageConverter
-import com.veilframe.app.pdf.operations.ImageFormat
 import com.veilframe.app.pdf.operations.MergePageItem
-import com.veilframe.app.pdf.operations.OfficeConverter
 import com.veilframe.app.pdf.operations.OfficeSourceFormat
-import com.veilframe.app.pdf.operations.PdfCompressor
 import com.veilframe.app.pdf.operations.PdfFormFiller
-import com.veilframe.app.pdf.operations.PdfMerger
 import com.veilframe.app.pdf.operations.PdfMetadataManager
-import com.veilframe.app.pdf.operations.PdfOrganizer
-import com.veilframe.app.pdf.operations.PdfRotator
-import com.veilframe.app.pdf.operations.PdfSecurityManager
 import com.veilframe.app.pdf.operations.PdfSecurityOptions
 import com.veilframe.app.pdf.operations.PdfSigner
-import com.veilframe.app.pdf.operations.PdfSplitter
 import com.veilframe.app.pdf.operations.RotationAngle
 import com.veilframe.app.pdf.ui.PdfMergePageAdapter
 import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
@@ -56,8 +46,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Collections
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 /**
  * Controller managing specialized single-action quick tools in the PDF Suite:
@@ -149,18 +137,10 @@ class PdfQuickToolController(
         }
     }
 
-    private val pdfMerger by lazy { PdfMerger() }
-    private val pdfSplitter by lazy { PdfSplitter() }
-    private val pdfCompressor by lazy { PdfCompressor() }
-    private val pdfRotator by lazy { PdfRotator() }
-    private val pdfOrganizer by lazy { PdfOrganizer() }
-    private val pdfSecurityManager by lazy { PdfSecurityManager() }
     private val pdfSigner by lazy { PdfSigner(activity) }
+    private val quickExecutor by lazy { PdfQuickOperationExecutor(activity.applicationContext, pdfSigner) }
     private val pdfFormFiller by lazy { PdfFormFiller() }
     private val formEditor = PdfAcroFormEditor(activity)
-    private val htmlConverter by lazy { HtmlToPdfConverter() }
-    private val officeConverter by lazy { OfficeConverter() }
-    private val imageConverter by lazy { ImageConverter() }
     private val metadataManager by lazy { PdfMetadataManager() }
     private val thumbnailLoader by lazy { PdfThumbnailLoader(activity) }
     private val pagePreviews by lazy { PdfQuickPagePreviews(activity,scope,thumbnailLoader) }
@@ -1580,338 +1560,67 @@ class PdfQuickToolController(
             bitmap to pages
         } else null
 
+        val request = try {
+            when (operationMode) {
+                QuickMode.MERGE -> QuickPdfRequest.Merge(operationUris, if (interleaved) mergePlan else null)
+                QuickMode.SPLIT -> {
+                    val uri = operationUris.first()
+                    when {
+                        splitAllPages -> QuickPdfRequest.SplitAll(uri, sourcePageCount)
+                        splitSelectedMode -> {
+                            require(splitSelectedPages.isNotEmpty()) { "Select at least one page to split" }
+                            QuickPdfRequest.SplitSelected(uri, splitSelectedPages)
+                        }
+                        else -> {
+                            val ranges = PdfSplitRangeParser.parse(splitRangeText, sourcePageCount)
+                            require(ranges.isNotEmpty()) { "Enter valid page ranges (e.g. 1-2, 3-5)" }
+                            QuickPdfRequest.SplitRanges(uri, ranges)
+                        }
+                    }
+                }
+                QuickMode.DELETE -> {
+                    require(deletePages.isNotEmpty()) { "Select at least one page to delete" }
+                    QuickPdfRequest.Delete(operationUris.first(), deletePages)
+                }
+                QuickMode.ROTATE -> QuickPdfRequest.Rotate(operationUris.first(), rotatePages, rotateAngle)
+                QuickMode.REORDER -> QuickPdfRequest.Reorder(operationUris.first(), reorderPages)
+                QuickMode.IMAGE_TO_PDF -> QuickPdfRequest.Images(operationUris)
+                QuickMode.COMPRESS -> QuickPdfRequest.Compress(operationUris.first(), quality, rasterSelected && rasterConfirmed)
+                QuickMode.LOCK -> {
+                    val options = requireNotNull(lockOptions)
+                    require(options.password.isNotEmpty()) { "Enter an encryption password" }
+                    QuickPdfRequest.Lock(operationUris.first(), options)
+                }
+                QuickMode.SIGN -> if (signatureItems.isNotEmpty()) {
+                    QuickPdfRequest.SignCanvas(operationUris.first(), signatureItems)
+                } else {
+                    val inputs = requireNotNull(signatureInput)
+                    QuickPdfRequest.SignRelative(operationUris.first(),
+                        requireNotNull(inputs.first) { "Draw a signature first" },
+                        inputs.second, signX, signY, signScale)
+                }
+                QuickMode.HTML_TO_PDF -> {
+                    require(htmlInput.isNotEmpty()) { "Enter HTML code" }
+                    QuickPdfRequest.Html(htmlInput)
+                }
+                QuickMode.DOC_TO_PDF -> QuickPdfRequest.Office(operationUris.first(), operationFileName,
+                    requireNotNull(officeIdentity) { "Inspect the Office document again before converting" },
+                    xlsxPrintLayout == true)
+                QuickMode.PDF_TO_IMAGE -> QuickPdfRequest.PdfImages(operationUris.first(), sourcePageCount)
+                else -> error("Unsupported quick export mode")
+            }
+        } catch (e: Exception) {
+            signatureInput?.first?.recycle()
+            isExecuting = false
+            binding.btnQuickToolExecute.isEnabled = true
+            binding.btnQuickToolExecute.text = origText
+            Toast.makeText(activity, e.message ?: "Invalid export request", Toast.LENGTH_SHORT).show()
+            return
+        }
         activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
-                val base = operationBase
-
-                when (operationMode) {
-                    QuickMode.MERGE -> {
-                        finishPdfOutputOnDisk("merged_document.pdf", origText) { output ->
-                            if (interleaved) {
-                                pdfMerger.mergePageItems(activity, mergePlan, output).isSuccess
-                            } else {
-                                pdfMerger.mergePdfs(activity, operationUris, output).isSuccess
-                            }
-                        }
-                    }
-                    QuickMode.SPLIT -> {
-                        val uri = operationUris.first()
-                        val workJob = coroutineContext[Job]
-                        if (splitAllPages) {
-                            // Stream each produced PDF directly into ZIP: no O(page count)
-                            // collection of page-sized ByteArrays or main-thread packaging.
-                            val zipFile = File.createTempFile("split_pages_", ".zip", activity.cacheDir)
-                            var handedOff = false
-                            try {
-                                var pagesWritten = 0
-                                val result = ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                                    pdfSplitter.splitAllPages(
-                                        context = activity,
-                                        inputUri = uri,
-                                        outputCallback = { pageNumber, pdfStream ->
-                                            workJob?.ensureActive()
-                                            zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.pdf"))
-                                            pdfStream.copyTo(zip)
-                                            zip.closeEntry()
-                                            pagesWritten++
-                                        }
-                                    )
-                                }
-                                workJob?.ensureActive()
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess && pagesWritten > 0,
-                                    zipFile, "${base}_split_pages.zip", origText
-                                )
-                            } finally {
-                                if (!handedOff) zipFile.delete()
-                            }
-                        } else if (splitSelectedMode) {
-                            if (splitSelectedPages.isEmpty()) {
-                                withContext(Dispatchers.Main) {
-                                    if (generation != selectionGeneration) return@withContext
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(
-                                        activity, "Please select at least one page to split",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                return@launchTransient
-                            }
-                            val pdfFile = File.createTempFile("split_selected_", ".pdf", activity.cacheDir)
-                            var handedOff = false
-                            try {
-                                val result = pdfFile.outputStream().buffered().use { output ->
-                                    pdfOrganizer.extractPagesAsPdf(
-                                        context = activity,
-                                        inputUri = uri,
-                                        outputStream = output,
-                                        pagesToExtract = splitSelectedPages
-                                    )
-                                }
-                                workJob?.ensureActive()
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess, pdfFile, "${base}_split_selected.pdf", origText
-                                )
-                            } finally {
-                                if (!handedOff) pdfFile.delete()
-                            }
-                        } else {
-                            val ranges = PdfSplitRangeParser.parse(splitRangeText, sourcePageCount)
-                            if (ranges.isEmpty()) {
-                                withContext(Dispatchers.Main) {
-                                    if (generation != selectionGeneration) return@withContext
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(
-                                        activity, "Please enter valid page ranges (e.g. 1-2, 3-5)",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                return@launchTransient
-                            }
-                            val singlePart = ranges.size == 1
-                            val tempFile = File.createTempFile(
-                                "split_ranges_", if (singlePart) ".pdf" else ".zip", activity.cacheDir
-                            )
-                            var handedOff = false
-                            try {
-                                var partsWritten = 0
-                                val result = if (singlePart) {
-                                    tempFile.outputStream().buffered().use { output ->
-                                        pdfSplitter.splitByRanges(
-                                            context = activity,
-                                            inputUri = uri,
-                                            ranges = ranges,
-                                            outputCallback = { _, pdfStream ->
-                                                workJob?.ensureActive()
-                                                pdfStream.copyTo(output)
-                                                partsWritten++
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    ZipOutputStream(tempFile.outputStream().buffered()).use { zip ->
-                                        pdfSplitter.splitByRanges(
-                                            context = activity,
-                                            inputUri = uri,
-                                            ranges = ranges,
-                                            outputCallback = { partNumber, pdfStream ->
-                                                workJob?.ensureActive()
-                                                zip.putNextEntry(ZipEntry("${base}_part_$partNumber.pdf"))
-                                                pdfStream.copyTo(zip)
-                                                zip.closeEntry()
-                                                partsWritten++
-                                            }
-                                        )
-                                    }
-                                }
-                                workJob?.ensureActive()
-                                val name = if (singlePart) {
-                                    "${base}_split_part1.pdf"
-                                } else {
-                                    "${base}_split_ranges.zip"
-                                }
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess && partsWritten == ranges.size,
-                                    tempFile, name, origText
-                                )
-                            } finally {
-                                if (!handedOff) tempFile.delete()
-                            }
-                        }
-                    }
-                    QuickMode.DELETE -> {
-                        val pagesToDelete = deletePages
-                        if (pagesToDelete.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                if (generation != selectionGeneration) return@withContext
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please tap at least one page to delete", Toast.LENGTH_SHORT).show()
-                            }
-                            return@launchTransient
-                        }
-                        finishPdfOutputOnDisk("${base}_pruned.pdf", origText) { output ->
-                            pdfOrganizer.removePages(
-                                context = activity,
-                                inputUri = operationUris.first(),
-                                outputStream = output,
-                                pagesToRemove = pagesToDelete
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.ROTATE -> {
-                        val angle = rotateAngle
-                        val selectedPages = rotatePages
-                        finishPdfOutputOnDisk("${base}_rotated.pdf", origText) { output ->
-                            if (selectedPages.isNotEmpty()) {
-                                val rotations = selectedPages.associateWith { angle }
-                                pdfRotator.rotateSpecificPages(
-                                    activity, operationUris.first(), output, rotations
-                                ).isSuccess
-                            } else {
-                                pdfRotator.rotateAllPages(
-                                    activity, operationUris.first(), output, angle
-                                ).isSuccess
-                            }
-                        }
-                    }
-                    QuickMode.REORDER -> {
-                        val pageOrder = reorderPages
-                        finishPdfOutputOnDisk("${base}_reordered.pdf", origText) { output ->
-                            pdfOrganizer.reorderPages(
-                                activity, operationUris.first(), output, pageOrder
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.IMAGE_TO_PDF -> {
-                        finishPdfOutputOnDisk("compiled_images.pdf", origText) { output ->
-                            imageConverter.imagesToPdf(activity, operationUris, output).isSuccess
-                        }
-                    }
-                    QuickMode.COMPRESS -> {
-                        val suffix = if (rasterSelected && rasterConfirmed) "image_only" else "compressed"
-                        finishPdfOutputOnDisk("${base}_$suffix.pdf", origText) { output ->
-                            if (rasterSelected && rasterConfirmed) {
-                                pdfCompressor.compressPdfRasterized(activity, operationUris.first(), output, quality).getOrThrow()
-                            } else {
-                                pdfCompressor.compressPdf(
-                                    context = activity,
-                                    inputUri = operationUris.first(),
-                                    outputStream = output,
-                                    qualityPercent = com.veilframe.app.pdf.operations.qualitySliderToCompressionPercent(quality)
-                                ).getOrThrow()
-                            }
-                            true
-                        }
-                    }
-                    QuickMode.LOCK -> {
-                        val options = requireNotNull(lockOptions)
-                        if (options.password.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                if (generation != selectionGeneration) return@withContext
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(
-                                    activity, "Please enter an encryption password", Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            return@launchTransient
-                        }
-                        finishPdfOutputOnDisk("${base}_locked.pdf", origText) { output ->
-                            pdfSecurityManager.encryptPdf(
-                                activity, operationUris.first(), output, options
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.SIGN -> {
-                        val uri = operationUris.first()
-                        val canvasPlacements = signatureItems
-                        if (canvasPlacements.isNotEmpty()) {
-                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
-                                pdfSigner.signPdfWithItems(
-                                    inputUri = uri, outputStream = output, items = canvasPlacements
-                                ).success
-                            }
-                        } else {
-                            // Read all view controls on Main before invoking PDFBox on IO.
-                            val inputs = requireNotNull(signatureInput)
-                            val bitmap = inputs.first
-                            if (bitmap == null) {
-                                withContext(Dispatchers.Main) {
-                                    if (generation != selectionGeneration) return@withContext
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
-                                }
-                                return@launchTransient
-                            }
-                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
-                                pdfSigner.addRelativeSignatureBitmaps(
-                                    inputUri = uri, outputStream = output,
-                                    bitmap = bitmap, pages = inputs.second,
-                                    xFraction = signX, yFractionFromBottom = signY, scale = signScale
-                                ).success
-                            }
-                        }
-                    }
-                    QuickMode.HTML_TO_PDF -> {
-                        val input = htmlInput
-                        if (input.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                if (generation != selectionGeneration) return@withContext
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please enter HTML code", Toast.LENGTH_SHORT).show()
-                            }
-                            return@launchTransient
-                        }
-
-                        val htmlContent = if (!input.contains("<html", ignoreCase = true) && !input.contains("<!doctype", ignoreCase = true)) {
-                            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>body{font-family:sans-serif;padding:24px;line-height:1.6;color:#222;}</style></head><body>$input</body></html>"
-                        } else {
-                            input
-                        }
-
-                        finishPdfOutputOnDisk("html_document.pdf", origText) { output ->
-                            htmlConverter.convertHtmlToPdf(activity, htmlContent, output).isSuccess
-                        }
-                    }
-                    QuickMode.DOC_TO_PDF -> {
-                        val identity = requireNotNull(officeIdentity) { "Inspect the Office document again before converting" }
-                        OfficeQuickExport.generate(activity,operationUris.first(),operationFileName,identity,
-                            xlsxPrintLayout == true,officeConverter) { staged ->
-                            finishDiskExecution(true,staged,"${base}.pdf",origText)
-                        }
-                    }
-                    QuickMode.PDF_TO_IMAGE -> {
-                        val uri = operationUris.first()
-                        val workJob = coroutineContext[Job]
-                        val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
-                        var handedOff = false
-                        try {
-                            var imagesWritten = 0
-                            val zipOk = ZipOutputStream(tempZip.outputStream().buffered()).use { zip ->
-                                imageConverter.pdfToImages(
-                                    context = activity,
-                                    inputUri = uri,
-                                    format = ImageFormat.WEBP,
-                                    dpi = 150,
-                                    outputCallback = { pageNumber, bitmap ->
-                                        workJob?.ensureActive()
-                                        zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.webp"))
-                                        check(bitmap.compress(Bitmap.CompressFormat.WEBP, 90, zip)) {
-                                            "Could not compress PDF page $pageNumber"
-                                        }
-                                        zip.closeEntry()
-                                        imagesWritten++
-                                    }
-                                ).isSuccess
-                            }
-                            workJob?.ensureActive()
-                            handedOff = finishDiskExecution(
-                                zipOk && imagesWritten > 0,
-                                tempZip, "${base}_images.zip", origText
-                            )
-                        } finally {
-                            if (!handedOff) tempZip.delete()
-                        }
-                    }
-                    else -> {
-                        withContext(Dispatchers.Main) {
-                            if (generation != selectionGeneration) return@withContext
-                            isExecuting = false
-                            binding.btnQuickToolExecute.isEnabled = true
-                            binding.btnQuickToolExecute.text = origText
-                        }
-                    }
+                quickExecutor.execute(request, operationBase) { success, file, name ->
+                    finishDiskExecution(success, file, name, origText)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
