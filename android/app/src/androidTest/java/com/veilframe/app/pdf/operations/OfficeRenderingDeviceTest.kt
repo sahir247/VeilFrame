@@ -189,7 +189,25 @@ class OfficeRenderingDeviceTest {
         val table="""<a:tbl><a:tblPr firstRow="1"><a:tableStyleId>$styleId</a:tableStyleId></a:tblPr><a:tblGrid><a:gridCol w="2540000"/><a:gridCol w="2540000"/></a:tblGrid>
             <a:tr h="1270000">${cell("Merged title","FF0000", "gridSpan=\"2\"")}${cell("","FF0000","hMerge=\"1\"")}</a:tr>
             <a:tr h="1270000">${cell("Left","")}${cell("Right","0000FF")}</a:tr></a:tbl>"""
-        val slide="""<p:sld xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:cSld><p:spTree>
+        val dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"
+        val dsp="http://schemas.microsoft.com/office/drawing/2008/diagram"
+        val diagramData="""<dgm:dataModel xmlns:dgm="$dgm" xmlns:a="$a" xmlns:dsp="$dsp">
+            <dgm:ptLst/><dgm:cxnLst/><dgm:whole/><dgm:bg/>
+            <dgm:extLst><a:ext uri="$dsp"><dsp:dataModelExt relId="rId6" minVer="$dgm"/></a:ext></dgm:extLst></dgm:dataModel>"""
+        fun diagramShape(id: Int,name: String,rgb: String,text: String="") = """<dsp:sp modelId="$id">
+            <dsp:nvSpPr><dsp:cNvPr id="$id" name="$name"/><dsp:cNvSpPr/></dsp:nvSpPr>
+            <dsp:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="635000"/></a:xfrm>
+            <a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="$rgb"/></a:solidFill><a:ln><a:noFill/></a:ln></dsp:spPr>
+            ${if(text.isEmpty()) "" else """<dsp:txBody><a:bodyPr lIns="0" rIns="0" tIns="0" bIns="0"/><a:lstStyle/>
+            <a:p><a:pPr algn="ctr"/><a:r><a:rPr sz="1400"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>$text</a:t></a:r></a:p></dsp:txBody>
+            <dsp:txXfrm><a:off x="127000" y="127000"/><a:ext cx="1651000" cy="381000"/></dsp:txXfrm>"""}</dsp:sp>"""
+        val diagramDrawing="""<dsp:drawing xmlns:dsp="$dsp" xmlns:a="$a"><dsp:spTree>
+            <dsp:nvGrpSpPr><dsp:cNvPr id="1" name=""/><dsp:cNvGrpSpPr/></dsp:nvGrpSpPr><dsp:grpSpPr/>
+            ${diagramShape(2,"First","FFFF00","Cache")}
+            <dsp:grpSp><dsp:nvGrpSpPr><dsp:cNvPr id="3" name="Nested"/><dsp:cNvGrpSpPr/></dsp:nvGrpSpPr>
+            <dsp:grpSpPr><a:xfrm><a:off x="0" y="1270000"/><a:ext cx="1905000" cy="635000"/><a:chOff x="0" y="0"/><a:chExt cx="1905000" cy="635000"/></a:xfrm></dsp:grpSpPr>
+            ${diagramShape(4,"Nested shape","00FFFF")}</dsp:grpSp></dsp:spTree></dsp:drawing>"""
+        val slide="""<p:sld xmlns:p="$p" xmlns:a="$a" xmlns:r="$r" xmlns:dgm="$dgm"><p:cSld><p:spTree>
             <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
             <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="Fixture table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
             <p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="5080000" cy="2540000"/></p:xfrm>
@@ -199,6 +217,9 @@ class OfficeRenderingDeviceTest {
             <a:prstGeom prst="line"><a:avLst/></a:prstGeom>
             <a:ln w="152400" cmpd="dbl"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:tailEnd type="triangle" w="med" len="med"/></a:ln>
             </p:spPr></p:cxnSp>
+            <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="Fixture SmartArt"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+            <p:xfrm><a:off x="6985000" y="1270000"/><a:ext cx="1905000" cy="2540000"/></p:xfrm>
+            <a:graphic><a:graphicData uri="$dgm"><dgm:relIds r:dm="rId2" r:lo="rId3" r:qs="rId4" r:cs="rId5"/></a:graphicData></a:graphic></p:graphicFrame>
             </p:spTree></p:cSld></p:sld>"""
         val emptyTree="""<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree>"""
         val clrMap="""<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>"""
@@ -214,12 +235,25 @@ class OfficeRenderingDeviceTest {
         fun rels(vararg targets: Pair<String,String>) = """<Relationships xmlns="$relNs">"""+
             targets.mapIndexed { index,(kind,target) -> """<Relationship Id="rId${index+1}" Type="$r/$kind" Target="$target"/>""" }.joinToString("")+"</Relationships>"
         val entries=mapOf(
-            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/></Types>""",
+            "[Content_Types].xml" to """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>
+            <Override PartName="/ppt/diagrams/data1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/>
+            <Override PartName="/ppt/diagrams/layout1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml"/>
+            <Override PartName="/ppt/diagrams/quickStyle1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"/>
+            <Override PartName="/ppt/diagrams/colors1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"/>
+            <Override PartName="/ppt/diagrams/saved-layout.xml" ContentType="application/vnd.ms-office.drawingml.diagramDrawing+xml"/></Types>""",
             "_rels/.rels" to rels("officeDocument" to "ppt/presentation.xml"),
             "ppt/presentation.xml" to """<p:presentation xmlns:p="$p" xmlns:a="$a" xmlns:r="$r"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId2"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>""",
             "ppt/_rels/presentation.xml.rels" to rels("slide" to "slides/slide1.xml","slideMaster" to "slideMasters/slideMaster1.xml","tableStyles" to "tableStyles.xml"),
             "ppt/slides/slide1.xml" to slide,
-            "ppt/slides/_rels/slide1.xml.rels" to rels("slideLayout" to "../slideLayouts/slideLayout1.xml"),
+            "ppt/slides/_rels/slide1.xml.rels" to (rels("slideLayout" to "../slideLayouts/slideLayout1.xml",
+                "diagramData" to "../diagrams/data1.xml","diagramLayout" to "../diagrams/layout1.xml",
+                "diagramQuickStyle" to "../diagrams/quickStyle1.xml","diagramColors" to "../diagrams/colors1.xml").removeSuffix("</Relationships>")+
+                """<Relationship Id="rId6" Type="http://schemas.microsoft.com/office/2007/relationships/diagramDrawing" Target="../diagrams/saved-layout.xml"/></Relationships>"""),
+            "ppt/diagrams/data1.xml" to diagramData,
+            "ppt/diagrams/layout1.xml" to """<dgm:layoutDef xmlns:dgm="$dgm" uniqueId="urn:fixture:layout"><dgm:layoutNode name="root"/></dgm:layoutDef>""",
+            "ppt/diagrams/quickStyle1.xml" to """<dgm:styleDef xmlns:dgm="$dgm" uniqueId="urn:fixture:style"/>""",
+            "ppt/diagrams/colors1.xml" to """<dgm:colorsDef xmlns:dgm="$dgm" uniqueId="urn:fixture:colors"/>""",
+            "ppt/diagrams/saved-layout.xml" to diagramDrawing,
             "ppt/slideLayouts/slideLayout1.xml" to layout,
             "ppt/slideLayouts/_rels/slideLayout1.xml.rels" to rels("slideMaster" to "../slideMasters/slideMaster1.xml"),
             "ppt/slideMasters/slideMaster1.xml" to master,
@@ -251,6 +285,12 @@ class OfficeRenderingDeviceTest {
             assertEquals("Transparent center gap",Color.WHITE,bitmap.getPixel(350,350))
             assertEquals("Lower compound band",Color.RED,bitmap.getPixel(350,354))
             assertEquals("Filled arrowhead",Color.RED,bitmap.getPixel(580,350))
+            assertEquals("SmartArt saved shape",Color.YELLOW,bitmap.getPixel(560,110))
+            assertEquals("SmartArt nested group",Color.CYAN,bitmap.getPixel(560,210))
+            var labelPixels=0
+            for(y in 110 until 140) for(x in 560 until 690)
+                if(bitmap.getPixel(x,y)==Color.BLACK) labelPixels++
+            assertTrue("SmartArt saved text overlay must render",labelPixels>5)
         } finally { images.forEach { it.recycle() } }
         Unit
     }
