@@ -827,7 +827,7 @@ object OpenXmlDocumentParser {
                 val markerStroke=SharedChartInk.stroke(marker,theme)
                 // Bars and pie use fills; explicit outlines need a separate
                 // closed-path painter, not the line-series stroke renderer.
-                if(kind in setOf("bar","column","pie") && stroke!=null && stroke.ink?.rgb!=null) return null
+                if(kind in setOf("bar","column","pie") && stroke!=null && stroke.ink!=XlsxCachedChart.Ink(null)) return null
                 return base.copy(fill=fill,stroke=stroke,markerFill=markerFill,markerStroke=markerStroke,pointFills=pointFills)
             } catch (_: IOException) { return null }
               catch (_: IllegalArgumentException) { return null }
