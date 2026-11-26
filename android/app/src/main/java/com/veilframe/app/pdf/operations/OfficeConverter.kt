@@ -2371,7 +2371,8 @@ class OfficeConverter {
                         }
                         continue
                     }
-                    val geomType = getShapeGeometryType(shape)
+                    val custom = PptxCustomGeometry.parse(shape.xmlObject.domNode)
+                    val geomType = if(custom!=null) ShapeGeom.FREEFORM else getShapeGeometryType(shape)
                     if (picture != null) {
                         if (geomType != ShapeGeom.RECTANGLE)
                             throw java.io.IOException("Nonrectangular slide picture fill is unsupported")
@@ -2385,12 +2386,14 @@ class OfficeConverter {
                         val fillColor = if (picture == null) getShapeFillColor(shape, themeColors) else null
                         if (fillColor != null) {
                             val fillPaint = Paint().apply { color = fillColor; style = Paint.Style.FILL; isAntiAlias = true }
-                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
+                            if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),fillPaint)
+                            else drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
                         }
                         val lineColor = getShapeLineColor(shape, themeColors)
                         if (lineColor != null) {
                             val strokePaint = Paint().apply { color = lineColor; style = Paint.Style.STROKE; strokeWidth = 2f * (targetWidth / 960f); isAntiAlias = true }
-                            drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
+                            if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),strokePaint)
+                            else drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
                         } else if (geomType == ShapeGeom.ELLIPSE) {
                             val strokePaint = Paint().apply { color = android.graphics.Color.rgb(30, 41, 59); style = Paint.Style.STROKE; strokeWidth = 1.5f * (targetWidth / 960f); isAntiAlias = true }
                             drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
@@ -2792,9 +2795,8 @@ class OfficeConverter {
                 }
                 canvas.drawPath(path, paint)
             }
-            ShapeGeom.FREEFORM, ShapeGeom.RECTANGLE -> {
-                canvas.drawRect(px, py, px + pw, py + ph, paint)
-            }
+            ShapeGeom.FREEFORM -> throw java.io.IOException("Custom shape geometry could not be resolved")
+            ShapeGeom.RECTANGLE -> canvas.drawRect(px, py, px + pw, py + ph, paint)
         }
     }
 
