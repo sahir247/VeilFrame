@@ -16,6 +16,15 @@ internal object PptxVerticalText {
     private data class Column(val layout: VerticalTextLayout,val before: Float,val after: Float,
         val top: Float,val available: Float,val inkTop: Int,val inkBottom: Int)
 
+    internal fun inlineBounds(height: Float,marginStart: Float,marginEnd: Float,indent: Float,first: Boolean): Pair<Float,Float> {
+        val start=marginStart+if(first) indent else 0f
+        val available=height-start-marginEnd
+        if(!listOf(height,start,marginEnd,available).all { it.isFinite() } ||
+            start<0f || marginEnd<0f || available<4f)
+            throw OfficeTextEncodingException("Vertical paragraph has no visible height")
+        return start to available
+    }
+
     private fun layout(text: CharSequence,paint: TextPaint,start: Int,end: Int,height: Float): VerticalTextLayout =
         VerticalTextLayout(text,start,end,paint,height,TextOrientation.Mixed).also {
             if(!it.isVerticalTextSupported() || it.lineCount<1 || !it.width.isFinite() || it.width<=0)
@@ -65,12 +74,12 @@ internal object PptxVerticalText {
         var attempts=0
         for(p in paragraphs) {
             if(!listOf(p.before,p.after,p.marginLeft,p.marginRight,p.firstIndent,p.lineMultiplier).all { it.isFinite() } ||
-                p.before<0 || p.after<0 || p.marginLeft<0 || p.marginRight<0 || p.firstIndent!=0f ||
-                p.lineMultiplier!=1f || p.alignment !in setOf("LEFT","CENTER","RIGHT"))
+                p.before<0 || p.after<0 || p.marginLeft<0 || p.marginRight<0 ||
+                p.lineMultiplier !in 1f..5f || p.alignment !in setOf("LEFT","CENTER","RIGHT"))
                 throw OfficeTextEncodingException("Unsupported vertical paragraph spacing or indentation")
             val (text,paint)=PptxTextLayout.attributed(p.runs)
-            val available=height-p.marginLeft-p.marginRight
-            if(available<4f) throw OfficeTextEncodingException("Vertical paragraph has no visible height")
+            inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,true)
+            inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,false)
             val maxSize=p.runs.maxOfOrNull { it.size } ?: 14f
             if(text.isBlank()) throw OfficeTextEncodingException("Empty vertical paragraph is unsupported")
             var start=0
@@ -87,6 +96,8 @@ internal object PptxVerticalText {
                 var boundary=0
                 while(offset<section.length) {
                     if(columns.size>=128) throw OfficeTextEncodingException("Vertical text exceeds column budget")
+                    val first=offset==0 && start==0
+                    val (inlineStart,available)=inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,first)
                     // Find longest legal line-break prefix that fits one column.
                     // Never split a contextual Mongolian word into isolated letters.
                     var low=boundary; var high=ends.lastIndex
@@ -103,9 +114,10 @@ internal object PptxVerticalText {
                     val column=chosen ?: throw OfficeTextEncodingException("Unbreakable vertical text does not fit")
                     val (inkTop,inkBottom)=ink(column,available,maxSize)
                     val spare=(available-(inkBottom-inkTop)).coerceAtLeast(0f)
-                    val y=p.marginLeft+when(p.alignment) { "CENTER" -> spare/2; "RIGHT" -> spare; else -> 0f }
-                    val before=if(offset==0 && start==0) p.before else 0f
-                    val after=if(ends[best]==section.length && newline==text.length) p.after else 0f
+                    val y=inlineStart+when(p.alignment) { "CENTER" -> spare/2; "RIGHT" -> spare; else -> 0f }
+                    val before=if(first) p.before else 0f
+                    val last=ends[best]==section.length && newline==text.length
+                    val after=if(last) p.after else column.width*(p.lineMultiplier-1f)
                     total+=column.width+before+after
                     if(total>width+0.05f) throw OfficeTextEncodingException("Vertical columns exceed visible width")
                     columns.add(Column(column,before,after,y,available,inkTop,inkBottom))
