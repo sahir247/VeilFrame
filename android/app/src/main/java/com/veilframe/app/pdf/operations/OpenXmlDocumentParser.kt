@@ -800,8 +800,7 @@ object OpenXmlDocumentParser {
             if (nodes.isEmpty()) return null to null
             if (nodes.size != 1) return null
             val marker = nodes.single()
-            // Per-marker fills, strokes and effects are not reconstructed.
-            if (marker.childElements("spPr").isNotEmpty() || marker.childElements("extLst").isNotEmpty()) return null
+            if (marker.childElements("extLst").isNotEmpty()) return null
             val symbol = marker.childElements("symbol").singleOrNull()?.getAttribute("val") ?: return null
             if (symbol !in XlsxChartMarker.supportedSymbols) return null
             val rawSize = marker.childElements("size")
@@ -809,6 +808,29 @@ object OpenXmlDocumentParser {
             val size = rawSize.singleOrNull()?.getAttribute("val")?.toIntOrNull()
             if (rawSize.isNotEmpty() && (size == null || size !in 2..72)) return null
             return symbol to size?.toFloat()
+        }
+        fun styled(base: XlsxCachedChart.Series,ser: Element,kind: String): XlsxCachedChart.Series? {
+            try {
+                val props=ser.childElements("spPr").singleOrNull()
+                val marker=ser.childElements("marker").singleOrNull()?.childElements("spPr")?.singleOrNull()
+                val pointFills=linkedMapOf<Int,XlsxCachedChart.Ink>()
+                for(point in ser.childElements("dPt")) {
+                    val index=point.childElements("idx").singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: return null
+                    if(index !in base.values.indices || pointFills.containsKey(index) || kind !in setOf("pie","bar","column")) return null
+                    val style=point.childElements("spPr").singleOrNull() ?: return null
+                    if(point.childElements("explosion").isNotEmpty() || SharedChartInk.stroke(style,theme)!=null) return null
+                    pointFills[index]=SharedChartInk.fill(style,theme) ?: return null
+                }
+                val fill=SharedChartInk.fill(props,theme)
+                val stroke=SharedChartInk.stroke(props,theme)
+                val markerFill=SharedChartInk.fill(marker,theme)
+                val markerStroke=SharedChartInk.stroke(marker,theme)
+                // Bars and pie use fills; explicit outlines need a separate
+                // closed-path painter, not the line-series stroke renderer.
+                if(kind in setOf("bar","column","pie") && stroke!=null && stroke.ink?.rgb!=null) return null
+                return base.copy(fill=fill,stroke=stroke,markerFill=markerFill,markerStroke=markerStroke,pointFills=pointFills)
+            } catch (_: IOException) { return null }
+              catch (_: IllegalArgumentException) { return null }
         }
         fun chartDisablesMarkers(element: Element): Boolean? {
             val nodes = element.childElements("marker")
@@ -923,10 +945,10 @@ object OpenXmlDocumentParser {
                 val yValues = numeric(ys) ?: return null
                 val marker = seriesMarker(ser) ?: return null
                 longest = maxOf(longest, xValues.size)
-                parsedScatter.add(XlsxCachedChart.Series(
+                parsedScatter.add(styled(XlsxCachedChart.Series(
                     text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
                     yValues, xValues, rgb = seriesRgb(ser), strokeWidthPt = seriesStrokeWidth(ser),
-                    markerSymbol = marker.first, markerSizePt = marker.second))
+                    markerSymbol = marker.first, markerSizePt = marker.second),ser,"scatter") ?: return null)
             }
             // An all-empty cache is an unsupported drawing, not a chart that
             // can be assigned invented axes and subsequently abort the PDF.
@@ -955,13 +977,18 @@ object OpenXmlDocumentParser {
             val marker = if (kind == "line" || (combo && seriesKinds[index] == "line"))
                 seriesMarker(ser) ?: return null else null to null
             val markerSymbol = if (lineMarkersDisabled && marker.first == null) "none" else marker.first
-            parsed.add(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
+            parsed.add(styled(XlsxCachedChart.Series(text(ser.childElements("tx").singleOrNull()) ?: "Series " + (index + 1),
                 values, chartKind = if (combo) seriesKinds[index] else null, rgb = seriesRgb(ser),
                 strokeWidthPt = seriesStrokeWidth(ser), markerSymbol = markerSymbol,
-                markerSizePt = marker.second,valueAxisId=seriesAxisIds[index]))
+                markerSizePt = marker.second,valueAxisId=seriesAxisIds[index]),ser,
+                if(combo) seriesKinds[index] else kind) ?: return null)
         }
+        val angles=type.childElements("firstSliceAng")
+        if(angles.size>1) return null
+        val angle=angles.singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: if(angles.isEmpty()) 0 else return null
+        if(angle !in 0..360 || (angle!=0 && kind!="pie")) return null
         val result=XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
-            grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes)
+            grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes,firstSliceAngle=angle)
         if(valueAxes.isNotEmpty()) {
             try { SharedChartValueAxes.build(result) }
             catch (_: IllegalArgumentException) { return null }
