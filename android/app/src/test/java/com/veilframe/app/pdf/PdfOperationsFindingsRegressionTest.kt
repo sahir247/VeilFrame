@@ -11,6 +11,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
 import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
 import com.veilframe.app.pdf.operations.PdfCompressor
 import com.veilframe.app.pdf.operations.PdfFlattener
+import com.veilframe.app.pdf.operations.PdfActiveContentSanitizer
 import com.veilframe.app.pdf.operations.FlattenConfig
 import com.veilframe.app.pdf.operations.TargetSizeNotReachedException
 import com.veilframe.app.pdf.operations.TextExtractor
@@ -96,11 +97,8 @@ class PdfOperationsFindingsRegressionTest {
         destination.page = page
         doc.documentCatalog.setOpenAction(destination)
 
-        val flattener = PdfFlattener()
-        val removeJsMethod = PdfFlattener::class.java.getDeclaredMethod("removeJavaScript", PDDocument::class.java)
-        removeJsMethod.isAccessible = true
-
-        removeJsMethod.invoke(flattener, doc)
+        PdfActiveContentSanitizer.remove(doc,javascript = true,attachments = false)
+        PdfActiveContentSanitizer.verify(doc,javascript = true,attachments = false)
 
         // Finding 9 verification: Legitimate navigation OpenActions must NOT be removed
         val preservedAction = doc.documentCatalog.openAction
@@ -111,7 +109,8 @@ class PdfOperationsFindingsRegressionTest {
         val jsAction = PDActionJavaScript("app.alert('malicious_script');")
         doc.documentCatalog.setOpenAction(jsAction)
 
-        removeJsMethod.invoke(flattener, doc)
+        PdfActiveContentSanitizer.remove(doc,javascript = true,attachments = false)
+        PdfActiveContentSanitizer.verify(doc,javascript = true,attachments = false)
 
         // Finding 9 verification: JavaScript actions MUST be removed
         assertNull("JavaScript OpenAction must be completely removed", doc.documentCatalog.openAction)

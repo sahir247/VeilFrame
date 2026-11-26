@@ -2281,16 +2281,16 @@ class OfficeConverterFidelityTest {
     @Test
     fun savedPrintRejectsUnencodableHeaderGlyphsWithoutPublishingOutput() = runBlocking {
         val workbook = """<workbook><sheets><sheet name="Print" sheetId="1"/></sheets></workbook>"""
-        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><headerFooter><oddHeader>&amp;C漢字</oddHeader></headerFooter></worksheet>"""
+        val sheet = """<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><headerFooter><oddHeader>&amp;C͸</oddHeader></headerFooter></worksheet>"""
         val input = createZip(mapOf("xl/workbook.xml" to workbook, "xl/worksheets/sheet1.xml" to sheet))
         val printed = File(tempFolder.root,"unsupported-header.pdf")
-        try {
+        val sentinel = byteArrayOf(12,34,56)
+        printed.writeBytes(sentinel)
+        val failure = runCatching {
             OfficeConverter().convertXlsxToPdf(input,printed,context,savedPrintLayout=true)
-            org.junit.Assert.fail("Expected explicit unsupported-font rejection")
-        } catch (expected: IllegalArgumentException) {
-            assertTrue(expected.message.orEmpty().contains("glyphs"))
-        }
-        assertTrue(!printed.exists())
+        }.exceptionOrNull()
+        assertTrue("Expected explicit unsupported-font rejection: $failure", failure is OfficeTextEncodingException)
+        assertTrue(sentinel.contentEquals(printed.readBytes()))
         // Full worksheet export must remain independent of saved print metadata.
         val full = File(tempFolder.root,"no-header-full.pdf")
         OfficeConverter().convertXlsxToPdf(input,full,context)
