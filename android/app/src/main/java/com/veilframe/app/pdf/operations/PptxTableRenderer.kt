@@ -58,7 +58,7 @@ internal object PptxTableRenderer {
         if(a!=null && b!=null && a.priority!=b.priority) return if(a.priority>b.priority) a else b
         return sharedBorder(a,b,aAnchor,bAnchor)
     }
-    private data class Visual(val entry: Cell,val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: Map<String,Border>)
+    private data class Visual(val entry: Cell,val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: Map<String,Border>,val textStyle: PptxTableStyle.TextStyle)
 
     // Explicit shared edges: an upper/left anchor takes precedence even when
     // its border is explicitly transparent. A merged-away neighbour does not
@@ -70,7 +70,7 @@ internal object PptxTableRenderer {
         else -> leading ?: trailing
     }
     fun draw(canvas: Canvas,table: XSLFTable,bounds: RectF,fontScale: Float,
-        theme: (String)->Int?,checkpoint: ()->Unit,text: (XSLFTableCell,RectF)->Unit) {
+        theme: (String)->Int?,checkpoint: ()->Unit,text: (XSLFTableCell,RectF,PptxTableStyle.TextStyle)->Unit) {
         val rows=table.numberOfRows
         val cols=table.numberOfColumns
         val props=one(table.ctTable.domNode,"tblPr")
@@ -134,7 +134,7 @@ internal object PptxTableRenderer {
                     throw IOException("Unresolved explicit table border")
                 }
             }
-            Visual(entry,cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders)
+            Visual(entry,cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders,PptxTableStyle.textStyle(layers,theme))
         }
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
         tableBackground?.let { paint.color=it; canvas.drawRect(bounds,paint) }
@@ -144,7 +144,7 @@ internal object PptxTableRenderer {
         }
         for(v in visuals) {
             checkpoint()
-            text(v.cell,v.box)
+            text(v.cell,v.box,v.textStyle)
         }
         val owners=arrayOfNulls<Visual>(rows*cols)
         for(v in visuals) for(r in v.entry.row until v.entry.row+v.entry.rows)
