@@ -46,35 +46,58 @@ internal object PptxChartRenderer {
             paint.color=rgb; paint.style=Paint.Style.STROKE; paint.strokeWidth=stroke
             canvas.drawLine(x,y,x2,y2,paint)
         }
+        fun seriesLine(x: Float,y: Float,x2: Float,y2: Float,s: XlsxCachedChart.Series,rgb: Int,width: Float,phase: Float) {
+            val ink=SharedChartInk.resolved(s.stroke?.ink,rgb) ?: return
+            val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color=ink or 0xff000000.toInt(); style=Paint.Style.STROKE; strokeWidth=width
+                strokeCap=when(s.stroke?.cap) { "rnd" -> Paint.Cap.ROUND; "sq" -> Paint.Cap.SQUARE; else -> Paint.Cap.BUTT }
+                val dash=SharedChartInk.dashes(s.stroke,width)
+                if(dash.isNotEmpty()) pathEffect=android.graphics.DashPathEffect(dash,phase%dash.sum())
+            }
+            canvas.drawLine(x,y,x2,y2,pen)
+        }
         fun marker(x: Float,y: Float,s: XlsxCachedChart.Series,rgb: Int) {
             val size=((s.markerSizePt ?: 4f)*scale).coerceIn(2f,36f)
             val r=size/2
-            paint.color=rgb; paint.style=Paint.Style.FILL
+            if(s.markerSymbol=="none") return
+            val path=Path()
+            val half=size/10
+            fun bar(x1: Float,y1: Float,x2: Float,y2: Float) {
+                path.addRect(x1,y1,x2,y2,Path.Direction.CW)
+            }
+            fun diagonal(up: Boolean) {
+                val sign=if(up) -1 else 1
+                path.moveTo(x-r,y+sign*(r-2*half))
+                path.lineTo(x-r+2*half,y+sign*r)
+                path.lineTo(x+r,y-sign*(r-2*half))
+                path.lineTo(x+r-2*half,y-sign*r)
+                path.close()
+            }
             when(s.markerSymbol ?: "square") {
-                "none" -> Unit
-                "circle" -> canvas.drawCircle(x,y,r,paint)
-                "square" -> rect(x-r,y-r,x+r,y+r,rgb)
-                "diamond","triangle" -> {
-                    val path=Path()
-                    path.moveTo(x,y-r)
-                    if(s.markerSymbol=="triangle") {
-                        path.lineTo(x+r,y+r); path.lineTo(x-r,y+r)
-                    } else {
-                        path.lineTo(x+r,y); path.lineTo(x,y+r); path.lineTo(x-r,y)
-                    }
-                    path.close(); canvas.drawPath(path,paint)
-                }
-                "dot" -> canvas.drawCircle(x,y,r/2,paint)
-                "dash" -> line(x-r,y,x+r,y,rgb,size/5)
+                "circle" -> path.addCircle(x,y,r,Path.Direction.CW)
+                "square" -> bar(x-r,y-r,x+r,y+r)
+                "diamond" -> { path.moveTo(x,y-r); path.lineTo(x+r,y); path.lineTo(x,y+r); path.lineTo(x-r,y); path.close() }
+                "triangle" -> { path.moveTo(x,y-r); path.lineTo(x+r,y+r); path.lineTo(x-r,y+r); path.close() }
+                "dot" -> bar(x-r/2,y-half,x+r/2,y+half)
+                "dash" -> bar(x-r,y-half,x+r,y+half)
                 "plus","x","star" -> {
-                    if(s.markerSymbol!="x") {
-                        line(x-r,y,x+r,y,rgb,size/5); line(x,y-r,x,y+r,rgb,size/5)
-                    }
-                    if(s.markerSymbol!="plus") {
-                        line(x-r,y-r,x+r,y+r,rgb,size/5); line(x-r,y+r,x+r,y-r,rgb,size/5)
-                    }
+                    if(s.markerSymbol!="x") { bar(x-r,y-half,x+r,y+half); bar(x-half,y-r,x+half,y+r) }
+                    if(s.markerSymbol!="plus") { diagonal(true); diagonal(false) }
                 }
                 else -> throw IOException("Unsupported chart marker")
+            }
+            SharedChartInk.resolved(s.markerFill,rgb)?.let { ink ->
+                canvas.drawPath(path,Paint(Paint.ANTI_ALIAS_FLAG).apply { color=ink or 0xff000000.toInt() })
+            }
+            s.markerStroke?.let { spec ->
+                SharedChartInk.resolved(spec.ink,rgb)?.let { ink ->
+                    canvas.drawPath(path,Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color=ink or 0xff000000.toInt(); style=Paint.Style.STROKE
+                        strokeWidth=(spec.widthPt ?: 1f)*scale
+                        val dash=SharedChartInk.dashes(spec,strokeWidth)
+                        if(dash.isNotEmpty()) pathEffect=android.graphics.DashPathEffect(dash,0f)
+                    })
+                }
             }
         }
 
@@ -96,16 +119,19 @@ internal object PptxChartRenderer {
                 val cx=box.left+pad+pieWidth/2
                 val cy=legendTop+pad+pieHeight/2
                 val oval=RectF(cx-diameter/2,cy-diameter/2,cx+diameter/2,cy+diameter/2)
-                var angle=-90f
+                var angle=-90f+chart.firstSliceAngle
                 for((i,v) in s.values.withIndex()) {
                     checkpoint()
                     val sweep=(((v ?: 0.0)/maxValue)/sum*360).toFloat()
-                    paint.color=palette[i]; paint.style=Paint.Style.FILL
-                    if(sweep>0) canvas.drawArc(oval,angle,sweep,true,paint)
+                    val ink=SharedChartInk.pointFill(s,i,XlsxPieChartPainter.palette[i])
+                    if(ink!=null && sweep>0) {
+                        paint.color=ink or 0xff000000.toInt(); paint.style=Paint.Style.FILL
+                        canvas.drawArc(oval,angle,sweep,true,paint)
+                    }
                     angle+=sweep
                     val x=box.left+w*0.55f
                     val y=legendTop+pad+i*lineH
-                    rect(x,y+pad,x+font,y+pad+font,palette[i])
+                    ink?.let { rect(x,y+pad,x+font,y+pad+font,it or 0xff000000.toInt()) }
                     label(chart.categories[i].orEmpty(),x+font+pad,y,box.right-x-font-2*pad)
                 }
                 return
@@ -188,36 +214,42 @@ internal object PptxChartRenderer {
                 val axis=dual[s.valueAxisId]
                 fun seriesFraction(v: Double)=axis?.fraction(v) ?: f(v/maxAbs)
                 val rgb=color(s,i)
-                val stroke=((s.strokeWidthPt ?: 1.2f)*scale).coerceIn(0.5f,20f)
+                val stroke=((s.stroke?.widthPt ?: s.strokeWidthPt ?: 1.2f)*scale).coerceIn(0.01f,72f)
+                var phase=0f
+                fun connect(from: Pair<Float,Float>,x: Float,y: Float) {
+                    seriesLine(from.first,from.second,x,y,s,rgb,stroke,phase)
+                    phase+=kotlin.math.hypot(x-from.first,y-from.second)
+                }
                 var previous: Pair<Float,Float>?=null
                 val isLine=chart.kind=="line" || chart.kind=="combo" && s.chartKind=="line"
                 for((j,cached) in s.values.withIndex()) {
                     checkpoint()
                     if(scatter) {
                         val x=s.xValues[j]
-                        if(x==null || cached==null) { previous=null; continue }
+                        if(x==null || cached==null) { previous=null; phase=0f; continue }
                         val px=left+requireNotNull(xAxis).fraction(x)*pw
                         val py=bottom-requireNotNull(yAxis).fraction(cached)*ph
-                        if(chart.scatterStyle!="marker") previous?.let { line(it.first,it.second,px,py,rgb,stroke) }
+                        if(chart.scatterStyle!="marker") previous?.let { connect(it,px,py) }
                         if(chart.scatterStyle!="line") marker(px,py,s,rgb)
                         previous=px to py
                         continue
                     }
                     val v=if(isLine) chart.blankDisplay.lineValue(cached) else cached
-                    if(v==null) { if(!isLine || chart.blankDisplay.breakOnMissing()) previous=null; continue }
+                    if(v==null) { if(!isLine || chart.blankDisplay.breakOnMissing()) { previous=null; phase=0f }; continue }
                     if(isLine) {
                         val px=left+slot*(j+0.5f); val py=bottom-seriesFraction(v)*ph
-                        previous?.let { line(it.first,it.second,px,py,rgb,stroke) }
+                        previous?.let { connect(it,px,py) }
                         marker(px,py,s,rgb)
                         previous=px to py
                     } else {
+                        val ink=SharedChartInk.pointFill(s,j,rgb)?.let { it or 0xff000000.toInt() } ?: continue
                         val segment=if(stacked) stacks[i][j] ?: continue else XlsxStackedChart.Segment(0.0,v/maxAbs)
                         val offset=slot*j+slot*0.11f+if(stacked) 0f else barIndex*thickness
-                        if(horizontal) rect(left+f(segment.start)*pw,top+offset,left+f(segment.end)*pw,top+offset+thickness,rgb)
+                        if(horizontal) rect(left+f(segment.start)*pw,top+offset,left+f(segment.end)*pw,top+offset+thickness,ink)
                         else {
                             val start=axis?.zero() ?: f(segment.start)
                             val end=axis?.fraction(v) ?: f(segment.end)
-                            rect(left+offset,bottom-start*ph,left+offset+thickness,bottom-end*ph,rgb)
+                            rect(left+offset,bottom-start*ph,left+offset+thickness,bottom-end*ph,ink)
                         }
                     }
                 }
