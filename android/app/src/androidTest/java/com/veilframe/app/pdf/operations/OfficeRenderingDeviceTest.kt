@@ -193,7 +193,7 @@ class OfficeRenderingDeviceTest {
             <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
             <p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="Fixture table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
             <p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="5080000" cy="2540000"/></p:xfrm>
-            <a:graphic><a:graphicData uri="$a/table">$table</a:graphicData></a:graphic></p:graphicFrame>
+            <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">$table</a:graphicData></a:graphic></p:graphicFrame>
             <p:cxnSp><p:nvCxnSpPr><p:cNvPr id="3" name="Horizontal double arrow"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
             <p:spPr><a:xfrm><a:off x="1270000" y="4445000"/><a:ext cx="6350000" cy="0"/></a:xfrm>
             <a:prstGeom prst="line"><a:avLst/></a:prstGeom>
