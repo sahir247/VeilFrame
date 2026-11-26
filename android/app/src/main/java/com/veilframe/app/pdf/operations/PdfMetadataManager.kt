@@ -11,6 +11,7 @@ import com.tom_roush.pdfbox.cos.COSBase
 import com.tom_roush.pdfbox.cos.COSDictionary
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.cos.COSObject
+import com.tom_roush.pdfbox.cos.COSString
 import java.util.ArrayDeque
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -62,22 +63,37 @@ data class EditableMetadata(
  * not a content redactor; metadata within opaque image or attachment bytes
  * is outside the scope of this operation.
  */
-internal fun stripPdfMetadata(document: PDDocument) {
+internal fun stripPdfMetadata(document: PDDocument,checkpoint: ()->Unit = {}): ByteArray {
     document.documentInformation = PDDocumentInformation()
-    visitMetadata(document, true)
+    visitMetadata(document, true,checkpoint=checkpoint)
+    // PDFBox retains the existing two-entry /ID on a full save. Generate
+    // a new random identifier rather than retaining source linkage or
+    // relying on the writer's time-derived default. Encrypted/signed
+    // production inputs are refused by requirePdfRewriteAllowed.
+    val id = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+    document.document.setDocumentID(COSArray().apply { add(COSString(id.copyOf())); add(COSString(id.copyOf())) })
+    return id
 }
 
-internal fun verifyStrippedPdfMetadata(document: PDDocument) {
+internal fun verifyStrippedPdfMetadata(document: PDDocument,expectedId: ByteArray? = null,
+    checkpoint: ()->Unit = {}) {
     if (document.documentInformation.cosObject.keySet().isNotEmpty()) {
         throw java.io.IOException("Document information remains after metadata removal")
     }
-    visitMetadata(document, false)
+    visitMetadata(document, false,checkpoint=checkpoint)
+    if (expectedId != null) {
+        val ids = document.document.getDocumentID()
+        if (ids == null || ids.size()!=2 || (0..1).any {
+                val value = ids.getObject(it) as? COSString
+                value == null || !expectedId.contentEquals(value.bytes)
+            }) throw IOException("Saved PDF trailer identity does not match regenerated identifier")
+    }
 }
 
 internal fun visitMetadata(
     document: PDDocument,
     mutate: Boolean,
-    maxVisitedNodes: Int = 250_000
+    maxVisitedNodes: Int = 250_000,checkpoint: ()->Unit = {}
 ) {
     require(maxVisitedNodes in 1..250_000) { "Invalid PDF metadata traversal budget" }
     val metadata = COSName.METADATA
@@ -91,7 +107,9 @@ internal fun visitMetadata(
         pending.add(value)
     }
     enqueue(document.documentCatalog.cosObject)
+    enqueue(document.document.trailer)
     while (pending.isNotEmpty()) {
+        checkpoint()
         val node = pending.removeLast()
         if (!seen.add(node)) continue
         if (seen.size > maxVisitedNodes) {
@@ -291,11 +309,13 @@ class PdfMetadataManager {
             onProgress(0.4f)
             
             requirePdfRewriteAllowed(document)
-            stripPdfMetadata(document)
+            val work = kotlin.coroutines.coroutineContext
+            val freshId = stripPdfMetadata(document) { work.ensureActive() }
             
             onProgress(0.7f)
             
-            exportVerifiedPdf(context, document, document.numberOfPages, ::verifyStrippedPdfMetadata) {
+            exportVerifiedPdf(context, document, document.numberOfPages,
+                verify = { verifyStrippedPdfMetadata(it,freshId) { work.ensureActive() } }) {
                 // This public API does not own the caller's output stream.
                 object : java.io.FilterOutputStream(outputStream) {
                     override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)

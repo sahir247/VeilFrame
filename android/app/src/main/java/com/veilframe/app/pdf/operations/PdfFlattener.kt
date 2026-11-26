@@ -146,15 +146,9 @@ class PdfFlattener {
 
             progressCallback(80)
             
-            // Remove JavaScript if requested
-            if (config.removeJavaScript) {
-                removeJavaScript(document)
-            }
-            
-            // Remove embedded files if requested
-            if (config.removeEmbeddedFiles) {
-                removeEmbeddedFiles(document)
-            }
+            // Traverse once when both removal options are enabled.
+            val work = kotlin.coroutines.coroutineContext
+            PdfActiveContentSanitizer.remove(document,config.removeJavaScript,config.removeEmbeddedFiles) { work.ensureActive() }
             
             progressCallback(90)
             
@@ -173,7 +167,7 @@ class PdfFlattener {
                 if (config.flattenAnnotations && saved.pages.any { it.annotations.isNotEmpty() }) {
                     throw IOException("Annotations remain after saving")
                 }
-                PdfActiveContentSanitizer.verify(saved, config.removeJavaScript, config.removeEmbeddedFiles)
+                PdfActiveContentSanitizer.verify(saved, config.removeJavaScript, config.removeEmbeddedFiles) { work.ensureActive() }
             }) {
                 context.contentResolver.openOutputStream(outputUri)
                     ?: throw IOException("Cannot open destination URI for writing: $outputUri")
@@ -326,16 +320,6 @@ class PdfFlattener {
         return annotations.size
     }
 
-    /**
-     * Remove JavaScript from the document.
-     */
-    private fun removeJavaScript(document: PDDocument) {
-        PdfActiveContentSanitizer.remove(document, javascript = true, attachments = false)
-    }
-
-    private fun removeEmbeddedFiles(document: PDDocument) {
-        PdfActiveContentSanitizer.remove(document, javascript = false, attachments = true)
-    }
 }
 
 /** Maps a PDFRenderer image of the rotated crop box back into unrotated page space. */

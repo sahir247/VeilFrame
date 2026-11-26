@@ -2,7 +2,6 @@ package com.veilframe.app.pdf.operations
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -14,7 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.rendering.PDFRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
+import kotlinx.coroutines.ensureActive
 import java.io.OutputStream
 
 /**
@@ -40,19 +39,23 @@ enum class ImageFormat(val extension: String, val mimeType: String) {
 /**
  * Handles image to PDF and PDF to image conversion operations.
  */
+/** Preflight the pinned PDFBox render geometry before allocating a bitmap. */
+internal object PdfImageRasterBudget {
+    fun requireFits(widthPt: Float,heightPt: Float,dpi: Int) {
+        require(widthPt.isFinite() && heightPt.isFinite() && widthPt>0f && heightPt>0f && dpi in 36..600) {
+            "Invalid PDF image geometry or resolution"
+        }
+        val scale=dpi/72f
+        val width=kotlin.math.ceil(widthPt.toDouble()*scale)
+        val height=kotlin.math.ceil(heightPt.toDouble()*scale)
+        require(width in 1.0..8192.0 && height in 1.0..8192.0 && width*height<=16_000_000.0) {
+            "Page exceeds the 16 megapixel raster budget; lower the export DPI"
+        }
+    }
+}
+
 class ImageConverter {
-    
-    /**
-     * Convert multiple images to a single PDF.
-     * 
-     * @param context Android context
-     * @param imageUris List of image URIs (supports JPEG, PNG)
-     * @param outputStream Output stream for the PDF
-     * @param pageSize Page size for the PDF
-     * @param quality Image quality (1-100, only affects JPEG images)
-     * @param onProgress Progress callback (0.0 to 1.0)
-     * @return Number of images converted
-     */
+    /** One bounded, oriented source image at a time. Alpha is never discarded. */
     suspend fun imagesToPdf(
         context: Context,
         imageUris: List<Uri>,
@@ -61,54 +64,37 @@ class ImageConverter {
         quality: Int = 85,
         onProgress: (Float) -> Unit = {}
     ): Result<Int> = withContext(Dispatchers.IO) {
-        if (imageUris.isEmpty()) {
-            return@withContext Result.failure(
-                IllegalArgumentException("No images provided")
-            )
-        }
-        
-        val document = PDDocument()
-        
         try {
-            imageUris.forEachIndexed { index, uri ->
-                val bitmap = loadBitmap(context, uri)
-                    ?: return@withContext Result.failure(
-                        IllegalStateException("Cannot load image: $uri")
-                    )
-                
-                try {
-                    addImageAsPage(document, bitmap, pageSize)
-                } finally {
-                    bitmap.recycle()
+            require(imageUris.size in 1..10_000 && quality in 1..100) { "Invalid image count or quality" }
+            PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { document ->
+                imageUris.forEachIndexed { index,uri ->
+                    ensureActive()
+                    MergeImageSource.open(context,uri).use { source ->
+                        val bitmap=source.decode()
+                        try {
+                            addImageAsPage(document,bitmap,pageSize,quality)
+                        } finally { bitmap.recycle() }
+                    }
+                    onProgress((index+1).toFloat()/imageUris.size)
                 }
-                
-                onProgress((index + 1).toFloat() / imageUris.size)
+                exportVerifiedPdf(context,document,imageUris.size) {
+                    object : java.io.FilterOutputStream(outputStream) {
+                        override fun write(b: ByteArray,off: Int,len: Int) = out.write(b,off,len)
+                        override fun close() = flush()
+                    }
+                }
             }
-            
-            document.save(outputStream)
-            outputStream.flush()
-            
             Result.success(imageUris.size)
-            
-        } catch (e: Exception) {
-            Result.failure(e)
-        } finally {
-            document.close()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: OutOfMemoryError) {
+            Result.failure(IllegalStateException("Image conversion exceeded available memory",failure))
+        } catch (failure: Exception) {
+            Result.failure(failure)
         }
     }
-    
-    /**
-     * Convert PDF pages to images.
-     * 
-     * @param context Android context
-     * @param inputUri URI of the PDF
-     * @param format Output image format
-     * @param dpi Resolution (72, 150, 300, etc.)
-     * @param pageNumbers Specific pages to convert (1-indexed), or null for all pages
-     * @param outputCallback Callback for each generated image (pageNumber, bitmap)
-     * @param onProgress Progress callback (0.0 to 1.0)
-     * @return Number of images created
-     */
+
+    /** Render one RGB bitmap per page. The callback borrows it until return. */
     suspend fun pdfToImages(
         context: Context,
         inputUri: Uri,
@@ -118,170 +104,58 @@ class ImageConverter {
         outputCallback: suspend (pageNumber: Int, bitmap: Bitmap) -> Unit,
         onProgress: (Float) -> Unit = {}
     ): Result<Int> = withContext(Dispatchers.IO) {
-        var document: PDDocument? = null
-        var renderer: PDFRenderer? = null
-        
         try {
-            val inputStream = context.contentResolver.openInputStream(inputUri)
-                ?: return@withContext Result.failure(
-                    IllegalStateException("Cannot open input file")
-                )
-            
-            document = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
-            val totalPages = document.numberOfPages
-            
-            if (totalPages == 0) {
-                return@withContext Result.failure(
-                    IllegalStateException("PDF has no pages")
-                )
-            }
-            
-            renderer = PDFRenderer(document)
-            val pagesToConvert = pageNumbers ?: (1..totalPages).toList()
-            
-            // Validate page numbers
-            val invalidPages = pagesToConvert.filter { it < 1 || it > totalPages }
-            if (invalidPages.isNotEmpty()) {
-                return@withContext Result.failure(
-                    IllegalArgumentException("Invalid page numbers: $invalidPages")
-                )
-            }
-            
-            // Process pages ONE AT A TIME to prevent OOM
-            pagesToConvert.forEachIndexed { index, pageNum ->
-                try {
-                    // Capture renderer in local variable for smart cast
-                    val pdfRenderer = renderer ?: throw IllegalStateException("PDFRenderer is null")
-                    
-                    // Render page at requested DPI
-                    val sourceBitmap = pdfRenderer.renderImageWithDPI(pageNum - 1, dpi.toFloat())
-                    
-                    // Convert to RGB_565 to halve memory usage
-                    val bitmap = if (sourceBitmap.config != Bitmap.Config.RGB_565) {
-                        val converted = sourceBitmap.copy(Bitmap.Config.RGB_565, false)
-                        sourceBitmap.recycle()
-                        converted
-                    } else {
-                        sourceBitmap
-                    }
-                    
-                    // Guard: Ensure bitmap is valid before callback
-                    if (bitmap == null || bitmap.isRecycled) {
-                        throw IllegalStateException("Failed to render page $pageNum")
-                    }
-                    
+            require(dpi in 36..600) { "Unsupported image export DPI" }
+            val source = context.contentResolver.openInputStream(inputUri)
+                ?: throw java.io.IOException("Cannot open input PDF")
+            val doc = source.use { PDDocument.load(it,MemoryUsageSetting.setupTempFileOnly()) }
+            doc.use { document ->
+                val total=document.numberOfPages
+                require(total in 1..10_000) { "Unsupported PDF page count" }
+                val pages=pageNumbers ?: (1..total).toList()
+                require(pages.isNotEmpty() && pages.size<=total && pages.toSet().size==pages.size &&
+                    pages.all { it in 1..total }) { "Invalid or duplicate page numbers" }
+                // Admit all page geometry before emitting the first callback.
+                for (page in pages) {
+                    ensureActive()
+                    val crop=document.getPage(page-1).cropBox
+                    PdfImageRasterBudget.requireFits(crop.width,crop.height,dpi)
+                }
+                val renderer=PDFRenderer(document)
+                for ((index,page) in pages.withIndex()) {
+                    ensureActive()
+                    val bitmap=renderer.renderImageWithDPI(page-1,dpi.toFloat())
                     try {
-                        outputCallback(pageNum, bitmap)
-                    } finally {
-                        // Recycle immediately after use
-                        if (!bitmap.isRecycled) {
-                            bitmap.recycle()
-                        }
-                    }
-                    
-                    onProgress((index + 1).toFloat() / pagesToConvert.size)
-                    
-                    // Yield to allow cancellation and GC between pages
-                    yield()
-                    System.gc()
-                    
-                } catch (e: OutOfMemoryError) {
-                    System.gc()
-                    throw IllegalStateException("Not enough memory to convert page $pageNum. Try with a smaller PDF or lower DPI.")
+                        ensureActive()
+                        require(!bitmap.isRecycled && bitmap.width in 1..8192 && bitmap.height in 1..8192 &&
+                            bitmap.width.toLong()*bitmap.height<=16_000_000L) { "Renderer exceeded admitted geometry" }
+                        outputCallback(page,bitmap)
+                    } finally { if (!bitmap.isRecycled) bitmap.recycle() }
+                    onProgress((index+1).toFloat()/pages.size)
                 }
+                Result.success(pages.size)
             }
-            
-            Result.success(pagesToConvert.size)
-            
-        } catch (e: OutOfMemoryError) {
-            Result.failure(
-                IllegalStateException("Not enough memory. Try with a smaller PDF or lower DPI.")
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
-        } finally {
-            renderer = null
-            document?.close()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: OutOfMemoryError) {
+            Result.failure(IllegalStateException("Page rasterization exceeded available memory; lower DPI",failure))
+        } catch (failure: Exception) {
+            Result.failure(failure)
         }
     }
-    
-    /**
-     * Load a bitmap from a URI with memory-efficient options.
-     */
-    private fun loadBitmap(context: Context, uri: Uri): Bitmap? {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                // First, get image dimensions
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                BitmapFactory.decodeStream(inputStream, null, options)
-                
-                // Calculate sample size to avoid OOM
-                val maxDimension = 2048
-                var sampleSize = 1
-                while (options.outWidth / sampleSize > maxDimension || 
-                       options.outHeight / sampleSize > maxDimension) {
-                    sampleSize *= 2
-                }
-                
-                // Decode with sample size
-                context.contentResolver.openInputStream(uri)?.use { stream2 ->
-                    val decodeOptions = BitmapFactory.Options().apply {
-                        inSampleSize = sampleSize
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }
-                    BitmapFactory.decodeStream(stream2, null, decodeOptions)
-                }
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-    
-    /**
-     * Add an image as a new page in the document.
-     * Uses JPEGFactory for large images to reduce memory usage.
-     */
-    private fun addImageAsPage(
-        document: PDDocument,
-        bitmap: Bitmap,
-        pageSize: PageSize
-    ) {
-        val pageRect = if (pageSize == PageSize.FIT_IMAGE) {
-            // Create page that fits the image
-            PDRectangle(bitmap.width.toFloat(), bitmap.height.toFloat())
-        } else {
-            pageSize.rectangle
-        }
-        
-        val page = PDPage(pageRect)
+
+    private fun addImageAsPage(document: PDDocument,bitmap: Bitmap,pageSize: PageSize,quality: Int) {
+        val rect=if (pageSize==PageSize.FIT_IMAGE) PDRectangle(bitmap.width.toFloat(),bitmap.height.toFloat()) else pageSize.rectangle
+        val page=PDPage(rect)
         document.addPage(page)
-        
-        // Use JPEGFactory for large images to save memory, LosslessFactory for small ones
-        val pixelCount = bitmap.width * bitmap.height
-        val pdImage = if (pixelCount > 1024 * 1024) { // > 1MP use JPEG
-            JPEGFactory.createFromImage(document, bitmap, 0.9f)
-        } else {
-            LosslessFactory.createFromImage(document, bitmap)
-        }
-        
-        // Calculate scaling to fit the page while maintaining aspect ratio
-        val pageWidth = pageRect.width
-        val pageHeight = pageRect.height
-        val imageWidth = bitmap.width.toFloat()
-        val imageHeight = bitmap.height.toFloat()
-        
-        val scale = minOf(pageWidth / imageWidth, pageHeight / imageHeight)
-        val scaledWidth = imageWidth * scale
-        val scaledHeight = imageHeight * scale
-        
-        // Center the image on the page
-        val x = (pageWidth - scaledWidth) / 2
-        val y = (pageHeight - scaledHeight) / 2
-        
-        PDPageContentStream(document, page).use { contentStream ->
-            contentStream.drawImage(pdImage, x, y, scaledWidth, scaledHeight)
+        val image=if (!bitmap.hasAlpha() && bitmap.width.toLong()*bitmap.height>1024L*1024)
+            JPEGFactory.createFromImage(document,bitmap,quality/100f)
+        else LosslessFactory.createFromImage(document,bitmap)
+        val scale=minOf(rect.width/bitmap.width,rect.height/bitmap.height)
+        val w=bitmap.width*scale
+        val h=bitmap.height*scale
+        PDPageContentStream(document,page).use {
+            it.drawImage(image,(rect.width-w)/2f,(rect.height-h)/2f,w,h)
         }
     }
 }

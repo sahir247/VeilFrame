@@ -51,24 +51,24 @@ internal object PdfActiveContentSanitizer {
 
     fun remove(
         document: PDDocument, javascript: Boolean, attachments: Boolean,
-        maxVisitedNodes: Int = MAX_REACHABLE_NODES
+        maxVisitedNodes: Int = MAX_REACHABLE_NODES,checkpoint: ()->Unit = {}
     ) {
         if (!javascript && !attachments) return
-        visit(document, javascript, attachments, mutate = true, maxVisitedNodes = maxVisitedNodes)
-        verify(document, javascript, attachments, maxVisitedNodes)
+        visit(document, javascript, attachments, mutate = true, maxVisitedNodes = maxVisitedNodes,checkpoint=checkpoint)
+        verify(document, javascript, attachments, maxVisitedNodes,checkpoint)
     }
 
     fun verify(
         document: PDDocument, javascript: Boolean, attachments: Boolean,
-        maxVisitedNodes: Int = MAX_REACHABLE_NODES
+        maxVisitedNodes: Int = MAX_REACHABLE_NODES,checkpoint: ()->Unit = {}
     ) {
         if (!javascript && !attachments) return
-        visit(document, javascript, attachments, mutate = false, maxVisitedNodes = maxVisitedNodes)
+        visit(document, javascript, attachments, mutate = false, maxVisitedNodes = maxVisitedNodes,checkpoint=checkpoint)
     }
 
     private fun visit(
         document: PDDocument, javascript: Boolean, attachments: Boolean,
-        mutate: Boolean, maxVisitedNodes: Int
+        mutate: Boolean, maxVisitedNodes: Int,checkpoint: ()->Unit
     ) {
         require(maxVisitedNodes in 1..MAX_REACHABLE_NODES) {
             "Invalid PDF sanitization traversal budget"
@@ -77,6 +77,7 @@ internal object PdfActiveContentSanitizer {
         val seenTrees = Collections.newSetFromMap(IdentityHashMap<COSDictionary, Boolean>())
         var treeWork = 0
         fun charge(amount: Int = 1) {
+            checkpoint()
             if (amount < 0 || amount > maxVisitedNodes - treeWork) throw IOException("PDF name tree exceeds sanitization safety budget")
             treeWork += amount
         }
@@ -115,6 +116,7 @@ internal object PdfActiveContentSanitizer {
                 if (pairs.size() % 2 != 0) throw IOException("Malformed PDF name tree pairs")
                 var previous: COSString? = null
                 for (index in 0 until pairs.size() step 2) {
+                    checkpoint()
                     val key = dereference(pairs.get(index)) as? COSString ?: throw IOException("Malformed PDF name tree key")
                     if (previous != null && compareKeys(previous, key) >= 0) throw IOException("Unordered or duplicate PDF name tree key")
                     previous = key
@@ -176,6 +178,7 @@ internal object PdfActiveContentSanitizer {
         }
         queue(document.documentCatalog.cosObject)
         while (pending.isNotEmpty()) {
+            checkpoint()
             val node = pending.removeLast()
             if (!seen.add(node)) continue
             if (seen.size > maxVisitedNodes) {
@@ -195,6 +198,7 @@ internal object PdfActiveContentSanitizer {
                         throw IOException("Cannot safely sanitize opaque multimedia annotation payloads")
                     }
                     for (key in node.keySet().toList()) {
+                        checkpoint()
                         val child = node.getItem(key)
                         val forbiddenKey = (javascript && key in listOf(name("JS"), name("JavaScript"))) ||
                             (attachments && (key in listOf(name("EmbeddedFiles"), name("AF"), name("EF"), name("RF")) ||
@@ -235,6 +239,7 @@ internal object PdfActiveContentSanitizer {
                         throw IOException("PDF active-content array exceeds sanitization safety budget")
                     }
                     for (index in node.size() - 1 downTo 0) {
+                        checkpoint()
                         val child = node.get(index)
                         if (forbiddenReference(child, javascript, attachments)) {
                             if (!mutate) throw IOException("Active content remains in a PDF array")

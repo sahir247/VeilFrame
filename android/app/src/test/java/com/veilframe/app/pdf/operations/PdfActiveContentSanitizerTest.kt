@@ -13,6 +13,20 @@ import org.junit.Test
 class PdfActiveContentSanitizerTest {
     private fun n(value: String) = COSName.getPDFName(value)
 
+    @Test fun cancellationInterruptsActiveContentTraversal() {
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            val items = COSArray().apply { repeat(40) { add(COSDictionary().apply { setInt(n("Audit"),it) }) } }
+            doc.documentCatalog.cosObject.setItem(n("Fixture"),items)
+            var calls=0
+            assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+                PdfActiveContentSanitizer.remove(doc,true,true) {
+                    if (++calls>=8) throw kotlinx.coroutines.CancellationException("requested")
+                }
+            }
+        }
+    }
+
     @Test fun prunesEmptyNameTreeBranchesAndRepairsAllAncestorLimits() {
         PDDocument().use { doc ->
             doc.addPage(PDPage())

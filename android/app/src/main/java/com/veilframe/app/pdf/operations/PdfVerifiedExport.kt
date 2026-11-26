@@ -47,6 +47,7 @@ internal suspend fun exportVerifiedPdf(
                     currentCoroutineContext().ensureActive()
                     val n = input.read(buffer)
                     if (n < 0) break
+                    if (n == 0) throw IOException("Verified PDF copy made no read progress")
                     output.write(buffer, 0, n)
                 }
             }

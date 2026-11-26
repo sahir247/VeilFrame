@@ -16,6 +16,24 @@ import org.junit.Test
 import java.io.ByteArrayOutputStream
 
 class PdfMetadataRemovalRegressionTest {
+    @Test fun originalTrailerIdentityIsReplacedAndVerifiedAfterSave() {
+        PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            val old = ByteArray(16) { 42 }
+            doc.document.setDocumentID(com.tom_roush.pdfbox.cos.COSArray().apply {
+                add(com.tom_roush.pdfbox.cos.COSString(old)); add(com.tom_roush.pdfbox.cos.COSString(old))
+            })
+            val fresh = stripPdfMetadata(doc)
+            assertFalse(old.contentEquals(fresh))
+            val bytes = ByteArrayOutputStream().use { doc.save(it); it.toByteArray() }
+            PDDocument.load(bytes).use { saved ->
+                verifyStrippedPdfMetadata(saved,fresh)
+                org.junit.Assert.assertThrows(java.io.IOException::class.java) { verifyStrippedPdfMetadata(saved,old) }
+            }
+            assertFalse(fresh.contentEquals(stripPdfMetadata(doc)))
+        }
+    }
+
     @Test
     fun fullRewriteDoesNotRetainUncompressedMetadataPayload() {
         val marker = "VEILFRAME_PRIVATE_METADATA_SENTINEL_72519"
