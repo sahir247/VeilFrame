@@ -83,6 +83,9 @@ internal object PptxTableStyle {
         return styles.single()
     }
 
+    internal fun priority(name: String): Int = listOf("wholeTbl","band1H","band2H","band1V","band2V",
+        "lastCol","firstCol","lastRow","seCell","swCell","firstRow","neCell","nwCell").indexOf(name)+1
+
     data class Region(val name: String,val cell: Node?)
     fun layers(style: Node?,row: Int,col: Int,rows: Int,cols: Int,f: Flags): List<Region> =
         regions(row,col,rows,cols,f).mapNotNull { name ->
