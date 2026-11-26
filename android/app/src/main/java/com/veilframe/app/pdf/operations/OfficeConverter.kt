@@ -2462,6 +2462,9 @@ class OfficeConverter {
                         if(line!=null) PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line.spec,line.color)
                         continue
                     }
+                    val diagramStyle=if(leaf.diagramPart!=null)
+                        PptxSmartArtCache.paintStyle(shape.xmlObject.domNode,shape.sheet,fontScale,tableColors::get,picture!=null)
+                        else null
                     val custom = PptxCustomGeometry.parse(shape.xmlObject.domNode,pw/sx,ph/sy,includePresets=true)
                     val geomType = if(custom!=null) ShapeGeom.FREEFORM else getShapeGeometryType(shape)
                     if (picture != null) {
@@ -2474,20 +2477,21 @@ class OfficeConverter {
 
                     // Draw geometry fill & stroke
                     if (shape is XSLFSimpleShape) {
-                        val fillColor = if (picture == null) getShapeFillColor(shape, themeColors) else null
+                        val fillColor = if(diagramStyle!=null) diagramStyle.fill
+                            else if (picture == null) getShapeFillColor(shape, themeColors) else null
                         if (fillColor != null) {
                             val fillPaint = Paint().apply { color = fillColor; style = Paint.Style.FILL; isAntiAlias = true }
                             if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),fillPaint)
                             else drawShapeGeometry(canvas, geomType, px, py, pw, ph, fillPaint)
                         }
-                        val lineColor = getShapeLineColor(shape, themeColors)
+                        val lineColor = if(diagramStyle!=null) diagramStyle.line else getShapeLineColor(shape, themeColors)
                         if (lineColor != null) {
-                            val line=PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
+                            val line=diagramStyle?.stroke ?: PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
                                 2f*(targetWidth/960f))
                             val strokePaint=line.paint(lineColor)
                             if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),strokePaint)
                             else drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
-                        } else if (geomType == ShapeGeom.ELLIPSE) {
+                        } else if (diagramStyle==null && geomType == ShapeGeom.ELLIPSE) {
                             val strokePaint = Paint().apply { color = android.graphics.Color.rgb(30, 41, 59); style = Paint.Style.STROKE; strokeWidth = 1.5f * (targetWidth / 960f); isAntiAlias = true }
                             drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
                         }
@@ -2502,7 +2506,8 @@ class OfficeConverter {
                             val textRect=PptxCustomGeometry.textBounds(shape.xmlObject.domNode,pw/sx,ph/sy)
                                 ?.mapped(px,py,pw,ph) ?: floatArrayOf(px,py,pw,ph)
                             drawShapeText(shape,textRect[0],textRect[1],textRect[2],textRect[3],matrix.pixelAffine(sx,sy),
-                                if(isTitle) 26f else if(geomType==ShapeGeom.ELLIPSE) 12f else 14f)
+                                if(isTitle) 26f else if(geomType==ShapeGeom.ELLIPSE) 12f else 14f,
+                                diagramStyle?.text)
                         }
                     }
                     } finally { canvas.restoreToCount(shapeSave) }
