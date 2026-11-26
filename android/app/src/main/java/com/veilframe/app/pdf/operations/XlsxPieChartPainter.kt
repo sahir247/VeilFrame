@@ -20,8 +20,11 @@ internal object XlsxPieChartPainter {
         return values.map { (it ?: 0.0)/max/total }
     }
 
+    fun draw(stream: PDPageContentStream,shares: List<Double>,cx: Float,cy: Float,radius: Float,checkpoint: ()->Unit) =
+        draw(stream,shares,cx,cy,radius,checkpoint,shares.indices.map { palette[it] },0)
+
     fun draw(stream: PDPageContentStream,shares: List<Double>,cx: Float,cy: Float,radius: Float,checkpoint: ()->Unit,
-        colors: List<Int?> = shares.indices.map { palette[it] },firstSliceAngle: Int=0) {
+        colors: List<Int?>,firstSliceAngle: Int) {
         require(radius.isFinite() && radius>0f && colors.size==shares.size && firstSliceAngle in 0..360)
         var angle = Math.PI/2-Math.toRadians(firstSliceAngle.toDouble())
         for ((index,share) in shares.withIndex()) {
