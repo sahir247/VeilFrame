@@ -16,7 +16,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
+import java.nio.file.Files
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -190,145 +190,144 @@ class PdfSigner(private val context: Context) {
         }
     }
 
-    private val indexFile: File by lazy {
-        File(signaturesDir, "signatures_index.json")
+    private val indexFile: File by lazy { File(signaturesDir, "signatures_index.json") }
+
+    private companion object {
+        val libraryLock = Any()
+        const val MAX_SIGNATURE_PIXELS = 4_000_000L
+        const val MAX_INDEX_BYTES = 2_097_152L
+        const val MAX_LIBRARY_ENTRIES = 2048
     }
 
     private fun readIndexMap(): MutableMap<String, String> {
-        val map = mutableMapOf<String, String>()
-        if (indexFile.exists()) {
-            try {
-                val json = indexFile.readText()
-                val array = org.json.JSONArray(json)
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    map[obj.getString("id")] = obj.getString("name")
-                }
-            } catch (ignored: Exception) {}
+        if (!indexFile.exists()) return linkedMapOf()
+        require(indexFile.length() in 1..MAX_INDEX_BYTES) { "Invalid signature library index size" }
+        val array = org.json.JSONArray(indexFile.readText())
+        require(array.length() <= MAX_LIBRARY_ENTRIES) { "Signature library index too large" }
+        val map = linkedMapOf<String, String>()
+        for (i in 0 until array.length()) {
+            val entry = array.getJSONObject(i)
+            val id = entry.getString("id")
+            require(SignatureLibraryFiles.validId(id) && !map.containsKey(id)) { "Invalid signature library entry" }
+            map[id] = entry.getString("name")
         }
         return map
     }
 
     private fun writeIndexMap(map: Map<String, String>) {
-        try {
-            val array = org.json.JSONArray()
-            for ((id, name) in map) {
-                val obj = org.json.JSONObject()
-                obj.put("id", id)
-                obj.put("name", name)
-                array.put(obj)
-            }
-            indexFile.writeText(array.toString())
-        } catch (ignored: Exception) {}
-    }
-
-    /**
-     * Save a signature bitmap directly with a custom name.
-     */
-    suspend fun saveSignatureBitmap(
-        bitmap: Bitmap,
-        name: String
-    ): SavedSignature = withContext(Dispatchers.IO) {
-        val id = System.currentTimeMillis().toString()
-        val signatureFile = File(signaturesDir, "signature_$id.png")
-        FileOutputStream(signatureFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        require(map.size <= MAX_LIBRARY_ENTRIES) { "Signature library is full" }
+        val array = org.json.JSONArray()
+        for ((id, name) in map) {
+            array.put(org.json.JSONObject().put("id", id).put("name", name))
         }
-        val cleanName = name.trim().ifEmpty { "Signature ${getSavedSignatures().size + 1}" }
-        val index = readIndexMap()
-        index[id] = cleanName
-        writeIndexMap(index)
-
-        SavedSignature(
-            id = id,
-            name = cleanName,
-            bitmapPath = signatureFile.absolutePath,
-            createdAt = System.currentTimeMillis()
-        )
+        val bytes = array.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size.toLong() <= MAX_INDEX_BYTES) { "Signature library index too large" }
+        SignatureLibraryFiles.atomicWrite(indexFile) { it.write(bytes) }
     }
 
-    /**
-     * Save a signature for reuse from drawing data.
-     */
-    suspend fun saveSignature(
-        signatureData: SignatureData,
-        name: String
-    ): SavedSignature = withContext(Dispatchers.IO) {
-        val id = System.currentTimeMillis().toString()
+    /** Save both the image and its index entry, or report failure. */
+    suspend fun saveSignatureBitmap(bitmap: Bitmap, name: String): SavedSignature = withContext(Dispatchers.IO) {
+        require(!bitmap.isRecycled && bitmap.width.toLong() * bitmap.height <= MAX_SIGNATURE_PIXELS) {
+            "Invalid or oversized signature"
+        }
+        synchronized(libraryLock) {
+            val index = readIndexMap()
+            require(index.size < MAX_LIBRARY_ENTRIES) { "Signature library is full" }
+            val id = java.util.UUID.randomUUID().toString()
+            val file = File(signaturesDir, "signature_$id.png")
+            val cleanName = name.trim().ifEmpty { "Signature ${index.size + 1}" }
+            require(cleanName.length <= 256) { "Signature name is too long" }
+            SignatureLibraryFiles.atomicWrite(file) { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw IOException("Signature encoding failed")
+            }
+            try {
+                index[id] = cleanName
+                writeIndexMap(index)
+            } catch (failure: Exception) {
+                file.delete()
+                throw failure
+            }
+            SavedSignature(id, cleanName, file.absolutePath, file.lastModified())
+        }
+    }
+
+    suspend fun saveSignature(signatureData: SignatureData, name: String): SavedSignature = withContext(Dispatchers.IO) {
         val bitmap = createSignatureBitmap(signatureData, 400, 200)
-            ?: return@withContext SavedSignature(
-                id = id,
-                name = name,
-                bitmapPath = "",
-                createdAt = 0
-            )
-        
-        val signatureFile = File(signaturesDir, "signature_$id.png")
-        FileOutputStream(signatureFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
-        
-        bitmap.recycle()
-        val cleanName = name.trim().ifEmpty { "Signature $id" }
-        val index = readIndexMap()
-        index[id] = cleanName
-        writeIndexMap(index)
-        
-        SavedSignature(
-            id = id,
-            name = cleanName,
-            bitmapPath = signatureFile.absolutePath
-        )
+            ?: throw IOException("Cannot create signature bitmap")
+        try { saveSignatureBitmap(bitmap, name) } finally { bitmap.recycle() }
     }
-    
-    /**
-     * Get all saved signatures.
-     */
-    fun getSavedSignatures(): List<SavedSignature> {
-        val signatures = mutableListOf<SavedSignature>()
-        val index = readIndexMap()
-        
-        signaturesDir.listFiles()?.forEach { file ->
-            if (file.name.startsWith("signature_") && file.name.endsWith(".png")) {
-                val id = file.name.removePrefix("signature_").removeSuffix(".png")
-                val name = index[id] ?: "Signature $id"
-                signatures.add(
-                    SavedSignature(
-                        id = id,
-                        name = name,
-                        bitmapPath = file.absolutePath,
-                        createdAt = file.lastModified()
-                    )
-                )
+
+    fun getSavedSignatures(): List<SavedSignature> = synchronized(libraryLock) {
+        // Keep existing images visible if an old index is damaged, but never overwrite
+        // that damaged index during a mutation.
+        val index = try { readIndexMap() } catch (failure: Exception) {
+            android.util.Log.w("PdfSigner", "Cannot read signature index", failure)
+            emptyMap()
+        }
+        signaturesDir.listFiles().orEmpty().mapNotNull { file ->
+            if (!file.isFile || !file.name.startsWith("signature_") || !file.name.endsWith(".png")) return@mapNotNull null
+            val id = file.name.removePrefix("signature_").removeSuffix(".png")
+            if (!SignatureLibraryFiles.validId(id)) return@mapNotNull null
+            SavedSignature(id, index[id] ?: "Signature $id", file.absolutePath, file.lastModified())
+        }.sortedByDescending { it.createdAt }
+    }
+
+    /** Reject oversized images before decode; list thumbnails have a separate small budget. */
+    fun loadSavedSignatureBitmap(path: String, thumbnail: Boolean = false): Bitmap? = synchronized(libraryLock) {
+        val file = File(path)
+        if (file.parentFile != signaturesDir || !file.isFile) return@synchronized null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 ||
+            bounds.outWidth.toLong() * bounds.outHeight > MAX_SIGNATURE_PIXELS) return@synchronized null
+        val options = android.graphics.BitmapFactory.Options()
+        if (thumbnail) {
+            while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize.coerceAtLeast(1) > 192) {
+                options.inSampleSize = options.inSampleSize.coerceAtLeast(1) * 2
             }
         }
-        
-        return signatures.sortedByDescending { it.createdAt }
-    }
-    
-    /**
-     * Delete a saved signature.
-     */
-    fun deleteSignature(signature: SavedSignature): Boolean {
-        return deleteSignatureById(signature.id)
+        android.graphics.BitmapFactory.decodeFile(path, options)
     }
 
-    fun deleteSignatureById(id: String): Boolean {
+    fun deleteSignature(signature: SavedSignature): Boolean = deleteSignatureById(signature.id)
+
+    fun deleteSignatureById(id: String): Boolean = synchronized(libraryLock) {
+        if (!SignatureLibraryFiles.validId(id)) return@synchronized false
         val file = File(signaturesDir, "signature_$id.png")
-        val deleted = file.delete()
-        val index = readIndexMap()
-        index.remove(id)
-        writeIndexMap(index)
-        return deleted
+        if (!file.isFile) return@synchronized false
+        val tombstone = File(signaturesDir, ".deleted-${java.util.UUID.randomUUID()}.png")
+        try {
+            val index = readIndexMap()
+            Files.move(file.toPath(), tombstone.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            try {
+                index.remove(id)
+                writeIndexMap(index)
+            } catch (failure: Exception) {
+                Files.move(tombstone.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                throw failure
+            }
+            if (!tombstone.delete()) throw IOException("Cannot remove signature image")
+            true
+        } catch (failure: Exception) {
+            android.util.Log.w("PdfSigner", "Signature deletion failed", failure)
+            false
+        }
     }
 
-    fun renameSignature(id: String, newName: String): Boolean {
-        val index = readIndexMap()
-        index[id] = newName.trim()
-        writeIndexMap(index)
-        return true
+    fun renameSignature(id: String, newName: String): Boolean = synchronized(libraryLock) {
+        if (!SignatureLibraryFiles.validId(id) || newName.trim().length !in 1..256 ||
+            !File(signaturesDir, "signature_$id.png").isFile) return@synchronized false
+        try {
+            val index = readIndexMap()
+            index[id] = newName.trim()
+            writeIndexMap(index)
+            true
+        } catch (failure: Exception) {
+            android.util.Log.w("PdfSigner", "Signature rename failed", failure)
+            false
+        }
     }
-    
+
     /**
      * Create a bitmap from signature drawing data.
      */

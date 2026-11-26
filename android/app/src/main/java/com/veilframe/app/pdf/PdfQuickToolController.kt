@@ -1286,13 +1286,10 @@ class PdfQuickToolController(
             targetColor = selectedSignColor,
             opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
         ) ?: pdfSigner.getSavedSignatures().firstOrNull()?.bitmapPath?.let {
-            android.graphics.BitmapFactory.decodeFile(it)
+            pdfSigner.loadSavedSignatureBitmap(it)
         }
 
         binding.pdfSignCanvasView.setDocument(uri, initialSignature = currentSigBmp)
-        if (currentSigBmp != null) {
-            binding.pdfSignCanvasView.addSignature(currentSigBmp)
-        }
     }
 
     private fun setupSignCanvasOverlay() {
@@ -1452,10 +1449,21 @@ class PdfQuickToolController(
             .setView(til)
             .setPositiveButton("Save") { _, _ ->
                 val name = editText.text?.toString()?.trim().orEmpty()
+                val generation = selectionGeneration
                 launchTransient {
-                    pdfSigner.saveSignatureBitmap(bitmap, name)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
+                    try {
+                        pdfSigner.saveSignatureBitmap(bitmap, name)
+                        withContext(Dispatchers.Main) {
+                            if (generation == selectionGeneration)
+                                Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        withContext(Dispatchers.Main) {
+                            if (generation == selectionGeneration)
+                                Toast.makeText(activity, failure.message ?: "Signature save failed", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }
@@ -1503,7 +1511,7 @@ class PdfQuickToolController(
                 }
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundColor(Color.parseColor("#26262B"))
-                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath, thumbnail = true)
                 if (bmp != null) setImageBitmap(bmp)
             }
 
@@ -1531,11 +1539,13 @@ class PdfQuickToolController(
             itemRow.addView(textLayout)
 
             itemRow.setOnClickListener {
-                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath)
                 if (bmp != null) {
                     binding.pdfSignCanvasView.addSignature(bmp)
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(activity, "Cannot read saved signature", Toast.LENGTH_SHORT).show()
                 }
-                dialog.dismiss()
             }
 
             container.addView(itemRow)
@@ -1588,7 +1598,7 @@ class PdfQuickToolController(
                         }
                         scaleType = ImageView.ScaleType.FIT_CENTER
                         setBackgroundColor(Color.parseColor("#26262B"))
-                        val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
+                        val bmp = pdfSigner.loadSavedSignatureBitmap(sig.bitmapPath, thumbnail = true)
                         if (bmp != null) setImageBitmap(bmp)
                     }
 
@@ -1636,9 +1646,10 @@ class PdfQuickToolController(
                                 .setPositiveButton("Save") { _, _ ->
                                     val newName = editName.text?.toString()?.trim().orEmpty()
                                     if (newName.isNotBlank()) {
-                                        pdfSigner.renameSignature(sig.id, newName)
-                                        dialog.dismiss()
-                                        buildDialog()
+                                        if (pdfSigner.renameSignature(sig.id, newName)) {
+                                            dialog.dismiss()
+                                            buildDialog()
+                                        } else Toast.makeText(activity, "Signature rename failed", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                                 .setNegativeButton("Cancel", null)
@@ -1656,9 +1667,10 @@ class PdfQuickToolController(
                         setTextColor(Color.parseColor("#EF4444"))
                         setStrokeColorResource(android.R.color.holo_red_dark)
                         setOnClickListener {
-                            pdfSigner.deleteSignatureById(sig.id)
-                            dialog.dismiss()
-                            buildDialog()
+                            if (pdfSigner.deleteSignatureById(sig.id)) {
+                                dialog.dismiss()
+                                buildDialog()
+                            } else Toast.makeText(activity, "Signature deletion failed", Toast.LENGTH_SHORT).show()
                         }
                     }
 

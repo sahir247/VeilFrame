@@ -13,7 +13,9 @@ This is the living record of the two fresh static audits: engineering integrity 
 
 Code and ledger updates must be committed together. Never mark an issue verified without finding-specific acceptance evidence. A green unit/compile pipeline is recorded under CI evidence but must not be mistaken for complete user/device parity. Preserve main and release gates; no changes to signing secrets. Prioritize false success, privacy, fidelity, ownership, then benchmarks.
 
-## Findings — reconciled against latest checked application revision (`5ecc707`, 2026-11-23)
+## Findings — baseline acceptance register (last complete checked revision `5ecc707`, 2026-11-23)
+
+**2026-11-26 reconciliation:** The register below retains conservative acceptance statuses. Later implementation deltas (including the latest multilingual Office, source identity, metadata, raster and signature changes) are recorded in the dated sections at the end; they supersede older implementation limitations, not unexecuted acceptance tests.
 
 **Source status and verification are separate.** `PATCHED` means a bounded source fix, not complete acceptance; `PARTIAL` means remaining source or assurance scope. The application/test revision is `bdfb039fb40c08eb0169722cb3eba8c9809feff0` and the successful CI-checked documentation successor is `5ecc7074e1f15f725eda24e1edbf0315027681c0`. Device runs give **scoped evidence**, not automatic whole-finding `VERIFIED` status. Baseline paths are historical finding pointers.
 
@@ -1530,3 +1532,12 @@ Robolectric `LegacyToolThemeContractTest` checks AMOLED black canvas/surface, DA
 
 - Rotate the source PDF trailer /ID to a fresh random 16-byte value on metadata removal, and verify both saved identifier entries before transfer. Confirmed pinned PDFBox-Android v2.0.27.0 COSWriter preserves a valid existing ID on full save (https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/library/src/main/java/com/tom_roush/pdfbox/pdfwriter/COSWriter.java). Traverse trailer as well as catalog for explicit Metadata/PieceInfo; add cancellation checkpoints. This does not anonymize document content or opaque streams. Combined JS/attachment sanitation runs one shared traversal with cancellation and saved verification. Verify-export copy rejects zero-progress reads. Tests cover ID regeneration/serialized mismatch and cancellation.
 - Image-to-PDF quick engine now shares the admitted immutable image snapshot/EXIF path, preserves transparency, honors JPEG quality for opaque large images, uses disk-backed destination and verifies page count before transfer. PDF-to-image preflights all requested pages for 36–600dpi, max 8192-edge/16MP, rejects invalid/duplicate pages, uses original PDFBox RGB raster rather than lossy RGB565, closes provider stream and preserves cancellation and borrowed-bitmap ownership. Test covers geometry limits; reference device color/EXIF and UserUnit exact DPI remain pending. Explicit source/raster limits are admission decisions, not universal conversion. CI pending.
+
+
+### 2026-11-26 — A21/A29 signature library persistence and UI result integrity
+
+- Stage and sync image/index writes before atomic replacement. Unique UUID image identities, shared process lock, bounded index and validated IDs; reject empty/failed encoding, refuse to overwrite unreadable index, roll back new image on failed index publication, preserve legacy numeric IDs and display legacy orphan images. Rename/delete report failure instead of unconditional success; failed index update during deletion attempts to restore the original image. This is not a crash-atomic multi-file transaction or secure erase. Quick-tool feedback reports failures and suppresses stale save toasts; bounded thumbnail/full image decode and one initial canvas placement. JVM fixture exercises atomic replacement, injected failed writes, empty writes and ID validation. CI and physical UI acceptance pending.
+
+### Remaining acceptance boundaries (2026-11-26)
+
+- A02/A05–A08: independent multilingual OCR/visual corpus, adversarial PDF parser and SAF failure tests, 48/108 MP real-camera export. A16/A17: held-out credential/tokenization/parser and provider mutation tests. A19/A21/A22/A25/A26/B03: physical recall, cross-workspace lifecycle, independent attribution, prolonged native/device and region/temporal performance. A28: supported chart/print/shaping paths now broader, but arbitrary Office fidelity, stacked/fragmented complex graphemes, unsupported fonts and independent reference rendering remain explicit boundaries. A29: ownership extracted for multiple PDF paths; whole-app controller decomposition remains incremental, not complete. No blanket VERIFIED status, release-readiness claim or benchmark result is inferred from source edits.
