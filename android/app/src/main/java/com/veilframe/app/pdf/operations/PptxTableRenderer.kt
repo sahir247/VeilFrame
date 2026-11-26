@@ -93,8 +93,18 @@ internal object PptxTableRenderer {
         } ?: (rgb ushr 24)
         return (rgb and 0xffffff) or (alpha shl 24)
     }
-    private data class Border(val edge: String,val color: Int,val style: PptxStrokeStyle.Spec)
-    private data class Visual(val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: List<Border>)
+    private data class Border(val color: Int?,val style: PptxStrokeStyle.Spec?)
+    private data class Visual(val entry: Cell,val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: Map<String,Border>)
+
+    // Explicit shared edges: an upper/left anchor takes precedence even when
+    // its border is explicitly transparent. A merged-away neighbour does not
+    // compete. Missing/inherited styles are not resolved by this helper.
+    internal fun <T> sharedBorder(leading: T?,trailing: T?,leadingIsAnchor: Boolean,
+        trailingIsAnchor: Boolean): T? = when {
+        leadingIsAnchor && leading!=null -> leading
+        trailingIsAnchor && trailing!=null -> trailing
+        else -> leading ?: trailing
+    }
     fun draw(canvas: Canvas,table: XSLFTable,bounds: RectF,fontScale: Float,
         theme: (String)->Int,checkpoint: ()->Unit,text: (XSLFTableCell,RectF)->Unit) {
         val rows=table.numberOfRows
@@ -110,16 +120,20 @@ internal object PptxTableRenderer {
             val cell=requireNotNull(table.getCell(entry.row,entry.col))
             val properties=one(cell.xmlObject.domNode,"tcPr")
             val color=properties?.let { fill(it,theme) }
-            val borders=mutableListOf<Border>()
+            val borders=mutableMapOf<String,Border>()
             if(properties!=null) {
                 for(edge in listOf("lnL","lnR","lnT","lnB","lnTlToBr","lnBlToTr")) {
                     val line=one(properties,edge) ?: continue
-                    val lineColor=fill(line,theme) ?: continue
-                    val style=PptxStrokeStyle.parse(line,fontScale,fontScale)
-                    if(style.width>0f) borders.add(Border(edge,lineColor,style))
+                    val lineColor=fill(line,theme)
+                    if(one(line,"noFill")!=null) {
+                        borders[edge]=Border(null,null)
+                    } else if(lineColor!=null) {
+                        val style=PptxStrokeStyle.parse(line,fontScale,fontScale)
+                        borders[edge]=Border(lineColor,style)
+                    }
                 }
             }
-            Visual(cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders)
+            Visual(entry,cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders)
         }
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
         for(v in visuals) {
@@ -130,17 +144,57 @@ internal object PptxTableRenderer {
             checkpoint()
             text(v.cell,v.box)
         }
-        for(v in visuals) for(line in v.borders) {
-            val stroke=line.style.paint(line.color)
-            val r=v.box
-            when(line.edge) {
-                "lnL" -> canvas.drawLine(r.left,r.top,r.left,r.bottom,stroke)
-                "lnR" -> canvas.drawLine(r.right,r.top,r.right,r.bottom,stroke)
-                "lnT" -> canvas.drawLine(r.left,r.top,r.right,r.top,stroke)
-                "lnB" -> canvas.drawLine(r.left,r.bottom,r.right,r.bottom,stroke)
-                "lnTlToBr" -> canvas.drawLine(r.left,r.top,r.right,r.bottom,stroke)
-                "lnBlToTr" -> canvas.drawLine(r.left,r.bottom,r.right,r.top,stroke)
+        val owners=arrayOfNulls<Visual>(rows*cols)
+        for(v in visuals) for(r in v.entry.row until v.entry.row+v.entry.rows)
+            for(c in v.entry.col until v.entry.col+v.entry.cols) owners[r*cols+c]=v
+        fun at(r: Int,c: Int): Visual? =
+            if(r in 0 until rows && c in 0 until cols) owners[r*cols+c] else null
+        fun anchor(v: Visual?,r: Int,c: Int)=v?.entry?.let { it.row==r && it.col==c }==true
+        fun line(b: Border?,x1: Float,y1: Float,x2: Float,y2: Float) {
+            val color=b?.color ?: return
+            val style=b.style ?: return
+            if(style.width>0f) canvas.drawLine(x1,y1,x2,y2,style.paint(color))
+        }
+        // Coalesce identical adjacent segments so merged edges/dashes stay continuous.
+        for(r in 0..rows) {
+            checkpoint()
+            fun edge(c: Int): Border? {
+                val above=at(r-1,c); val below=at(r,c)
+                if(above===below) return null
+                return sharedBorder(above?.borders?.get("lnB"),below?.borders?.get("lnT"),
+                    anchor(above,r-1,c),anchor(below,r,c))
             }
+            var start=0
+            while(start<cols) {
+                val b=edge(start)
+                var end=start+1
+                while(end<cols && edge(end)==b) end++
+                line(b,xs[start],ys[r],xs[end],ys[r])
+                start=end
+            }
+        }
+        for(c in 0..cols) {
+            checkpoint()
+            fun edge(r: Int): Border? {
+                val left=at(r,c-1); val right=at(r,c)
+                if(left===right) return null
+                return sharedBorder(left?.borders?.get("lnR"),right?.borders?.get("lnL"),
+                    anchor(left,r,c-1),anchor(right,r,c))
+            }
+            var start=0
+            while(start<rows) {
+                val b=edge(start)
+                var end=start+1
+                while(end<rows && edge(end)==b) end++
+                line(b,xs[c],ys[start],xs[c],ys[end])
+                start=end
+            }
+        }
+        for(v in visuals) {
+            checkpoint()
+            val r=v.box
+            line(v.borders["lnTlToBr"],r.left,r.top,r.right,r.bottom)
+            line(v.borders["lnBlToTr"],r.left,r.bottom,r.right,r.top)
         }
     }
 }
