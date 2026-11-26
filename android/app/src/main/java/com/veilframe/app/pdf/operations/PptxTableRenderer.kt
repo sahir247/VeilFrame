@@ -52,48 +52,12 @@ internal object PptxTableRenderer {
         }
         return out
     }
-    private val namespaces=setOf("http://schemas.openxmlformats.org/drawingml/2006/main",
-        "http://purl.oclc.org/ooxml/drawingml/main")
-    private fun children(node: Node): List<Node> {
-        val out=mutableListOf<Node>()
-        var child=node.firstChild
-        while(child!=null) {
-            if(child.nodeType==Node.ELEMENT_NODE && child.namespaceURI in namespaces) out.add(child)
-            child=child.nextSibling
-        }
-        return out
+    private data class Border(val color: Int?,val style: PptxStrokeStyle.Spec?,val priority: Int)
+    private fun one(n: Node?,name: String)=PptxTableStyle.one(n,name)
+    private fun prefer(a: Border?,b: Border?,aAnchor: Boolean,bAnchor: Boolean): Border? {
+        if(a!=null && b!=null && a.priority!=b.priority) return if(a.priority>b.priority) a else b
+        return sharedBorder(a,b,aAnchor,bAnchor)
     }
-    private fun one(node: Node,name: String): Node? {
-        val found=children(node).filter { it.localName==name }
-        require(found.size<=1) { "Ambiguous slide table formatting" }
-        return found.singleOrNull()
-    }
-    private fun attr(node: Node,name: String)=node.attributes?.getNamedItem(name)?.nodeValue
-    private fun fill(node: Node,theme: (String)->Int): Int? {
-        val fills=children(node).filter { it.localName in setOf("solidFill","noFill","gradFill","blipFill","pattFill","grpFill") }
-        require(fills.size<=1) { "Ambiguous slide table fill" }
-        val f=fills.singleOrNull() ?: return null
-        if(f.localName=="noFill") return null
-        if(f.localName!="solidFill") throw IOException("Unsupported non-solid slide table fill")
-        val color=children(f).singleOrNull() ?: throw IOException("Missing slide table color")
-        val value=attr(color,"val") ?: throw IOException("Missing slide table color value")
-        val rgb=when(color.localName) {
-            "srgbClr" -> if(value.matches(Regex("[0-9A-Fa-f]{6}"))) value.toInt(16) or 0xff000000.toInt()
-                else throw IOException("Invalid slide table RGB")
-            "schemeClr" -> theme(value)
-            else -> throw IOException("Unsupported slide table color")
-        }
-        val effects=children(color)
-        if(effects.any { it.localName!="alpha" } || effects.size>1)
-            throw IOException("Unsupported slide table color transform")
-        val alpha=effects.singleOrNull()?.let {
-            val v=attr(it,"val")?.toIntOrNull() ?: throw IOException("Invalid slide table alpha")
-            require(v in 0..100000)
-            (v*255/100000)
-        } ?: (rgb ushr 24)
-        return (rgb and 0xffffff) or (alpha shl 24)
-    }
-    private data class Border(val color: Int?,val style: PptxStrokeStyle.Spec?)
     private data class Visual(val entry: Cell,val cell: XSLFTableCell,val box: RectF,val fill: Int?,val borders: Map<String,Border>)
 
     // Explicit shared edges: an upper/left anchor takes precedence even when
@@ -106,9 +70,25 @@ internal object PptxTableRenderer {
         else -> leading ?: trailing
     }
     fun draw(canvas: Canvas,table: XSLFTable,bounds: RectF,fontScale: Float,
-        theme: (String)->Int,checkpoint: ()->Unit,text: (XSLFTableCell,RectF)->Unit) {
+        theme: (String)->Int?,checkpoint: ()->Unit,text: (XSLFTableCell,RectF)->Unit) {
         val rows=table.numberOfRows
         val cols=table.numberOfColumns
+        val props=one(table.ctTable.domNode,"tblPr")
+        val flags=PptxTableStyle.flags(props)
+        val style=PptxTableStyle.select(props,table.sheet.slideShow.tableStyles?.xmlObject?.domNode)
+        val format=table.sheet.theme?.xmlObject?.themeElements?.fmtScheme
+        fun fillLookup(index: Int): Node? {
+            if(index==0 || index==1000) return null
+            val list=if(index>1000) format?.bgFillStyleLst?.domNode else format?.fillStyleLst?.domNode
+            return list?.let { PptxTableStyle.children(it).getOrNull(if(index>1000) index-1001 else index-1) }
+        }
+        fun lineLookup(index: Int): Node? {
+            val lines=format?.lnStyleLst
+            return if(lines!=null && index in 1..lines.sizeOfLnArray()) lines.getLnArray(index-1).domNode else null
+        }
+        val tableBackground=PptxTableStyle.inheritedFill(one(style,"tblBg"),::fillLookup,theme)?.let {
+            PptxTableStyle.solid(it.node,theme,it.placeholder)
+        }
         val plan=grid(rows,cols) { r,c ->
             checkpoint()
             table.getCell(r,c)?.let { Span(it.rowSpan,it.gridSpan,it.isMerged) }
@@ -119,23 +99,45 @@ internal object PptxTableRenderer {
             checkpoint()
             val cell=requireNotNull(table.getCell(entry.row,entry.col))
             val properties=one(cell.xmlObject.domNode,"tcPr")
-            val color=properties?.let { fill(it,theme) }
+            val layers=PptxTableStyle.layers(style,entry.row,entry.col,rows,cols,flags)
+            val localFill=PptxTableStyle.directFill(properties)
+            val inheritedFill=if(localFill==null) layers.asReversed().firstNotNullOfOrNull {
+                PptxTableStyle.inheritedFill(it.cell,::fillLookup,theme)
+            } else null
+            val color=when {
+                localFill!=null -> PptxTableStyle.solid(localFill,theme)
+                inheritedFill!=null -> PptxTableStyle.solid(inheritedFill.node,theme,inheritedFill.placeholder)
+                else -> null
+            }
             val borders=mutableMapOf<String,Border>()
-            if(properties!=null) {
-                for(edge in listOf("lnL","lnR","lnT","lnB","lnTlToBr","lnBlToTr")) {
-                    val line=one(properties,edge) ?: continue
-                    val lineColor=fill(line,theme)
-                    if(one(line,"noFill")!=null) {
-                        borders[edge]=Border(null,null)
-                    } else if(lineColor!=null) {
-                        val style=PptxStrokeStyle.parse(line,fontScale,fontScale)
-                        borders[edge]=Border(lineColor,style)
-                    }
+            for(edge in listOf("lnL","lnR","lnT","lnB","lnTlToBr","lnBlToTr")) {
+                val direct=one(properties,edge)
+                val inherited=layers.asReversed().firstNotNullOfOrNull { region ->
+                    val role=PptxTableStyle.borderRole(region.name,edge,
+                        if(edge=="lnB") entry.row+entry.rows-1 else entry.row,
+                        if(edge=="lnR") entry.col+entry.cols-1 else entry.col,rows,cols,flags)
+                    val wrapper=one(one(region.cell,"tcBdr"),role)
+                    wrapper?.let { PptxTableStyle.inheritedBorder(it,::lineLookup,theme) }
+                        ?.let { it to PptxTableStyle.priority(region.name) }
+                }
+                val localLineFill=PptxTableStyle.directFill(direct)
+                val chosenFill=localLineFill ?: PptxTableStyle.directFill(inherited?.first?.node)
+                if(chosenFill!=null) {
+                    val ink=PptxTableStyle.solid(chosenFill,theme,
+                        if(localLineFill!=null) null else inherited?.first?.placeholder)
+                    val priority=if(direct!=null) 100 else inherited?.second ?: 0
+                    val stroke=if(ink==null) null else PptxStrokeStyle.parse(
+                        direct ?: requireNotNull(inherited).first.node,fontScale,fontScale,
+                        inherited=inherited?.first?.node)
+                    borders[edge]=Border(ink,stroke,priority)
+                } else if(direct!=null) {
+                    throw IOException("Unresolved explicit table border")
                 }
             }
             Visual(entry,cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders)
         }
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        tableBackground?.let { paint.color=it; canvas.drawRect(bounds,paint) }
         for(v in visuals) {
             checkpoint()
             v.fill?.let { paint.color=it; canvas.drawRect(v.box,paint) }
@@ -161,7 +163,7 @@ internal object PptxTableRenderer {
             fun edge(c: Int): Border? {
                 val above=at(r-1,c); val below=at(r,c)
                 if(above===below) return null
-                return sharedBorder(above?.borders?.get("lnB"),below?.borders?.get("lnT"),
+                return prefer(above?.borders?.get("lnB"),below?.borders?.get("lnT"),
                     anchor(above,r-1,c),anchor(below,r,c))
             }
             var start=0
@@ -178,7 +180,7 @@ internal object PptxTableRenderer {
             fun edge(r: Int): Border? {
                 val left=at(r,c-1); val right=at(r,c)
                 if(left===right) return null
-                return sharedBorder(left?.borders?.get("lnR"),right?.borders?.get("lnL"),
+                return prefer(left?.borders?.get("lnR"),right?.borders?.get("lnL"),
                     anchor(left,r,c-1),anchor(right,r,c))
             }
             var start=0
