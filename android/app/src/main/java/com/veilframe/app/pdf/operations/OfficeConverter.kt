@@ -2261,10 +2261,14 @@ class OfficeConverter {
                 }
 
                 // 2. Flatten all shapes (including nested group children and Slide Master / Layout background shapes)
-                val allSlideShapes = mutableListOf<org.apache.poi.xslf.usermodel.XSLFShape>()
+                data class SlideLeaf(val shape: XSLFShape,val ancestor: PptxShapeTransform.Affine,
+                    val grouped: Boolean,val diagramPart: org.apache.poi.openxml4j.opc.PackagePart?)
+                val allSlideShapes = mutableListOf<SlideLeaf>()
                 var shapeCount = 0
                 fun collectBitmapShapes(shapes: List<org.apache.poi.xslf.usermodel.XSLFShape>,
-                    isMasterOrLayout: Boolean = false,depth: Int = 0) {
+                    isMasterOrLayout: Boolean = false,depth: Int = 0,
+                    ancestor: PptxShapeTransform.Affine=PptxShapeTransform.Affine(),
+                    diagramPart: org.apache.poi.openxml4j.opc.PackagePart?=null) {
                     require(depth<=64) { "Slide group nesting exceeds rendering budget" }
                     for (s in shapes) {
                         work.ensureActive()
@@ -2274,9 +2278,16 @@ class OfficeConverter {
                             continue
                         }
                         if (s is XSLFGroupShape) {
-                            collectBitmapShapes(s.shapes,isMasterOrLayout,depth+1)
+                            val children=s.shapes
+                            if(children.isNotEmpty()) collectBitmapShapes(children,isMasterOrLayout,depth+1,
+                                ancestor*PptxShapeTransform.group(s.xmlObject.domNode),diagramPart)
+                        } else if(PptxSmartArtCache.isDiagram(s.xmlObject.domNode)) {
+                            val frame=PptxShapeTransform.shape(s.xmlObject.domNode)
+                                ?: throw java.io.IOException("Missing SmartArt frame transform")
+                            val cached=PptxSmartArtCache.load(s.xmlObject.domNode,s.sheet,frame)
+                            collectBitmapShapes(cached.group.shapes,false,depth+1,ancestor*cached.mapping,cached.cachePart)
                         } else {
-                            allSlideShapes.add(s)
+                            allSlideShapes.add(SlideLeaf(s,ancestor,depth>0,diagramPart))
                         }
                     }
                 }
@@ -2377,21 +2388,15 @@ class OfficeConverter {
                         }
                     }
                 // 3. Draw all shapes in z-order
-                for (shape in allSlideShapes) {
+                for (leaf in allSlideShapes) {
                     work.ensureActive()
+                    val shape=leaf.shape
                     val sx = targetWidth.toDouble()/slideWidthEmu
                     val sy = targetHeight.toDouble()/slideHeightEmu
                     val straightConnector = PptxConnectorRenderer.isStraight(shape.xmlObject.domNode)
                     val direct = PptxShapeTransform.shape(shape.xmlObject.domNode,straightConnector)
-                    var matrix = direct?.matrix ?: PptxShapeTransform.Affine()
-                    var parentShape = shape.parent
-                    var transformDepth = 0
-                    while (parentShape is XSLFGroupShape) {
-                        require(++transformDepth<=64) { "Slide group transform exceeds depth budget" }
-                        require(direct != null) { "Grouped slide shape has no explicit transform" }
-                        matrix = PptxShapeTransform.group(parentShape.xmlObject.domNode)*matrix
-                        parentShape = parentShape.parent
-                    }
+                    if(leaf.grouped) require(direct!=null) { "Grouped slide shape has no explicit transform" }
+                    val matrix = leaf.ancestor*(direct?.matrix ?: PptxShapeTransform.Affine())
                     val normBounds = if (direct != null) {
                         val box = direct.bounds
                         (if(straightConnector) admitLineBounds(box.x/slideWidthEmu,box.y/slideHeightEmu,
@@ -2462,7 +2467,7 @@ class OfficeConverter {
                     if (picture != null) {
                         if (geomType != ShapeGeom.RECTANGLE)
                             throw java.io.IOException("Nonrectangular slide picture fill is unsupported")
-                        val bytes = PptxPictureRenderer.read(shape.sheet,picture) { work.ensureActive() }
+                        val bytes = PptxPictureRenderer.read(leaf.diagramPart ?: shape.sheet.packagePart,picture) { work.ensureActive() }
                         PptxPictureRenderer.draw(canvas,bytes,picture.crop,RectF(px,py,px+pw,py+ph))
                         if (shape is XSLFPictureShape) continue
                     }
