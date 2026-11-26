@@ -2359,14 +2359,22 @@ class OfficeConverter {
                                 (paragraph.indent ?: 0.0).toFloat()*fontScale))
                         }
                         if (rendered.any { it.runs.any { run -> run.text.isNotBlank() } }) {
-                            if (shape.textDirection?.name !in setOf(null,"HORIZONTAL"))
-                                throw OfficeTextEncodingException("Vertical slide text is unsupported")
                             val l = shape.leftInset.toFloat()*fontScale
                             val r = shape.rightInset.toFloat()*fontScale
                             val top = shape.topInset.toFloat()*fontScale
                             val bottom = shape.bottomInset.toFloat()*fontScale
-                            PptxTextLayout.draw(canvas,rendered,px+l,py+top,pw-l-r,ph-top-bottom,
-                                shape.verticalAlignment?.name ?: "TOP")
+                            val body = PptxShapeTransform.textBody(shape.xmlObject.domNode)
+                            val frame = PptxShapeTransform.textFrame(matrix.pixelAffine(sx,sy),
+                                PptxShapeTransform.Rect(px.toDouble(),py.toDouble(),pw.toDouble(),ph.toDouble()),
+                                body,shape.textRotation ?: 0.0,shape.textDirection?.name)
+                            val box = frame.bounds
+                            val textSave = canvas.save()
+                            try {
+                                canvas.concat(android.graphics.Matrix().apply { setValues(frame.correction.pixels(1.0,1.0)) })
+                                PptxTextLayout.draw(canvas,rendered,box.x.toFloat()+l,box.y.toFloat()+top,
+                                    box.width.toFloat()-l-r,box.height.toFloat()-top-bottom,
+                                    shape.verticalAlignment?.name ?: "TOP")
+                            } finally { canvas.restoreToCount(textSave) }
                         }
                     }
                     } finally { canvas.restoreToCount(shapeSave) }

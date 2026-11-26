@@ -4,6 +4,9 @@ import org.w3c.dom.Node
 import java.io.IOException
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.atan2
+import kotlin.math.abs
+import kotlin.math.hypot
 
 /** DrawingML coordinates remain in EMUs until the complete group transform is composed. */
 internal object PptxShapeTransform {
@@ -25,9 +28,19 @@ internal object PptxShapeTransform {
             a*inner.c+c*inner.d,b*inner.c+d*inner.d,
             a*inner.tx+c*inner.ty+tx,b*inner.tx+d*inner.ty+ty)
         fun point(x: Double,y: Double) = (a*x+c*y+tx) to (b*x+d*y+ty)
-        fun pixels(sx: Double,sy: Double): FloatArray {
+        val determinant: Double get() = a*d-b*c
+        fun inverse(): Affine {
+            val det = determinant
+            require(det.isFinite() && abs(det)>1e-12) { "Degenerate slide text transform" }
+            return Affine(d/det,-b/det,-c/det,a/det,(c*ty-d*tx)/det,(b*tx-a*ty)/det)
+        }
+        fun pixelAffine(sx: Double,sy: Double): Affine {
             require(sx.isFinite() && sy.isFinite() && sx>0 && sy>0)
-            val values = doubleArrayOf(a,c*sx/sy,tx*sx,b*sy/sx,d,ty*sy,0.0,0.0,1.0)
+            return Affine(a,b*sy/sx,c*sx/sy,d,tx*sx,ty*sy)
+        }
+        fun pixels(sx: Double,sy: Double): FloatArray {
+            val p = pixelAffine(sx,sy)
+            val values = doubleArrayOf(p.a,p.c,p.tx,p.b,p.d,p.ty,0.0,0.0,1.0)
             require(values.all { it.isFinite() && kotlin.math.abs(it)<=1e8 }) {
                 "Slide shape transform exceeds rendering bounds"
             }
@@ -83,6 +96,57 @@ internal object PptxShapeTransform {
         val bounds = rect(node,"off","ext")
         return Transform(bounds,orientation(node,bounds))
     }
+    data class TextBody(val upright: Boolean,val direction: String?)
+    fun textBody(root: Node): TextBody {
+        val body = properties(root,"txBody")?.let { one(it,"bodyPr",drawing) }
+            ?: return TextBody(false,null)
+        return TextBody(flag(body,"upright"),attr(body,"vert"))
+    }
+    data class TextFrame(val bounds: Rect,val correction: Affine)
+
+    /**
+     * Shape canvas already has its pixel affine. Return a relative correction
+     * and a centered layout rectangle; glyphs must not be mirror images.
+     * 90/270 flow swaps the layout axes, not individual characters.
+     */
+    fun textFrame(shape: Affine,bounds: Rect,body: TextBody,rotation: Double,
+        inheritedDirection: String? = null): TextFrame {
+        require(rotation.isFinite()) { "Invalid slide text rotation" }
+        val cx = bounds.x+bounds.width/2
+        val cy = bounds.y+bounds.height/2
+        var desired = shape
+        if (desired.determinant<0) desired = desired*around(bounds,0.0,true,false)
+        var frame = bounds
+        fun swapped(r: Rect) = Rect(r.x+(r.width-r.height)/2,r.y+(r.height-r.width)/2,r.height,r.width)
+        if (body.upright) {
+            val xLength = hypot(desired.a,desired.b)
+            val yLength = hypot(desired.c,desired.d)
+            require(xLength>1e-8 && yLength>1e-8 &&
+                abs(desired.a*desired.c+desired.b*desired.d)/(xLength*yLength)<0.005) {
+                "Upright text inside a sheared group is unsupported"
+            }
+            val angle = Math.toDegrees(atan2(desired.b,desired.a))
+            val (mx,my) = desired.point(cx,cy)
+            val radians = Math.toRadians(-angle)
+            desired = translate(mx,my)*Affine(cos(radians),sin(radians),-sin(radians),cos(radians))*
+                translate(-mx,-my)*desired
+            if (abs(sin(Math.toRadians(angle)))>abs(cos(Math.toRadians(angle)))) frame=swapped(frame)
+        } else {
+            desired = desired*around(bounds,rotation%360.0,false,false)
+        }
+        val flow = when(body.direction ?: inheritedDirection ?: "horz") {
+            "horz","HORIZONTAL" -> 0.0
+            "vert","VERTICAL" -> 90.0
+            "vert270","VERTICAL_270" -> -90.0
+            else -> throw OfficeTextEncodingException("Stacked or native vertical-script slide text is unsupported")
+        }
+        if (flow!=0.0) {
+            desired = desired*around(bounds,flow,false,false)
+            frame=swapped(frame)
+        }
+        return TextFrame(frame,shape.inverse()*desired)
+    }
+
     fun group(root: Node): Affine {
         val properties = properties(root,"grpSpPr") ?: throw IOException("Missing slide group properties")
         val node = one(properties,"xfrm",drawing) ?: throw IOException("Missing slide group transform")
