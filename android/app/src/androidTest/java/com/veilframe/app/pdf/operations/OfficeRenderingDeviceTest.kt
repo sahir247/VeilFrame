@@ -107,6 +107,28 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun nativeVerticalCjkMixedOrientationPaintsAndRejectsOverflow() {
+        val bitmap=Bitmap.createBitmap(320,320,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val p=PptxTextLayout.Paragraph(listOf(
+                PptxTextLayout.Run("日本語「文」",28f,Color.RED),
+                PptxTextLayout.Run(" ABC",24f,Color.BLUE)))
+            PptxVerticalText.draw(android.graphics.Canvas(bitmap),listOf(p),10f,10f,300f,300f,"TOP",true)
+            var red=0; var blue=0
+            for(y in 0 until bitmap.height) for(x in 0 until bitmap.width) {
+                val v=bitmap.getPixel(x,y)
+                if(Color.red(v)>150 && Color.blue(v)<100 && Color.green(v)<100) red++
+                if(Color.blue(v)>150 && Color.red(v)<100 && Color.green(v)<100) blue++
+            }
+            assertTrue(red>10 && blue>10)
+            bitmap.eraseColor(Color.WHITE)
+            assertTrue(runCatching { PptxVerticalText.draw(android.graphics.Canvas(bitmap),listOf(p),
+                0f,0f,5f,5f,"TOP",true) }.isFailure)
+            assertEquals(Color.WHITE,bitmap.getPixel(1,1))
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {

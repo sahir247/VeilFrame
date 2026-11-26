@@ -128,7 +128,7 @@ internal object PptxShapeTransform {
         found
     }
     data class TextFrame(val bounds: Rect,val correction: Affine,val stacked: Boolean = false,
-        val columnsRtl: Boolean = false)
+        val columnsRtl: Boolean = false,val nativeVertical: Boolean = false)
 
     /**
      * Shape canvas already has its pixel affine. Return a relative correction
@@ -147,23 +147,32 @@ internal object PptxShapeTransform {
         if (body.upright) {
             val xLength = hypot(desired.a,desired.b)
             val yLength = hypot(desired.c,desired.d)
-            require(xLength>1e-8 && yLength>1e-8 &&
-                abs(desired.a*desired.c+desired.b*desired.d)/(xLength*yLength)<0.005) {
-                "Upright text inside a sheared group is unsupported"
-            }
-            val angle = Math.toDegrees(atan2(desired.b,desired.a))
+            require(xLength>1e-8 && yLength>1e-8) { "Degenerate upright text transform" }
+            val angle = atan2(desired.b,desired.a)
             val (mx,my) = desired.point(cx,cy)
-            val radians = Math.toRadians(-angle)
-            desired = translate(mx,my)*Affine(cos(radians),sin(radians),-sin(radians),cos(radians))*
-                translate(-mx,-my)*desired
-            if (abs(sin(Math.toRadians(angle)))>abs(cos(Math.toRadians(angle)))) frame=swapped(frame)
+            val quarterTurn = abs(sin(angle))>abs(cos(angle))
+            if (quarterTurn) frame=swapped(frame)
+            // Fit an axis-aligned, undistorted text rectangle inside the mapped
+            // parallelogram. Inverse-map all four corners by absolute extents.
+            val inverse = desired.inverse()
+            val scaleX = if(quarterTurn) yLength else xLength
+            val scaleY = if(quarterTurn) xLength else yLength
+            val halfX = frame.width*scaleX/2
+            val halfY = frame.height*scaleY/2
+            val reachX = abs(inverse.a)*halfX+abs(inverse.c)*halfY
+            val reachY = abs(inverse.b)*halfX+abs(inverse.d)*halfY
+            val fit = minOf(1.0,bounds.width/(2*reachX),bounds.height/(2*reachY))
+            require(fit.isFinite() && fit>0.001) { "Upright text rectangle is degenerate" }
+            desired = translate(mx,my)*scale(scaleX*fit,scaleY*fit)*translate(-cx,-cy)
         } else {
             desired = desired*around(bounds,rotation%360.0,false,false)
         }
         val direction = body.direction ?: inheritedDirection ?: "horz"
         val stacked = direction in setOf("wordArtVert","wordArtVertRtl","STACKED")
+        val nativeVertical = direction in setOf("eaVert","mongolianVert","VERTICAL_EAST_ASIAN","VERTICAL_MONGOLIAN")
         val flow = when(direction) {
-            "horz","HORIZONTAL","wordArtVert","wordArtVertRtl","STACKED" -> 0.0
+            "horz","HORIZONTAL","wordArtVert","wordArtVertRtl","STACKED",
+            "eaVert","mongolianVert","VERTICAL_EAST_ASIAN","VERTICAL_MONGOLIAN" -> 0.0
             "vert","VERTICAL" -> 90.0
             "vert270","VERTICAL_270" -> -90.0
             else -> throw OfficeTextEncodingException("Native vertical-script slide text is unsupported")
@@ -172,7 +181,8 @@ internal object PptxShapeTransform {
             desired = desired*around(bounds,flow,false,false)
             frame=swapped(frame)
         }
-        return TextFrame(frame,shape.inverse()*desired,stacked,direction=="wordArtVertRtl")
+        return TextFrame(frame,shape.inverse()*desired,stacked,
+            direction in setOf("wordArtVertRtl","eaVert","VERTICAL_EAST_ASIAN"),nativeVertical)
     }
 
     fun group(root: Node): Affine {

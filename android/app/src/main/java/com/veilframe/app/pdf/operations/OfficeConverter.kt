@@ -2376,7 +2376,9 @@ class OfficeConverter {
                                 val textWidth = box.width.toFloat()-l-r
                                 val textHeight = box.height.toFloat()-top-bottom
                                 val vertical = shape.verticalAlignment?.name ?: "TOP"
-                                if(frame.stacked) PptxTextLayout.drawStacked(canvas,rendered,textLeft,textTop,
+                                if(frame.nativeVertical) PptxVerticalText.draw(canvas,rendered,textLeft,textTop,
+                                    textWidth,textHeight,vertical,frame.columnsRtl)
+                                else if(frame.stacked) PptxTextLayout.drawStacked(canvas,rendered,textLeft,textTop,
                                     textWidth,textHeight,vertical,frame.columnsRtl)
                                 else PptxTextLayout.draw(canvas,rendered,textLeft,textTop,textWidth,textHeight,vertical)
                             } finally { canvas.restoreToCount(textSave) }

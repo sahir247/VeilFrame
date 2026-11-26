@@ -38,13 +38,40 @@ internal object PptxTextLayout {
             !paragraph.lineMultiplier.isFinite() || paragraph.lineMultiplier !in 0.5f..5f ||
             !paragraph.firstIndent.isFinite() || kotlin.math.abs(paragraph.firstIndent)>available-4f)
             throw OfficeTextEncodingException("Unsupported slide paragraph geometry")
+        val (content,paint) = attributed(paragraph.runs)
+        val value = content.toString()
+        val rtl = TextDirectionHeuristics.FIRSTSTRONG_LTR.isRtl(value,0,value.length)
+        val align = when(paragraph.alignment) {
+            "CENTER" -> Layout.Alignment.ALIGN_CENTER
+            "RIGHT" -> if(rtl) Layout.Alignment.ALIGN_NORMAL else Layout.Alignment.ALIGN_OPPOSITE
+            "LEFT" -> if(rtl) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
+            "JUSTIFY" -> Layout.Alignment.ALIGN_NORMAL
+            else -> throw OfficeTextEncodingException("Unsupported slide paragraph alignment: ${paragraph.alignment}")
+        }
+        val builder = StaticLayout.Builder.obtain(content,0,content.length,paint,available.toInt())
+            .setAlignment(align).setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
+            .setIncludePad(true).setLineSpacing(0f,paragraph.lineMultiplier)
+            .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE).setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
+        if (paragraph.firstIndent != 0f) builder.setIndents(
+            if (rtl) null else intArrayOf(paragraph.firstIndent.toInt(),0),
+            if (rtl) intArrayOf(paragraph.firstIndent.toInt(),0) else null)
+        if (paragraph.alignment == "JUSTIFY") builder.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD)
+        if (android.os.Build.VERSION.SDK_INT>=28) builder.setUseLineSpacingFromFallbacks(true)
+        val result = builder.build()
+        if (result.lineCount !in 1..4096 || result.height<=0 ||
+            (0 until result.lineCount).any { result.getLineWidth(it)>available+1f })
+            throw OfficeTextEncodingException("Slide paragraph exceeds visible width")
+        return result
+    }
+
+    internal fun attributed(runs: List<Run>): Pair<SpannableStringBuilder,TextPaint> {
         val content = SpannableStringBuilder()
-        val baseSize = paragraph.runs.firstOrNull()?.size ?: 14f
+        val baseSize = runs.firstOrNull()?.size ?: 14f
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             textSize = baseSize
             typeface = Typeface.DEFAULT
         }
-        for (run in paragraph.runs) {
+        for (run in runs) {
             if (!run.size.isFinite() || run.size !in 1f..2048f)
                 throw OfficeTextEncodingException("Slide font size exceeds rendering budget")
             val value = run.text.replace("\r\n","\n").replace('\r','\n').replace('\u000b','\n').replace('\t',' ')
@@ -80,29 +107,7 @@ internal object PptxTextLayout {
             if (run.superscript) span(SuperscriptSpan())
             if (run.subscript) span(SubscriptSpan())
         }
-        val value = content.toString()
-        val rtl = TextDirectionHeuristics.FIRSTSTRONG_LTR.isRtl(value,0,value.length)
-        val align = when(paragraph.alignment) {
-            "CENTER" -> Layout.Alignment.ALIGN_CENTER
-            "RIGHT" -> if(rtl) Layout.Alignment.ALIGN_NORMAL else Layout.Alignment.ALIGN_OPPOSITE
-            "LEFT" -> if(rtl) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
-            "JUSTIFY" -> Layout.Alignment.ALIGN_NORMAL
-            else -> throw OfficeTextEncodingException("Unsupported slide paragraph alignment: ${paragraph.alignment}")
-        }
-        val builder = StaticLayout.Builder.obtain(content,0,content.length,paint,available.toInt())
-            .setAlignment(align).setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
-            .setIncludePad(true).setLineSpacing(0f,paragraph.lineMultiplier)
-            .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE).setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
-        if (paragraph.firstIndent != 0f) builder.setIndents(
-            if (rtl) null else intArrayOf(paragraph.firstIndent.toInt(),0),
-            if (rtl) intArrayOf(paragraph.firstIndent.toInt(),0) else null)
-        if (paragraph.alignment == "JUSTIFY") builder.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD)
-        if (android.os.Build.VERSION.SDK_INT>=28) builder.setUseLineSpacingFromFallbacks(true)
-        val result = builder.build()
-        if (result.lineCount !in 1..4096 || result.height<=0 ||
-            (0 until result.lineCount).any { result.getLineWidth(it)>available+1f })
-            throw OfficeTextEncodingException("Slide paragraph exceeds visible width")
-        return result
+        return content to paint
     }
 
     private data class StackGlyph(val layout: StaticLayout,val width: Float)

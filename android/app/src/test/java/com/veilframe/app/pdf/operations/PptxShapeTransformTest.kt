@@ -55,12 +55,31 @@ class PptxShapeTransformTest {
         point(20.0,10.0,final,20.0,10.0)
     }
 
-    @Test fun unsupportedVerticalScriptAndShearedUprightAreExplicitFailures() {
+    @Test fun verticalScriptModesPreserveColumnDirection() {
         val rect = PptxShapeTransform.Rect(0.0,0.0,30.0,40.0)
-        assertTrue(runCatching { PptxShapeTransform.textFrame(PptxShapeTransform.Affine(),rect,
-            PptxShapeTransform.TextBody(false,"eaVert"),0.0) }.isFailure)
-        assertTrue(runCatching { PptxShapeTransform.textFrame(PptxShapeTransform.Affine(c=0.5),rect,
-            PptxShapeTransform.TextBody(true,null),0.0) }.isFailure)
+        for(mode in listOf("eaVert","mongolianVert")) {
+            val frame=PptxShapeTransform.textFrame(PptxShapeTransform.Affine(),rect,
+                PptxShapeTransform.TextBody(false,mode),0.0)
+            assertTrue(frame.nativeVertical && !frame.stacked)
+            assertEquals(mode=="eaVert",frame.columnsRtl)
+            assertEquals(rect,frame.bounds)
+        }
+    }
+
+    @Test fun shearedUprightFitsInsideOriginalParallelogram() {
+        val rect = PptxShapeTransform.Rect(0.0,0.0,30.0,40.0)
+        val shape = PptxShapeTransform.Affine(c=0.5,tx=7.0,ty=3.0)
+        val frame=PptxShapeTransform.textFrame(shape,rect,PptxShapeTransform.TextBody(true,null),0.0)
+        val final=shape*frame.correction
+        assertEquals(0.0,final.b,0.0001)
+        assertEquals(0.0,final.c,0.0001)
+        assertTrue(final.a>0 && final.d>0)
+        point(32.0,23.0,final,15.0,20.0)
+        for(x in listOf(0.0,30.0)) for(y in listOf(0.0,40.0)) {
+            val (px,py)=final.point(x,y)
+            val (localX,localY)=shape.inverse().point(px,py)
+            assertTrue(localX in -0.0001..30.0001 && localY in -0.0001..40.0001)
+        }
     }
 
     @Test fun textBodyAttributesResolveIndependentlyIncludingExplicitFalse() {

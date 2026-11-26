@@ -285,6 +285,8 @@ dependencies {
     // Bundled, offline byte-pair tokenizer; exact named-encoding artifact counts.
     implementation("com.knuddels:jtokkit:1.1.0")
     implementation("androidx.core:core-ktx:1.19.1")
+    // Mixed-orientation vertical shaping; beta03 includes the pre-36 compatibility path.
+    implementation("androidx.text:text-vertical:1.0.0-beta03")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
