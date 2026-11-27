@@ -10,7 +10,8 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     val blankDisplay: BlankDisplay = BlankDisplay.GAP,
     val valueAxes: List<ValueAxis> = emptyList(),
     val firstSliceAngle: Int = 0,
-    val scatterAxes: ScatterAxes? = null) {
+    val scatterAxes: ScatterAxes? = null,
+    val dateAxis: DateAxis? = null) {
     /** Applies to drawing categorical lines only; cached worksheet values remain unchanged. */
     enum class BlankDisplay {
         GAP, ZERO, SPAN;
@@ -24,6 +25,9 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
 
     /** Numeric XY axes are distinct from categorical value-axis assignments. */
     data class ScatterAxes(val x: ValueAxis,val y: ValueAxis)
+
+    data class DateAxis(val serials: List<Long>,val date1904: Boolean,val minimum: Long?,
+        val maximum: Long?,val reversed: Boolean,val majorDays: Long?,val format: String)
 
     /** Source DrawingML coordinates, not worksheet or PDF point units. */
     data class DrawingOffsets(val fromColEmu: Long, val fromRowEmu: Long,

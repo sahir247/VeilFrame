@@ -1302,6 +1302,7 @@ class OfficeConverter {
         }
         val palette = intArrayOf(0x2463A0, 0xD15A36, 0x36845B, 0x8354AA, 0xA47715, 0x247D82)
         val dual=SharedChartValueAxes.build(chart)
+        val dates=SharedChartDates.build(chart)
         val primary=dual.values.singleOrNull { it.axis.position=="l" }
         val secondary=dual.values.singleOrNull { it.axis.position=="r" }
         val combo = chart.kind == "combo"
@@ -1361,7 +1362,7 @@ class OfficeConverter {
                 }
                 stream.saveGraphicsState()
                 try {
-                if(dual.isNotEmpty()) {
+                if(dual.isNotEmpty() || dates!=null) {
                     stream.addRect(left,bottom,width,height)
                     stream.clip()
                 }
@@ -1378,7 +1379,7 @@ class OfficeConverter {
                             if (isLine && chart.blankDisplay.breakOnMissing()) points.add(null)
                             continue
                         }
-                        val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + slot*(local+0.5f)
+                        val position = if (horizontal) bottom + height - slot*(local+0.5f) else left + (dates?.let { it.fractionAt(index)*width } ?: (slot*(local+0.5f)))
                         if (isLine) {
                             val y = bottom + (axis?.fraction(v) ?: fraction(v))*height
                             points.add(position to y)
@@ -1407,7 +1408,9 @@ class OfficeConverter {
                         point.first,point.second,4f,series.markerFill,series.markerStroke,fallback,painter)
                 }
                 } finally { stream.restoreGraphicsState() }
-                for ((local,index) in indices.withIndex()) {
+                if(dates!=null) for(day in dates.ticks) {
+                    label(dates.label(day),left+dates.fraction(day)*width-22f,bottom-12f,8f)
+                } else for ((local,index) in indices.withIndex()) {
                     if (horizontal) label((index+1).toString(),80f,bottom+height-slot*(local+0.5f)-3f,8f)
                     else label((index+1).toString(),left+slot*(local+0.5f)-3f,bottom-12f,8f)
                 }

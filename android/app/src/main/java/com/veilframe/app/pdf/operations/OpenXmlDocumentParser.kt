@@ -874,8 +874,10 @@ object OpenXmlDocumentParser {
         // one common axis pair and no declarations retain the old behavior.
         val valueAxes=mutableListOf<XlsxCachedChart.ValueAxis>()
         val axisByType=mutableMapOf<Element,String>()
-        // Explicit date-axis semantics are not equivalent to equally spaced labels.
-        if(plot.childElements("dateAx").isNotEmpty()) return null
+        val dateNodes=plot.childElements("dateAx")
+        if(dateNodes.size>1 || dateNodes.isNotEmpty() && kind!="line") return null
+        val dateNode=dateNodes.singleOrNull()
+        var dateSerials: List<Long>?=null
         fun ids(t: Element)=t.childElements("axId").map { it.getAttribute("val") }
         fun axisId(e: Element)=e.childElements("axId").singleOrNull()?.getAttribute("val")
         fun parseValueAxis(v: Element,positions: Set<String> = setOf("l","r")): XlsxCachedChart.ValueAxis? {
@@ -1007,7 +1009,12 @@ object OpenXmlDocumentParser {
             if (kind == "pie" && (values.size > 12 || values.any { it != null && it < 0.0 } ||
                 values.none { it != null && it > 0.0 })) return null
             val cat = ser.childElements("cat").singleOrNull()
-            val categories = if (cat == null) List(values.size) { (it + 1).toString() }
+            val categories = if(dateNode!=null) {
+                val numbers=cache(cat,true)?.map { SharedChartDates.serial(it) ?: return null } ?: return null
+                if(dateSerials!=null && dateSerials!=numbers) return null
+                dateSerials=numbers
+                numbers.map { it.toString() }
+            } else if (cat == null) List(values.size) { (it + 1).toString() }
                 else cache(cat, false) ?: return null
             if (categories.size != values.size || (labels != null && labels != categories)) return null
             labels = categories
@@ -1024,8 +1031,45 @@ object OpenXmlDocumentParser {
         if(angles.size>1) return null
         val angle=angles.singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: if(angles.isEmpty()) 0 else return null
         if(angle !in 0..360 || (angle!=0 && kind!="pie")) return null
-        val result=XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, labels.orEmpty(), parsed,
-            grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes,firstSliceAngle=angle)
+        val dateAxis=if(dateNode==null) null else {
+            val id=axisId(dateNode) ?: return null
+            val value=plot.childElements("valAx").singleOrNull() ?: return null
+            val vid=axisId(value) ?: return null
+            if(id==vid || ids(type).size!=2 || ids(type).toSet()!=setOf(id,vid) ||
+                dateNode.childElements("axPos").singleOrNull()?.getAttribute("val")!="b" ||
+                dateNode.childElements("crossAx").singleOrNull()?.getAttribute("val")!=vid ||
+                value.childElements("crossAx").singleOrNull()?.getAttribute("val")!=id ||
+                plot.childElements("catAx").isNotEmpty()) return null
+            fun attr(n: Element,name: String)=n.childElements(name).singleOrNull()?.getAttribute("val")
+            if(listOf("baseTimeUnit","majorTimeUnit","minorTimeUnit").any {
+                dateNode.childElements(it).size>1 || attr(dateNode,it) !in setOf(null,"days")
+            } || dateNode.childElements("minorUnit").isNotEmpty()) return null
+            val scaling=dateNode.childElements("scaling").singleOrNull() ?: return null
+            if(scaling.childElements("logBase").isNotEmpty() ||
+                listOf("min","max","orientation").any { scaling.childElements(it).size>1 }) return null
+            val orientation=attr(scaling,"orientation") ?: "minMax"
+            if(orientation !in setOf("minMax","maxMin")) return null
+            val min=attr(scaling,"min")?.let { SharedChartDates.serial(it) ?: return null }
+            val max=attr(scaling,"max")?.let { SharedChartDates.serial(it) ?: return null }
+            if(dateNode.childElements("majorUnit").size>1) return null
+            val major=attr(dateNode,"majorUnit")?.let { SharedChartDates.serial(it)?.takeIf { v -> v>0 } ?: return null }
+            val fmt=dateNode.childElements("numFmt").singleOrNull()?.getAttribute("formatCode") ?: return null
+            if(!SharedChartDates.supportedFormat(fmt)) return null
+            val epochs=root.childElements("date1904")
+            if(epochs.size>1) return null
+            val epoch=when(epochs.singleOrNull()?.getAttribute("val")) {
+                null,"0","false" -> false
+                "","1","true" -> true
+                else -> return null
+            }
+            XlsxCachedChart.DateAxis(dateSerials ?: return null,epoch,min,max,orientation=="maxMin",major,fmt)
+        }
+        val dateLabels=if(dateAxis==null) labels.orEmpty() else try {
+            dateAxis.serials.map { SharedChartDates.label(it,dateAxis.date1904,dateAxis.format) }
+        } catch (_: IllegalArgumentException) { return null }
+        val result=XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart", kind, dateLabels, parsed,
+            grouping ?: "clustered", blankDisplay = blankDisplay,valueAxes=valueAxes,firstSliceAngle=angle,dateAxis=dateAxis)
+        try { SharedChartDates.build(result) } catch (_: IllegalArgumentException) { return null }
         if(valueAxes.isNotEmpty()) {
             try { SharedChartValueAxes.build(result) }
             catch (_: IllegalArgumentException) { return null }

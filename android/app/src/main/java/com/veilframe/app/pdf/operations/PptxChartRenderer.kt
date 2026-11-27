@@ -198,8 +198,15 @@ internal object PptxChartRenderer {
                 label(requireNotNull(yAxis).label(1f),box.left+pad,top,left-box.left-2*pad,lineH,"RIGHT")
                 label(yAxis.label(0f),box.left+pad,bottom-lineH/2,left-box.left-2*pad,lineH,"RIGHT")
             }
+            val dates=SharedChartDates.build(chart)
             val slot=(if(horizontal) ph else pw)/chart.categories.size
-            if(!scatter) {
+            if(dates!=null) {
+                val labelWidth=minOf(pw/dates.ticks.size,font*9)
+                for(day in dates.ticks) {
+                    val x=left+dates.fraction(day)*pw
+                    label(dates.label(day),(x-labelWidth/2).coerceIn(box.left,box.right-labelWidth),bottom+pad,labelWidth,lineH,"CENTER")
+                }
+            } else if(!scatter) {
                 if(horizontal && slot<lineH) throw IOException("Slide chart category labels overlap")
                 // No silent category truncation: reject frames too small for their labels.
                 for((i,category) in chart.categories.withIndex()) {
@@ -212,7 +219,7 @@ internal object PptxChartRenderer {
             var barIndex=0
             val plotSave=canvas.save()
             try {
-            if(dual.isNotEmpty() || scatter) canvas.clipRect(left,top,right,bottom)
+            if(dual.isNotEmpty() || scatter || dates!=null) canvas.clipRect(left,top,right,bottom)
             for((i,s) in chart.series.withIndex()) {
                 val axis=dual[s.valueAxisId]
                 fun seriesFraction(v: Double)=axis?.fraction(v) ?: f(v/maxAbs)
@@ -242,7 +249,7 @@ internal object PptxChartRenderer {
                     val v=if(isLine) chart.blankDisplay.lineValue(cached) else cached
                     if(v==null) { if(!isLine || chart.blankDisplay.breakOnMissing()) previous=null; continue }
                     if(isLine) {
-                        val px=left+slot*(j+0.5f); val py=bottom-seriesFraction(v)*ph
+                        val px=left+(dates?.let { it.fractionAt(j)*pw } ?: (slot*(j+0.5f))); val py=bottom-seriesFraction(v)*ph
                         connect(px,py)
                         markers.add(px to py)
                     } else {

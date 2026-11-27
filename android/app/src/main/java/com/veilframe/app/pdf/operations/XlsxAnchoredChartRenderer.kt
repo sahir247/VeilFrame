@@ -100,6 +100,7 @@ internal object XlsxAnchoredChartRenderer {
             }
             val axes=SharedChartValueAxes.build(chart)
             val xy=if(chart.kind=="scatter") XlsxScatterGeometry.build(chart) else null
+            val dates=SharedChartDates.build(chart)
             val secondary=axes.values.singleOrNull { it.axis.position=="r" }
             val primary=axes.values.singleOrNull { it.axis.position=="l" }
             val x0=p.left+if(primary!=null || xy!=null) 40f else 22f
@@ -128,8 +129,21 @@ internal object XlsxAnchoredChartRenderer {
                     }
                 }
             }
+            if(dates!=null) {
+                val labelW=minOf(64f,w/dates.ticks.size)
+                for(day in dates.ticks) {
+                    val value=dates.label(day)
+                    val x=(x0+dates.fraction(day)*w-labelW/2).coerceIn(p.left,p.left+p.width-labelW)
+                    if(label!=null) label(value,x,y0-9f,6f,labelW)
+                    else {
+                        require(font.getStringWidth(value)*6f/1000f<=labelW) { "Date-axis label exceeds chart frame" }
+                        color(0x222222);stream.beginText();stream.setFont(font,6f)
+                        stream.newLineAtOffset(x,y0-9f);stream.showText(value);stream.endText()
+                    }
+                }
+            }
             // Restrict explicitly scaled marks to the plot, not just the chart frame.
-            if(axes.isNotEmpty() || xy!=null) { stream.addRect(x0,y0,w,h);stream.clip() }
+            if(axes.isNotEmpty() || xy!=null || dates!=null) { stream.addRect(x0,y0,w,h);stream.clip() }
 
             if (chart.kind == "scatter") {
                 require(chart.scatterStyle in setOf("marker","line","lineMarker"))
@@ -180,7 +194,7 @@ internal object XlsxAnchoredChartRenderer {
                             if (isLine && chart.blankDisplay.breakOnMissing()) points.add(null)
                             continue
                         }
-                        val position=if(horizontal) y0+h-slot*(point+0.5f) else x0+slot*(point+0.5f)
+                        val position=if(horizontal) y0+h-slot*(point+0.5f) else x0+(dates?.let { it.fractionAt(point)*w } ?: (slot*(point+0.5f)))
                         if(isLine){
                             val sy=y0+(axis?.fraction(raw) ?: fraction(raw/maxAbs))*h
                             points.add(position to sy)
