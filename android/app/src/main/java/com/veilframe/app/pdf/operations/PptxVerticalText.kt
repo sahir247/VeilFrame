@@ -13,8 +13,28 @@ import kotlin.math.ceil
  * without reflecting the glyphs or reversing the logical source text.
  */
 internal object PptxVerticalText {
-    private data class Column(val layout: VerticalTextLayout,val before: Float,val after: Float,
-        val top: Float,val available: Float,val inkTop: Int,val inkBottom: Int)
+    private data class Column(val layout: VerticalTextLayout?,val width: Float,val offset: Float,
+        val top: Float,val inkTop: Int)
+
+    /** Track the occupied envelope independently of advance: tight spacing may
+     * overlap columns, but cannot allow the final ink beyond the frame. */
+    internal class ColumnFlow(private val limit: Float) {
+        var cursor=0f
+            private set
+        var extent=0f
+            private set
+        fun admit(width: Float,before: Float,after: Float): Float {
+            require(listOf(width,before,after).all { it.isFinite() } && width>0 && before>=0 && width+after>0)
+            val start=cursor+before
+            val next=start+width+after
+            val occupied=maxOf(extent,start+width,next)
+            if(occupied>limit+0.05f) throw OfficeTextEncodingException("Vertical columns exceed visible width")
+            cursor=next
+            extent=occupied
+            return start
+        }
+        fun room(before: Float)=limit-cursor-before
+    }
 
     internal fun inlineBounds(height: Float,marginStart: Float,marginEnd: Float,indent: Float,first: Boolean): Pair<Float,Float> {
         val start=marginStart+if(first) indent else 0f
@@ -70,23 +90,37 @@ internal object PptxVerticalText {
             paragraphs.sumOf { p -> p.runs.sumOf { it.text.length.toLong() } }>8192L)
             throw OfficeTextEncodingException("Vertical text exceeds layout budget")
         val columns=mutableListOf<Column>()
-        var total=0f
+        val flow=ColumnFlow(width)
         var attempts=0
         for(p in paragraphs) {
             if(!listOf(p.before,p.after,p.marginLeft,p.marginRight,p.firstIndent,p.lineMultiplier).all { it.isFinite() } ||
                 p.before<0 || p.after<0 || p.marginLeft<0 || p.marginRight<0 ||
-                p.lineMultiplier !in 1f..5f || p.alignment !in setOf("LEFT","CENTER","RIGHT"))
+                p.lineMultiplier !in 0.5f..5f || p.alignment !in setOf("LEFT","CENTER","RIGHT"))
                 throw OfficeTextEncodingException("Unsupported vertical paragraph spacing or indentation")
             val (text,paint)=PptxTextLayout.attributed(p.runs)
             inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,true)
             inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,false)
             val maxSize=p.runs.maxOfOrNull { it.size } ?: 14f
-            if(text.isBlank()) throw OfficeTextEncodingException("Empty vertical paragraph is unsupported")
             var start=0
-            while(start<text.length) {
+            fun addBlank(first: Boolean,last: Boolean) {
+                if(columns.size>=128) throw OfficeTextEncodingException("Vertical text exceeds column budget")
+                val (inlineStart,_)=inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,first)
+                // Empty columns reserve the current font's nominal em without
+                // manufacturing a visible glyph or invoking ink verification.
+                val w=maxSize.coerceAtLeast(1f)
+                val position=flow.admit(w,if(first) p.before else 0f,
+                    if(last) p.after else w*(p.lineMultiplier-1f))
+                columns.add(Column(null,w,position,inlineStart,0))
+            }
+            while(start<=text.length) {
                 val newline=text.indexOf('\n',start).let { if(it<0) text.length else it }
-                if(newline==start) throw OfficeTextEncodingException("Empty vertical column is unsupported")
                 val section=SpannableStringBuilder(text,start,newline)
+                if(section.isBlank()) {
+                    addBlank(start==0,newline==text.length)
+                    if(newline==text.length) break
+                    start=newline+1
+                    continue
+                }
                 val iterator=android.icu.text.BreakIterator.getLineInstance(java.util.Locale.ROOT)
                 iterator.setText(section.toString())
                 val ends=mutableListOf<Int>()
@@ -107,7 +141,7 @@ internal object PptxVerticalText {
                         if(++attempts>2048) throw OfficeTextEncodingException("Vertical line search exceeds budget")
                         val mid=(low+high)/2
                         val candidate=layout(section,paint,offset,ends[mid],available)
-                        if(candidate.lineCount==1 && candidate.width<=width-total+0.05f) {
+                        if(candidate.lineCount==1 && candidate.width<=flow.room(if(first) p.before else 0f)+0.05f) {
                             best=mid; chosen=candidate; low=mid+1
                         } else high=mid-1
                     }
@@ -118,28 +152,26 @@ internal object PptxVerticalText {
                     val before=if(first) p.before else 0f
                     val last=ends[best]==section.length && newline==text.length
                     val after=if(last) p.after else column.width*(p.lineMultiplier-1f)
-                    total+=column.width+before+after
-                    if(total>width+0.05f) throw OfficeTextEncodingException("Vertical columns exceed visible width")
-                    columns.add(Column(column,before,after,y,available,inkTop,inkBottom))
+                    val position=flow.admit(column.width,before,after)
+                    columns.add(Column(column,column.width,position,y,inkTop))
                     offset=ends[best]; boundary=best+1
                 }
                 if(newline==text.length) break
                 start=newline+1
-                if(start==text.length) throw OfficeTextEncodingException("Trailing empty vertical column is unsupported")
+                // A trailing break reserves one final empty column.
             }
         }
-        val spare=(width-total).coerceAtLeast(0f)
+        val spare=(width-flow.extent).coerceAtLeast(0f)
         val shift=when(anchor) {
             "TOP" -> 0f
             "MIDDLE" -> spare/2f
             "BOTTOM" -> spare
             else -> throw OfficeTextEncodingException("Unsupported vertical text anchor")
         }
-        var x=if(rtlColumns) left+width-shift else left+shift
+        val x=if(rtlColumns) left+width-shift else left+shift
         for(c in columns) {
-            val right=if(rtlColumns) x-c.before else x+c.before+c.layout.width
-            c.layout.draw(canvas,right,top+c.top-c.inkTop)
-            x+=(if(rtlColumns) -1 else 1)*(c.layout.width+c.before+c.after)
+            val right=if(rtlColumns) x-c.offset else x+c.offset+c.width
+            c.layout?.draw(canvas,right,top+c.top-c.inkTop)
         }
     }
 }
