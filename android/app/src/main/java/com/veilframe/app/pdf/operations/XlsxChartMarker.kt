@@ -11,12 +11,9 @@ internal object XlsxChartMarker {
     fun draw(stream: PDPageContentStream, symbol: String?, sizePt: Float?,
         x: Float, y: Float, defaultSize: Float,
         fill: XlsxCachedChart.Ink?=null,outline: XlsxCachedChart.Stroke?=null,
-        fallbackRgb: Int?=null) {
+        fallbackRgb: Int?=null,painter: PdfChartPaint=PdfChartPaint(stream)) {
         if (symbol == "none") return
-        if(fallbackRgb!=null && SharedChartInk.resolved(fill,fallbackRgb)==null &&
-            (outline==null || SharedChartInk.resolved(outline.ink,fallbackRgb)==null)) return
-        stream.saveGraphicsState()
-        try {
+        fun path() {
         val size = sizePt ?: defaultSize
         require(size.isFinite() && size in 2f..72f) { "Invalid saved chart marker size" }
         val half = size / 2f
@@ -71,17 +68,8 @@ internal object XlsxChartMarker {
             }
             else -> throw IllegalArgumentException("Unsupported chart marker symbol")
         }
-        val fillRgb=fallbackRgb?.let { SharedChartInk.resolved(fill,it) }
-        val outlineRgb=if(outline==null) null else fallbackRgb?.let { SharedChartInk.resolved(outline.ink,it) }
-        if(fillRgb!=null) stream.setNonStrokingColor(fillRgb ushr 16 and 255,fillRgb ushr 8 and 255,fillRgb and 255)
-        if(outlineRgb!=null) {
-            stream.setStrokingColor(outlineRgb ushr 16 and 255,outlineRgb ushr 8 and 255,outlineRgb and 255)
-            val width=outline?.widthPt ?: 1f
-            stream.setLineWidth(width)
-            stream.setLineCapStyle(when(outline?.cap) { "rnd" -> 1; "sq" -> 2; else -> 0 })
-            stream.setLineDashPattern(SharedChartInk.dashes(outline,width),0f)
-            if(fillRgb!=null) stream.fillAndStroke() else stream.stroke()
-        } else stream.fill()
-        } finally { stream.restoreGraphicsState() }
+        }
+        if(fallbackRgb==null) { path(); stream.fill() }
+        else painter.closed(SharedChartInk.resolveInk(fill,fallbackRgb),outline,fallbackRgb,::path)
     }
 }
