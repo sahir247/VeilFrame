@@ -108,10 +108,11 @@ class PdfFlattener {
             
             // Flatten annotations on each page
             if (config.flattenAnnotations) {
+                val annotationWork = kotlin.coroutines.coroutineContext
                 for (pageIndex in 0 until totalPages) {
                     ensureActive()
                     val page = document.getPage(pageIndex)
-                    annotationsCount += flattenPageAnnotations(document, page)
+                    annotationsCount += flattenPageAnnotations(document, page) { annotationWork.ensureActive() }
                     
                     val progress = 30 + ((pageIndex + 1) * 50 / totalPages)
                     progressCallback(progress)
@@ -258,62 +259,35 @@ class PdfFlattener {
      * Flatten annotations on a page.
      * This renders annotations into the page content stream.
      */
-    internal fun flattenPageAnnotations(document: PDDocument, page: PDPage): Int {
+    internal fun flattenPageAnnotations(document: PDDocument, page: PDPage, checkpoint: ()->Unit = {}): Int {
         val annotations = page.annotations.toList()
-        // Preflight all annotations: do not silently remove ones with missing geometry.
-        for (annotation in annotations) {
-            // NoView+Print is a print-only annotation, not an invisible
-            // annotation that can be discarded. ToggleNoView depends on interaction.
-            if (annotation.isHidden || annotation.isInvisible) continue
-            if (annotation.isNoView && annotation.isPrinted ||
-                annotation.cosObject.getInt(COSName.getPDFName("F"), 0) and 256 != 0) {
+        if(annotations.size>10_000) throw IOException("Page annotation count exceeds flattening budget")
+        data class Placement(val appearance: com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream,
+            val matrix: com.tom_roush.pdfbox.util.Matrix)
+        val placements=mutableListOf<Placement>()
+        // Preflight the entire page (including transformed BBox placement)
+        // before appending any operators or removing any annotation.
+        for(annotation in annotations) {
+            checkpoint()
+            if(annotation.isHidden || annotation.isInvisible) continue
+            if(annotation.isNoView && annotation.isPrinted ||
+                annotation.cosObject.getInt(COSName.getPDFName("F"),0) and 256 != 0)
                 throw IOException("Cannot flatten a print-only or interactive-visibility annotation")
-            }
-            if (annotation.isNoView) continue
-            if (annotation.isNoRotate || annotation.isNoZoom || annotation.cosObject.containsKey(COSName.getPDFName("OC"))) {
+            if(annotation.isNoView) continue
+            if(annotation.isNoRotate || annotation.isNoZoom || annotation.cosObject.containsKey(COSName.getPDFName("OC")))
                 throw IOException("Cannot flatten an annotation with conditional visibility or view-dependent geometry")
-            }
-            val rect = annotation.rectangle
-            val appearance = annotation.normalAppearanceStream
-            val bbox = appearance?.bBox
-            if (rect == null || appearance == null || bbox == null ||
-                listOf(rect.lowerLeftX, rect.lowerLeftY, rect.upperRightX, rect.upperRightY,
-                    bbox.lowerLeftX, bbox.lowerLeftY, bbox.upperRightX, bbox.upperRightY).any { !it.isFinite() } ||
-                rect.width <= 0f || rect.height <= 0f || bbox.width <= 0f || bbox.height <= 0f) {
-                throw IOException("Annotation cannot be flattened without valid geometry and an appearance; use a supported PDF")
-            }
+            val appearance=PdfAnnotationAppearance.resolve(document,annotation)
+            placements.add(Placement(appearance,PdfAnnotationAppearance.placement(annotation.rectangle,appearance)))
         }
-        for (annotation in annotations) {
-            if (annotation.isHidden || annotation.isInvisible || annotation.isNoView) continue
-            val rect = annotation.rectangle
-            val appearance = annotation.normalAppearanceStream
-            val bbox = appearance.bBox
-            PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
-                stream.saveGraphicsState()
-                // PDF appearance streams may have a non-identity Matrix. Transform
-                // the four BBox corners into appearance space before fitting the Rect.
-                val m = appearance.matrix
-                val points = listOf(
-                    m.transformPoint(bbox.lowerLeftX, bbox.lowerLeftY),
-                    m.transformPoint(bbox.lowerLeftX, bbox.upperRightY),
-                    m.transformPoint(bbox.upperRightX, bbox.lowerLeftY),
-                    m.transformPoint(bbox.upperRightX, bbox.upperRightY)
-                )
-                val minX = points.minOf { it.x }
-                val minY = points.minOf { it.y }
-                val width = points.maxOf { it.x } - minX
-                val height = points.maxOf { it.y } - minY
-                if (!width.isFinite() || !height.isFinite() || width <= 0f || height <= 0f) throw IOException("Invalid annotation appearance transform")
-                val sx = rect.width / width
-                val sy = rect.height / height
-                val tx = rect.lowerLeftX - minX * sx
-                val ty = rect.lowerLeftY - minY * sy
-                if (listOf(sx, sy, tx, ty).any { !it.isFinite() } || sx <= 0f || sy <= 0f) {
-                    throw IOException("Non-finite annotation placement")
+        if(placements.isNotEmpty()) {
+            PDPageContentStream(document,page,PDPageContentStream.AppendMode.APPEND,true,true).use { stream ->
+                for(placement in placements) {
+                    checkpoint()
+                    stream.saveGraphicsState()
+                    stream.transform(placement.matrix)
+                    stream.drawForm(placement.appearance)
+                    stream.restoreGraphicsState()
                 }
-                stream.transform(com.tom_roush.pdfbox.util.Matrix(sx, 0f, 0f, sy, tx, ty))
-                stream.drawForm(appearance)
-                stream.restoreGraphicsState()
             }
         }
         page.setAnnotations(emptyList())
