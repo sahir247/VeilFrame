@@ -139,7 +139,19 @@ class PptxChartCacheTest {
         assertEquals("1904-01-01",SharedChartDates.label(0,true,"yyyy-mm-dd"))
         assertEquals("1900-03-01",SharedChartDates.label(61,false,"yyyy-mm-dd"))
         assertThrows(IllegalArgumentException::class.java) { SharedChartDates.label(60,false,"yyyy-mm-dd") }
-        assertTrue(runCatching { parse(source.replace("majorTimeUnit val=\"days\"","majorTimeUnit val=\"months\"")) }.isFailure)
+        assertTrue(runCatching { parse(source.replace("baseTimeUnit val=\"days\"","baseTimeUnit val=\"months\"")) }.isFailure)
         assertTrue(runCatching { parse(source.replace("<c:v>44198</c:v>","<c:v>44198.5</c:v>")) }.isFailure)
+    }
+
+    @Test fun monthAndYearMajorTicksFollowRealCalendarWithoutEndOfMonthDrift() {
+        val chart=XlsxCachedChart("Dates","line",listOf("A","B"),listOf(
+            XlsxCachedChart.Series("S",listOf(1.0,2.0))),
+            dateAxis=XlsxCachedChart.DateAxis(listOf(44227L,44286L),false,null,null,false,1,"yyyy-mm-dd","months"))
+        val scale=SharedChartDates.build(chart)!!
+        assertEquals(listOf("2021-01-31","2021-02-28","2021-03-31"),scale.ticks.map(scale::label))
+        assertEquals(28f/59f,scale.fraction(scale.ticks[1]),0.001f)
+        val annual=chart.copy(dateAxis=chart.dateAxis!!.copy(serials=listOf(43890L,44621L),majorUnit="years"))
+        val years=SharedChartDates.build(annual)!!
+        assertEquals(listOf("2020-02-29","2021-02-28","2022-02-28"),years.ticks.map(years::label))
     }
 }

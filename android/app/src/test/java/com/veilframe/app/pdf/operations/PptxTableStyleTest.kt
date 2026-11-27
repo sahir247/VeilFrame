@@ -82,4 +82,23 @@ class PptxTableStyleTest {
         assertEquals("right",PptxTableStyle.borderRole("firstCol","lnR",0,3,3,4,f))
         assertEquals("left",PptxTableStyle.borderRole("lastCol","lnL",0,0,3,4,f))
     }
+
+    @Test fun builtinGalleryResolvesOnlyMissingDefinitionsAndHasUniqueIds() {
+        val id="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"
+        assertEquals(74,PptxBuiltInTableStyles.count())
+        val pr=xml("""<a:tblPr xmlns:a="$a"><a:tableStyleId>$id</a:tableStyleId></a:tblPr>""")
+        val builtin=PptxTableStyle.select(pr,null)!!
+        assertEquals("Medium Style 2 - Accent 1",PptxTableStyle.attr(builtin,"styleName"))
+        val layers=PptxTableStyle.layers(builtin,0,0,2,2,PptxTableStyle.Flags(firstRow=true))
+        val theme: (String)->Int? = { key -> when(key) {
+            "dk1","tx1" -> 0xff000000.toInt()
+            "lt1","bg1" -> 0xffffffff.toInt()
+            "accent1" -> 0xff204060.toInt()
+            else -> null
+        } }
+        val header=layers.asReversed().firstNotNullOf { PptxTableStyle.inheritedFill(it.cell,{null},theme) }
+        assertEquals(0xff204060.toInt(),PptxTableStyle.solid(header.node,theme,header.placeholder))
+        val local=xml("""<a:tblStyleLst xmlns:a="$a"><a:tblStyle styleId="$id" styleName="Custom"/></a:tblStyleLst>""")
+        assertEquals("Custom",PptxTableStyle.attr(PptxTableStyle.select(pr,local),"styleName"))
+    }
 }

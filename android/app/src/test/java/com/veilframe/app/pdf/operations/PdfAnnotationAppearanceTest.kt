@@ -127,4 +127,38 @@ class PdfAnnotationAppearanceTest {
             assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,rich) }
         }
     }
+
+    @Test fun cloudySquareCircleAndPlainCalloutGeneratePaint() {
+        PDDocument().use { doc ->
+            for(kind in listOf("Square","Circle")) {
+                val a=annotation(kind).apply {
+                    cosObject.setItem(key("BE"),COSDictionary().apply {
+                        setName(key("S"),"C");setItem(key("I"),COSFloat(1f))
+                    })
+                }
+                val appearance=PdfAnnotationAppearance.resolve(doc,a)
+                assertNotNull(appearance)
+                assertTrue(appearance.bBox.width>0)
+            }
+            val page=PDPage();doc.addPage(page)
+            val a=annotation("FreeText").apply {
+                rectangle=PDRectangle(10f,20f,200f,120f)
+                contents="Callout text"
+                cosObject.setString(key("DA"),"/Helv 12 Tf 0 g")
+                cosObject.setName(key("IT"),"FreeTextCallout")
+                cosObject.setName(key("LE"),"OpenArrow")
+                cosObject.setItem(key("RD"),floats(70f,20f,10f,20f))
+                cosObject.setItem(key("CL"),floats(20f,40f,60f,60f,80f,60f))
+            }
+            page.annotations.add(a)
+            assertEquals(1,PdfFlattener().flattenPageAnnotations(doc,page))
+            assertTrue(com.tom_roush.pdfbox.text.PDFTextStripper().getText(doc).contains("Callout text"))
+            val invalid=annotation("Square").apply {
+                cosObject.setItem(key("BE"),COSDictionary().apply {
+                    setName(key("S"),"C");setItem(key("I"),COSFloat(3f))
+                })
+            }
+            assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,invalid) }
+        }
+    }
 }

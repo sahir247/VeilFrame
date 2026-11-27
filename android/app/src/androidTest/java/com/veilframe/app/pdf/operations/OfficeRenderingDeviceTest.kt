@@ -539,6 +539,31 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+
+    @Test fun curvedCompoundConnectorUsesTangentArrowheadsAndTransparentGaps() {
+        val bitmap=Bitmap.createBitmap(220,180,Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val canvas=android.graphics.Canvas(bitmap)
+            val curve=android.graphics.Path().apply {
+                moveTo(25f,130f);quadTo(110f,10f,195f,130f)
+            }
+            val spec=PptxStrokeStyle.Spec(12f,compound="dbl",
+                head=PptxStrokeStyle.End("triangle"),tail=PptxStrokeStyle.End("arrow"))
+            PptxConnectorRenderer.drawCurved(canvas,curve,spec,0x800000ff.toInt())
+            var painted=0
+            for(y in 0 until bitmap.height) for(x in 0 until bitmap.width) {
+                val color=bitmap.getPixel(x,y)
+                if(Color.blue(color)>245 && Color.red(color)<230) {
+                    painted++
+                    assertTrue("Alpha accumulated in compound or arrow overlap",Color.red(color)>=115)
+                }
+            }
+            assertTrue(painted>100)
+            assertEquals(Color.WHITE,bitmap.getPixel(110,70))
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
