@@ -143,12 +143,42 @@ internal object PdfAnnotationAppearance {
         val appearance=annotation.normalAppearanceStream ?: reject("Annotation appearance generation failed")
         bounds(annotation.rectangle)
         bounds(appearance.bBox)
-        val parser=PDFStreamParser(appearance)
-        parser.parse()
-        val operators=parser.tokens.filterIsInstance<Operator>().map { it.name }
-        if(operators.none { it in setOf("S","s","f","F","f*","B","B*","b","b*","Do") })
-            reject("Generated annotation appearance contains no painting operation")
+        verifyGeneratedInk(appearance)
         return appearance
+    }
+
+    /** A Do alone is not evidence of visible ink: PDFBox highlights use
+     * nested transparency forms, and their handlers can log I/O failures.
+     * Only inspect the fresh, internally generated resource graph. */
+    private fun verifyGeneratedInk(appearance: PDAppearanceStream) {
+        val visited=java.util.Collections.newSetFromMap(
+            java.util.IdentityHashMap<com.tom_roush.pdfbox.cos.COSStream,Boolean>())
+        var totalTokens=0
+        fun verify(form: com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject,depth: Int): Boolean {
+            if(depth>8 || visited.size>=32 || !visited.add(form.cosObject))
+                reject("Invalid generated annotation form graph")
+            val parser=PDFStreamParser(form)
+            parser.parse()
+            val tokens=parser.tokens
+            totalTokens+=tokens.size
+            if(totalTokens>200_000) reject("Generated annotation appearance exceeds token budget")
+            var paints=false
+            for((index,token) in tokens.withIndex()) {
+                if(token !is Operator) continue
+                when(token.name) {
+                    "S","s","f","F","f*","B","B*","b","b*" -> paints=true
+                    "Do" -> {
+                        val name=tokens.getOrNull(index-1) as? COSName ?: reject("Invalid generated form operand")
+                        val child=form.resources?.getXObject(name) as? com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject
+                            ?: reject("Missing generated annotation subform")
+                        if(!verify(child,depth+1)) reject("Empty generated annotation subform")
+                        paints=true
+                    }
+                }
+            }
+            return paints
+        }
+        if(!verify(appearance,0)) reject("Generated annotation appearance contains no painting operation")
     }
 
     /** Compute placement before writing any page operators. */
