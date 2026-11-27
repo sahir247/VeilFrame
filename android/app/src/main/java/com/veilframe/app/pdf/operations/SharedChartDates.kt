@@ -17,12 +17,20 @@ internal object SharedChartDates {
         if(!number.isFinite() || number<0 || number>2958465 || number!=kotlin.math.floor(number)) return null
         return number.toLong()
     }
-    fun label(day: Long,date1904: Boolean,format: String): String {
+    private fun date(day: Long,date1904: Boolean): LocalDate {
         require(day in 0..2958465 && (date1904 || day!=60L))
         val date=if(date1904) LocalDate.of(1904,1,1).plusDays(day)
             else LocalDate.of(1899,12,31).plusDays(if(day>60) day-1 else day)
         require(date.year in 1..9999)
-        return date.format(DateTimeFormatter.ofPattern(requireNotNull(patterns[format.lowercase(Locale.ROOT)]),Locale.US))
+        return date
+    }
+    private fun serial(date: LocalDate,date1904: Boolean): Long {
+        val epoch=if(date1904) LocalDate.of(1904,1,1) else LocalDate.of(1899,12,31)
+        val days=java.time.temporal.ChronoUnit.DAYS.between(epoch,date)
+        return days+if(!date1904 && date>=LocalDate.of(1900,3,1)) 1 else 0
+    }
+    fun label(day: Long,date1904: Boolean,format: String): String {
+        return date(day,date1904).format(DateTimeFormatter.ofPattern(requireNotNull(patterns[format.lowercase(Locale.ROOT)]),Locale.US))
     }
     class Scale(val axis: XlsxCachedChart.DateAxis,val low: Long,val high: Long,val ticks: List<Long>) {
         fun fraction(day: Long): Float {
@@ -40,9 +48,31 @@ internal object SharedChartDates {
         val high=a.maximum ?: a.serials.last()
         require(high>low && (a.date1904 || !(low<=60 && high>=60)))
         (a.serials+listOf(low,high)).forEach { label(it,a.date1904,a.format) }
-        val step=a.majorDays ?: ceil((high-low)/4.0).toLong().coerceAtLeast(1)
-        require(step>0 && (high-low)/step<=9) { "Date-axis tick count exceeds visible budget" }
-        val ticks=generateSequence(low) { previous -> (previous+step).takeIf { it<=high } }.toList()
+        require(a.majorUnit in setOf("days","months","years"))
+        val start=date(low,a.date1904)
+        val end=date(high,a.date1904)
+        val range=when(a.majorUnit) {
+            "months" -> java.time.temporal.ChronoUnit.MONTHS.between(start,end)
+            "years" -> java.time.temporal.ChronoUnit.YEARS.between(start,end)
+            else -> high-low
+        }
+        val step=a.majorDays ?: ceil(range/4.0).toLong().coerceAtLeast(1)
+        require(step in 1..2958465)
+        val ticks=buildList {
+            // Compute each calendar tick from the anchor, not the previous
+            // tick: Jan 31 -> Feb 28 -> Mar 31 rather than permanent drift.
+            for(i in 0..10) {
+                val offset=i*step
+                val day=when(a.majorUnit) {
+                    "months" -> serial(start.plusMonths(offset),a.date1904)
+                    "years" -> serial(start.plusYears(offset),a.date1904)
+                    else -> low+offset
+                }
+                if(day>high) break
+                require(i<10) { "Date-axis tick count exceeds visible budget" }
+                add(day)
+            }
+        }
         return Scale(a,low,high,ticks)
     }
 }

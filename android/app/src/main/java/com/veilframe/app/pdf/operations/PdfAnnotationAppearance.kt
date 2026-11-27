@@ -61,8 +61,17 @@ internal object PdfAnnotationAppearance {
         val subtype=annotation.subtype
         if(subtype !in supported) reject("Unsupported annotation without appearance: "+subtype)
         val rect=bounds(annotation.rectangle)
-        if(d.containsKey(key("BE")) || d.containsKey(key("Path")) || d.containsKey(key("Measure")))
-            reject("Unsupported annotation border effect, curved path or measurement")
+        if(d.containsKey(key("Path")) || d.containsKey(key("Measure")))
+            reject("Unsupported annotation curved path or measurement")
+        val effect=if(d.containsKey(key("BE"))) d.getDictionaryObject(key("BE")) as? COSDictionary
+            ?: reject("Invalid annotation border effect") else null
+        if(effect!=null) {
+            if(subtype !in setOf("Square","Circle") || effect.getNameAsString(key("S"),"S")!="C")
+                reject("Unsupported annotation border effect")
+            val intensity=scalar(effect,"I",0f,0f,2f)
+            if(intensity<=0f || rect.width>2000f || rect.height>2000f)
+                reject("Cloudy annotation exceeds synthesis budget")
+        }
         scalar(d,"CA",1f,0f,1f).also { if(it==0f) reject("Zero-opacity annotation synthesis unsupported") }
         val stroke=color(d,"C")
         val fill=color(d,"IC")
@@ -78,6 +87,9 @@ internal object PdfAnnotationAppearance {
             }
         }
         val width=if(bs!=null) scalar(bs,"W",1f,0f,1000f) else if(border!=null) number(border.getObject(2),"border width") else 1f
+        if(effect!=null && (width<0.1f || width>32f || !stroke || border?.size()==4 ||
+                bs?.getNameAsString(key("S"),"S")=="D"))
+            reject("Unsupported cloudy annotation stroke")
         if(bs!=null) {
             if(bs.getNameAsString(key("S"),"S") !in setOf("S","D")) reject("Unsupported annotation border style")
             array(bs,"D")?.let { if(numbers(it,1,64).any { n -> n<=0 || n>1000 }) reject("Invalid annotation dash") }

@@ -1041,9 +1041,12 @@ object OpenXmlDocumentParser {
                 value.childElements("crossAx").singleOrNull()?.getAttribute("val")!=id ||
                 plot.childElements("catAx").isNotEmpty()) return null
             fun attr(n: Element,name: String)=n.childElements(name).singleOrNull()?.getAttribute("val")
-            if(listOf("baseTimeUnit","majorTimeUnit","minorTimeUnit").any {
-                dateNode.childElements(it).size>1 || attr(dateNode,it) !in setOf(null,"days")
-            } || dateNode.childElements("minorUnit").isNotEmpty()) return null
+            if(listOf("baseTimeUnit","majorTimeUnit","minorTimeUnit").any { dateNode.childElements(it).size>1 } ||
+                attr(dateNode,"baseTimeUnit") !in setOf(null,"days") ||
+                attr(dateNode,"minorTimeUnit") !in setOf(null,"days") ||
+                dateNode.childElements("minorUnit").isNotEmpty()) return null
+            val majorUnit=attr(dateNode,"majorTimeUnit") ?: "days"
+            if(majorUnit !in setOf("days","months","years")) return null
             val scaling=dateNode.childElements("scaling").singleOrNull() ?: return null
             if(scaling.childElements("logBase").isNotEmpty() ||
                 listOf("min","max","orientation").any { scaling.childElements(it).size>1 }) return null
@@ -1062,7 +1065,7 @@ object OpenXmlDocumentParser {
                 "","1","true" -> true
                 else -> return null
             }
-            XlsxCachedChart.DateAxis(dateSerials ?: return null,epoch,min,max,orientation=="maxMin",major,fmt)
+            XlsxCachedChart.DateAxis(dateSerials ?: return null,epoch,min,max,orientation=="maxMin",major,fmt,majorUnit)
         }
         val dateLabels=if(dateAxis==null) labels.orEmpty() else try {
             dateAxis.serials.map { SharedChartDates.label(it,dateAxis.date1904,dateAxis.format) }

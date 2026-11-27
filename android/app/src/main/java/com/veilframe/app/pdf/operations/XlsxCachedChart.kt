@@ -27,7 +27,8 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     data class ScatterAxes(val x: ValueAxis,val y: ValueAxis)
 
     data class DateAxis(val serials: List<Long>,val date1904: Boolean,val minimum: Long?,
-        val maximum: Long?,val reversed: Boolean,val majorDays: Long?,val format: String)
+        val maximum: Long?,val reversed: Boolean,val majorDays: Long?,val format: String,
+        val majorUnit: String="days")
 
     /** Source DrawingML coordinates, not worksheet or PDF point units. */
     data class DrawingOffsets(val fromColEmu: Long, val fromRowEmu: Long,
