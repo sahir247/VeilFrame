@@ -112,7 +112,7 @@ internal object PptxTextLayout {
 
     private data class StackGlyph(val layout: StaticLayout,val width: Float)
     private data class StackColumn(val glyphs: List<StackGlyph>,val width: Float,val height: Float,
-        val before: Float,val after: Float,val alignment: String)
+        val offset: Float,val inlineStart: Float,val available: Float,val alignment: String)
 
     /** WordArt stacking uses grapheme boundaries, not UTF-16 or individual codepoints.
      * Keep original run styling even where a cluster crosses a run boundary.
@@ -155,46 +155,48 @@ internal object PptxTextLayout {
             throw OfficeTextEncodingException("Stacked slide text exceeds rendering budget")
         val columns = mutableListOf<StackColumn>()
         var count = 0
-        var totalWidth = 0f
+        val flow=PptxVerticalText.ColumnFlow(width)
         for(p in paragraphs) {
             if(!listOf(p.before,p.after,p.marginLeft,p.marginRight,p.firstIndent,p.lineMultiplier).all { it.isFinite() } ||
-                p.before<0 || p.after<0 || p.marginLeft!=0f || p.marginRight!=0f || p.firstIndent!=0f ||
+                p.before<0 || p.after<0 || p.marginLeft<0 || p.marginRight<0 ||
                 p.lineMultiplier !in 0.5f..5f || p.alignment !in setOf("LEFT","CENTER","RIGHT"))
                 throw OfficeTextEncodingException("Unsupported stacked paragraph geometry")
-            val available = height-p.marginLeft-p.marginRight
-            if(available<1f) throw OfficeTextEncodingException("Stacked paragraph has no visible height")
-            var glyphs = mutableListOf<StackGlyph>()
-            var columnWidth = 0f
-            var columnHeight = 0f
-            fun flush() {
-                if(glyphs.isEmpty()) return
-                val column = StackColumn(glyphs.toList(),columnWidth,columnHeight,p.before,p.after,p.alignment)
-                totalWidth += column.width+column.before+column.after
-                if(totalWidth>width+0.05f) throw OfficeTextEncodingException("Stacked slide text exceeds visible width")
-                columns.add(column)
+            PptxVerticalText.inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,true)
+            PptxVerticalText.inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,false)
+            var first=true
+            var glyphs=mutableListOf<StackGlyph>()
+            var columnWidth=0f
+            var columnHeight=0f
+            fun bounds()=PptxVerticalText.inlineBounds(height,p.marginLeft,p.marginRight,p.firstIndent,first)
+            fun flush(last: Boolean) {
+                if(columns.size>=128) throw OfficeTextEncodingException("Stacked slide column budget exceeded")
+                val (inlineStart,available)=bounds()
+                val w=if(glyphs.isEmpty()) (p.runs.maxOfOrNull { it.size } ?: 14f).coerceAtLeast(1f) else columnWidth
+                val position=flow.admit(w,if(first) p.before else 0f,
+                    if(last) p.after else w*(p.lineMultiplier-1f))
+                columns.add(StackColumn(glyphs.toList(),w,columnHeight,position,inlineStart,available,p.alignment))
                 glyphs=mutableListOf(); columnWidth=0f; columnHeight=0f
+                first=false
             }
-            val normalized = p.runs.map { it.copy(text=it.text.replace("\r\n","\n").replace('\r','\n').replace('\u000b','\n').replace('\t',' ')) }
+            val normalized=p.runs.map { it.copy(text=it.text.replace("\r\n","\n").replace('\r','\n').replace('\u000b','\n').replace('\t',' ')) }
             for(cluster in stackedRuns(normalized)) {
                 if(++count>2048) throw OfficeTextEncodingException("Stacked slide grapheme budget exceeded")
                 if(cluster.joinToString("") { it.text }=="\n") {
-                    if(glyphs.isEmpty()) throw OfficeTextEncodingException("Empty stacked text column is unsupported")
-                    flush(); continue
+                    flush(false)
+                    continue
                 }
                 val layout=prepare(Paragraph(cluster,"LEFT"),width)
                 if(layout.lineCount!=1) throw OfficeTextEncodingException("Stacked grapheme exceeds visible width")
                 val w=layout.getLineWidth(0).coerceAtLeast(1f)
                 val h=layout.height.toFloat()
-                if(h>available) throw OfficeTextEncodingException("Stacked grapheme exceeds visible height")
-                val advance=h*maxOf(1f,p.lineMultiplier)
-                if(glyphs.isNotEmpty() && columnHeight+advance>available) flush()
-                if(advance>available) throw OfficeTextEncodingException("Stacked line spacing exceeds visible height")
+                if(glyphs.isNotEmpty() && columnHeight+h>bounds().second) flush(false)
+                if(h>bounds().second) throw OfficeTextEncodingException("Stacked grapheme exceeds visible height")
                 glyphs.add(StackGlyph(layout,w))
-                columnWidth=maxOf(columnWidth,w); columnHeight+=advance
+                columnWidth=maxOf(columnWidth,w); columnHeight+=h
             }
-            flush()
+            flush(true)
         }
-        val spareX=(width-totalWidth).coerceAtLeast(0f)
+        val spareX=(width-flow.extent).coerceAtLeast(0f)
         val xOffset=when(vertical) {
             "TOP" -> 0f
             "MIDDLE" -> spareX/2f
@@ -202,21 +204,19 @@ internal object PptxTextLayout {
             else -> throw OfficeTextEncodingException("Unsupported stacked text anchor")
         }
         // Stack column placement starts at the leading side of the frame.
-        var x=if(rtlColumns) left+width-xOffset else left+xOffset
+        val x=if(rtlColumns) left+width-xOffset else left+xOffset
         for(column in columns) {
-            val columnX=if(rtlColumns) x-column.before-column.width else x+column.before
-            val spareY=(height-column.height).coerceAtLeast(0f)
-            var y=top+when(column.alignment) { "CENTER" -> spareY/2f; "RIGHT" -> spareY; else -> 0f }
-            val advance=column.height/column.glyphs.sumOf { it.layout.height.toDouble() }.toFloat()
+            val columnX=if(rtlColumns) x-column.offset-column.width else x+column.offset
+            val spareY=(column.available-column.height).coerceAtLeast(0f)
+            var y=top+column.inlineStart+when(column.alignment) { "CENTER" -> spareY/2f; "RIGHT" -> spareY; else -> 0f }
             for(glyph in column.glyphs) {
                 val save=canvas.save()
                 try {
                     canvas.translate(columnX+(column.width-glyph.width)/2f-glyph.layout.getLineLeft(0),y)
                     glyph.layout.draw(canvas)
                 } finally { canvas.restoreToCount(save) }
-                y+=glyph.layout.height*advance
+                y+=glyph.layout.height
             }
-            x+=(if(rtlColumns) -1f else 1f)*(column.width+column.before+column.after)
         }
     }
 
