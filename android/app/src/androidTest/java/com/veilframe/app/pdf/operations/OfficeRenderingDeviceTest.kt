@@ -268,10 +268,11 @@ class OfficeRenderingDeviceTest {
         try {
             assertEquals(1,images.size)
             val bitmap=images.single()
-            assertEquals(Color.RED,bitmap.getPixel(115,115))
-            assertEquals(Color.RED,bitmap.getPixel(495,115))
-            assertEquals(Color.GREEN,bitmap.getPixel(115,215))
-            assertEquals(Color.BLUE,bitmap.getPixel(495,215))
+            // Sample well inside cell interiors, away from text and grid edges.
+            assertEquals("Merged header left interior",Color.RED,bitmap.getPixel(150,180))
+            assertEquals("Merged header right interior",Color.RED,bitmap.getPixel(470,180))
+            assertEquals("Inherited left cell fill",Color.GREEN,bitmap.getPixel(150,280))
+            assertEquals("Explicit right cell fill",Color.BLUE,bitmap.getPixel(470,280))
             assertEquals("Inherited internal border",Color.MAGENTA,bitmap.getPixel(300,270))
             assertEquals("Merged header suppresses internal border",Color.RED,bitmap.getPixel(300,170))
             var dark=0
@@ -355,10 +356,19 @@ class OfficeRenderingDeviceTest {
             PptxChartRenderer.draw(android.graphics.Canvas(bitmap),chart,android.graphics.RectF(0f,0f,800f,480f),1f) {}
             // The secondary 100% endpoint must be near the top, not flattened
             // against zero by the primary 2000-unit value scale.
-            var blue=0
-            for(y in 40 until 200) for(x in 400 until 680)
-                if(bitmap.getPixel(x,y)==Color.BLUE) blue++
-            assertTrue("Secondary line must reach its independently scaled upper plot",blue>10)
+            // The right-axis endpoint lies at the upper plot boundary. A
+            // subpixel antialiased line need not contain fully saturated blue.
+            var upperBlue=0
+            var lowerBlue=0
+            for(y in 40 until 460) for(x in 400 until 680) {
+                val c=bitmap.getPixel(x,y)
+                if(Color.blue(c)>Color.red(c)+35 && Color.blue(c)>Color.green(c)+35) {
+                    if(y<200) upperBlue++
+                    if(y>400) lowerBlue++
+                }
+            }
+            assertTrue("Secondary line must reach upper plot (blue pixels="+upperBlue+")",upperBlue>10)
+            assertEquals("Secondary line must not flatten against primary zero",0,lowerBlue)
         } finally { bitmap.recycle() }
     }
 
