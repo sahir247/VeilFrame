@@ -73,6 +73,7 @@ internal object XlsxAnchoredChartRenderer {
                 "Saved chart title exceeds the verified drawing rectangle"
             }
         } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved chart title or glyphs") }
+        val painter=PdfChartPaint(stream)
         val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715,0x247D82)
         fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
         fun stroke(rgb: Int) = stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
@@ -97,11 +98,33 @@ internal object XlsxAnchoredChartRenderer {
                 drawPie(stream,chart,p,font,checkpoint,label)
                 return
             }
-            val x0=p.left+22f; val y0=bottom+17f
-            val w=p.width-33f; val h=p.height-42f
+            val axes=SharedChartValueAxes.build(chart)
+            val secondary=axes.values.singleOrNull { it.axis.position=="r" }
+            val primary=axes.values.singleOrNull { it.axis.position=="l" }
+            val x0=p.left+if(primary!=null) 40f else 22f
+            val y0=bottom+17f
+            val w=p.width-(x0-p.left)-(if(secondary!=null) 40f else 11f)
+            val h=p.height-42f
             require(w > 0f && h > 0f)
             stroke(0xD8DDE2); stream.setLineWidth(0.35f)
-            for (tick in 0..4) line(x0,y0+tick*h/4f,x0+w,y0+tick*h/4f)
+            for (tick in 0..4) {
+                val ratio=tick/4f; val y=y0+ratio*h
+                line(x0,y,x0+w,y)
+                if(primary!=null && secondary!=null) {
+                    fun axisLabel(value: String,x: Float,width: Float) {
+                        if(label!=null) label(value,x,y-2f,6f,width)
+                        else {
+                            require(font.getStringWidth(value)*6f/1000f<=width) { "Saved axis label exceeds chart frame" }
+                            color(0x222222);stream.beginText();stream.setFont(font,6f)
+                            stream.newLineAtOffset(x,y-2f);stream.showText(value);stream.endText()
+                        }
+                    }
+                    axisLabel(primary.tick(ratio),p.left+2f,36f)
+                    axisLabel(secondary.tick(ratio),x0+w+3f,35f)
+                }
+            }
+            // Restrict explicitly scaled marks to the plot, not just the chart frame.
+            if(axes.isNotEmpty()) { stream.addRect(x0,y0,w,h);stream.clip() }
 
             if (chart.kind == "scatter") {
                 require(chart.scatterStyle in setOf("marker","line","lineMarker"))
@@ -114,19 +137,18 @@ internal object XlsxAnchoredChartRenderer {
                 for ((i,s) in chart.series.withIndex()) {
                     checkpoint()
                     require(s.xValues.size == s.values.size)
-                    val rgb=s.rgb ?: palette[i]; color(rgb); stroke(rgb)
-                    stream.setLineWidth(s.strokeWidthPt ?: 1.2f)
-                    var previous: Pair<Float,Float>?=null
+                    val rgb=s.rgb ?: palette[i]
+                    val points=mutableListOf<Pair<Float,Float>?>()
                     for ((x,y) in s.xValues.zip(s.values)) {
                         checkpoint()
-                        if(x == null || y == null){previous=null;continue}
+                        if(x == null || y == null){points.add(null);continue}
                         val sx=x0+ax.fraction(x)*w; val sy=y0+ay.fraction(y)*h
-                        if(chart.scatterStyle != "marker") previous?.let { line(it.first,it.second,sx,sy) }
-                        if(chart.scatterStyle != "line"){
-                            XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,sx,sy,2.8f)
-                        }
-                        previous=sx to sy
+                        points.add(sx to sy)
                     }
+                    if(chart.scatterStyle!="marker") painter.polyline(points,s,rgb,1.2f)
+                    if(chart.scatterStyle!="line") for(point in points.filterNotNull())
+                        XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,point.first,point.second,2.8f,
+                            s.markerFill,s.markerStroke,rgb,painter)
                 }
             } else {
                 val stacked=chart.kind in setOf("bar","column") && chart.grouping in setOf("stacked","percentStacked")
@@ -147,40 +169,43 @@ internal object XlsxAnchoredChartRenderer {
                 val thickness=slot*0.77f/(if(stacked) 1 else bars)
                 for ((i,s) in chart.series.withIndex()){
                     checkpoint()
-                    val rgb=s.rgb ?: palette[i];color(rgb);stroke(rgb)
-                    var previous:Pair<Float,Float>?=null
+                    val rgb=s.rgb ?: palette[i]
+                    val axis=axes[s.valueAxisId]
+                    val points=mutableListOf<Pair<Float,Float>?>()
                     val isLine = chart.kind == "line" || (chart.kind == "combo" && s.chartKind == "line")
                     for ((point,cached) in s.values.withIndex()){
                         checkpoint()
                         val raw = if (isLine) chart.blankDisplay.lineValue(cached) else cached
                         if(raw == null){
-                            if (!isLine || chart.blankDisplay.breakOnMissing()) previous = null
+                            if (isLine && chart.blankDisplay.breakOnMissing()) points.add(null)
                             continue
                         }
                         val position=if(horizontal) y0+h-slot*(point+0.5f) else x0+slot*(point+0.5f)
                         if(isLine){
-                            val sy=y0+fraction(raw/maxAbs)*h
-                            stream.setLineWidth(s.strokeWidthPt ?: 1.2f)
-                            previous?.let { line(it.first,it.second,position,sy) }
-                            XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,position,sy,2.6f)
-                            previous=position to sy
+                            val sy=y0+(axis?.fraction(raw) ?: fraction(raw/maxAbs))*h
+                            points.add(position to sy)
                         }else{
                             val ordinal=if(chart.kind=="combo") chart.series.take(i).count { it.chartKind=="column" } else i
                             val offset=position-slot*0.385f+(if(stacked) 0 else ordinal)*thickness
                             val segment=if(stacked) stacks[i][point] ?: continue
                                 else XlsxStackedChart.Segment(0.0,raw/maxAbs)
-                            val a=fraction(segment.start);val b=fraction(segment.end)
+                            val a=axis?.zero() ?: fraction(segment.start)
+                            val b=axis?.fraction(raw) ?: fraction(segment.end)
+                            val ink=SharedChartInk.pointInk(s,point,rgb)
+                            val outline=SharedChartInk.pointStroke(s,point)
                             if(abs(a-b)<1e-7f) continue
                             if(horizontal){
                                 val ax=x0+a*w;val bx=x0+b*w
-                                stream.addRect(minOf(ax,bx),offset,abs(bx-ax),thickness*0.9f)
+                                painter.rect(minOf(ax,bx),offset,abs(bx-ax),thickness*0.9f,ink,outline,rgb)
                             }else{
                                 val ay=y0+a*h;val by=y0+b*h
-                                stream.addRect(offset,minOf(ay,by),thickness*0.9f,abs(by-ay))
+                                painter.rect(offset,minOf(ay,by),thickness*0.9f,abs(by-ay),ink,outline,rgb)
                             }
-                            stream.fill()
                         }
                     }
+                    painter.polyline(points,s,rgb,1.2f)
+                    for(point in points.filterNotNull()) XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,
+                        point.first,point.second,2.6f,s.markerFill,s.markerStroke,rgb,painter)
                 }
             }
         } finally { stream.restoreGraphicsState() }
@@ -206,13 +231,16 @@ internal object XlsxAnchoredChartRenderer {
             require(font.getStringWidth(label)*labelSize/1000f <= labelW) { "Saved pie legend exceeds chart width" }
         }
         val radius=minOf(p.width*0.24f-4f,availableH/2f-3f)
-        XlsxPieChartPainter.draw(stream,shares,p.left+p.width*0.25f,p.top-19f-availableH/2f,radius,checkpoint)
+        val series=chart.series.single()
+        val colors=values.indices.map { SharedChartInk.pointInk(series,it,XlsxPieChartPainter.palette[it]) }
+        val outlines=values.indices.map { SharedChartInk.pointStroke(series,it) }
+        val painter=PdfChartPaint(stream)
+        XlsxPieChartPainter.drawStyled(stream,shares,p.left+p.width*0.25f,p.top-19f-availableH/2f,radius,
+            checkpoint,colors,outlines,chart.firstSliceAngle)
         for ((index,label) in labels.withIndex()) {
             checkpoint()
             val y=p.top-25f-index*11f
-            val rgb=XlsxPieChartPainter.palette[index]
-            stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
-            stream.addRect(labelX,y-1f,7f,7f);stream.fill()
+            painter.rect(labelX,y-1f,7f,7f,colors[index],outlines[index],XlsxPieChartPainter.palette[index])
             if (labelRenderer != null) labelRenderer(label,labelX+10f,y,labelSize,labelW)
             else {
                 stream.setNonStrokingColor(0,0,0)
