@@ -22,7 +22,7 @@ internal object PdfAnnotationAppearance {
     private const val MAX_COORD=1_000_000f
     private const val MAX_NUMBERS=16_384
     private val quads=setOf("Highlight","Underline","StrikeOut","Squiggly")
-    private val supported=quads+setOf("Ink","Square","Circle","Line","Polygon","PolyLine")
+    private val supported=quads+setOf("Ink","Square","Circle","Line","Polygon","PolyLine","FreeText","Text")
     private fun reject(message: String): Nothing=throw IOException(message)
     private fun number(value: Any?,description: String): Float {
         val n=(value as? COSNumber)?.floatValue() ?: reject("Invalid annotation "+description)
@@ -82,7 +82,19 @@ internal object PdfAnnotationAppearance {
             if(bs.getNameAsString(key("S"),"S") !in setOf("S","D")) reject("Unsupported annotation border style")
             array(bs,"D")?.let { if(numbers(it,1,64).any { n -> n<=0 || n>1000 }) reject("Invalid annotation dash") }
         }
-        if(subtype in quads) {
+        if(subtype=="FreeText") {
+            if(listOf("RC","DS","CL","RD","DR","Rotate","LE").any { d.containsKey(key(it)) } ||
+                d.getNameAsString(key("IT")) !in setOf(null,"FreeText") ||
+                bs?.getNameAsString(key("S"),"S")=="D" || border?.size()==4)
+                reject("Unsupported rich, rotated, callout or dashed FreeText annotation")
+            if(width*4>=rect.width || width*4>=rect.height) reject("FreeText border exceeds rectangle")
+        } else if(subtype=="Text") {
+            if(!d.containsKey(key("F")) || d.getBoolean(key("Open"),false))
+                reject("Open or view-dependent note icon cannot be flattened")
+            if(d.getNameAsString(key("Name"),"Note") !in setOf("Note","Comment","Key","Help","NewParagraph",
+                    "Paragraph","Insert","Circle","Cross","Star","Check","RightArrow","RightPointer","UpArrow","UpLeftArrow","CrossHairs"))
+                reject("Unsupported note icon")
+        } else if(subtype in quads) {
             if(!stroke) reject("Missing text markup color")
             val points=numbers(array(d,"QuadPoints") ?: reject("Missing annotation QuadPoints"),8,MAX_NUMBERS,8)
             for(q in points.chunked(8)) {
@@ -139,7 +151,9 @@ internal object PdfAnnotationAppearance {
         validate(annotation)
         // The pinned PDFBox handlers generate native vector appearances and
         // may expand /Rect to enclose ink. They log some I/O errors internally.
-        annotation.constructAppearances(document)
+        if(annotation.subtype=="FreeText") PdfPlainFreeTextAppearance.generate(document,annotation)
+        else annotation.constructAppearances(document)
+        if(annotation.isNoZoom || annotation.isNoRotate) reject("Generated appearance has view-dependent geometry")
         val appearance=annotation.normalAppearanceStream ?: reject("Annotation appearance generation failed")
         bounds(annotation.rectangle)
         bounds(appearance.bBox)
@@ -167,6 +181,7 @@ internal object PdfAnnotationAppearance {
                 if(token !is Operator) continue
                 when(token.name) {
                     "S","s","f","F","f*","B","B*","b","b*" -> paints=true
+                    "Tj" -> if((tokens.getOrNull(index-1) as? com.tom_roush.pdfbox.cos.COSString)?.bytes?.isNotEmpty()==true) paints=true
                     "Do" -> {
                         val name=tokens.getOrNull(index-1) as? COSName ?: reject("Invalid generated form operand")
                         val child=form.resources?.getXObject(name) as? com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject
