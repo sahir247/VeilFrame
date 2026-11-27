@@ -119,4 +119,27 @@ class PptxChartCacheTest {
         assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("<c:v>1</c:v>","<c:v>0</c:v>").byteInputStream(),emptyMap()) }.isFailure)
         assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("crossAx val=\"21\"","crossAx val=\"999\"").byteInputStream(),emptyMap()) }.isFailure)
     }
+
+    @Test fun dateAxisUsesElapsedDaysAndRespectsCalendarEpoch() {
+        val source=xml("""<c:lineChart><c:ser>
+            <c:cat><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>44197</c:v></c:pt><c:pt idx="1"><c:v>44198</c:v></c:pt><c:pt idx="2"><c:v>44207</c:v></c:pt></c:numLit></c:cat>
+            <c:val><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt><c:pt idx="2"><c:v>3</c:v></c:pt></c:numLit></c:val>
+            </c:ser><c:axId val="1"/><c:axId val="2"/></c:lineChart>
+            <c:dateAx><c:axId val="1"/><c:scaling><c:min val="44197"/><c:max val="44207"/></c:scaling><c:axPos val="b"/>
+            <c:numFmt formatCode="yyyy-mm-dd"/><c:crossAx val="2"/><c:baseTimeUnit val="days"/><c:majorUnit val="5"/><c:majorTimeUnit val="days"/></c:dateAx>
+            <c:valAx><c:axId val="2"/><c:scaling/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>""")
+        fun parse(s: String)=OpenXmlDocumentParser.readPresentationChart(s.byteInputStream(),emptyMap())
+        val chart=parse(source)
+        val scale=SharedChartDates.build(chart)!!
+        assertEquals(listOf("2021-01-01","2021-01-02","2021-01-11"),chart.categories)
+        assertEquals(0.1f,scale.fractionAt(1),0.001f)
+        assertEquals(listOf(44197L,44202L,44207L),scale.ticks)
+        val reversed=parse(source.replace("<c:scaling><c:min", "<c:scaling><c:orientation val=\"maxMin\"/><c:min"))
+        assertEquals(0.9f,SharedChartDates.build(reversed)!!.fractionAt(1),0.001f)
+        assertEquals("1904-01-01",SharedChartDates.label(0,true,"yyyy-mm-dd"))
+        assertEquals("1900-03-01",SharedChartDates.label(61,false,"yyyy-mm-dd"))
+        assertThrows(IllegalArgumentException::class.java) { SharedChartDates.label(60,false,"yyyy-mm-dd") }
+        assertTrue(runCatching { parse(source.replace("majorTimeUnit val=\"days\"","majorTimeUnit val=\"months\"")) }.isFailure)
+        assertTrue(runCatching { parse(source.replace("<c:v>44198</c:v>","<c:v>44198.5</c:v>")) }.isFailure)
+    }
 }
