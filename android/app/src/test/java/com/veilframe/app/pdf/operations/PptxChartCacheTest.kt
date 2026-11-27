@@ -85,4 +85,19 @@ class PptxChartCacheTest {
         val invisible=OpenXmlDocumentParser.readPresentationChart(xml("<c:barChart><c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>$negative</c:barChart>").byteInputStream(),emptyMap())
         assertNull(SharedChartInk.pointInk(invisible.series.single(),1,0))
     }
+
+    @Test fun logarithmicScaleUsesMultiplicativeSpacingAndRejectsZero() {
+        val series="""<c:ser><c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt><c:pt idx="2"><c:v>C</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>10</c:v></c:pt><c:pt idx="2"><c:v>100</c:v></c:pt></c:numLit></c:val></c:ser>"""
+        val source=xml("""<c:lineChart>$series<c:axId val="1"/><c:axId val="2"/></c:lineChart>
+            <c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:logBase val="10"/><c:min val="1"/><c:max val="100"/></c:scaling><c:axPos val="l"/><c:numFmt formatCode="0"/></c:valAx>""")
+        val chart=OpenXmlDocumentParser.readPresentationChart(source.byteInputStream(),emptyMap())
+        val scale=SharedChartValueAxes.build(chart).getValue("2")
+        assertEquals(0f,scale.fraction(1.0),0.001f)
+        assertEquals(0.5f,scale.fraction(10.0),0.001f)
+        assertEquals(1f,scale.fraction(100.0),0.001f)
+        assertEquals("10",scale.tick(0.5f))
+        assertEquals(0f,scale.zero(),0.001f)
+        assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("<c:v>1</c:v>","<c:v>0</c:v>").byteInputStream(),emptyMap()) }.isFailure)
+        assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("catAx","dateAx").byteInputStream(),emptyMap()) }.isFailure)
+    }
 }

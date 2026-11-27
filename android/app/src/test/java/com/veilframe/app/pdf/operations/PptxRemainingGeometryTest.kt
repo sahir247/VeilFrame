@@ -133,4 +133,18 @@ class PptxRemainingGeometryTest {
         assertArrayEquals(doubleArrayOf(0.0,0.0,0.0),DrawingMlColorMath.lightness(rgb) { 0.0 },1e-9)
         assertArrayEquals(doubleArrayOf(0.6,0.6,0.6),DrawingMlColorMath.lightness(doubleArrayOf(0.4,0.4,0.4)) { it+0.2 },1e-9)
     }
+
+    @Test fun centeredAndInsetCompoundEnvelopesRetainGaps() {
+        val spec=PptxStrokeStyle.Spec(12f,compound="dbl")
+        val centered=PptxClosedOutline.intervals(spec)
+        assertEquals(-6f,centered[0].low,0.001f)
+        assertEquals(-2f,centered[0].high,0.001f)
+        assertEquals(2f,centered[1].low,0.001f)
+        assertEquals(6f,centered[1].high,0.001f)
+        val inset=PptxClosedOutline.intervals(spec.copy(alignment="in"))
+        assertEquals(0f,inset[0].low,0.001f)
+        assertEquals(4f,inset[0].high,0.001f)
+        assertEquals(8f,inset[1].low,0.001f)
+        assertEquals(12f,inset[1].high,0.001f)
+    }
 }

@@ -70,4 +70,16 @@ class PptxTableStyleTest {
         assertEquals(0xff112233.toInt(),PptxTableStyle.themeColors(theme,null,null,master)["tx1"])
         assertEquals(0xffaa0000.toInt(),PptxTableStyle.themeColors(theme,slide,null,master)["tx1"])
     }
+
+    @Test fun rtlReadingOrderMapsMergesAndPhysicalCornerBorders() {
+        val f=PptxTableStyle.flags(xml("""<a:tblPr xmlns:a="$a" rtl="on" firstRow="1" firstCol="1" lastCol="1"/>"""))
+        assertTrue(f.rtl)
+        assertEquals(2,PptxTableRenderer.physicalColumn(0,2,4,true))
+        assertEquals(0,PptxTableRenderer.physicalColumn(3,1,4,true))
+        assertEquals(0,PptxTableRenderer.physicalColumn(0,2,4,false))
+        assertEquals(listOf("wholeTbl","firstCol","firstRow","neCell"),PptxTableStyle.regions(0,0,3,4,f))
+        assertEquals(listOf("wholeTbl","lastCol","firstRow","nwCell"),PptxTableStyle.regions(0,3,3,4,f))
+        assertEquals("right",PptxTableStyle.borderRole("firstCol","lnR",0,3,3,4,f))
+        assertEquals("left",PptxTableStyle.borderRole("lastCol","lnL",0,0,3,4,f))
+    }
 }

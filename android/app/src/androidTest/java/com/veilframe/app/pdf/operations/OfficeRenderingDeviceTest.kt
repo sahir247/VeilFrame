@@ -517,6 +517,28 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+
+    @Test fun closedCompoundAndInsetInkPreserveUnderlyingPixels() {
+        val bitmap=Bitmap.createBitmap(200,200,Bitmap.Config.ARGB_8888)
+        try {
+            val canvas=android.graphics.Canvas(bitmap)
+            val path=android.graphics.Path().apply { addCircle(100f,100f,60f,android.graphics.Path.Direction.CW) }
+            bitmap.eraseColor(Color.WHITE)
+            val spec=PptxStrokeStyle.Spec(12f,compound="dbl")
+            PptxClosedOutline.draw(canvas,path,spec,0x800000ff.toInt())
+            assertEquals(Color.WHITE,bitmap.getPixel(100,39))
+            val outer=bitmap.getPixel(100,35);val inner=bitmap.getPixel(100,43)
+            assertTrue(Color.blue(outer)>245 && Color.red(outer) in 115..140)
+            assertTrue(Color.blue(inner)>245 && Color.red(inner) in 115..140)
+            bitmap.eraseColor(Color.WHITE)
+            PptxClosedOutline.draw(canvas,path,spec.copy(alignment="in"),Color.RED)
+            assertEquals(Color.WHITE,bitmap.getPixel(100,36))
+            assertEquals(Color.RED,bitmap.getPixel(100,41))
+            assertEquals(Color.WHITE,bitmap.getPixel(100,46))
+            assertEquals(Color.RED,bitmap.getPixel(100,50))
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {

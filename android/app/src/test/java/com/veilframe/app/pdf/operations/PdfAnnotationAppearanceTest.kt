@@ -98,4 +98,33 @@ class PdfAnnotationAppearanceTest {
             assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,unsupported) }
         }
     }
+
+    @Test fun plainFreeTextAndNoteAreFlattenedWithoutLosingText() {
+        PDDocument().use { doc ->
+            val page=PDPage();doc.addPage(page)
+            val free=annotation("FreeText").apply {
+                contents="Visible note"
+                cosObject.setString(key("DA"),"/Helv 12 Tf 0 g")
+            }
+            val note=annotation("Text").apply { cosObject.setName(key("Name"),"Note") }
+            page.annotations.add(free);page.annotations.add(note)
+            assertEquals(2,PdfFlattener().flattenPageAnnotations(doc,page))
+            val bytes=ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
+            PDDocument.load(bytes).use { saved ->
+                assertTrue(saved.getPage(0).annotations.isEmpty())
+                assertTrue(com.tom_roush.pdfbox.text.PDFTextStripper().getText(saved).contains("Visible note"))
+            }
+        }
+    }
+    @Test fun freeTextRejectsOverflowUnsupportedFontAndRichText() {
+        PDDocument().use { doc ->
+            fun free(text: String,da: String)=annotation("FreeText").apply {
+                contents=text;cosObject.setString(key("DA"),da)
+            }
+            assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,free("W".repeat(100),"/Helv 12 Tf 0 g")) }
+            assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,free("Hello","/Unknown 12 Tf 0 g")) }
+            val rich=free("Hello","/Helv 12 Tf 0 g").apply { cosObject.setString(key("RC"),"<p>Hello</p>") }
+            assertThrows(IOException::class.java) { PdfAnnotationAppearance.resolve(doc,rich) }
+        }
+    }
 }
