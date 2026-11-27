@@ -91,7 +91,7 @@ object ImageFormatEncoder {
                 encodeBmp(bitmap, outFile)
             }
             Format.TIFF -> {
-                encodeViaFFmpeg(bitmap, outFile, "-c:v tiff")
+                encodeViaFFmpeg(bitmap, outFile, arrayOf("-c:v", "tiff"))
             }
             Format.GIF -> {
                 encodeGifViaFFmpeg(bitmap, outFile)
@@ -114,11 +114,18 @@ object ImageFormatEncoder {
             val width = bitmap.width
             val height = bitmap.height
             // Row size in BMP must be multiple of 4 bytes
-            val rowBytes = (width * 3 + 3) and 3.inv()
-            val pixelDataSize = rowBytes * height
+            require(width > 0 && height > 0)
+            val rowBytesLong = (width.toLong() * 3 + 3) and 3L.inv()
+            val pixelDataSizeLong = Math.multiplyExact(rowBytesLong, height.toLong())
+            val totalFileSizeLong = Math.addExact(54L, pixelDataSizeLong)
+            require(totalFileSizeLong <= 0xFFFF_FFFFL && rowBytesLong <= Int.MAX_VALUE) {
+                "BMP exceeds 32-bit container size"
+            }
+            val rowBytes = rowBytesLong.toInt()
+            val pixelDataSize = pixelDataSizeLong.toInt()
             val fileHeaderSize = 14
             val infoHeaderSize = 40
-            val totalFileSize = fileHeaderSize + infoHeaderSize + pixelDataSize
+            val totalFileSize = totalFileSizeLong.toInt()
 
             val header = ByteBuffer.allocate(fileHeaderSize + infoHeaderSize).order(ByteOrder.LITTLE_ENDIAN)
             // Bitmap File Header (14 bytes)
@@ -142,18 +149,17 @@ object ImageFormatEncoder {
             header.putInt(0) // colors in color table
             header.putInt(0) // important color count
 
-            val pixels = IntArray(width * height)
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
+            // Read one row at a time; a full IntArray duplicates the entire bitmap.
+            val pixels = IntArray(width)
             FileOutputStream(outFile).use { fos ->
                 fos.write(header.array())
                 val rowBuffer = ByteArray(rowBytes)
                 // BMP is stored bottom-up
                 for (y in height - 1 downTo 0) {
                     var byteIndex = 0
-                    val rowStart = y * width
+                    bitmap.getPixels(pixels, 0, width, 0, y, width, 1)
                     for (x in 0 until width) {
-                        val pixel = pixels[rowStart + x]
+                        val pixel = pixels[x]
                         rowBuffer[byteIndex++] = (pixel and 0xFF).toByte()         // Blue
                         rowBuffer[byteIndex++] = ((pixel shr 8) and 0xFF).toByte()  // Green
                         rowBuffer[byteIndex++] = ((pixel shr 16) and 0xFF).toByte() // Red
@@ -164,7 +170,7 @@ object ImageFormatEncoder {
                     fos.write(rowBuffer)
                 }
             }
-            outFile.exists() && outFile.length() > 0
+            outFile.isFile && outFile.length() == totalFileSizeLong
         } catch (e: Exception) {
             Log.e(TAG, "Native BMP encoding failed: ${e.message}", e)
             false
@@ -189,17 +195,20 @@ object ImageFormatEncoder {
 
         // Fallback: FFmpegKit x265 encoder
         val crf = (51 - ((quality / 100.0) * 35)).toInt().coerceIn(16, 45)
-        return encodeViaFFmpeg(bitmap, outFile, "-c:v libx265 -crf $crf -preset veryfast")
+        return encodeViaFFmpeg(bitmap, outFile, arrayOf("-c:v", "libx265", "-crf", crf.toString(), "-preset", "veryfast"))
     }
 
     private fun encodeGifViaFFmpeg(bitmap: Bitmap, outFile: File): Boolean {
         val tempPng = File.createTempFile("vf_gif_src_", ".png", outFile.parentFile)
         return try {
             FileOutputStream(tempPng).use { fos ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
-            val cmd = "-y -i \"${tempPng.absolutePath}\" -vf \"split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128\" \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
+            val session = FFmpegKit.executeWithArguments(arrayOf(
+                "-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1",
+                "-vf", "split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128",
+                outFile.absolutePath
+            ))
             ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0
         } catch (e: Exception) {
             Log.e(TAG, "GIF encoding failed: ${e.message}", e)
@@ -214,25 +223,16 @@ object ImageFormatEncoder {
         val tempPng = File.createTempFile("vf_avif_src_", ".png", outFile.parentFile)
         return try {
             FileOutputStream(tempPng).use { fos ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
-            // Attempt FFmpeg AVIF encode
-            val cmd = "-y -i \"${tempPng.absolutePath}\" -crf $crf \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
-            if (ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0) {
-                true
-            } else {
-                // Fallback: modern WebP lossless or lossy
-                FileOutputStream(outFile).use { fos ->
-                    val webpFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        Bitmap.CompressFormat.WEBP_LOSSY
-                    } else {
-                        Bitmap.CompressFormat.WEBP
-                    }
-                    bitmap.compress(webpFormat, quality, fos)
-                }
-                outFile.exists() && outFile.length() > 0
-            }
+            // A failed AVIF encoder is not permission to return WebP in an AVIF container.
+            val session = FFmpegKit.executeWithArguments(arrayOf(
+                "-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1",
+                "-c:v", "libaom-av1", "-crf", crf.toString(), "-f", "avif", outFile.absolutePath
+            ))
+            val valid = ReturnCode.isSuccess(session.returnCode) && ImageContainerContract.matches(outFile, Format.AVIF)
+            if (!valid) outFile.delete()
+            valid
         } catch (e: Exception) {
             Log.e(TAG, "AVIF encoding failed: ${e.message}", e)
             false
@@ -241,14 +241,16 @@ object ImageFormatEncoder {
         }
     }
 
-    private fun encodeViaFFmpeg(bitmap: Bitmap, outFile: File, ffmpegVideoOptions: String): Boolean {
+    private fun encodeViaFFmpeg(bitmap: Bitmap, outFile: File, ffmpegVideoOptions: Array<String>): Boolean {
         val tempPng = File.createTempFile("vf_encode_src_", ".png", outFile.parentFile)
         return try {
             FileOutputStream(tempPng).use { fos ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) { "Unable to encode intermediate PNG" }
             }
-            val cmd = "-y -i \"${tempPng.absolutePath}\" $ffmpegVideoOptions \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
+            val session = FFmpegKit.executeWithArguments(
+                arrayOf("-y", "-i", tempPng.absolutePath, "-map_metadata", "-1", "-frames:v", "1") +
+                    ffmpegVideoOptions + arrayOf(outFile.absolutePath)
+            )
             ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0
         } catch (e: Exception) {
             Log.e(TAG, "FFmpeg image encoding failed: ${e.message}", e)

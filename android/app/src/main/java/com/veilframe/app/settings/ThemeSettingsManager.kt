@@ -5,11 +5,13 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.os.Build
 import android.graphics.Typeface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.WindowCompat
 import com.google.android.material.color.DynamicColors
 import com.veilframe.app.R
 
@@ -239,6 +241,32 @@ object ThemeSettingsManager {
             ThemeMode.DARK, ThemeMode.AMOLED -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         }
     }
+
+    /**
+     * System bars are owned by the Android window, not by the themed navigation
+     * views. AppCompat's base windowLightStatusBar attribute is not re-resolved
+     * after switching among light, system-dark, dark and AMOLED.
+     *
+     * Use the effective UI configuration (not AppCompatDelegate's policy:
+     * FOLLOW_SYSTEM does NOT imply light mode). Transparent gesture bars draw
+     * over our theme-bound canvas; disable Android 10+ contrast scrims so OLED
+     * stays genuinely black.
+     */
+    fun applySystemBarAppearance(activity: Activity) {
+        val lightSurface = !isDarkUi(activity)
+        WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
+            isAppearanceLightStatusBars = lightSurface
+            isAppearanceLightNavigationBars = lightSurface
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            activity.window.isNavigationBarContrastEnforced = false
+            activity.window.isStatusBarContrastEnforced = false
+        }
+    }
+
+    internal fun isDarkUi(context: Context): Boolean =
+        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
 
     fun isAmoledActive(context: Context): Boolean {
         val mode = getThemeMode(context)

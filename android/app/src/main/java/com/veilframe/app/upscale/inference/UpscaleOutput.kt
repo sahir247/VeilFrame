@@ -30,7 +30,20 @@ sealed class UpscaleOutput {
         val preview: Bitmap?,
         override val width: Int,
         override val height: Int,
+        /** Backend of the completed native attempt; null for non-neural outputs. */
+        val inferenceBackend: String? = null,
     ) : UpscaleOutput()
+
+    /** Only for unpublished output; a controller takes ownership after delivery. */
+    internal fun discardUnclaimed() {
+        when (this) {
+            is InMemory -> if (!bitmap.isRecycled) bitmap.recycle()
+            is Streamed -> {
+                preview?.let { if (!it.isRecycled) it.recycle() }
+                file.delete()
+            }
+        }
+    }
 
     abstract val width: Int
     abstract val height: Int

@@ -29,6 +29,10 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
     private val corners = mutableListOf<PointF>()
     private var activeCornerIndex = -1
 
+    /** Monotonic interaction revision; asynchronous detection must not overwrite user input. */
+    var interactionRevision: Long = 0L
+        private set
+
     private val touchRadius = dpToPx(40f)
     private val handleOuterRadius = dpToPx(14f)
     private val handleInnerRadius = dpToPx(6f)
@@ -63,6 +67,7 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
     private val displayMatrix = Matrix()
 
     fun setSource(bitmap: Bitmap, initialCorners: List<PointF>?) {
+        interactionRevision++
         this.sourceBitmap = bitmap
         corners.clear()
         if (initialCorners != null && initialCorners.size == 4) {
@@ -81,11 +86,12 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
     }
 
     fun getCornersInSource(): List<PointF> {
-        return corners.toList()
+        return corners.map { PointF(it.x, it.y) }
     }
 
     fun setCorners(newCorners: List<PointF>) {
         if (newCorners.size == 4) {
+            interactionRevision++
             corners.clear()
             newCorners.forEach { corners.add(PointF(it.x, it.y)) }
             activeCornerIndex = -1
@@ -95,6 +101,7 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
 
     fun resetToFullImage() {
         val bmp = sourceBitmap ?: return
+        interactionRevision++
         val w = bmp.width.toFloat()
         val h = bmp.height.toFloat()
         corners.clear()
@@ -188,6 +195,7 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
                 }
 
                 if (closestIdx != -1) {
+                    interactionRevision++
                     activeCornerIndex = closestIdx
                     parent?.requestDisallowInterceptTouchEvent(true)
                     invalidate()
@@ -201,6 +209,7 @@ class InteractiveDocumentCropView @JvmOverloads constructor(
                     val imgX = pts[0].coerceIn(0f, bmp.width.toFloat())
                     val imgY = pts[1].coerceIn(0f, bmp.height.toFloat())
 
+                    interactionRevision++
                     corners[activeCornerIndex].x = imgX
                     corners[activeCornerIndex].y = imgY
                     invalidate()

@@ -65,30 +65,21 @@ class FlowEstimator(
         require(!previous.empty() && !current.empty()) { "frames must be non-empty" }
         require(previous.size() == current.size()) { "frames must have identical size" }
 
-        val prevGray = toGray(previous)
-        val nextGray = toGray(current)
-        val prevWork = downscale(prevGray)
-        val nextWork = downscale(nextGray)
-        val scaleX = prevWork.cols().toDouble() / prevGray.cols()
-        val scaleY = prevWork.rows().toDouble() / prevGray.rows()
-        val scale = FlowScale(x = scaleX, y = scaleY)
-        try {
+        return withMotionMats {
+            val prevGray = own(toGray(previous))
+            val nextGray = own(toGray(current))
+            val prevWork = own(downscale(prevGray))
+            val nextWork = own(downscale(nextGray))
+            val scale = FlowScale(prevWork.cols().toDouble() / prevGray.cols(),
+                prevWork.rows().toDouble() / prevGray.rows())
             val chosen = when (algorithm) {
                 Algorithm.DIS, Algorithm.FARNEBACK -> algorithm
                 Algorithm.AUTO -> Algorithm.DIS
             }
-            val forward = computeFlow(prevWork, nextWork, chosen)
-            val backward = computeFlow(nextWork, prevWork, chosen)
-            return BidirectionalFlow(
-                forward = FlowField(forward, scale),
-                backward = FlowField(backward, scale),
-                algorithmUsed = chosen,
-            )
-        } finally {
-            prevGray.release()
-            nextGray.release()
-            prevWork.release()
-            nextWork.release()
+            val forward = own(computeFlow(prevWork, nextWork, chosen))
+            val backward = own(computeFlow(nextWork, prevWork, chosen))
+            BidirectionalFlow(FlowField(forward,scale), FlowField(backward,scale), chosen)
+                .also { transfer(forward); transfer(backward) }
         }
     }
 
@@ -98,26 +89,22 @@ class FlowEstimator(
     }
 
     private fun disFlow(from: Mat, to: Mat): Mat {
-        val flow = Mat()
-        val dis = obtainDis()
+        val dis = obtainDis() ?: return farnebackFlow(from,to)
         return try {
-            if (dis == null) {
-                flow.release()
-                farnebackFlow(from, to)
-            } else {
-                // The cached instance is reusable but not thread-safe.
-                synchronized(dis) { dis.calc(from, to, flow) }
-                flow
+            withMotionMats {
+                val flow = own(Mat())
+                synchronized(dis) { dis.calc(from,to,flow) }
+                transfer(flow)
             }
         } catch (e: Exception) {
-            // Any DIS failure (missing symbols, invalid input) → Farnebäck.
-            flow.release()
-            farnebackFlow(from, to)
+            farnebackFlow(from,to)
+        } catch (e: LinkageError) {
+            farnebackFlow(from,to)
         }
     }
 
-    private fun farnebackFlow(from: Mat, to: Mat): Mat {
-        val flow = Mat()
+    private fun farnebackFlow(from: Mat, to: Mat): Mat = withMotionMats {
+        val flow = own(Mat())
         Video.calcOpticalFlowFarneback(
             from,
             to,
@@ -130,7 +117,7 @@ class FlowEstimator(
             1.2,  // polySigma
             0,
         )
-        return flow
+        transfer(flow)
     }
 
     /**
@@ -159,14 +146,11 @@ class FlowEstimator(
 
     private fun toGray(frame: Mat): Mat = when (frame.channels()) {
         1 -> frame.clone()
-        else -> {
-            val gray = Mat()
-            Imgproc.cvtColor(
-                frame,
-                gray,
-                if (frame.channels() == 4) Imgproc.COLOR_BGRA2GRAY else Imgproc.COLOR_BGR2GRAY,
-            )
-            gray
+        else -> withMotionMats {
+            val gray = own(Mat())
+            Imgproc.cvtColor(frame,gray,
+                if (frame.channels() == 4) Imgproc.COLOR_BGRA2GRAY else Imgproc.COLOR_BGR2GRAY)
+            transfer(gray)
         }
     }
 
@@ -205,7 +189,8 @@ class FlowEstimator(
     private fun downscale(gray: Mat): Mat {
         val maxEdge = maxOf(gray.cols(), gray.rows())
         if (maxEdge <= workingMaxEdge) return gray.clone()
-        val out = Mat()
+        return withMotionMats {
+        val out = own(Mat())
         val scaleFactor = workingMaxEdge.toDouble() / maxEdge
         Imgproc.resize(
             gray,
@@ -216,6 +201,7 @@ class FlowEstimator(
             ),
             0.0, 0.0, Imgproc.INTER_AREA,
         )
-        return out
+        transfer(out)
+        }
     }
 }

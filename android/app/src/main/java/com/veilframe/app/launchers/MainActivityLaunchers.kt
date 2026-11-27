@@ -27,10 +27,23 @@ class MainActivityLaunchers(private val activity: MainActivity) {
 
     // Pending export buffers and files for SAF CreateDocument callbacks
     private var pendingMarkdownSaveContent: String? = null
+    private data class PendingArtifact(val file: File, val ownedReview: Boolean) {
+        fun release() { if (ownedReview) file.parentFile?.deleteRecursively() }
+    }
+    private var pendingArtifact: PendingArtifact? = null
     private var pendingImgStudioExportFile: File? = null
     private var pendingVidStudioExportFile: File? = null
     private var pendingDocScannerExportFile: File? = null
-    private var pendingBgRemoverExportFile: File? = null
+    private data class PendingCutout(val file: File, val owned: Boolean) {
+        fun release() { if (owned) file.delete() }
+    }
+    private var pendingCutout: PendingCutout? = null
+
+    /** The picker is activity-owned. A recreated activity cannot use an old pending payload. */
+    fun releasePendingCutout() {
+        pendingCutout?.release()
+        pendingCutout = null
+    }
     private var pendingPdfSignatureSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveBytes: ByteArray? = null
     private var pendingPdfUnlockSaveFile: File? = null
@@ -84,25 +97,31 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         }
     }
 
-    // Generic Artifact Export launcher
+    // Generic artifact picker owns the exact source selected before launch.
     private val exportDocumentLauncher = activity.registerForActivityResult(
         CreateDocumentWithMime()
     ) { destinationUri ->
-        if (destinationUri != null) {
-            val sourceFile = activity.toolSessionManager.currentState.lastGeneratedFile
-            if (sourceFile != null && sourceFile.exists()) {
-                activity.lifecycleScope.launch(Dispatchers.IO) {
-                    val success = activity.safStorageManager.copyFileToUri(sourceFile, destinationUri)
+        val artifact = pendingArtifact
+        pendingArtifact = null
+        if (destinationUri == null) {
+            artifact?.release()
+        } else if (artifact == null || !artifact.file.isFile) {
+            artifact?.release()
+            Toast.makeText(activity, "Original export unavailable; generate and review it again", Toast.LENGTH_LONG).show()
+        } else {
+            activity.lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val success = activity.safStorageManager.copyFileToUri(artifact.file, destinationUri)
                     withContext(Dispatchers.Main) {
                         if (success) {
-                            activity.consoleLogController.log("[EXPORT] Artifact written to storage: ${destinationUri.lastPathSegment ?: destinationUri.path}")
+                            activity.consoleLogController.log("[EXPORT] Artifact written to storage")
                             Toast.makeText(activity, "Saved to device storage", Toast.LENGTH_LONG).show()
                         } else {
                             activity.consoleLogController.log("[ERR] Failed to write exported file to destination.")
-                            Toast.makeText(activity, "Export write failed", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "Export write failed", Toast.LENGTH_LONG).show()
                         }
                     }
-                }
+                } finally { artifact.release() }
             }
         }
     }
@@ -365,19 +384,25 @@ class MainActivityLaunchers(private val activity: MainActivity) {
     private val bgRemoverExportLauncher = activity.registerForActivityResult(
         CreateDocumentWithMime()
     ) { destUri ->
-        val file = pendingBgRemoverExportFile
-        pendingBgRemoverExportFile = null
-        if (destUri != null && file != null) {
-            activity.lifecycleScope.launch(Dispatchers.IO) {
-                val ok = activity.safStorageManager.copyFileToUri(file, destUri)
-                withContext(Dispatchers.Main) {
-                    if (ok) {
-                        Toast.makeText(activity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(activity, "Failed to save PNG cutout to storage", Toast.LENGTH_SHORT).show()
+        val artifact = pendingCutout
+        pendingCutout = null
+        if (artifact != null && destUri != null) {
+            try {
+                val transfer = activity.lifecycleScope.launch(Dispatchers.IO) {
+                    val ok = activity.safStorageManager.copyFileToUri(artifact.file, destUri)
+                    withContext(Dispatchers.Main) {
+                        if (ok) Toast.makeText(activity, "Cutout saved to storage", Toast.LENGTH_LONG).show()
+                        else Toast.makeText(activity, "Failed to save cutout to storage", Toast.LENGTH_SHORT).show()
                     }
                 }
+                transfer.invokeOnCompletion { artifact.release() }
+            } catch (failure: Throwable) {
+                artifact.release()
+                throw failure
             }
+        } else {
+            artifact?.release()
+            if (destUri != null) Toast.makeText(activity, "Cutout export expired; generate it again", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -592,8 +617,25 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         markdownSaveAsLauncher.launch(suggestedName)
     }
 
-    fun launchExportDocument(fileName: String, mimeType: String) {
-        exportDocumentLauncher.launch(fileName to mimeType)
+    fun launchExportDocument(
+        fileName: String, mimeType: String,
+        sourceFile: File? = activity.toolSessionManager.currentState.lastGeneratedFile,
+        ownedReview: Boolean = false
+    ): Boolean {
+        if (sourceFile == null || !sourceFile.isFile || pendingArtifact != null) {
+            Toast.makeText(activity, "Export unavailable or another save is pending", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val artifact = PendingArtifact(sourceFile, ownedReview)
+        pendingArtifact = artifact
+        return try {
+            exportDocumentLauncher.launch(fileName to mimeType)
+            true
+        } catch (failure: Exception) {
+            pendingArtifact = null
+            Toast.makeText(activity, "Cannot open export picker: ${failure.message}", Toast.LENGTH_LONG).show()
+            false
+        }
     }
 
     fun launchImgStudioExport(file: File, mime: String = activity.safStorageManager.getExportMimeType(file)) {
@@ -735,9 +777,23 @@ class MainActivityLaunchers(private val activity: MainActivity) {
         bgRemoverPickerLauncher.launch(request)
     }
 
-    fun launchBgRemoverExport(file: File, mime: String = activity.safStorageManager.getExportMimeType(file)) {
-        pendingBgRemoverExportFile = file
-        bgRemoverExportLauncher.launch(file.name to mime)
+    fun launchBgRemoverExport(
+        file: File, mime: String = activity.safStorageManager.getExportMimeType(file), owned: Boolean = false
+    ): Boolean {
+        if (!file.isFile || file.length() <= 0L || pendingCutout != null) {
+            Toast.makeText(activity, "Cutout unavailable or a save is already pending", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        pendingCutout = PendingCutout(file, owned)
+        return try {
+            bgRemoverExportLauncher.launch(file.name to mime)
+            true
+        } catch (failure: Exception) {
+            // The caller still owns the file when launch fails.
+            pendingCutout = null
+            Toast.makeText(activity, "Cannot open cutout save picker", Toast.LENGTH_LONG).show()
+            false
+        }
     }
 
     fun launchQualityPicker(request: PickVisualMediaRequest = PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly).build()) {

@@ -89,8 +89,11 @@ class RembgModelDownloadManager(
         model: RembgModel,
         listener: DownloadListener? = null,
     ): Result<File> = withContext(Dispatchers.IO) {
-        if (model.isBundled || repository.isModelReady(model)) {
-            val file = repository.getModelFile(model)
+        val cc = coroutineContext
+        val cached = if (model.isBundled) repository.getModelFile(model)
+            else repository.verifiedModelFile(model) { cc.ensureActive() }
+        if (cached != null) {
+            val file = cached
             listener?.onSuccess(model, file)
             return@withContext Result.success(file)
         }
@@ -187,10 +190,10 @@ class RembgModelDownloadManager(
             }
 
             // Stage 4: Verification of physical model readiness in repository
-            if (!repository.isModelReady(model)) {
+            if (repository.verifiedModelFile(model) { cc.ensureActive() } != destBinFile) {
                 destBinFile.delete()
-                destParamFile.delete()
-                throw IllegalStateException("Model installation incomplete: repository isModelReady check failed after install")
+                if (model.paramFileName.isNotEmpty()) destParamFile.delete()
+                throw IllegalStateException("Model installation incomplete: installed bytes do not match the pinned artifacts")
             }
 
             _state.value = _state.value.copy(

@@ -25,6 +25,120 @@ import org.robolectric.RobolectricTestRunner
 class VideoPiiRedactionEngineTest {
 
     @Test
+    fun sequentialPacketMetadataChecksTimebaseGeometryOrderAndPayload() {
+        val bytes = ByteArray(8 * 8 * 3) { it.toByte() }
+        fun valid() = FramePacketContract(8, 8).apply {
+            header("#tb 0: 1/1000000")
+            header("#media_type 0: video")
+            header("#codec_id 0: rawvideo")
+            header("#dimensions 0: 8x8")
+        }
+        val checksum = String.format(java.util.Locale.ROOT, "%08x", FramePacketContract.checksum(bytes))
+        val contract = valid()
+        assertEquals(0L, contract.packet("0, 0, 0, 100000, 192, 0x$checksum", bytes))
+        assertEquals(123456L, contract.packet("0, 123456, 123456, 100000, 192, 0x$checksum", bytes))
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            contract.packet("0, 123456, 123456, 100000, 192, 0x$checksum", bytes)
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            valid().packet("0, 0, 0, 100000, 192, 0x00000000", bytes)
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).header("#dimensions 0: 9x8")
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).header("#tb 0: 1/30")
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            FramePacketContract(8, 8).packet("0, 0, 0, 100000, 192, 0x$checksum", bytes)
+        }
+        assertEquals(0x00040003L, FramePacketContract.checksum(byteArrayOf(1, 2)))
+    }
+
+    @Test
+    fun stationaryEveryFrameRegionsAreCoalescedWithoutDroppingCoverage() {
+        val regions = mutableListOf<TimedPiiRegion>()
+        repeat(20_000) { i ->
+            VideoPiiRedactionEngine.appendCoverageRegion(regions,
+                TimedPiiRegion(i * 0.04, (i + 1) * 0.04, RectF(10f, 10f, 40f, 40f), PiiClass.FACE, "face"))
+        }
+        assertEquals(1, regions.size)
+        assertEquals(800.0, regions.single().endSec, 0.000001)
+        assertEquals(0.0, regions.single().startSec, 0.000001)
+    }
+
+    @Test
+    fun frameCoverageUsesActualVariableFrameIntervalsAndLastHold() {
+        val detection = PiiDetection(RectF(20f, 30f, 40f, 60f), PiiClass.FACE, .9f, "face")
+        val region = VideoPiiRedactionEngine.frameCoverageRegions(120_000, 870_000, 2000, 320, 240, listOf(detection)).single()
+        assertEquals(0.12, region.startSec, 0.000001)
+        assertEquals(0.87, region.endSec, 0.000001)
+        assertTrue(region.rect.contains(detection.rect))
+        val last = VideoPiiRedactionEngine.frameCoverageRegions(1_100_000, null, 2000, 320, 240, listOf(detection)).single()
+        assertEquals(2.0, last.endSec, 0.000001)
+    }
+
+    @Test
+    fun sequentialModeRejectsSamplingFallback() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.sampleCountForSpan(1000, VideoPiiRedactionEngine.ScanDensity.EVERY_FRAME)
+        }
+    }
+
+    @Test
+    fun scanGeometryAndSamplingAreBounded() {
+        assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, 90))
+        assertEquals(1080 to 1920, VideoPiiRedactionEngine.displayDimensions(1920, 1080, -90))
+        assertEquals(1920 to 1080, VideoPiiRedactionEngine.displayDimensions(1920, 1080, 180))
+        assertEquals(1, VideoPiiRedactionEngine.sampleCountForSpan(1))
+        assertEquals(6, VideoPiiRedactionEngine.sampleCountForSpan(500))
+        assertEquals(120, VideoPiiRedactionEngine.sampleCountForSpan(Long.MAX_VALUE))
+    }
+
+    @Test
+    fun denseScanningIncreasesCoverageWithoutUnboundedAllocation() {
+        val dense = VideoPiiRedactionEngine.ScanDensity.DENSE
+        assertEquals(101, VideoPiiRedactionEngine.sampleCountForSpan(10_001, dense))
+        assertEquals(600, VideoPiiRedactionEngine.sampleCountForSpan(Long.MAX_VALUE, dense))
+        assertEquals(2, VideoPiiRedactionEngine.sampleCountForSpan(2, dense))
+        assertEquals(120, VideoPiiRedactionEngine.sampleCountForSpan(120_000))
+    }
+
+    @Test
+    fun tinyPositiveDetectionIsNotSilentlyDiscarded() {
+        val tiny = RectF(20.2f, 30.3f, 21.1f, 31.2f)
+        val (regions, _) = VideoPiiRedactionEngine.buildTrackedRegions(
+            listOf(0.0 to listOf(PiiDetection(tiny, PiiClass.FACE, .9f, "face"))),
+            320, 240, 1.0
+        )
+        assertTrue(regions.any { it.rect.contains(tiny) })
+    }
+
+    @Test
+    fun malformedObservationsAndCrowdedFramesFailClosed() {
+        val valid = PiiDetection(RectF(1f, 1f, 40f, 40f), PiiClass.FACE, .9f, "face")
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(
+                listOf(0.0 to listOf(valid.copy(rect = RectF(Float.NaN, 1f, 40f, 40f)))),
+                320, 240, 1.0
+            )
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(listOf(0.0 to List(513) { valid }), 320, 240, 1.0)
+        }
+    }
+
+    @Test
+    fun cancelledTrackingDoesNotMaterializePartialMasks() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            VideoPiiRedactionEngine.buildTrackedRegions(
+                listOf(0.0 to listOf(PiiDetection(RectF(1f, 1f, 40f, 40f), PiiClass.FACE, .9f, "face"))),
+                320, 240, 1.0, isCancelled = { true }
+            )
+        }
+    }
+
+    @Test
     fun testAnyFrameOrDetectorFailureMakesScanIncomplete() {
         assertTrue(
             VideoPiiRedactionEngine.isScanIncomplete(
@@ -99,6 +213,37 @@ class VideoPiiRedactionEngineTest {
         assertTrue("End of track should extend past last keyframe", regions.maxOf { it.endSec } >= 1.2)
         // Verify intervals progress left to right across X
         assertTrue(regions.last().rect.centerX() > regions.first().rect.centerX() + 500f)
+    }
+
+    @Test
+    fun movingMaskContainsEachObservedPositionEvenWithLeadAndTrailPadding() {
+        val first = RectF(10f, 100f, 70f, 160f)
+        val last = RectF(290f, 100f, 350f, 160f)
+        val (regions, tracks) = VideoPiiRedactionEngine.buildTrackedRegions(
+            listOf(1.0 to listOf(PiiDetection(first, PiiClass.FACE, .9f, "Face")),
+                2.0 to listOf(PiiDetection(last, PiiClass.FACE, .9f, "Face"))),
+            1920, 1080, 2.5, 1.0
+        )
+        assertEquals(1, tracks)
+        assertTrue(regions.any { it.startSec <= 1.0 && it.endSec >= 1.0 && it.rect.contains(first) })
+        assertTrue(regions.any { it.startSec <= 2.0 && it.endSec >= 2.0 && it.rect.contains(last) })
+        assertTrue(regions.all { it.endSec <= 2.5 })
+    }
+
+    @Test
+    fun filterCoordinatesAndTimesAlwaysRoundOutward() {
+        val region = TimedPiiRegion(.109, .421, RectF(11.7f, 13.8f, 20.1f, 24.2f), PiiClass.FACE, "Face")
+        val solid = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(listOf(region), 320, 240)!!
+        assertTrue(solid.contains("x=10:y=12:w=12:h=14"))
+        assertTrue(solid.contains("between(t,0.10,0.43)"))
+        val blur = VideoPiiRedactionEngine.generateFfmpegRedactionFilters(listOf(region), 320, 240, PiiRedactionStyle.BLUR)!!
+        assertTrue(blur.startsWith("[0:v:0]"))
+        assertTrue(blur.contains("crop=w=12:h=14:x=10:y=12:exact=1"))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            VideoPiiRedactionEngine.generateFfmpegRedactionFilters(
+                listOf(region.copy(rect = RectF(Float.NaN, 0f, 20f, 30f))), 320, 240
+            )
+        }
     }
 
     @Test

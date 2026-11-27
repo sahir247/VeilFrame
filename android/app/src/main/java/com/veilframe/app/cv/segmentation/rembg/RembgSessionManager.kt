@@ -1,6 +1,5 @@
 package com.veilframe.app.cv.segmentation.rembg
 
-import com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative
 
 /**
  * Manages NCNN native sessions and lifecycle for background removal models.
@@ -10,11 +9,11 @@ class RembgSessionManager(
     private val modelRepository: RembgModelRepository? = null,
 ) {
     fun closeSession(model: RembgModel) {
-        NcnnMattingNative.nativeRelease()
+        NcnnMattingTransactions.requestRelease()
     }
 
     fun closeAll() {
-        NcnnMattingNative.nativeRelease()
+        NcnnMattingTransactions.requestRelease()
     }
 }
 

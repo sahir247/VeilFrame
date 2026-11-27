@@ -62,7 +62,7 @@ jobs:
           sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list* /etc/apt/apt-mirrors.txt 2>/dev/null || true
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="15" -o Acquire::https::Timeout="15"
-          sudo apt-get install -y --no-install-recommends ninja-build python3 python3-pip git
+          sudo apt-get install -y --no-install-recommends ninja-build python3 python3-pip git nasm
           ninja --version
           python3 --version
           git --version
@@ -73,38 +73,95 @@ jobs:
       - name: Cache upstream and app Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
 
-      # The pinned upstream OpenCV Gradle project references JCenter, which
-      # redirects some artifact requests to repo1.maven.org. On shared CI runners
-      # that endpoint frequently returns HTTP 429. Prepend Maven Central's
-      # canonical endpoint *before* the generated project is evaluated.
-      - name: Prefer canonical Maven Central for upstream OpenCV Gradle
+      # The generated OpenCV Gradle 8.11.1/Kotlin 1.8.20 project resolves
+      # plugins independently of VeilFrame. GitHub-hosted runners recently hit
+      # 429 on BOTH repo.maven.apache.org and JCenter -> repo1.maven.org.
+      # Google Cloud's public Maven Central mirror is documented at
+      # https://maven-central.storage.googleapis.com/index.html
+      # Scope the override strictly to OpenCV's standalone generated project,
+      # retaining Google Maven for Android artifacts and Maven Central fallback.
+      - name: Prefer public Google Maven Central mirror for generated OpenCV Gradle
         shell: bash
         run: |
           set -Eeuo pipefail
           GRADLE_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
           mkdir -p "$GRADLE_DIR/init.d"
           cat > "$GRADLE_DIR/init.d/veilframe-opencv-maven.gradle" <<'GRADLE'
-          // Only the OpenCV-generated Gradle project needs this workaround.
-          // The VeilFrame root project uses FAIL_ON_PROJECT_REPOS and rejects
-          // project-level repository injections during its own build.
+          import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+          def mirrorUrl = 'https://maven-central.storage-download.googleapis.com/maven2/'
+          def mirrorOnlyOpenCv = { dir -> dir.absolutePath.contains('/.opencv_build/') }
+          // Hook *existing and future* repositories: the generated project
+          // adds JCenter/repo1 during evaluation, after beforeProject fires.
+          def replaceLegacyCentral = { repository ->
+              if (repository instanceof MavenArtifactRepository) {
+                  def host = repository.url.host?.toLowerCase(java.util.Locale.ROOT)
+                  if (host in ['repo1.maven.org', 'jcenter.bintray.com', 'jcenter.bintray.org']) {
+                      repository.url = new URI(mirrorUrl)
+                  }
+              }
+          }
           gradle.beforeSettings { settings ->
-              if (settings.settingsDir.absolutePath.contains('/.opencv_build/')) {
+              if (mirrorOnlyOpenCv(settings.settingsDir)) {
                   settings.pluginManagement.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
               }
           }
           gradle.beforeProject { project ->
-              if (project.rootDir.absolutePath.contains('/.opencv_build/')) {
+              if (mirrorOnlyOpenCv(project.rootDir)) {
                   project.buildscript.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
                   project.repositories {
-                      maven { url = uri('https://repo.maven.apache.org/maven2/') }
+                      maven { url = uri(mirrorUrl) }
+                      all { repository -> replaceLegacyCentral(repository) }
                   }
               }
           }
           GRADLE
+
+      # Avoid the generated OpenCV Android project's late wrapper download from
+      # services.gradle.org. That network timeout previously aborted ninja at
+      # 16/17 after C++ libraries had successfully linked.
+      - name: Cache pinned Gradle 8.11.1 archive for upstream OpenCV
+        uses: actions/cache@v6.1.0
+        with:
+          path: .ci-cache/gradle-8.11.1-bin.zip
+          key: opencv-gradle-8.11.1-bin-f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6
+
+      - name: Download and verify upstream OpenCV Gradle distribution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          DIST="${GITHUB_WORKSPACE}/.ci-cache/gradle-8.11.1-bin.zip"
+          SHA256="f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
+          mkdir -p "$(dirname "$DIST")"
+          if [ ! -f "$DIST" ] || ! echo "$SHA256  $DIST" | sha256sum --check --status; then
+            rm -f "$DIST"
+            success=false
+            for url in \
+              "https://downloads.gradle.org/distributions/gradle-8.11.1-bin.zip" \
+              "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"; do
+              if curl --fail --location --silent --show-error \
+                --retry 3 --retry-all-errors --retry-delay 3 \
+                --connect-timeout 20 --max-time 240 "$url" -o "$DIST" \
+                && echo "$SHA256  $DIST" | sha256sum --check --status; then
+                success=true
+                break
+              fi
+              echo "::warning::Pinned Gradle download failed or checksum mismatch: $url"
+              rm -f "$DIST"
+            done
+            if [ "$success" != true ]; then
+              echo "::error::Could not verify Gradle 8.11.1 distribution from either host."
+              exit 1
+            fi
+          fi
+          echo "$SHA256  $DIST" | sha256sum --check
+          echo "VEILFRAME_UPSTREAM_GRADLE_ZIP=$DIST" >> "$GITHUB_ENV"
 
       - name: Execute OpenCV Android SDK Build
         run: |
@@ -158,7 +215,68 @@ jobs:
         working-directory: android
         run: |
           ./gradlew :app:assembleDebug --no-daemon
+          # Stage Robolectric JARs explicitly and log resolved artifact paths
+          # before the test task. Any missing/corrupt jar fails the build.
+          ./gradlew :app:prepareRobolectricSdkJars --no-daemon --info
+          # Do not retry or suppress actual failing CV test assertions.
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*" --no-daemon
+
+      - name: Upload focused CV JVM test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: opencv-cv-jvm-test-evidence
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: ignore
+
+      # Build the same application and JNI sources natively for the x86_64
+      # test guest. ARM translation on API 30 aborts in its SIMD decoder.
+      # Provision only the matching NCNN ABI, never replace the vendored ARM64 SDK.
+      - name: Provision pinned NCNN x86_64 Vulkan SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          archive="$work/ncnn.zip"
+          curl --fail --location --retry 3 --retry-delay 3 --connect-timeout 20 --max-time 300 "https://github.com/Tencent/ncnn/releases/download/20260526/ncnn-20260526-android-vulkan.zip" -o "$archive"
+          echo "26909c92eed35afed4a966b5e9e503fcb0a529691ea3f910ec2c94a4fff52804  $archive" | sha256sum --check --strict
+          unzip -q "$archive" -d "$work"
+          sdk="$(find "$work" -type d -name x86_64 -print -quit)"
+          test -n "$sdk"
+          test -s "$sdk/lib/libncnn.a"
+          test -f "$sdk/lib/cmake/ncnn/ncnnConfig.cmake"
+          grep -q 'set(NCNN_VERSION 20260526)' "$sdk/lib/cmake/ncnn/ncnnConfig.cmake"
+          grep -q 'set(NCNN_VULKAN ON)' "$sdk/lib/cmake/ncnn/ncnnConfig.cmake"
+          destination="android/app/src/main/cpp/ncnn/x86_64"
+          test ! -e "$destination"
+          cp -a "$sdk" "$destination"
+
+      - name: Assemble and verify native x86_64 instrumentation APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PcvEmulatorX86=true --no-daemon
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          apks = list(Path("app/build/outputs/apk/debug").glob("*.apk"))
+          if len(apks) != 1:
+              raise SystemExit(f"Expected exactly one debug APK, found {apks}")
+          with zipfile.ZipFile(apks[0]) as apk:
+              libs = {name for name in apk.namelist() if name.startswith("lib/") and name.endswith(".so")}
+              wrong = sorted(name for name in libs if not name.startswith("lib/x86_64/"))
+              required = {"lib/x86_64/" + name for name in (
+                  "libopencv_java4.so", "libveilframe_ncnn.so", "libveilframe_jpeg.so"
+              )}
+              missing = sorted(required - libs)
+              if wrong or missing:
+                  raise SystemExit(f"Invalid x86_64 debug APK: wrong ABI={wrong}, missing={missing}")
+              print("Verified x86_64-only debug APK:", apks[0])
+          PY
 
       - name: Ensure Gradle Wrapper Executable Permissions
         run: |
@@ -176,8 +294,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm || true
           ls -la /dev/kvm || true
 
+      # This is a release gate, not informational telemetry. Previously
+      # continue-on-error let broken CV/preview instrumentation appear green.
       - name: Device Runtime Verification (WeChatQRCode + Native CV Subsystem on x86_64 Emulator)
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -187,14 +306,16 @@ jobs:
           profile: pixel_6
           working-directory: ./android
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # The emulator action runs each nonempty script line in its own
+          # sh -c process. Keep each command self-contained; never use shell
+          # continuations or multi-line compound statements in this input.
+          emulator-port: 5554
           script: |
             chmod +x ./gradlew
-            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv || {
-              echo "=== Dumping logcat crash log ==="
-              adb logcat -d -b crash || true
-              adb logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true
-              exit 1
-            }
+            timeout 90s sh -c 'until [ "$(timeout 5s adb -s emulator-5554 get-state 2>/dev/null)" = device ] && [ "$(timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ] && timeout 5s adb -s emulator-5554 shell pm path android 2>/dev/null | grep -q "^package:"; do sleep 2; done' || ( echo "::error::Emulator ADB, boot, or package manager readiness timed out"; adb devices -l; exit 1 )
+            adb -s emulator-5554 shell getprop ro.product.cpu.abilist
+            adb -s emulator-5554 shell getprop ro.product.cpu.abi | tr -d '\r' | grep -qx x86_64 || ( echo "::error::Expected a native x86_64 Android guest"; exit 1 )
+            ./gradlew :app:connectedDebugAndroidTest -PcvEmulatorX86=true -Pandroid.testInstrumentationRunnerArguments.package=com.veilframe.app.cv,com.veilframe.app.media.dialogs,com.veilframe.app.pdf.operations || ( status=$?; echo "=== Dumping native CV/preview instrumentation logcat ==="; timeout 20s adb -s emulator-5554 logcat -d -b crash || true; timeout 20s adb -s emulator-5554 logcat -d -s AndroidRuntime:E DEBUG:E libc:F | tail -n 100 || true; exit "$status" )
 
       - name: Upload Connected Android Test Reports
         if: always()

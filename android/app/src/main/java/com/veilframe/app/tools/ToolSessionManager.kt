@@ -6,6 +6,7 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.color.MaterialColors
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.databinding.*
@@ -251,10 +252,10 @@ class ToolSessionManager(
     }
 
     fun getToolTitle(mode: ToolMode): String = when (mode) {
-        ToolMode.AI_BUNDLE -> "AI BUNDLE"
+        ToolMode.AI_BUNDLE -> "AI BUNDLER"
         ToolMode.VIDEO_CLEANER -> "VIDEO CLEANER"
         ToolMode.IMAGE_CLEANER -> "IMAGE CLEANER"
-        ToolMode.FOLDER_SCANNER -> "FOLDER SCANNER"
+        ToolMode.FOLDER_SCANNER -> "FOLDER ANALYZER"
         ToolMode.IMAGE_COMPRESSOR -> "IMAGE STUDIO"
         ToolMode.VIDEO_COMPRESSOR -> "VIDEO STUDIO"
         ToolMode.IMAGE_UPSCALER -> "IMAGE UPSCALER"
@@ -272,11 +273,12 @@ class ToolSessionManager(
 
     fun configureToolUI(mode: ToolMode) {
         currentToolMode = mode
+        updateUtilityWorkspaceHero(mode)
         binding.layoutBundleDepthControl.visibility = if (mode == ToolMode.AI_BUNDLE) View.VISIBLE else View.GONE
         when (mode) {
             ToolMode.AI_BUNDLE -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "AI Bundle"
+                binding.tvToolTitle.text = "AI Bundler"
                 binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
                 binding.btnPickFolder.text = "Project Folder"
                 binding.btnPickFile.text = "Single File"
@@ -284,8 +286,8 @@ class ToolSessionManager(
                 configureOptions(
                     paramHeader = "AI BUNDLE CONFIGURATION",
                     primaryLabel = "Token Budget",
-                    primaryDesc = "Target context window limit for LLM prompt ingestion",
-                    primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
+                    primaryDesc = "Choose o200k_base or cl100k_base artifact tokens (2 MiB cap); chat overhead differs. Byte-only: 32 MiB.",
+                    primaryChips = BundleBudgetOptions.choices.map { it.label },
                     primaryDefaultIndex = 1,
                     formatLabel = "Bundle Format",
                     formatDesc = "Output archive extension and structured packaging",
@@ -305,7 +307,7 @@ class ToolSessionManager(
             }
             ToolMode.VIDEO_CLEANER -> {
                 binding.tvToolTitle.text = "Video Cleaner"
-                binding.tvToolSubtitle.text = "Remove forensic identifiers & camera sensor noise"
+                binding.tvToolSubtitle.text = "Clean metadata and re-encode video with selectable privacy options"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Video"
 
@@ -322,8 +324,8 @@ class ToolSessionManager(
 
                 configureOptions(
                     paramHeader = "VIDEO PRIVACY PARAMETERS",
-                    primaryLabel = "Sensor Fingerprint Protection",
-                    primaryDesc = "Mitigate camera sensor pattern noise (PRNU forensic defense)",
+                    primaryLabel = "Video Noise Treatment",
+                    primaryDesc = "Select temporal noise processing (not validated camera anonymity)",
                     primaryChips = listOf("Standard", "High", "Stealth", "None"),
                     primaryDefaultIndex = 0,
                     formatLabel = "Container Format",
@@ -343,8 +345,8 @@ class ToolSessionManager(
                 )
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvToolTitle.text = "Image Cleaner & PRNU Purifier"
-                binding.tvToolSubtitle.text = "Scrub camera fingerprints, sensor PRNU, AI attribution manifolds & EXIF"
+                binding.tvToolTitle.text = "Image Cleaner"
+                binding.tvToolSubtitle.text = "Remove sensitive metadata and optionally alter image content"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Image"
 
@@ -383,7 +385,7 @@ class ToolSessionManager(
             }
             ToolMode.FOLDER_SCANNER -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "Folder Scanner"
+                binding.tvToolTitle.text = "Folder Analyzer"
                 binding.tvToolSubtitle.text = "Perform structural directory audits, secret scans & duplicate hunts"
                 binding.btnPickFolder.text = "Select Folder"
                 binding.btnPickFile.text = "Select File"
@@ -437,70 +439,75 @@ class ToolSessionManager(
         }
     }
 
-    private fun createChipBackgroundStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_surface_variant)
+    /**
+     * The four utility tools share one layout; update its entire introduction
+     * on every mode switch rather than leaking the previous screen's identity.
+     */
+    private fun updateUtilityWorkspaceHero(mode: ToolMode) {
+        val hero = binding.layoutToolWorkflow
+        val (eyebrow, title, description, icon) = when (mode) {
+            ToolMode.AI_BUNDLE -> UtilityHero(
+                "DEVELOPER WORKSPACE", "AI Bundler",
+                "Turn project files into locally prepared context bundles.",
+                R.drawable.ic_tab_bundle
             )
-        )
+            ToolMode.FOLDER_SCANNER -> UtilityHero(
+                "FILE INTELLIGENCE", "Folder Analyzer",
+                "Inspect structure, duplicates and optional secret indicators.",
+                R.drawable.ic_tab_folder
+            )
+            ToolMode.IMAGE_CLEANER -> UtilityHero(
+                "IMAGE PRIVACY", "Image Cleaner",
+                "Control metadata removal and optional image transformations.",
+                R.drawable.ic_tab_image
+            )
+            ToolMode.VIDEO_CLEANER -> UtilityHero(
+                "VIDEO PRIVACY", "Video Cleaner",
+                "Control video metadata, noise treatment and re-encoding.",
+                R.drawable.ic_tab_video
+            )
+            else -> return
+        }
+        hero.tvToolHeroEyebrow.text = eyebrow
+        hero.tvToolHeroTitle.text = title
+        hero.tvToolHeroDescription.text = description
+        hero.ivToolHeroIcon.setImageResource(icon)
     }
 
-    private fun createChipTextStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_on_primary),
-                activity.getColor(R.color.vf_text_primary)
-            )
-        )
-    }
+    private data class UtilityHero(
+        val eyebrow: String,
+        val title: String,
+        val description: String,
+        val icon: Int
+    )
 
-    private fun createChipStrokeStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_surface_stroke)
-            )
-        )
-    }
+    /** Resolve active M3 overlay roles (Dynamic Color, accents, Dark, AMOLED). */
+    private fun role(attr: Int, fallback: Int): Int =
+        MaterialColors.getColor(activity, attr, activity.getColor(fallback))
 
-    private fun createSwitchThumbStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary),
-                activity.getColor(R.color.vf_text_muted)
-            )
+    private fun createChipBackgroundStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(com.google.android.material.R.attr.colorSecondaryContainer, R.color.vf_primary_container),
+            role(com.google.android.material.R.attr.colorSurfaceContainerHigh, R.color.vf_surface_variant)
         )
-    }
+    )
 
-    private fun createSwitchTrackStateList(): ColorStateList {
-        return ColorStateList(
-            arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf(-android.R.attr.state_checked)
-            ),
-            intArrayOf(
-                activity.getColor(R.color.vf_primary_container),
-                activity.getColor(R.color.vf_surface_variant)
-            )
+    private fun createChipTextStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(com.google.android.material.R.attr.colorOnSecondaryContainer, R.color.vf_on_primary_container),
+            role(com.google.android.material.R.attr.colorOnSurface, R.color.vf_text_primary)
         )
-    }
+    )
+
+    private fun createChipStrokeStateList(): ColorStateList = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(
+            role(com.google.android.material.R.attr.colorSecondary, R.color.vf_secondary),
+            role(com.google.android.material.R.attr.colorOutlineVariant, R.color.vf_outline_variant)
+        )
+    )
 
     fun configureOptions(
         paramHeader: String,
@@ -540,9 +547,10 @@ class ToolSessionManager(
                 chipStrokeWidth = resources.displayMetrics.density * 1.5f
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
-                textSize = 12f
+                textSize = 13f
+                minHeight = (48 * resources.displayMetrics.density).toInt()
                 shapeAppearanceModel = shapeAppearanceModel.toBuilder()
-                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .setAllCornerSizes(resources.displayMetrics.density * 24f)
                     .build()
                 ExpressiveMotion.applyTouchBounce(this)
                 setOnCheckedChangeListener { _, isChecked ->
@@ -569,9 +577,10 @@ class ToolSessionManager(
                 chipStrokeWidth = resources.displayMetrics.density * 1.5f
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
-                textSize = 12f
+                textSize = 13f
+                minHeight = (48 * resources.displayMetrics.density).toInt()
                 shapeAppearanceModel = shapeAppearanceModel.toBuilder()
-                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .setAllCornerSizes(resources.displayMetrics.density * 24f)
                     .build()
                 ExpressiveMotion.applyTouchBounce(this)
             }
@@ -581,26 +590,21 @@ class ToolSessionManager(
         binding.tvSwitch1Title.text = switch1Title
         binding.tvSwitch1Desc.text = switch1Desc
         binding.switchOption1.isChecked = switch1Checked
-        binding.switchOption1.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption1.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch2Title.text = switch2Title
         binding.tvSwitch2Desc.text = switch2Desc
         binding.switchOption2.isChecked = switch2Checked
-        binding.switchOption2.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption2.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch3Title.text = switch3Title
         binding.tvSwitch3Desc.text = switch3Desc
         binding.switchOption3.isChecked = switch3Checked
-        binding.switchOption3.thumbTintList = createSwitchThumbStateList()
-        binding.switchOption3.trackTintList = createSwitchTrackStateList()
 
         binding.btnExecute.text = executeText
     }
 
     fun clearSelectedTarget(logMessage: Boolean = true) {
         val state = currentState
+        state.targetRevision++
         state.selectedUri = null
         state.selectedPathDisplay = "No file or folder selected"
         state.isFolderSelected = false
@@ -634,7 +638,7 @@ class ToolSessionManager(
             binding.layoutTargetEmpty.visibility = View.GONE
             binding.layoutTargetMounted.visibility = View.VISIBLE
             binding.tvSelectedPath.text = state.selectedPathDisplay
-            binding.tvSelectedPath.setTextColor(activity.getColor(R.color.vf_text_primary))
+            binding.tvSelectedPath.setTextColor(role(com.google.android.material.R.attr.colorOnSurface, R.color.vf_text_primary))
             binding.tvTargetDetails.text = if (state.isFolderSelected) {
                 "${state.targetFileCount} files • ${safStorageManager.formatBytes(state.targetTotalBytes)} • Ready"
             } else {
@@ -693,9 +697,15 @@ class ToolSessionManager(
     fun updatePrivacySummaryUI() {
         when (currentToolMode) {
             ToolMode.AI_BUNDLE -> {
-                binding.tvPrivacyProfileBadge.text = "LLM Packaging"
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                val maskingEnabled = binding.switchOption1.isChecked
+                binding.tvPrivacyProfileBadge.text =
+                    if (maskingEnabled) "MASKED CONTEXT BUNDLE" else "UNMASKED CONTEXT"
+                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(
+                    if (maskingEnabled) R.color.vf_accent_green else R.color.vf_accent_amber
+                ))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (maskingEnabled) R.drawable.bg_badge_pass else R.drawable.bg_badge_warn
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "• Raw credentials unmasked (masking disabled)"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Test suites, mocks & fixtures excluded from context" else "• Full source directory included"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Dependency manifests compressed to reduce prompt tokens" else "• Manifest compression disabled"
@@ -707,9 +717,18 @@ class ToolSessionManager(
                     2 -> "Stealth"
                     else -> "None"
                 }
-                binding.tvPrivacyProfileBadge.text = "$noiseLevel DEFENSE".uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                // None is a user-selected disablement, not a passed privacy test.
+                val noiseEnabled = noiseLevel != "None"
+                binding.tvPrivacyProfileBadge.text = if (noiseEnabled) {
+                    "$noiseLevel NOISE TREATMENT".uppercase()
+                } else "NO NOISE TREATMENT"
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (noiseEnabled) activity.getColor(R.color.vf_accent_green)
+                    else role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (noiseEnabled) R.drawable.bg_badge_pass else R.drawable.bg_badge_neutral
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Camera EXIF, GPS coordinates & device serials purged" else "• EXIF & GPS retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Audio stream stripped completely" else "• Audio stream preserved (metadata tags scrubbed)"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked with temporal dithering & asymmetric scaling" else "• Stream remuxed without pixel alteration"
@@ -721,9 +740,17 @@ class ToolSessionManager(
                     2 -> "High Suppression"
                     else -> "Metadata Strip"
                 }
-                binding.tvPrivacyProfileBadge.text = "$mode PRNU Suppression".uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                val metadataOnly = getSelectedOptionIndex() == 3
+                binding.tvPrivacyProfileBadge.text = if (metadataOnly) {
+                    "METADATA ONLY"
+                } else "$mode IMAGE TREATMENT".uppercase()
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (metadataOnly) role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    else activity.getColor(R.color.vf_accent_green)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (metadataOnly) R.drawable.bg_badge_neutral else R.drawable.bg_badge_pass
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Neural/geometric image perturbation applied; camera PRNU not independently verified" else "• Neural/geometric perturbation skipped"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Clean IJG quantization re-encoding applied" else "• Container re-encode skipped"
@@ -734,11 +761,25 @@ class ToolSessionManager(
                     1 -> "Deep Forensic"
                     else -> "Duplicate Hunt"
                 }
+                val quick = mode == "Quick Audit"
                 binding.tvPrivacyProfileBadge.text = mode.uppercase()
-                binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
+                binding.tvPrivacyProfileBadge.setTextColor(
+                    if (quick) role(com.google.android.material.R.attr.colorOnSurfaceVariant, R.color.vf_text_secondary)
+                    else activity.getColor(R.color.vf_accent_green)
+                )
+                binding.tvPrivacyProfileBadge.setBackgroundResource(
+                    if (quick) R.drawable.bg_badge_neutral else R.drawable.bg_badge_pass
+                )
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Recursive directory traversal across all subprojects" else "• Top-level directory only"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• SHA-256 cryptographic hashing active" else "• SHA-256 calculation skipped (low CPU/battery)"
+                // All three rows share one view across four modes. Failing to
+                // update this row leaves unrelated cleaner/AI-bundle copy on
+                // Folder Analyzer when the user switches tools.
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) {
+                    "• Heuristic credential and token scan enabled (review matches)"
+                } else {
+                    "• Heuristic credential and token scan disabled"
+                }
             }
             ToolMode.IMAGE_COMPRESSOR,
             ToolMode.VIDEO_COMPRESSOR,

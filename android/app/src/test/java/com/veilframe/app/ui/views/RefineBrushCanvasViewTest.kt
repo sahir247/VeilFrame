@@ -158,6 +158,7 @@ class RefineBrushCanvasViewTest {
         assertEquals(0, Color.alpha(view.getRefinedBitmap()!!.getPixel(15, 15)))
         assertTrue(view.canUndo())
         assertFalse(view.canRedo())
+        assertEquals(1, view.replaySnapshot()!!.size)
 
         // Undo -> should revert to green with alpha = 255
         view.undo()
@@ -165,12 +166,64 @@ class RefineBrushCanvasViewTest {
         assertEquals(Color.GREEN, view.getRefinedBitmap()!!.getPixel(15, 15))
         assertFalse(view.canUndo())
         assertTrue(view.canRedo())
+        assertTrue(view.replaySnapshot()!!.isEmpty())
 
         // Redo -> should re-erase center
         view.redo()
+        assertEquals(1, view.replaySnapshot()!!.size)
         assertEquals(0, Color.alpha(view.getRefinedBitmap()!!.getPixel(15, 15)))
         assertTrue(view.canUndo())
         assertFalse(view.canRedo())
+    }
+
+    @Test
+    fun restoreUsesAlignedSourcePreviewAndPreservesSourceAlpha() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        val source = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.RED)
+            for (y in 0 until 20) for (x in 10 until 20) setPixel(x, y, Color.argb(128, 0, 0, 255))
+        }
+        val cutout = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
+        try {
+            view.setBitmaps(source, cutout)
+            assertFalse(view.hasEdits)
+            view.brushMode = RefineBrushCanvasView.BrushMode.RESTORE
+            view.brushRadiusPx = 4f
+            view.applyStrokeDirect(12f, 20f, 12f, 20f)
+            view.getRefinedBitmap()!!.let { assertEquals(Color.RED, it.getPixel(12, 20)); it.recycle() }
+            view.applyStrokeDirect(30f, 20f, 30f, 20f)
+            view.getRefinedBitmap()!!.let { assertEquals(Color.argb(128, 0, 0, 255), it.getPixel(30, 20)); it.recycle() }
+            assertTrue(view.hasEdits)
+            view.undo()
+            view.undo()
+            assertFalse(view.hasEdits)
+        } finally { view.cleanup(); source.recycle(); cutout.recycle() }
+    }
+
+    @Test
+    fun replayRetainsEditsOlderThanBitmapUndoHistory() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        val source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        val cutout = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        try {
+            view.setBitmaps(source, cutout)
+            repeat(10) {
+                view.applyStrokeDirect(it.toFloat(), 10f, it.toFloat(), 10f)
+            }
+            assertEquals(10, view.replaySnapshot()!!.size)
+            var undone = 0
+            while (view.canUndo()) { view.undo(); undone++ }
+            assertTrue(undone in 1..5)
+            assertEquals(10 - undone, view.replaySnapshot()!!.size)
+            assertTrue(view.hasEdits)
+        } finally { view.cleanup(); source.recycle(); cutout.recycle() }
+    }
+
+    @Test
+    fun historyCapacityRejectsUnboundedFullResolutionCopies() {
+        val view = RefineBrushCanvasView(RuntimeEnvironment.getApplication())
+        assertTrue(view.historyCapacity(50, 50) >= 2)
+        assertEquals(0, view.historyCapacity(16000, 8000))
     }
 
     @Test

@@ -34,7 +34,8 @@ import java.io.File
  */
 internal object PdfFlattenPreviewSizing {
     fun dpi(pageWidthPoints: Float, pageHeightPoints: Float, maxEdgePx: Float = 1280f): Float {
-        if (pageWidthPoints <= 0f || pageHeightPoints <= 0f) return 72f
+        require(pageWidthPoints.isFinite() && pageHeightPoints.isFinite() && maxEdgePx.isFinite() &&
+            pageWidthPoints > 0f && pageHeightPoints > 0f && maxEdgePx in 1f..4096f) { "Invalid preview dimensions" }
         val scale = minOf(
             1.5f,
             maxEdgePx / pageWidthPoints,
@@ -62,7 +63,7 @@ class PdfFlattenController(
     private var previewJob: Job? = null
     private var isFlattening: Boolean = false
     private var isSaved: Boolean = false
-    private var formFieldCount: Int = 0
+    private var generation: Long = 0
 
     private val pdfFlattener by lazy { PdfFlattener() }
 
@@ -71,6 +72,7 @@ class PdfFlattenController(
     override val isProcessing: Boolean get() = isFlattening
 
     override fun discardAndReleaseAllResources() {
+        generation++
         taskTracker.cancelAll()
         previewJob?.cancel()
         beforeBitmap?.recycle()
@@ -120,6 +122,10 @@ class PdfFlattenController(
             val uri = activePdfUri ?: return@setOnClickListener
             if (isFlattening) return@setOnClickListener
 
+            val owner = ++generation
+            previewJob?.cancel()
+            binding.pbFlattenLoading.visibility = View.GONE
+            val sourceName = activePdfName
             isFlattening = true
             binding.btnFlattenExecute.isEnabled = false
             binding.btnFlattenExecute.text = "Flattening Document..."
@@ -129,7 +135,7 @@ class PdfFlattenController(
                 try {
                     val cacheDir = File(activity.cacheDir, "pdf_flatten_temp")
                     if (!cacheDir.exists()) cacheDir.mkdirs()
-                    val outputFile = File(cacheDir, "flattened_${System.currentTimeMillis()}.pdf")
+                    val outputFile = File.createTempFile("flattened_", ".pdf", cacheDir)
                     tempOutFile = outputFile
                     val outUri = Uri.fromFile(outputFile)
 
@@ -150,13 +156,14 @@ class PdfFlattenController(
                     }
 
                     withContext(Dispatchers.Main) {
+                        if (owner != generation || activePdfUri != uri) return@withContext
                         isFlattening = false
                         binding.btnFlattenExecute.isEnabled = true
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
 
                         if (flattenedFile != null) {
-                            isSaved = true
-                            val base = activePdfName.removeSuffix(".pdf")
+                            // Handing off to a Save picker does not prove external publication.
+                            val base = sourceName.removeSuffix(".pdf")
                             val exportName = "${base}_flattened.pdf"
                             // Transfer the temporary file to PdfSuiteCoordinator; it streams it to SAF.
                             onSavePdfRequest(flattenedFile, exportName)
@@ -170,6 +177,7 @@ class PdfFlattenController(
                     throw cancelled
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
+                        if (owner != generation || activePdfUri != uri) return@withContext
                         isFlattening = false
                         binding.btnFlattenExecute.isEnabled = true
                         binding.btnFlattenExecute.text = "Flatten & Save PDF"
@@ -183,6 +191,7 @@ class PdfFlattenController(
     }
 
     fun onPdfSelected(uri: Uri) {
+        generation++
         taskTracker.cancelAll()
         previewJob = null
         beforeBitmap?.recycle()
@@ -210,6 +219,7 @@ class PdfFlattenController(
 
     private fun renderLivePreviews(uri: Uri) {
         previewJob?.cancel()
+        val owner = generation
         binding.pbFlattenLoading.visibility = View.VISIBLE
         previewJob = taskTracker.launch(Dispatchers.IO) {
             var before: Bitmap? = null
@@ -217,7 +227,9 @@ class PdfFlattenController(
             var pageCount = 0
             var fields = 0
             try {
-                val document = activity.contentResolver.openInputStream(uri)?.use { PDDocument.load(it) }
+                val document = activity.contentResolver.openInputStream(uri)?.use {
+                    PDDocument.load(it, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())
+                }
                     ?: throw IllegalStateException("Unable to open the selected PDF for preview")
 
                 document.use { doc ->
@@ -225,23 +237,30 @@ class PdfFlattenController(
                     check(pageCount > 0) { "PDF has no pages to preview" }
                     val acroForm = doc.documentCatalog.acroForm
                     fields = acroForm?.fields?.size ?: 0
-                    formFieldCount = fields
-
                     val renderer = PDFRenderer(doc)
                     // Preview only needs screen resolution. Bound the longest edge to 1280 px;
                     // 150-DPI rendering made large-format pages allocate very large bitmaps.
-                    val pageBox = doc.getPage(0).mediaBox
+                    val pageBox = doc.getPage(0).cropBox
                     val previewDpi = PdfFlattenPreviewSizing.dpi(pageBox.width, pageBox.height)
                     before = renderer.renderImageWithDPI(0, previewDpi)
 
-                    // Render simulated flattened after bitmap using the same bounded resolution.
-                    acroForm?.flatten()
-                    after = renderer.renderImageWithDPI(0, previewDpi)
+                    // Use the same form/annotation admission and appearance
+                    // implementation as export, rather than a forms-only simulation.
+                    com.veilframe.app.pdf.operations.requirePdfRewriteAllowed(doc)
+                    pdfFlattener.flattenForms(doc)
+                    coroutineContext.ensureActive()
+                    pdfFlattener.flattenPageAnnotations(doc, doc.getPage(0))
+                    com.veilframe.app.pdf.operations.PdfActiveContentSanitizer.remove(doc, javascript = true, attachments = false)
+                    after = PDFRenderer(doc).renderImageWithDPI(0, previewDpi)
                 }
 
                 coroutineContext.ensureActive()
                 withContext(Dispatchers.Main) {
+                    if (owner != generation || activePdfUri != uri) return@withContext
                     binding.pbFlattenLoading.visibility = View.GONE
+                    binding.ivFlattenPreview.setImageDrawable(null)
+                    beforeBitmap?.recycle()
+                    afterBitmap?.recycle()
                     beforeBitmap = before
                     afterBitmap = after
                     before = null
@@ -258,6 +277,7 @@ class PdfFlattenController(
                 throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (owner != generation || activePdfUri != uri) return@withContext
                     binding.pbFlattenLoading.visibility = View.GONE
                     binding.tvFlattenDocMeta.text = "Error rendering preview: ${e.message}"
                 }

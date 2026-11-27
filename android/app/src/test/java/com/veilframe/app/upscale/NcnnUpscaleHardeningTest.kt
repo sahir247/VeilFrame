@@ -48,6 +48,28 @@ class NcnnUpscaleHardeningTest {
     }
 
     @Test
+    fun scanlineValidationHandlesChunkBoundariesAndCancellation() {
+        val file = tempFolder.newFile("wide_rgba.png")
+        val width = 4097
+        val height = 19
+        StreamingPngWriter(file, width, height).use { writer ->
+            val random = java.util.Random(456)
+            repeat(height) { writer.writeRow(IntArray(width) { random.nextInt() }) }
+        }
+        NcnnUpscaleEngine.validatePngFile(file, width, height, 4)
+        org.junit.Assert.assertThrows(ImageValidationException::class.java) {
+            NcnnUpscaleEngine.validatePngFile(file, width, height, 3)
+        }
+        var checks = 0
+        org.junit.Assert.assertThrows(UpscaleCancellationException::class.java) {
+            NcnnUpscaleEngine.validatePngFile(file, width, height, 4) {
+                if (++checks == 5) throw UpscaleCancellationException("test cancellation")
+            }
+        }
+        NcnnUpscaleEngine.validatePngFile(file, width, height, 4)
+    }
+
+    @Test
     fun testValidatePngFile_TruncatedOrEmptyFileThrowsImageValidationException() {
         val emptyFile = tempFolder.newFile("empty.png")
         try {

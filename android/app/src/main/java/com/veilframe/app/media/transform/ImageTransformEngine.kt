@@ -100,6 +100,9 @@ object ImageTransformEngine {
         origFullH: Int = src.height,
         useFullRes: Boolean = false
     ): Bitmap {
+        // Export may not silently omit a user-selected crop, blur, resize or
+        // color transform. Preview rendering can degrade visually and report a
+        // warning; useFullRes=true is the strict, fail-closed export path.
         var result = src
 
         // 0. Layer C Isolated Redaction (AI PII Auto-Redactor)
@@ -123,7 +126,8 @@ object ImageTransformEngine {
             try {
                 result = Bitmap.createBitmap(result, cropL, cropT, cropR - cropL, cropB - cropT)
             } catch (e: Exception) {
-                Log.w(TAG, "Crop error: ${e.message}")
+                if (useFullRes) throw IllegalStateException("Export crop failed; refusing an unedited image", e)
+                Log.w(TAG, "Crop preview error: ${e.message}", e)
             }
         } else if (state.cropAspect != "Free" && state.cropAspect != "Original") {
             val ratio = when {
@@ -150,7 +154,8 @@ object ImageTransformEngine {
                 try {
                     result = Bitmap.createBitmap(result, left, top, w, h)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Aspect crop error: ${e.message}")
+                    if (useFullRes) throw IllegalStateException("Export aspect crop failed; refusing an unedited image", e)
+                    Log.w(TAG, "Aspect crop preview error: ${e.message}", e)
                 }
             }
         }
@@ -169,7 +174,8 @@ object ImageTransformEngine {
                 }
                 result = Bitmap.createBitmap(result, 0, 0, result.width, result.height, matrix, true)
             } catch (e: Exception) {
-                Log.w(TAG, "Rotate/Flip error: ${e.message}")
+                if (useFullRes) throw IllegalStateException("Export rotation/flip failed; refusing an unedited image", e)
+                Log.w(TAG, "Rotation preview error: ${e.message}", e)
             }
         }
 
@@ -201,7 +207,8 @@ object ImageTransformEngine {
                     )
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Blur transform error: ${e.message}")
+                if (useFullRes) throw IllegalStateException("Export blur failed; refusing an unblurred image", e)
+                Log.w(TAG, "Blur preview error: ${e.message}", e)
             }
         }
 
@@ -232,8 +239,8 @@ object ImageTransformEngine {
             try {
                 result = Bitmap.createScaledBitmap(result, targetWidth, targetHeight, true)
             } catch (t: Throwable) {
-                Log.w(TAG, "createScaledBitmap error: ${t.message}", t)
-                System.gc()
+                if (useFullRes) throw IllegalStateException("Export resizing failed; refusing wrong dimensions", t)
+                Log.w(TAG, "Preview resizing failed: ${t.message}", t)
             }
         }
 
@@ -250,7 +257,8 @@ object ImageTransformEngine {
                 canvas.drawBitmap(result, 0f, 0f, null)
                 result = bgBmp
             } catch (e: Exception) {
-                Log.w(TAG, "Background fill error: ${e.message}")
+                if (useFullRes) throw IllegalStateException("Export background fill failed; refusing wrong background", e)
+                Log.w(TAG, "Background preview error: ${e.message}", e)
             }
         }
 
@@ -287,6 +295,9 @@ object ImageTransformEngine {
                         else -> null
                     }
 
+                if (colorMatrix == null && useFullRes) {
+                    throw IllegalArgumentException("Unsupported export color filter: ${state.filter}")
+                }
                 if (colorMatrix != null) {
                     val filteredBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(filteredBmp)
@@ -297,7 +308,8 @@ object ImageTransformEngine {
                     result = filteredBmp
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Color filter error: ${e.message}")
+                if (useFullRes) throw IllegalStateException("Export color filter failed; refusing unfiltered image", e)
+                Log.w(TAG, "Color preview error: ${e.message}", e)
             }
         }
 

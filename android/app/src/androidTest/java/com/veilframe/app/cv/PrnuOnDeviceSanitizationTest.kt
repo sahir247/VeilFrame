@@ -10,6 +10,7 @@ import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.prnu.PrnuSanitizerEngine
 import com.veilframe.app.cv.prnu.ncnn.VeilNetNanoNative
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -124,5 +125,63 @@ class PrnuOnDeviceSanitizationTest {
         origBmp.recycle()
         sanBmp.recycle()
         testDir.deleteRecursively()
+    }
+
+    @Test
+    fun testPrnuSanitizerOnRealCameraPhoto() {
+        val photoCandidates = listOf(
+            File("/data/local/tmp/test_portrait.jpg"),
+            File("/data/local/tmp/veilframe_validation/real_inputs_20/06_720p_real_portrait.jpg"),
+            File("/data/local/tmp/veilframe_validation/real_inputs_20/10_1080p_real_human.jpg"),
+            File("/sdcard/Download/wallpaperflare.com_wallpaper.jpg")
+        )
+        val realPhoto = photoCandidates.firstOrNull { it.exists() && it.length() > 0L }
+        if (realPhoto == null) {
+            android.util.Log.w("PrnuTest", "No real camera photo found on device; skipping real photo PRNU test")
+            return
+        }
+
+        val testDir = File(context.cacheDir, "prnu_real_photo_test").apply { mkdirs() }
+        val outputFile = File(testDir, "sanitized_real_photo.jpg")
+        try {
+            val milestones = mutableListOf<String>()
+            val success = PrnuSanitizerEngine.sanitizeImageFile(
+                context = context,
+                inputFile = realPhoto,
+                outputFile = outputFile,
+                mode = PrnuSanitizerEngine.DefenseMode.STEALTH_HYBRID,
+                onMilestone = { milestones.add(it) }
+            )
+
+            assertTrue("Sanitization on physical real photo must succeed", success)
+            assertTrue("Sanitized output must exist and be non-empty", outputFile.exists() && outputFile.length() > 0L)
+            assertTrue("Must complete Stage 1 VeilNet", milestones.any { it.contains("VeilNet-Nano") })
+            assertTrue("Must complete Stage 2 Coarse Remap", milestones.any { it.contains("Stage 2") })
+            assertTrue("Must complete Stage 3 Clean IJG", milestones.any { it.contains("Stage 3") })
+
+            val origMat = Mat()
+            val sanMat = Mat()
+            val origBmp = android.graphics.BitmapFactory.decodeFile(realPhoto.absolutePath)
+            val sanBmp = android.graphics.BitmapFactory.decodeFile(outputFile.absolutePath)
+            Utils.bitmapToMat(origBmp, origMat)
+            Utils.bitmapToMat(sanBmp, sanMat)
+
+            val audit = PrnuSanitizerEngine.auditSanitization(origMat, sanMat, maxDimension = 512)
+            android.util.Log.i(
+                "PrnuTest",
+                "Real photo PRNU audit (${realPhoto.name}) — baseline sPCE: ${audit.baselineSpce}, post sPCE: ${audit.postSpce}, max strip: ${audit.post6StripMaxSpce}"
+            )
+            assertTrue("Baseline sPCE must be finite", audit.baselineSpce.isFinite())
+            assertTrue("Post sPCE must be finite", audit.postSpce.isFinite())
+            assertFalse("Single-image residual correlation cannot certify camera PRNU removal", audit.verifiedSecure)
+            assertFalse("No independent camera fingerprint reference was supplied", audit.isConclusive)
+
+            origMat.release()
+            sanMat.release()
+            origBmp.recycle()
+            sanBmp.recycle()
+        } finally {
+            testDir.deleteRecursively()
+        }
     }
 }

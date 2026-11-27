@@ -12,8 +12,8 @@
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
-        app:elevation="2dp">
+        android:background="?attr/colorSurfaceContainerLowest"
+        app:elevation="0dp">
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -26,6 +26,7 @@
                 android:layout_height="56dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
+                android:background="?attr/colorSurfaceContainerLowest"
                 android:visibility="visible"
                 app:contentInsetStart="0dp"
                 app:contentInsetEnd="0dp">
@@ -76,7 +77,7 @@
                         android:layout_marginStart="4dp"
                         android:contentDescription="Appearance and Customization Settings"
                         app:icon="@drawable/ic_settings"
-                        app:iconTint="@color/vf_primary" />
+                        app:iconTint="?attr/colorOnSurface" />
                 </LinearLayout>
             </com.google.android.material.appbar.MaterialToolbar>
 
@@ -87,6 +88,7 @@
                 android:layout_height="56dp"
                 android:paddingStart="8dp"
                 android:paddingEnd="16dp"
+                android:background="?attr/colorSurfaceContainerLowest"
                 android:visibility="gone"
                 app:contentInsetStart="0dp"
                 app:contentInsetEnd="0dp">
@@ -107,7 +109,7 @@
                         android:maxLines="1"
                         android:contentDescription="Back to Home Dashboard"
                         app:icon="@drawable/ic_arrow_back"
-                        app:iconTint="@color/vf_primary" />
+                        app:iconTint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -158,7 +160,7 @@
                         android:layout_marginStart="4dp"
                         android:contentDescription="Appearance and Customization Settings"
                         app:icon="@drawable/ic_settings"
-                        app:iconTint="@color/vf_primary" />
+                        app:iconTint="?attr/colorOnSurface" />
                 </LinearLayout>
             </com.google.android.material.appbar.MaterialToolbar>
         </FrameLayout>
@@ -411,7 +413,7 @@
                 app:iconGravity="textStart"
                 android:text="Save"
                 app:icon="@drawable/ic_action_save"
-                app:iconTint="@color/vf_primary"
+                app:iconTint="?attr/colorPrimary"
                 app:iconSize="18dp"
                 android:visibility="gone" />
 
@@ -429,7 +431,7 @@
                 app:iconGravity="textStart"
                 android:text="Share"
                 app:icon="@drawable/ic_action_share"
-                app:iconTint="@color/vf_primary"
+                app:iconTint="?attr/colorPrimary"
                 app:iconSize="18dp"
                 android:visibility="gone" />
         </LinearLayout>
@@ -443,9 +445,11 @@
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="?attr/colorSurface"
+        android:background="?attr/colorSurfaceContainerLowest"
         android:visibility="gone"
-        app:elevation="8dp"
+        app:elevation="0dp"
+        app:itemIconTint="@color/selector_vf_navigation_item"
+        app:itemTextColor="@color/selector_vf_navigation_item"
         app:menu="@menu/bottom_nav_menu" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
@@ -453,9 +457,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="?attr/colorSurface"
+        android:background="?attr/colorSurfaceContainerLowest"
         android:visibility="visible"
-        app:elevation="8dp"
+        app:elevation="0dp"
+        app:itemIconTint="@color/selector_vf_navigation_item"
+        app:itemTextColor="@color/selector_vf_navigation_item"
         app:menu="@menu/bottom_nav_menu" />
 
     <!-- 8. SETTINGS SLIDE-OVER OVERLAY                                    -->

@@ -84,8 +84,38 @@ class PdfSequenceParserTest {
     }
 
     @Test
-    fun parsePageSequence_exceedingTotalPages_filtersOutOfBounds() {
+    fun parsePageSequence_exceedingTotalPages_rejectsEntireRequest() {
         val result = PdfQuickToolController.parsePageSequence("1, 2, 5, 10", totalPages = 5)
-        assertEquals(listOf(1, 2, 5), result)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun malformedOrDuplicateTokensRejectEntireRequest() {
+        for (text in listOf("1, abc2", "1, 2, 2", "1-3,3-4", "1,,2", "1-2-", "1,0", "1, 2147483648", "1,")) {
+            assertTrue(text, PdfPageSequenceParser.parse(text, 10).isEmpty())
+        }
+    }
+
+    @Test
+    fun enormousRangesAndPresetsAreRejectedBeforeExpansion() {
+        for (text in listOf("1-2147483647", "2147483647-1", "all", "reverse")) {
+            assertTrue(text, PdfPageSequenceParser.parse(text, Int.MAX_VALUE).isEmpty())
+        }
+        assertTrue(PdfPageSequenceParser.parse("1-10001").isEmpty())
+        assertEquals(10_000, PdfPageSequenceParser.parse("1-10000").size)
+    }
+
+    @Test
+    fun mixedDelimitersAndSpacedRangesWork() {
+        assertEquals(listOf(1, 2, 3, 6, 5, 4, 7, 8),
+            PdfPageSequenceParser.parse("1 - 3 -> 6..4 | 7 8", 8))
+    }
+
+    @Test
+    fun mergePrefixPreservesEveryOriginalItemExactlyOnce() {
+        val original = listOf(3, 1, 4, 2)
+        assertEquals(listOf(4, 3, 1, 2), PdfPageSequenceParser.reorderPrefix(original, listOf(4)) { it })
+        assertTrue(PdfPageSequenceParser.reorderPrefix(original, listOf(4, 4)) { it }.isEmpty())
+        assertTrue(PdfPageSequenceParser.reorderPrefix(original, listOf(5)) { it }.isEmpty())
     }
 }

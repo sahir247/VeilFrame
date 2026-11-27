@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -18,6 +20,11 @@ import androidx.core.app.NotificationCompat
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.motion.FlowEstimator
 import com.veilframe.app.cv.motion.FrameSynthesizer
+import com.veilframe.app.cv.motion.MotionLabTimingContract
+import com.veilframe.app.cv.motion.MotionLabVfrMux
+import com.veilframe.app.cv.motion.MotionLabRawFramePipe
+import com.veilframe.app.cv.motion.MotionLabDiskBudget
+import com.veilframe.app.cv.motion.MotionLabAudioTimeline
 import com.veilframe.app.cv.motion.VideoStabilizerEngine
 import com.veilframe.app.media.AndroidMediaBackend
 import com.veilframe.app.media.JobState
@@ -25,10 +32,14 @@ import com.veilframe.app.media.JobType
 import com.veilframe.app.media.ProcessingJob
 import com.veilframe.app.media.rife.RifeModelManager
 import com.veilframe.app.media.rife.RifeNcnnNative
-import com.arthenica.ffmpegkit.FFmpegKit
+import com.veilframe.app.media.executeOwnedFfmpeg
+import kotlinx.coroutines.CancellationException
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.imgproc.Imgproc
+import org.opencv.core.Mat
+import org.opencv.android.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -92,14 +103,12 @@ class VeilFrameProcessingService : Service() {
 
         fun cancelProcessing(context: Context, jobId: UUID? = null) {
             val current = activeJob
+            if (jobId != null && current?.id != jobId) return
             if (current == null || current.state != JobState.RUNNING) {
+                if (jobId != null) return
                 try {
                     context.stopService(Intent(context, VeilFrameProcessingService::class.java))
                 } catch (_: Exception) {}
-                return
-            }
-
-            if (jobId != null && current.id != jobId) {
                 return
             }
 
@@ -237,17 +246,22 @@ class VeilFrameProcessingService : Service() {
             if (!isTargetJob) {
                 return START_NOT_STICKY
             }
-            promoteToForeground("Cancelling processing...")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            // Keep the owner alive until its native session has drained.
+            // Its coroutine finally stops the service.
+            if (currentExecutionJob?.isCompleted != false) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } else {
+                promoteToForeground("Cancelling processing...")
+            }
             return START_NOT_STICKY
         }
 
         // Concurrency guard: if another job is already running, reject duplicate start without mutating active state
         synchronized(this) {
             val current = activeJob
-            if (current != null && current.state == JobState.RUNNING) {
-                Log.w(TAG, "Refusing duplicate start: job ${current.id} is already RUNNING")
+            if (currentExecutionJob?.isCompleted == false || (current != null && current.state == JobState.RUNNING)) {
+                Log.w(TAG, "Refusing duplicate start: prior processing session is still owned")
                 if (!isForegroundStarted) {
                     promoteToForeground("Processing media with VeilFrame...")
                 }
@@ -363,6 +377,13 @@ class VeilFrameProcessingService : Service() {
                         executeVideoCleaning(jobId, inputUri, inputPath, outputUri, outputPath)
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                synchronized(this@VeilFrameProcessingService) {
+                    if (activeJob?.id == jobId && activeJob?.state == JobState.RUNNING) {
+                        activeJob = activeJob?.copy(state = JobState.CANCELLED)
+                    }
+                }
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Foreground processing failed: ${e.message}", e)
                 synchronized(this@VeilFrameProcessingService) {
@@ -417,6 +438,7 @@ class VeilFrameProcessingService : Service() {
 
         if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
             val result = mediaBackend.cleanVideoCancellableDetailed(effectiveInPath, effectiveOutPath)
+            kotlin.coroutines.coroutineContext.ensureActive()
             val ok = result.isSuccess
             val fallbackWarning = if (
                 result.status == com.veilframe.app.privacy.VideoSanitizationStatus.METADATA_ONLY_FALLBACK
@@ -467,69 +489,68 @@ class VeilFrameProcessingService : Service() {
         multiplier: Int,
         isTarget60fps: Boolean
     ) {
-        val workDir = File(cacheDir, "motionlab_${System.currentTimeMillis()}").apply { mkdirs() }
-        val framesDir = File(workDir, "frames").apply { mkdirs() }
-        val outDir = File(workDir, "out").apply { mkdirs() }
+        val workDir = File(cacheDir, "motionlab_${UUID.randomUUID()}").apply { mkdirs() }
         val inFile = File(workDir, "in.mp4")
+        var stagedOutput: File? = null
 
         try {
+            MotionLabDiskBudget.requireHeadroom(workDir)
             updateNotificationProgress("Preparing video source…", 5)
             jobCallback?.onProgress(jobId, 5, "Preparing source…")
 
             if (inputUri.scheme == "content" || inputUri.scheme == "file") {
                 contentResolver.openInputStream(inputUri)?.use { input ->
-                    inFile.outputStream().use { output -> input.copyTo(output) }
+                    MotionLabDiskBudget.stageInput(input, inFile, workDir)
                 } ?: throw IllegalStateException("Cannot open input video URI")
             } else if (inputPath.isNotEmpty()) {
                 val resolvedPath = if (inputPath.startsWith("file://")) inputPath.removePrefix("file://") else inputPath
-                File(resolvedPath).copyTo(inFile, overwrite = true)
+                val source = File(resolvedPath)
+                check(source.isFile && source.length() > 0) { "Video source unavailable" }
+                MotionLabDiskBudget.requireHeadroom(workDir, source.length())
+                source.inputStream().use { MotionLabDiskBudget.stageInput(it, inFile, workDir) }
             } else {
                 throw IllegalStateException("No valid input video specified")
             }
 
+            MotionLabDiskBudget.requireHeadroom(workDir)
             CvRuntime.requireAvailable()
 
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(inFile.absolutePath)
-            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
-            runCatching { retriever.release() }
-
-            updateNotificationProgress("Extracting video frames…", 15)
-            jobCallback?.onProgress(jobId, 15, "Extracting frames…")
-
-            val maxSeconds = 60
-            val extractSession = FFmpegKit.executeWithArguments(
-                arrayOf(
-                    "-y",
-                    "-i", inFile.absolutePath,
-                    "-t", maxSeconds.toString(),
-                    "-q:v", "2",
-                    "${framesDir.absolutePath}/f_%05d.jpg"
-                )
+            val durationMs = try {
+                retriever.setDataSource(inFile.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: throw IllegalStateException("Video duration unavailable; refusing to guess motion timing")
+            } finally {
+                retriever.release()
+            }
+            // Audit source packet presentation timestamps before extracting any frames.
+            // Resample to the requested CFR grid or preserve VFR interval subdivisions.
+            val sourceVideoPts = readMotionVideoPtsUs(inFile)
+            // Validate every audio track before expensive synthesis begins.
+            val sourceAudioTracks = readMotionAudioTracks(inFile)
+            val timing = MotionLabTimingContract.plan(
+                presentationUs = sourceVideoPts,
+                durationMs = durationMs,
+                target60Fps = isTarget60fps,
+                requestedMultiplier = multiplier,
+                videoDurationUs = readMotionVideoDurationUs(inFile)
             )
-            if (!ReturnCode.isSuccess(extractSession.returnCode)) {
-                throw IllegalStateException("Frame extraction failed (rc=${extractSession.returnCode})")
+
+            val sourceGeometry = readMotionSourceGeometry(inFile)
+            updateNotificationProgress("Preparing streaming decoder…", 15)
+            jobCallback?.onProgress(jobId, 15, "Preparing streaming decoder…")
+
+            val destFile = if (outputPath.isNotEmpty()) File(outputPath) else {
+                val exportDir = File(filesDir, "exports").apply { mkdirs() }
+                File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
             }
-
-            val frames = framesDir.listFiles { f -> f.name.startsWith("f_") && (f.name.endsWith(".jpg") || f.name.endsWith(".png")) }
-                ?.sortedBy { it.name } ?: emptyList()
-            if (frames.size < 2) throw IllegalStateException("Need at least 2 frames (extracted ${frames.size})")
-            if (frames.size > 1800) throw IllegalStateException("${frames.size} frames exceeds the maximum limit of 1800")
-
-            val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, maxSeconds.toDouble()) else 0.0
-            val fps = if (effectiveDurationS > 0.1) {
-                (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
-            } else {
-                captureFps ?: 30f
-            }
-
-            val effectiveMultiplier = if (isTarget60fps) {
-                if (fps <= 20f) 4 else 2
-            } else {
-                multiplier.coerceIn(2, 4)
-            }
-
+            val destinationDirectory = requireNotNull(destFile.absoluteFile.parentFile)
+            check(destinationDirectory.isDirectory || destinationDirectory.mkdirs()) { "Cannot create Motion Lab destination" }
+            val stage = File(destinationDirectory, ".motion_${UUID.randomUUID()}.mp4")
+            stagedOutput = stage
+            // Consume the entire raw stream to EOF before remuxing audio. An
+            // output -t on the pipe can cause the encoder to stop reading early.
+            val videoOnly = if (sourceAudioTracks.isEmpty()) stage else File(workDir, "encoded_video.mp4")
             var useRife = false
             if (methodStr.equals("RIFE", ignoreCase = true)) {
                 val rifeManager = RifeModelManager(this@VeilFrameProcessingService)
@@ -537,21 +558,18 @@ class VeilFrameProcessingService : Service() {
                 if (rifeManager.verifyModelIntegrity(selectedModel)) {
                     val attemptGpu = !RifeNcnnNative.isEmulator()
                     val requiredPadding = rifeManager.requiredPadding
-                    useRife = if (attemptGpu) {
-                        try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = true, padding = requiredPadding)
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "RIFE GPU init failed, trying CPU: ${t.message}")
-                            try {
-                                RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
-                            } catch (_: Throwable) { false }
-                        }
-                    } else {
-                        Log.i(TAG, "Android Emulator detected: defaulting RIFE to CPU OpenMP mode for stability")
-                        try {
-                            RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = false, padding = requiredPadding)
-                        } catch (_: Throwable) { false }
+                    fun initializeRife(gpu: Boolean): Boolean = try {
+                        RifeNcnnNative.nativeInit(rifeManager.modelDir.absolutePath, useGpu = gpu, padding = requiredPadding)
+                    } catch (failure: Exception) {
+                        Log.w(TAG, "RIFE initialization failed (GPU=$gpu)", failure)
+                        false
+                    } catch (failure: LinkageError) {
+                        Log.w(TAG, "RIFE JNI unavailable", failure)
+                        false
                     }
+                    // JNI reports failed initialization as false as well as throwing.
+                    // CPU must be attempted before falling back to a different algorithm.
+                    useRife = com.veilframe.app.cv.motion.MotionLabBackendSelection.initialize(attemptGpu, ::initializeRife)
                 } else {
                     Log.w(TAG, "RIFE model ${selectedModel.id} unavailable or failed cryptographic checksum; falling back to optical flow")
                     jobCallback?.onProgress(jobId, 18, "RIFE model unverified; using optical flow fallback…")
@@ -559,214 +577,374 @@ class VeilFrameProcessingService : Service() {
                 }
             }
 
-            val estimator = if (!useRife) {
-                val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
-                    FlowEstimator.Algorithm.FARNEBACK
-                } else {
-                    FlowEstimator.Algorithm.DIS
-                }
-                FlowEstimator(algorithm = flowAlgo)
-            } else null
-            val synthOptions = if (estimator != null) FrameSynthesizer.Options(estimator = estimator) else null
+            // A successful RIFE initialization must not disable the promised optical-flow
+            // fallback. Initialize one estimator for the whole job, not per frame.
+            val flowAlgo = if (methodStr.equals("FARNEBACK", ignoreCase = true)) {
+                FlowEstimator.Algorithm.FARNEBACK
+            } else FlowEstimator.Algorithm.DIS
+            val flowEstimator = FlowEstimator(algorithm = flowAlgo)
+            val synthOptions = FrameSynthesizer.Options(estimator = flowEstimator)
 
-            fun loadRifeBitmap(file: File): Bitmap? {
-                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
-                val origW = boundsOpts.outWidth
-                val origH = boundsOpts.outHeight
-                if (origW <= 0 || origH <= 0) return null
-
-                // For mobile GPU thermal & VRAM stability, clamp RIFE neural synthesis max dimension to 1920 (1080p).
-                // Videos at 1080p (1920x1080) or 720p run at 100% native resolution.
-                // 4K UHD (3840x2160) is scaled 2x to 1080p (1920x1080) via fast hardware DCT downsampling.
-                var sampleSize = 1
-                val maxDim = maxOf(origW, origH)
-                if (maxDim > 1920) {
-                    sampleSize = 2
-                }
-
-                val opts = BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                    inSampleSize = sampleSize
-                }
-                val raw = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-                return if (raw.config != Bitmap.Config.ARGB_8888) {
-                    val converted = raw.copy(Bitmap.Config.ARGB_8888, false)
-                    raw.recycle()
-                    converted
-                } else {
-                    raw
-                }
-            }
-
-            var outIdx = 0
-            var degradedFrameCount = 0
-            var prevBmp: Bitmap? = if (useRife) loadRifeBitmap(frames[0]) else null
-            var prevMat: org.opencv.core.Mat? = if (!useRife) Imgcodecs.imread(frames[0].absolutePath, Imgcodecs.IMREAD_COLOR) else null
-
-            if (useRife && prevBmp != null) {
-                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                outFile.outputStream().use { fos ->
-                    prevBmp!!.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                }
-            } else if (prevMat != null && !prevMat.empty()) {
-                Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), prevMat)
-            } else {
-                throw IllegalStateException("Initial frame unreadable")
-            }
-
+            var opticalFlowFallbackFrames = 0
+            var prevBmp: Bitmap? = null
+            var prevMat: Mat? = null
+            // Native RIFE may already be initialized here. Start its guaranteed
+            // retirement scope BEFORE decoding or writing the first frame.
             try {
-                for (i in 1 until frames.size) {
-                    kotlin.coroutines.coroutineContext.ensureActive()
+                val plan = sourceGeometry.plan(useRife)
+                val geometry = plan.geometry
+                val encodeSession = MotionLabDiskBudget.monitor(check = {
+                    MotionLabDiskBudget.requireHeadroom(workDir)
+                    MotionLabDiskBudget.requireHeadroom(destinationDirectory)
+                }) {
+                    MotionLabRawFramePipe.encode(
+                        geometry, timing.outputFps, timing.expectedOutputFrames,
+                        arrayOf("-map", "0:v:0", "-an", "-c:v", "libx264",
+                            "-preset", "veryfast", "-crf", "21",
+                            "-vf", plan.encodeFilter,
+                            "-pix_fmt", "yuv420p", "-fps_mode", "passthrough") +
+                            MotionLabVfrMux.arguments(timing) + arrayOf(videoOnly.absolutePath)
+                    ) {
+                        val output = this
+                        MotionLabRawFramePipe.decode(geometry, timing.sourceFrames,
+                            arrayOf("-noautorotate", "-i", inFile.absolutePath, "-vf", plan.decodeFilter),
+                            expectedPresentationUs = sourceVideoPts
+                        ) {
+                            val input = this
+                            prevBmp = if (useRife) input.readBitmap() else null
+                            prevMat = if (!useRife) input.readMat() else null
+                            for (i in 1 until timing.sourceFrames) {
+                                kotlin.coroutines.coroutineContext.ensureActive()
 
-                    var curBmp: Bitmap? = null
-                    var curMat: org.opencv.core.Mat? = null
+                                var curBmp: Bitmap? = null
+                                var curMat: Mat? = null
+                                var fallbackA: Mat? = null
+                                var fallbackB: Mat? = null
+                                var pairFlows: FlowEstimator.BidirectionalFlow? = null
 
-                    if (useRife) {
-                        curBmp = loadRifeBitmap(frames[i])
-                        if (curBmp == null || prevBmp == null) {
-                            curBmp?.recycle()
-                            continue
-                        }
-                    } else {
-                        curMat = Imgcodecs.imread(frames[i].absolutePath, Imgcodecs.IMREAD_COLOR)
-                        if (curMat == null || curMat.empty()) {
-                            curMat?.release()
-                            continue
-                        }
-                    }
-
-                    try {
-                        for (k in 1 until effectiveMultiplier) {
-                            kotlin.coroutines.coroutineContext.ensureActive()
-                            val t = k.toDouble() / effectiveMultiplier
-                            var interpolatedSuccessfully = false
-
-                            if (useRife && prevBmp != null && curBmp != null) {
-                                val synthBmp = try {
-                                    RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
-                                } catch (e: Throwable) {
-                                    Log.w(TAG, "RIFE interpolation failed for frame $i: ${e.message}")
-                                    null
-                                }
-                                if (synthBmp != null) {
-                                    val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                                    outFile.outputStream().use { fos ->
-                                        synthBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                                if (useRife) {
+                                    curBmp = input.readBitmap()
+                                    if (curBmp == null || prevBmp == null) {
+                                        curBmp?.recycle()
+                                        throw IllegalStateException("Video frame ${i + 1} could not be decoded; export aborted to preserve the timeline")
                                     }
-                                    synthBmp.recycle()
-                                    interpolatedSuccessfully = true
                                 } else {
-                                    Log.w(TAG, "RIFE returned null for frame $i (t=$t); attempting optical flow fallback")
+                                    curMat = input.readMat()
+                                    if (curMat == null || curMat.empty()) {
+                                        curMat?.release()
+                                        throw IllegalStateException("Video frame ${i + 1} could not be decoded; export aborted to preserve the timeline")
+                                    }
                                 }
-                            }
 
-                            if (!interpolatedSuccessfully && synthOptions != null) {
-                                val matA = prevMat ?: prevBmp?.let { bmp ->
-                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
-                                }
-                                val matB = curMat ?: curBmp?.let { bmp ->
-                                    org.opencv.core.Mat().also { org.opencv.android.Utils.bitmapToMat(bmp, it) }
-                                }
-                                if (matA != null && matB != null && !matA.empty() && !matB.empty()) {
-                                    val result = FrameSynthesizer.synthesize(matA, matB, t, synthOptions)
-                                    Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), result.frame)
-                                    result.frame.release()
-                                    result.confidence.release()
-                                    result.fallbackMask.release()
-                                    interpolatedSuccessfully = true
-                                }
-                                if (prevMat == null) matA?.release()
-                                if (curMat == null) matB?.release()
-                            }
+                                try {
+                                    for (t in timing.pairFractions[i-1]) {
+                                        kotlin.coroutines.coroutineContext.ensureActive()
+                                        MotionLabDiskBudget.requireHeadroom(workDir)
+                                        if (t == 0.0) {
+                                            if (useRife) output.writeBitmap(requireNotNull(prevBmp))
+                                            else output.writeMat(requireNotNull(prevMat))
+                                            continue
+                                        }
+                                        var interpolatedSuccessfully = false
 
-                            if (!interpolatedSuccessfully) {
-                                // Transparently record degraded fallback frame rather than claiming successful interpolation
-                                degradedFrameCount++
-                                Log.w(TAG, "Frame interpolation failed for frame $i at t=$t; writing degraded duplicate fallback")
-                                val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                                outFile.outputStream().use { fos ->
-                                    prevBmp?.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                                        ?: prevMat?.let { m -> Imgcodecs.imwrite(outFile.absolutePath, m) }
+                                        if (useRife && prevBmp != null && curBmp != null) {
+                                            val synthBmp = try {
+                                                RifeNcnnNative.nativeInterpolate(prevBmp!!, curBmp, t.toFloat())
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Exception) {
+                                                Log.w(TAG, "RIFE interpolation failed for frame $i: ${e.message}")
+                                                null
+                                            } catch (e: LinkageError) {
+                                                Log.w(TAG, "RIFE interpolation unavailable", e)
+                                                null
+                                            }
+                                            if (synthBmp != null) {
+                                                try {
+                                                    output.writeBitmap(synthBmp)
+                                                    interpolatedSuccessfully = true
+                                                } finally {
+                                                    if (synthBmp !== prevBmp && synthBmp !== curBmp) synthBmp.recycle()
+                                                }
+                                            } else {
+                                                Log.w(TAG, "RIFE returned null for frame $i (t=$t); attempting optical flow fallback")
+                                            }
+                                        }
+
+                                        if (!interpolatedSuccessfully) {
+                                            // Decode each bitmap to Mat at most once per input pair, even
+                                            // if several RIFE subframes require optical-flow recovery.
+                                            val matA = prevMat ?: fallbackA ?: bitmapToMotionBgr(
+                                                prevBmp ?: error("Missing previous RIFE frame")
+                                            ).also { fallbackA = it }
+                                            val matB = curMat ?: fallbackB ?: bitmapToMotionBgr(
+                                                curBmp ?: error("Missing current RIFE frame")
+                                            ).also { fallbackB = it }
+                                            if (matA.empty() || matB.empty()) {
+                                                throw IllegalStateException("Optical-flow fallback input unavailable for frame ${i + 1}")
+                                            }
+                                            val result = try {
+                                                // Optical flow and source frames do not change between
+                                                // k=1..factor-1: estimate once per pair, not once per
+                                                // synthesized frame. A RIFE failure lazily populates it.
+                                                val flows = pairFlows ?: flowEstimator.estimate(matA, matB)
+                                                    .also { pairFlows = it }
+                                                FrameSynthesizer.synthesizeWithFlows(matA, matB, t, flows, synthOptions)
+                                            } catch (e: Exception) {
+                                                throw IllegalStateException("Both RIFE and optical flow failed at frame ${i + 1} (t=$t)", e)
+                                            }
+                                            try {
+                                                output.writeMat(result.frame)
+                                                if (useRife) opticalFlowFallbackFrames++
+                                            } finally {
+                                                result.release()
+                                            }
+                                        }
+                                    }
+                                    // Publication belongs to the success path. Transfer ownership
+                                    // only after staging succeeds, never from a finally block.
+                                    kotlin.coroutines.coroutineContext.ensureActive()
+                                    MotionLabDiskBudget.requireHeadroom(workDir)
+                                    if (useRife && curBmp != null) {
+                                        prevBmp?.recycle()
+                                        prevBmp = curBmp
+                                        curBmp = null
+                                    } else if (curMat != null) {
+                                        prevMat?.release()
+                                        prevMat = curMat
+                                        curMat = null
+                                    } else {
+                                        error("Missing current motion frame")
+                                    }
+                                } finally {
+                                    pairFlows?.release()
+                                    fallbackA?.release()
+                                    fallbackB?.release()
+                                    curBmp?.recycle()
+                                    curMat?.release()
                                 }
+
+                                MotionLabDiskBudget.requireHeadroom(workDir)
+                                val synthPct = 25 + ((i.toFloat() / timing.sourceFrames.toFloat()) * 60f).toInt().coerceIn(0, 60)
+                                updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
+                                jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
                             }
+                        // Sample-and-hold the final source image for its actual tail interval.
+                        repeat(timing.tailFrames) {
+                            if (useRife) output.writeBitmap(requireNotNull(prevBmp))
+                            else output.writeMat(requireNotNull(prevMat))
                         }
-                    } finally {
-                        if (useRife && curBmp != null) {
-                            val outFile = File(outDir, "o_%05d.jpg".format(outIdx++))
-                            outFile.outputStream().use { fos ->
-                                curBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
-                            }
-                            prevBmp?.recycle()
-                            prevBmp = curBmp
-                        } else if (curMat != null) {
-                            Imgcodecs.imwrite("${outDir.absolutePath}/o_%05d.jpg".format(outIdx++), curMat)
-                            prevMat?.release()
-                            prevMat = curMat
                         }
                     }
-
-                    val synthPct = 25 + ((i.toFloat() / frames.size.toFloat()) * 60f).toInt().coerceIn(0, 60)
-                    updateNotificationProgress("Synthesizing frames ($synthPct%)", synthPct)
-                    jobCallback?.onProgress(jobId, synthPct, "Synthesizing frames ($synthPct%)")
+                }
+                check(ReturnCode.isSuccess(encodeSession.returnCode) && videoOnly.isFile && videoOnly.length() > 0L) {
+                    "Raw video encoding failed"
                 }
             } finally {
-                if (useRife) {
-                    RifeNcnnNative.nativeRelease()
+                try {
+                    if (useRife) RifeNcnnNative.nativeRelease()
+                } finally {
                     prevBmp?.recycle()
-                } else {
                     prevMat?.release()
                 }
             }
 
-            if (degradedFrameCount > 0) {
-                Log.w(TAG, "Frame synthesis completed with $degradedFrameCount degraded fallback frames")
+            if (opticalFlowFallbackFrames > 0) {
+                Log.w(TAG, "RIFE recovered $opticalFlowFallbackFrames intermediate frames with optical flow")
             }
-
-            val finalFps = if (isTarget60fps) 60f else (fps * effectiveMultiplier)
-            val framerateStr = if (isTarget60fps) "60.000" else String.format(Locale.US, "%.3f", fps * effectiveMultiplier)
-            updateNotificationProgress("Encoding video ($framerateStr fps)…", 88)
-            jobCallback?.onProgress(jobId, 88, "Encoding video…")
-
-            val destFile = if (outputPath.isNotEmpty()) {
-                File(outputPath)
-            } else {
-                val exportDir = File(filesDir, "exports").apply { mkdirs() }
-                File(exportDir, "motionlab_${System.currentTimeMillis()}.mp4")
-            }
-            destFile.parentFile?.mkdirs()
-
-            val encodeSession = FFmpegKit.executeWithArguments(
-                arrayOf(
-                    "-y",
-                    "-framerate", framerateStr,
-                    "-i", "${outDir.absolutePath}/o_%05d.jpg",
-                    "-i", inFile.absolutePath,
-                    "-map", "0:v",
-                    "-map", "1:a?",
-                    "-c:v", "libx264",
-                    "-preset", "veryfast",
-                    "-crf", "21",
-                    "-pix_fmt", "yuv420p",
-                    "-c:a", "copy",
-                    "-shortest",
-                    destFile.absolutePath
-                )
-            )
-            if (!ReturnCode.isSuccess(encodeSession.returnCode) || !destFile.exists() || destFile.length() == 0L) {
-                throw IllegalStateException("Video encoding failed (rc=${encodeSession.returnCode})")
-            }
-
-            synchronized(this) {
-                if (activeJob?.id == jobId) {
-                    activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+            // Verify the encoded video before remux. The remux must also pass
+            // the same frame count/PTS contract, so it cannot truncate video.
+            val encodedPts = readMotionVideoPtsUs(videoOnly, timing.expectedOutputFrames)
+            MotionLabVfrMux.verify(encodedPts,readMotionVideoDurationUs(videoOnly),timing)
+            if (sourceAudioTracks.isNotEmpty()) {
+                updateNotificationProgress("Remuxing source audio…", 88)
+                jobCallback?.onProgress(jobId, 88, "Remuxing source audio…")
+                val mux = MotionLabDiskBudget.monitor(check = {
+                    MotionLabDiskBudget.requireHeadroom(workDir)
+                    MotionLabDiskBudget.requireHeadroom(destinationDirectory)
+                }) {
+                    executeOwnedFfmpeg(arrayOf(
+                        "-nostdin", "-y", "-i", videoOnly.absolutePath, "-i", inFile.absolutePath,
+                        "-map", "0:v:0", "-map", "1:a", "-c", "copy",
+                        "-t", String.format(Locale.US, "%.6f", MotionLabVfrMux.durationSeconds(timing)),
+                        "-video_track_timescale", "1000000",
+                        "-movflags", "+faststart", stage.absolutePath
+                    ))
+                }
+                check(ReturnCode.isSuccess(mux.returnCode) && stage.isFile && stage.length() > 0L) {
+                    "Motion Lab audio remux failed"
                 }
             }
-            jobCallback?.onProgress(jobId, 100, "Complete")
+            // Inspect the actual serialized MP4, not just a successful FFmpeg exit.
+            // This also detects output-timeline truncation or extra CFR frames.
+            val publishedPts = readMotionVideoPtsUs(stage, timing.expectedOutputFrames)
+            MotionLabVfrMux.verify(publishedPts,readMotionVideoDurationUs(stage),timing)
+            val outputRetriever = MediaMetadataRetriever()
+            val outputDurationMs = try {
+                outputRetriever.setDataSource(stage.absolutePath)
+                outputRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: throw IllegalStateException("Encoded MP4 has no readable duration")
+            } finally {
+                outputRetriever.release()
+            }
+            check(kotlin.math.abs(outputDurationMs - durationMs) <= 200L) {
+                "Motion output duration $outputDurationMs ms disagrees with input $durationMs ms"
+            }
+            // An apparently complete video is still a bad export if a source
+            // audio stream was dropped or shifted during stream-copy remuxing.
+            MotionLabAudioTimeline.verifyTracks(
+                source = sourceAudioTracks,
+                output = readMotionAudioTracks(stage),
+                sourceVideoFirstUs = sourceVideoPts.minOrNull() ?: 0L,
+                outputVideoFirstUs = publishedPts.minOrNull() ?: 0L,
+                durationMs = durationMs
+            )
+
+            kotlin.coroutines.coroutineContext.ensureActive()
+            synchronized(this) {
+                if (activeJob?.id != jobId || activeJob?.state != JobState.RUNNING) {
+                    throw CancellationException("Motion Lab operation no longer owns publication")
+                }
+                java.nio.file.Files.move(stage.toPath(), destFile.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                stagedOutput = null
+                activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+            }
+            val completion = when {
+                methodStr.equals("RIFE", ignoreCase = true) && !useRife ->
+                    "Complete: optical flow used because RIFE was unavailable"
+                opticalFlowFallbackFrames > 0 ->
+                    "Complete: $opticalFlowFallbackFrames RIFE frames recovered with optical flow"
+                useRife -> "Complete: RIFE interpolation succeeded"
+                else -> "Complete: optical-flow interpolation succeeded"
+            }
+            jobCallback?.onProgress(jobId, 100, completion)
             jobCallback?.onCompleted(jobId, destFile.absolutePath)
-            showCompletionNotification("Motion Lab Finished", "Synthesized video ready")
+            showCompletionNotification("Motion Lab Finished", completion)
         } finally {
+            stagedOutput?.delete()
             workDir.deleteRecursively()
+        }
+    }
+
+    /** Android Bitmap -> RGBA Mat -> explicit BGR Mat for OpenCV optical flow.
+     * BitmapToMat returns RGBA, whereas FrameSynthesizer and raw encoding
+     * expect standard BGR. Keep channel contracts consistent across fallbacks.
+     */
+    private fun bitmapToMotionBgr(bitmap: Bitmap): Mat {
+        val rgba = Mat()
+        val bgr = Mat()
+        try {
+            Utils.bitmapToMat(bitmap, rgba)
+            check(!rgba.empty() && rgba.channels() == 4) {
+                "RIFE fallback bitmap conversion did not produce RGBA data"
+            }
+            Imgproc.cvtColor(rgba, bgr, Imgproc.COLOR_RGBA2BGR)
+            check(!bgr.empty() && bgr.channels() == 3) {
+                "Failed to convert RIFE fallback bitmap to BGR"
+            }
+            return bgr
+        } catch (t: Throwable) {
+            bgr.release()
+            throw t
+        } finally {
+            rgba.release()
+        }
+    }
+
+    private suspend fun readMotionAudioTracks(input: File): List<MotionLabAudioTimeline.Track> {
+        val tracks = MediaExtractor().let { extractor ->
+            try {
+                extractor.setDataSource(input.absolutePath)
+                (0 until extractor.trackCount).mapNotNull { index ->
+                    val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                    if (mime?.startsWith("audio/") == true) index to mime else null
+                }
+            } finally {
+                extractor.release()
+            }
+        }
+        check(tracks.size <= MotionLabAudioTimeline.MAX_AUDIO_TRACKS) { "Too many audio tracks" }
+        return tracks.map { (index, mime) ->
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(input.absolutePath)
+                extractor.selectTrack(index)
+                var firstPts = Long.MAX_VALUE
+                var lastPts = -1L
+                var count = 0
+                while (true) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val ptsUs = extractor.sampleTime
+                    if (ptsUs < 0L) break
+                    check(count < MotionLabAudioTimeline.MAX_AUDIO_SAMPLES) {
+                        "Audio track exceeds bounded verification budget"
+                    }
+                    firstPts = minOf(firstPts, ptsUs)
+                    lastPts = maxOf(lastPts, ptsUs)
+                    count++
+                    if (!extractor.advance()) break
+                }
+                check(count > 0 && firstPts >= 0L) { "Audio stream has no readable samples" }
+                MotionLabAudioTimeline.Track(mime, MotionLabAudioTimeline.AudioSpan(firstPts, lastPts, count))
+            } finally {
+                extractor.release()
+            }
+        }
+    }
+
+    private fun readMotionVideoDurationUs(input: File): Long? {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val video = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+                .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+                ?: error("Input has no video track")
+            return if (video.containsKey(MediaFormat.KEY_DURATION)) video.getLong(MediaFormat.KEY_DURATION) else null
+        } finally { extractor.release() }
+    }
+
+    private fun readMotionSourceGeometry(input: File): com.veilframe.app.cv.motion.MotionLabSourceGeometry {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val format = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+                .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+                ?: error("Input has no video track")
+            fun optionalInt(key: String, default: Int) = if (format.containsKey(key)) format.getInteger(key) else default
+            return com.veilframe.app.cv.motion.MotionLabSourceGeometry(
+                format.getInteger(MediaFormat.KEY_WIDTH), format.getInteger(MediaFormat.KEY_HEIGHT),
+                optionalInt("rotation-degrees", 0), optionalInt("sar-width",1), optionalInt("sar-height",1)
+            )
+        } finally { extractor.release() }
+    }
+
+    private suspend fun readMotionVideoPtsUs(
+        input: File,
+        maxFrames: Int = MotionLabTimingContract.MAX_SOURCE_FRAMES
+    ): List<Long> {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(input.absolutePath)
+            val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: throw IllegalStateException("Input has no video track")
+            extractor.selectTrack(videoTrack)
+            val timestamps = ArrayList<Long>()
+            while (true) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val pts = extractor.sampleTime
+                if (pts < 0) break
+                if (timestamps.size >= maxFrames) {
+                    throw IllegalStateException("Video has more than $maxFrames frames; timing verification refused")
+                }
+                timestamps.add(pts)
+                if (!extractor.advance()) break
+            }
+            return timestamps
+        } finally {
+            extractor.release()
         }
     }
 
@@ -816,7 +994,7 @@ class VeilFrameProcessingService : Service() {
             val clampedMargin = marginPercent.coerceIn(0, 20)
             val deshakeFilter = VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedMargin)
 
-            val session = FFmpegKit.executeWithArguments(
+            val session = executeOwnedFfmpeg(
                 arrayOf(
                     "-y",
                     "-i", effectiveInPath,
@@ -842,13 +1020,9 @@ class VeilFrameProcessingService : Service() {
             jobCallback?.onProgress(jobId, 100, "Complete")
             jobCallback?.onCompleted(jobId, effectiveOutPath)
             showCompletionNotification("Video Stabilizer Finished", "Stabilized video ready")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            synchronized(this) {
-                if (activeJob?.id == jobId) {
-                    activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
-                }
-            }
-            jobCallback?.onFailed(jobId, e.message ?: "Stabilization failed")
             throw e
         } finally {
             tempInFile?.delete()

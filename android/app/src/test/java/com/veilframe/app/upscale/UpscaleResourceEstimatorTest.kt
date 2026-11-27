@@ -219,4 +219,17 @@ class UpscaleResourceEstimatorTest {
         )
         assertNotNull(plan)
     }
+
+    @Test
+    fun test4kPhotoAt4xIsSafelyRejectedBeforeAllocation() {
+        // 3840x2160 at 4x produces 132,710,400 pixels, beyond the 100MP cap.
+        try {
+            UpscaleResourceEstimator.estimateAndPlan(
+                srcW = 3840, srcH = 2160, scale = 4, channels = 3
+            )
+            fail("4K-to-16K exceeds the admitted 100MP output limit")
+        } catch (e: ResourceLimitExceededException) {
+            assertTrue(e.message?.contains("safe pixel budget") == true)
+        }
+    }
 }

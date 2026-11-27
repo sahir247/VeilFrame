@@ -86,8 +86,15 @@ data class SheetLayout(
     val naturalPageHeight: Float,
     val mergedRegions: List<OpenXmlDocumentParser.CellRangeAddress> = emptyList(),
     val mergedGeometries: List<MergedCellGeometry> = emptyList(),
-    val frozenColumnsCount: Int = 0
-)
+    val frozenColumnsCount: Int = 0,
+    val cellStyles: XlsxCellStyles = XlsxCellStyles(),
+    val fontOverrides: Map<Long,PDFont> = emptyMap()
+) {
+    fun fontAt(row: Int,column: Int,base: PDFont): PDFont =
+        fontOverrides[cellFontKey(row,column)] ?: cellStyles.at(row,column).font(base)
+}
+
+private fun cellFontKey(row: Int,column: Int): Long = (row.toLong() shl 32) or (column.toLong() and 0xffffffffL)
 
 /**
  * Group of columns assigned to a horizontal panel tile.
@@ -173,32 +180,87 @@ object SpreadsheetLayoutEngine {
         sheet: OpenXmlDocumentParser.XlsxSheetData,
         sheetIndex: Int,
         fontNormal: PDFont,
-        limits: LayoutLimits
+        limits: LayoutLimits,
+        respectSavedDimensions: Boolean = false,
+        fontSelector: ((PDFont,String) -> PDFont)? = null,
+        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null,
+        shapedWidth: ((String,XlsxCellStyle,Float) -> Float?)? = null
     ): SheetLayout {
-        val rows = sheet.rows
-        val maxCol = rows.maxOfOrNull { it.size } ?: 0
+        val extent = SpreadsheetGeometry.inspect(sheet.rows, sheet.mergedRegions)
+        // Preserve blank geometry covered by declared merge ranges.
+        val rows = if (extent.rows == sheet.rows.size) sheet.rows
+            else sheet.rows + List(extent.rows - sheet.rows.size) { emptyList<String>() }
+        val maxCol = extent.columns
+        val fontOverrides = HashMap<Long,PDFont>()
+        if (fontSelector != null) for ((rowIndex,row) in rows.withIndex()) {
+            for ((column,text) in row.withIndex()) {
+                if (text.isBlank()) continue
+                val style = sheet.styles.at(rowIndex,column)
+                if (style.dataBar?.showValue == false || style.icon?.showValue == false) continue
+                val preferred = style.font(fontNormal)
+                val selected = fontSelector(preferred,text)
+                if (selected !== preferred) fontOverrides[cellFontKey(rowIndex,column)] = selected
+            }
+        }
+        fun fontAt(row: Int,column: Int) =
+            fontOverrides[cellFontKey(row,column)] ?: sheet.styles.at(row,column).font(fontNormal)
 
         val effectiveMaxTileW = limits.maxTileWidthOverride ?: limits.maxTileWidth
         val maxAllowedColWidth = (minOf(effectiveMaxTileW, limits.maxStandardCoord) - (2 * limits.margin)).coerceAtLeast(45f)
 
         val colWidths = FloatArray(maxCol) { c ->
             var maxW = 32f
-            for (r in rows) {
+            // Only lossless full-content export needs an expensive AutoFit scan.
+            // Saved-print uses fixed source widths and must never silently
+            // expand them based on text or approximate font metrics.
+            if (!respectSavedDimensions) for ((rowIndex, r) in rows.withIndex()) {
                 val cellVal = r.getOrNull(c) ?: ""
                 if (cellVal.isNotEmpty()) {
+                    val style = sheet.styles.at(rowIndex, c)
+                    val cellFont = fontAt(rowIndex,c)
+                    val cellSize = style.fontSizePt ?: limits.fontSizeCell
+                    val cellLeading = limits.lineHeight * cellSize / limits.fontSizeCell
+                    if (style.textRotation != 0) {
+                        val block = XlsxRotatedText.measure(cellVal, style.textRotation, cellFont,
+                            cellSize, cellLeading)
+                        val width = if (needsOfficeShaping(cellVal)) shapedWidth?.invoke(cellVal,style,cellSize) ?: block.width
+                            else block.width
+                        require(width + 16f <= maxAllowedColWidth) {
+                            "Rotated cell exceeds available tile width; use wider export settings"
+                        }
+                        maxW = maxOf(maxW, width)
+                        continue
+                    }
                     val maxLineW = cellVal.split(Regex("\r\n|\r|\n")).maxOfOrNull { line ->
                         val cleanLine = sanitizeForFontMetrics(line)
                         try {
-                            fontNormal.getStringWidth(cleanLine) / 1000f * limits.fontSizeCell
+                            cellFont.getStringWidth(cleanLine) / 1000f * cellSize
                         } catch (_: Exception) {
-                            cleanLine.length * 5f
+                            cleanLine.length * 5f * cellSize / limits.fontSizeCell
                         }
                     } ?: 0f
-                    if (maxLineW > maxW) maxW = maxLineW
+                    val neededWidth = maxLineW + (if (style.icon != null) 13f else 0f)
+                    if (neededWidth > maxW) maxW = neededWidth
                 }
             }
             // Strict ceiling: individual column width cannot exceed maximum tile table width budget
-            minOf(maxAllowedColWidth, (maxW + 16f).coerceAtLeast(45f))
+            val declared = sheet.dimensions.columnMinPt(c)
+            require(declared <= maxAllowedColWidth) {
+                "Declared column width exceeds available tile width; use wider export settings"
+            }
+            if (respectSavedDimensions) {
+                // Printing must not secretly AutoFit columns to long text.
+                // The source's width is a maximum-digit-width measurement,
+                // approximated in points by XlsxDimensions; the printer/font
+                // reference metrics are disclosed separately.
+                val explicitlySized = sheet.dimensions.columnWidths.containsKey(c) ||
+                    sheet.dimensions.defaultColumnWidth != null
+                val saved = if (explicitlySized) declared else 45f
+                require(saved in 3f..maxAllowedColWidth) {
+                    "Saved print column width is not renderable without a geometry fallback"
+                }
+                saved
+            } else minOf(maxAllowedColWidth, maxOf(declared, maxW + 16f, 45f))
         }
 
         val colX = FloatArray(maxCol)
@@ -213,7 +275,14 @@ object SpreadsheetLayoutEngine {
             Array(maxCol) { c ->
                 val text = row.getOrNull(c) ?: ""
                 if (text.isNotBlank()) {
-                    wrapCellText(text, fontNormal, limits.fontSizeCell, colWidths[c] - 8f)
+                    val style = sheet.styles.at(rIdx, c)
+                    if (shapedHeight != null && needsOfficeShaping(text))
+                        listOf(text)
+                    else if (style.textRotation != 0) XlsxRotatedText.lines(text, style.textRotation)
+                    else if (respectSavedDimensions && !style.wrapText)
+                        text.split(Regex("\\r\\n|\\r|\\n"))
+                    else wrapCellText(text, fontAt(rIdx,c), style.fontSizePt ?: limits.fontSizeCell,
+                        colWidths[c] - 8f - (if (style.icon != null) 13f else 0f))
                 } else {
                     emptyList()
                 }
@@ -221,8 +290,28 @@ object SpreadsheetLayoutEngine {
         }
 
         val rowHeights = FloatArray(rows.size) { rIdx ->
-            val maxLinesInRow = rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
-            maxOf(20f, maxLinesInRow * limits.lineHeight + limits.paddingVertical)
+            var required = 20f
+            for (c in 0 until maxCol) {
+                val lines = rowWrappedLines[rIdx][c]
+                if (lines.isEmpty()) continue
+                val style = sheet.styles.at(rIdx, c)
+                val size = style.fontSizePt ?: limits.fontSizeCell
+                val leading = limits.lineHeight * size / limits.fontSizeCell
+                val shaped = if (shapedHeight != null &&
+                    needsOfficeShaping(lines.joinToString("")) && style.dataBar?.showValue != false &&
+                    style.icon?.showValue != false)
+                    shapedHeight(lines.joinToString("\n"),style,colWidths[c]-8f-(if (style.icon != null) 13f else 0f)) else null
+                val height = shaped ?: if (style.textRotation == 0) lines.size * leading
+                else XlsxRotatedText.measureLines(lines, style.textRotation, fontAt(rIdx,c),
+                    size, leading).height
+                required = maxOf(required, height + limits.paddingVertical)
+            }
+            val fixedHeight = if (respectSavedDimensions &&
+                sheet.dimensions.rowHeightsPt.containsKey(rIdx)) sheet.dimensions.rowMinPt(rIdx) else null
+            if (fixedHeight != null) {
+                require(fixedHeight in 3f..409.5f) { "Saved print row height is not renderable" }
+                fixedHeight // fixed Excel row: clip text within the saved cell
+            } else maxOf(required, sheet.dimensions.rowMinPt(rIdx))
         }
 
         val rowY = FloatArray(rows.size)
@@ -238,19 +327,21 @@ object SpreadsheetLayoutEngine {
         val naturalPageWidth = maxOf(limits.minPageWidth, totalTableWidth + (2 * limits.margin))
         val naturalPageHeight = maxOf(limits.minPageHeight, limits.headerHeight + totalTableHeight + (2 * limits.margin))
 
-        val mergedGeometries = sheet.mergedRegions.mapNotNull { region ->
-            if (maxCol == 0 || rows.isEmpty()) return@mapNotNull null
-            val fCol = region.firstCol.coerceIn(0, maxCol - 1)
-            val lCol = region.lastCol.coerceIn(0, maxCol - 1)
-            val fRow = region.firstRow.coerceIn(0, rows.size - 1)
-            val lRow = region.lastRow.coerceIn(0, rows.size - 1)
-            if (lCol < fCol || lRow < fRow) return@mapNotNull null
+        val mergedGeometries = sheet.mergedRegions.map { region ->
+            val fCol = region.firstCol
+            val lCol = region.lastCol
+            val fRow = region.firstRow
+            val lRow = region.lastRow
 
             val mWidth = (fCol..lCol).sumOf { colWidths[it].toDouble() }.toFloat()
             val mHeight = (fRow..lRow).sumOf { rowHeights[it].toDouble() }.toFloat()
             val mText = rows.getOrNull(fRow)?.getOrNull(fCol) ?: ""
             val mWrapped = if (mText.isNotBlank()) {
-                wrapCellText(mText, fontNormal, limits.fontSizeCell, (mWidth - 8f).coerceAtLeast(10f))
+                val style = sheet.styles.at(fRow, fCol)
+                if (shapedHeight != null && needsOfficeShaping(mText)) listOf(mText)
+                else if (style.textRotation != 0) XlsxRotatedText.lines(mText, style.textRotation)
+                else wrapCellText(mText, fontAt(fRow,fCol), style.fontSizePt ?: limits.fontSizeCell,
+                    (mWidth - 8f).coerceAtLeast(10f))
             } else {
                 emptyList()
             }
@@ -292,7 +383,9 @@ object SpreadsheetLayoutEngine {
             naturalPageHeight = naturalPageHeight,
             mergedRegions = sheet.mergedRegions,
             mergedGeometries = mergedGeometries,
-            frozenColumnsCount = frozenCols
+            frozenColumnsCount = frozenCols,
+            cellStyles = sheet.styles,
+            fontOverrides = fontOverrides
         )
     }
 
@@ -339,9 +432,12 @@ object SpreadsheetLayoutEngine {
         sheet: OpenXmlDocumentParser.XlsxSheetData,
         sheetIndex: Int,
         fontNormal: PDFont,
-        limits: LayoutLimits
+        limits: LayoutLimits,
+        fontSelector: ((PDFont,String) -> PDFont)? = null,
+        shapedHeight: ((String,XlsxCellStyle,Float) -> Float?)? = null,
+        shapedWidth: ((String,XlsxCellStyle,Float) -> Float?)? = null
     ): ExportPlan {
-        val layout = buildSheetLayout(sheet, sheetIndex, fontNormal, limits)
+        val layout = buildSheetLayout(sheet, sheetIndex, fontNormal, limits, fontSelector = fontSelector,shapedHeight = shapedHeight,shapedWidth = shapedWidth)
         val strategy = selectStrategy(layout, limits)
 
         return when (strategy) {
@@ -415,16 +511,17 @@ object SpreadsheetLayoutEngine {
         while (colIdx < maxCol) {
             val activeCols = mutableListOf<Int>()
             var groupWidth = 0f
-            val baseAvail = if (colIdx > 0 && repeatFrozen) {
-                (availWidth - frozenWidth).coerceAtLeast(45f)
-            } else {
-                availWidth
-            }
+            // Repeat only complete identifying columns, never duplicate a
+            // frozen column that is already part of the active group.
+            val repeated = if (repeatFrozen && colIdx >= frozenCols.size &&
+                frozenWidth + layout.colWidths[colIdx] <= availWidth) frozenCols else emptyList()
+            val repeatedWidth = if (repeated.isEmpty()) 0f else frozenWidth
+            val baseAvail = availWidth - repeatedWidth
 
             while (colIdx < maxCol) {
                 val nextW = layout.colWidths[colIdx]
-                // If this is the first column in the panel, take it even if it exceeds baseAvail
-                if (activeCols.isEmpty() || groupWidth + nextW <= baseAvail) {
+                require(nextW <= availWidth + 0.01f) { "Column exceeds tile width" }
+                if (groupWidth + nextW <= baseAvail + 0.01f) {
                     activeCols.add(colIdx)
                     groupWidth += nextW
                     colIdx++
@@ -433,11 +530,8 @@ object SpreadsheetLayoutEngine {
                 }
             }
 
-            val groupTotalTableWidth = if (repeatFrozen && activeCols.first() > 0) {
-                frozenWidth + groupWidth
-            } else {
-                groupWidth
-            }
+            check(activeCols.isNotEmpty()) { "Column partition made no progress" }
+            val groupTotalTableWidth = repeatedWidth + groupWidth
 
             val maxAllowedWidth = minOf(effectiveMaxTileW, limits.maxStandardCoord)
             val tileWidth = minOf(maxAllowedWidth, maxOf(limits.minPageWidth, groupTotalTableWidth + (2 * limits.margin)))
@@ -448,7 +542,7 @@ object SpreadsheetLayoutEngine {
                     totalGroups = 0, // Assigned after loop
                     startCol = activeCols.first(),
                     endCol = activeCols.last(),
-                    frozenCols = if (repeatFrozen && activeCols.first() > 0) frozenCols else emptyList(),
+                    frozenCols = repeated,
                     activeCols = activeCols,
                     groupTableWidth = groupTotalTableWidth,
                     tileWidth = tileWidth,
@@ -478,11 +572,21 @@ object SpreadsheetLayoutEngine {
         var currentChunkStartLine = 0
 
         while (rIdx < rowCount) {
-            val totalLinesInRow = layout.rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1
+            val totalLinesInRow = maxOf(1, layout.rowWrappedLines[rIdx].maxOfOrNull { it.size } ?: 1)
             val totalRowH = layout.rowHeights[rIdx]
 
             if (totalRowH > availHeight) {
-                // Oversized row: split into vertical chunks across panels
+                require((0 until layout.colCount).none { c ->
+                    (layout.cellStyles.at(rIdx, c).textRotation != 0 ||
+                        layout.cellStyles.at(rIdx, c).fontSizePt?.let { it != limits.fontSizeCell } == true ||
+                        layout.rowWrappedLines[rIdx][c].any(::needsOfficeShaping)) &&
+                        layout.rowWrappedLines[rIdx][c].isNotEmpty()
+                }) { "Variable-size or rotated text row exceeds available tile height; use taller export settings" }
+                val contentHeight = maxOf(20f, totalLinesInRow * limits.lineHeight + limits.paddingVertical)
+                require(totalRowH <= contentHeight + 0.01f) {
+                    "Declared row height exceeds available tile height; use taller export settings"
+                }
+                // Oversized text row: split into vertical chunks across panels
                 val maxFittingLines = ((availHeight - limits.paddingVertical) / limits.lineHeight).toInt().coerceAtLeast(1)
                 val linesInChunk = minOf(totalLinesInRow - currentChunkStartLine, maxFittingLines)
                 val chunkHeight = maxOf(20f, linesInChunk * limits.lineHeight + limits.paddingVertical)
@@ -577,6 +681,9 @@ object SpreadsheetLayoutEngine {
             return emptyList()
         }
 
+        require(rowGroups.size.toLong() * colGroups.size <= SpreadsheetGeometry.MAX_PAGES) {
+            "Worksheet exceeds PDF tile page budget"
+        }
         val tiles = mutableListOf<SheetTile>()
         // Row-major sequence: for each row group, export all horizontal column groups left-to-right
         for (rGroup in rowGroups) {
@@ -598,18 +705,9 @@ object SpreadsheetLayoutEngine {
 
     // --- Helper text wrapping & font metrics ---
 
-    private fun sanitizeForFontMetrics(text: String): String {
-        val sb = StringBuilder()
-        for (char in text) {
-            val code = char.code
-            if (code in 32..126 || code in 160..255) {
-                sb.append(char)
-            } else {
-                sb.append(' ')
-            }
-        }
-        return sb.toString()
-    }
+    // Keep WinAnsi glyphs such as currency symbols and typographic punctuation
+    // intact when measuring. Actual drawing rejects unsupported glyphs.
+    private fun sanitizeForFontMetrics(text: String): String = text.replace('\t', ' ')
 
     fun wrapCellText(text: String, font: PDFont, fontSize: Float, maxWidth: Float): List<String> {
         if (maxWidth <= 0f) return listOf(text)

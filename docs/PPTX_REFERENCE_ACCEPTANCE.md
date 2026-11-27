@@ -1,0 +1,14 @@
+# PowerPoint reference-rendering acceptance
+
+Status: **not run against Microsoft PowerPoint**. Source-level tests and emulator pixel witnesses do not establish reference fidelity.
+
+Use trusted, synthetic PPTX fixtures with no user data. Include isolated slides for CJK punctuation and mixed Latin, Mongolian connected words and column order, mirrored and nested nonuniform/sheared upright shapes, inherited text properties, vertical WordArt, crop/rotation, charts, tables and themes. Use the same fonts where licensing and platform support permit; record font substitutions separately. A whole deck must fit the current Android batch raster limit (32 million pixels); use small independent decks for larger corpora.
+
+## Capture both renderers
+
+1. On Windows with licensed PowerPoint, export the untouched fixture at 1920 pixels wide using `powershell -File scripts/export_powerpoint_reference.ps1 -Fixture fixture.pptx -Output reference`. Record the exact Office build and installed font versions alongside the manifest. Do not enable macros or external links. PowerPoint may apply its own export size limits; mismatched dimensions are rejected.
+2. On the target Android device, install the exact candidate APK and test APK. Copy the identical fixture to the target app's external-files subdirectory `pptx_reference_inputs` (use the package ID from the installed build). Run the opt-in test `com.veilframe.app.pdf.operations.OfficeRenderingDeviceTest#capturePowerPointReferenceCandidate` with instrumentation arguments `pptxReferenceFixture=fixture.pptx` and `pptxReferenceCommit=<40-character tested commit>`. Pull the evidence folder printed as `VeilFrame.OfficeDevice`. Without the argument the test is skipped, not counted as reference acceptance. No PowerPoint installation or reference artifact is available in ordinary GitHub runners.
+3. Run `python scripts/compare_pptx_reference.py reference candidate --report report.json`. The comparator validates source SHA-256, capture provenance fields, exact slide count, opaque PNG and native pixel dimensions. It performs no resampling, registration or tolerance-based pass. Exit 0 = exact pixel equality for all supplied slides, 1 = at least one different pixel, 2 = invalid input/capture. Report includes hashes, count/fraction of changed pixels, channel errors and changed region bounds. A manifest identifies the reported renderer; it is not a signed attestation.
+4. Inspect diffs, distinguish font/platform rasterizer variation from genuine geometry/content differences, and retain reviewed reference images and reports with provenance. An exact match proves equality only for the supplied fixtures and versions. Pixel identity across arbitrary PowerPoint documents is not a general supported guarantee.
+
+No baseline reference images are fabricated, and ordinary CI does not mark this acceptance step complete.

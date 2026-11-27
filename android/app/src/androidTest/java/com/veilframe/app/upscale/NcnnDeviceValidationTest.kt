@@ -20,6 +20,7 @@ import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import com.veilframe.app.upscale.model.UpscaleModelRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -147,7 +148,7 @@ class NcnnDeviceValidationTest {
                 val t1 = System.nanoTime()
                 val pssAfter = Debug.getPss()
                 val elapsedMs = (t1 - t0) / 1_000_000
-                Log.i(TAG, "RealCase ${case.name} [Vulkan]: ${elapsedMs}ms | ${inW}x${inH} -> ${output.width}x${output.height} | PSS delta: ${pssAfter - pssBefore} kB")
+                Log.i(TAG, "RealCase ${case.name} [${checkNotNull(output.inferenceBackend)}]: ${elapsedMs}ms | ${inW}x${inH} -> ${output.width}x${output.height} | PSS delta: ${pssAfter - pssBefore} kB")
 
                 assertEquals("Width mismatch", expectedW, output.width)
                 assertEquals("Height mismatch", expectedH, output.height)
@@ -168,7 +169,7 @@ class NcnnDeviceValidationTest {
                     }
                 }
 
-                val outputArtifact = File(artifactsDir, "real_output_gpu_${case.name}.png")
+                val outputArtifact = File(artifactsDir, "real_output_${checkNotNull(output.inferenceBackend).lowercase(java.util.Locale.ROOT)}_${case.name}.png")
                 output.file.copyTo(outputArtifact, overwrite = true)
                 Log.i(TAG, "Saved real output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
             }
@@ -323,6 +324,7 @@ class NcnnDeviceValidationTest {
             val mpStr = String.format(java.util.Locale.US, "%.2f", totalMegaPixels)
             val tpStr = String.format(java.util.Locale.US, "%.2f", throughputMpS)
             Log.i(TAG, "=== USER WA UPSCALE COMPLETED SUCCESSFULLY ===")
+            Log.i(TAG, "Completed backend: ${checkNotNull(output.inferenceBackend)}")
             Log.i(TAG, "Elapsed time: ${elapsedMs}ms (${elapsedMs / 1000.0}s)")
             Log.i(TAG, "Output resolution: ${output.width}x${output.height} (~$mpStr MP)")
             Log.i(TAG, "Throughput: $tpStr MP/s")
@@ -334,7 +336,7 @@ class NcnnDeviceValidationTest {
             assertTrue("Output file must be non-empty", output.file.length() > 0)
             NcnnUpscaleEngine.validatePngFile(output.file, expectedW, expectedH)
 
-            val outputArtifact = File(artifactsDir, "real_output_gpu_user_wa_clash_5120x3840.png")
+            val outputArtifact = File(artifactsDir, "real_output_${checkNotNull(output.inferenceBackend).lowercase(java.util.Locale.ROOT)}_user_wa_clash_5120x3840.png")
             output.file.copyTo(outputArtifact, overwrite = true)
             Log.i(TAG, "Saved user output artifact to ${outputArtifact.absolutePath} (${outputArtifact.length()} bytes)")
         }
@@ -402,4 +404,66 @@ class NcnnDeviceValidationTest {
         }
     }
 
+    @Test
+    fun test07_ConcurrentNcnnMattingAndPiiStress() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val portraitCandidates = listOf(
+            File("/data/local/tmp/test_portrait.jpg"),
+            File("/data/local/tmp/veilframe_validation/real_inputs_20/06_720p_real_portrait.jpg"),
+            File(context.cacheDir, "test_portrait.jpg")
+        )
+        val portraitFile = portraitCandidates.firstOrNull { it.exists() && it.length() > 0L }
+
+        if (portraitFile == null) {
+            Log.w(TAG, "No portrait photo found for concurrent stress test")
+            return@runBlocking
+        }
+
+        val bmp = BitmapFactory.decodeFile(portraitFile.absolutePath)
+        assertNotNull("Must decode portrait", bmp)
+
+        // Initialize matting (U2-Net-P)
+        val mattingReady = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeInit(
+            assetManager = context.assets,
+            paramPath = "models/u2netp/u2netp.ncnn.param",
+            binPath = "models/u2netp/u2netp.ncnn.bin",
+            modelType = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_U2NETP,
+            useGpu = false,
+            isAsset = true
+        )
+        assertTrue("Matting must initialize", mattingReady)
+
+        val piiEngine = com.veilframe.app.privacy.PiiNcnnEngine(context)
+
+        val pssBefore = Debug.getPss()
+        val iterations = 5
+        val job1 = async(kotlinx.coroutines.Dispatchers.Default) {
+            for (i in 0 until iterations) {
+                val cutout = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeProcess(
+                    srcBitmap = bmp,
+                    modelType = com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.MODEL_TYPE_U2NETP,
+                    useGpu = false
+                )
+                assertNotNull("Cutout must not be null", cutout)
+                cutout?.recycle()
+            }
+        }
+
+        val job2 = async(kotlinx.coroutines.Dispatchers.Default) {
+            for (i in 0 until iterations) {
+                val detections = piiEngine.detect(bmp, confThreshold = 0.40f, iouThreshold = 0.45f)
+                assertNotNull("Detections must not be null", detections)
+            }
+        }
+
+        job1.await()
+        job2.await()
+
+        val pssAfter = Debug.getPss()
+        Log.i(TAG, "Concurrent NCNN stress completed: $iterations iterations each, PSS before=${pssBefore}KB after=${pssAfter}KB (delta=${pssAfter - pssBefore}KB)")
+
+        piiEngine.close()
+        com.veilframe.app.cv.segmentation.ncnn.NcnnMattingNative.nativeRelease()
+        bmp.recycle()
+    }
 }

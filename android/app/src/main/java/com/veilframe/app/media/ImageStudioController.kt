@@ -11,16 +11,21 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.chip.Chip
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutImageStudioBinding
 import com.veilframe.app.media.compression.ImageCompressionEngine
 import com.veilframe.app.media.dialogs.ImageStudioDialogController
 import com.veilframe.app.media.preview.ImagePreviewEngine
+import com.veilframe.app.media.preview.IsolatedImagePreviewRenderer
+import com.veilframe.app.media.ImageStudioBatchExportAcceptance
 import com.veilframe.app.media.transform.ImageTransformEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.veilframe.app.privacy.PiiNcnnEngine
@@ -87,6 +92,7 @@ class ImageStudioController(
     // Fast downscaled copy (max 1280px) for smooth 60fps live preview & modal interactions
     private var previewSourceBitmap: Bitmap? = null
     private var currentResultPreviewBitmap: Bitmap? = null
+    private var currentEditingPreviewBitmap: Bitmap? = null
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
@@ -125,7 +131,7 @@ class ImageStudioController(
                 currentItem?.origHeight ?: previewSourceBitmap?.height ?: 1080
             )
         },
-        renderLivePreview = { draftState -> renderLivePreview(draftState, useFullRes = false) },
+        renderLivePreview = { draftState -> renderLivePreview(draftState) },
         onEditsChanged = { refreshPreview() }
     )
 
@@ -278,7 +284,7 @@ class ImageStudioController(
             },
             onSecondaryClick = {
                 val f = lastResultFile
-                if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+                if (f != null && f.exists()) onShareFileRequest(f, com.veilframe.app.storage.SafStorageManager.getExportMimeType(f))
             },
             onCancelClick = {
                 cancelProcessing()
@@ -292,7 +298,7 @@ class ImageStudioController(
         }
         binding.btnImgShareResult.setOnClickListener {
             val f = lastResultFile
-            if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+            if (f != null && f.exists()) onShareFileRequest(f, com.veilframe.app.storage.SafStorageManager.getExportMimeType(f))
         }
 
         // Attach Material 3 Expressive tactile bounce to interactive controls
@@ -468,8 +474,12 @@ class ImageStudioController(
         compressionJob?.cancel()
         compressionJob = null
         lastResultFile = null
+        // Detach the ImageView before retiring either owned preview bitmap.
+        binding.imgAfterPreview.setImageDrawable(null)
         currentResultPreviewBitmap?.recycle()
         currentResultPreviewBitmap = null
+        currentEditingPreviewBitmap?.recycle()
+        currentEditingPreviewBitmap = null
 
         // Save current edits into currently active item
         currentItem?.editState?.copyFrom(editState)
@@ -558,20 +568,18 @@ class ImageStudioController(
     }
 
     /**
-     * Renders live preview using ImageTransformEngine.
+     * Returns an owned preview bitmap. Never give a mutable selected-source
+     * bitmap directly to redaction: it can mutate input pixels in place.
+     * Full-resolution work is exclusively the explicit export pipeline.
      */
-    fun renderLivePreview(state: ImageEditState = editState, useFullRes: Boolean = false): Bitmap? {
+    fun renderLivePreview(state: ImageEditState = editState): Bitmap? {
         val item = currentItem ?: return null
         val src = previewSourceBitmap ?: return null
-        val fullW = item.origWidth
-        val fullH = item.origHeight
-
-        return ImageTransformEngine.transform(
-            src = src,
+        return IsolatedImagePreviewRenderer.render(
+            source = src,
             state = state,
-            origFullW = fullW,
-            origFullH = fullH,
-            useFullRes = false
+            originalWidth = item.origWidth,
+            originalHeight = item.origHeight
         )
     }
 
@@ -581,7 +589,12 @@ class ImageStudioController(
 
     fun updatePreviewBitmap() {
         val previewBmp = renderLivePreview(editState) ?: return
+        // Treat rendered previews as owned buffers; replacing one must release
+        // the old allocation after the view has been rebound.
+        val old = currentEditingPreviewBitmap
+        currentEditingPreviewBitmap = previewBmp
         binding.imgAfterPreview.setImageBitmap(previewBmp)
+        if (old !== previewBmp) old?.recycle()
         val visualScale = (editState.resizeScale.toFloat() / 100f).coerceIn(0.2f, 2.5f)
         binding.imgAfterPreview.scaleX = visualScale
         binding.imgAfterPreview.scaleY = visualScale
@@ -768,7 +781,7 @@ class ImageStudioController(
             Toast.makeText(activity, "Please select an image first", Toast.LENGTH_SHORT).show()
             return
         }
-        val sourceBmp = previewSourceBitmap ?: run {
+        if (previewSourceBitmap == null) {
             Toast.makeText(activity, "No preview available", Toast.LENGTH_SHORT).show()
             return
         }
@@ -790,17 +803,18 @@ class ImageStudioController(
         piiJob = scope.launch(Dispatchers.Default) {
             val engine = getOrInitPiiEngine()
             try {
-                // Run multi-modal inference on preview bitmap, scaling bounding boxes to original dimensions
-                val summary = PiiMultiModalDetector.detectAllSummary(
+                // Analyze the actual source pixels in bounded, overlapping native-size
+                // regions. Scanning the 1280px preview used to erase small identifiers
+                // that remain visible in the higher-resolution exported image.
+                val scanContext = kotlin.coroutines.coroutineContext
+                val summary = ImagePiiRegionScanner.scan(
                     context = activity,
+                    file = item.file,
+                    expectedWidth = item.origWidth,
+                    expectedHeight = item.origHeight,
                     ncnnEngine = engine,
-                    bitmap = sourceBmp,
-                    targetWidth = item.origWidth,
-                    targetHeight = item.origHeight,
                     confThreshold = confThreshold,
-                    includeNcnn = true,
-                    includeBarcodes = true,
-                    includeOcrText = true
+                    checkActive = { scanContext.ensureActive() }
                 )
                 val detections = summary.detections
 
@@ -808,31 +822,52 @@ class ImageStudioController(
                     progressDialog.dismiss()
                     if (activeGeneration != gen) return@withContext
 
+                    if (currentItem !== item) return@withContext
+                    if (summary.failedEngines.isNotEmpty()) {
+                        // Engine failures on even ONE source-resolution tile mean the
+                        // scan is incomplete. A short toast disappears too quickly
+                        // and can make partial PII coverage appear fully verified.
+                        // Require an explicit review decision, preserving any
+                        // existing redaction boxes unless the user edits them.
+                        val failedCount = summary.failedEngines.size
+                        val failedExamples = summary.failedEngines.keys.take(4).joinToString(", ")
+                        val remainder = if (failedCount > 4) " and ${failedCount - 4} more" else ""
+                        val message = if (detections.isEmpty()) {
+                            "No identifiers were confirmed, but $failedCount detector/tile " +
+                                "passes failed ($failedExamples$remainder). This is NOT a " +
+                                "clean scan. Existing redactions remain unchanged. " +
+                                "Retry or inspect the image manually."
+                        } else {
+                            "${detections.size} possible identifiers were found, but " +
+                                "$failedCount detector/tile passes failed " +
+                                "($failedExamples$remainder). Unscanned areas may still " +
+                                "contain private details. Review these boxes and inspect " +
+                                "the entire image before exporting."
+                        }
+                        val warning = MaterialAlertDialogBuilder(activity)
+                            .setTitle("PII scan incomplete")
+                            .setMessage(message)
+                            .setPositiveButton("OK", null)
+                        if (detections.isNotEmpty()) {
+                            warning.setPositiveButton("Review available boxes") { _, _ ->
+                                if (activeGeneration == gen && currentItem === item) {
+                                    showPiiRedactionSelectionDialog(detections, item)
+                                }
+                            }.setNegativeButton("Cancel", null)
+                        }
+                        warning.show()
+                        return@withContext
+                    }
+
                     if (detections.isEmpty()) {
-                        if (summary.failedEngines.isNotEmpty()) {
-                            val failedList = summary.failedEngines.keys.joinToString(", ")
-                            Toast.makeText(
-                                activity,
-                                "PII scan degraded: $failedList unavailable. 0 targets confirmed in active passes.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else if (editState.piiDetections.isNotEmpty()) {
+                        if (editState.piiDetections.isNotEmpty()) {
                             editState.piiDetections = emptyList()
                             refreshPreview()
                             Toast.makeText(activity, "No PII targets detected; cleared prior redactions", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(activity, "No PII detected (0 targets found across all engines)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "No PII detected (0 targets found across active engines)", Toast.LENGTH_SHORT).show()
                         }
                         return@withContext
-                    }
-
-                    if (summary.failedEngines.isNotEmpty()) {
-                        val failedList = summary.failedEngines.keys.joinToString(", ")
-                        Toast.makeText(
-                            activity,
-                            "Partial scan: $failedList failed. ${detections.size} targets found in active passes.",
-                            Toast.LENGTH_SHORT
-                        ).show()
                     }
 
                     showPiiRedactionSelectionDialog(detections, item)
@@ -954,17 +989,42 @@ class ImageStudioController(
             return
         }
 
-        executeCompression()
+        if (selectedMediaList.size > 1) {
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Export individual image edits")
+                .setMessage(
+                    "Every image will use its own saved crop, rotation, filter, blur and PII redactions. " +
+                        "Edits on the currently selected image are NOT copied to other images. " +
+                        "Review and scan each image separately before exporting sensitive photos."
+                )
+                .setNegativeButton("Review images", null)
+                .setPositiveButton("Export per-image edits") { _, _ ->
+                    if (compressionJob?.isActive != true && selectedMediaList.isNotEmpty()) {
+                        executeCompression()
+                    }
+                }
+                .show()
+        } else executeCompression()
     }
 
     private fun executeCompression() {
         val itemsToProcess = selectedMediaList.toList()
         if (itemsToProcess.isEmpty()) return
+        // One authoritative edit model per source file. Snapshot synchronously
+        // before launching IO so dialog/nav changes cannot mix revisions.
+        currentItem?.editState?.copyFrom(editState)
+        val editsAtExport = ImageStudioBatchEditContract.snapshot(
+            itemsToProcess.map { it.editState },
+            currentMediaIndex,
+            editState
+        )
 
-        val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
-        val ext = outputConfig.format.lowercase(Locale.US)
+        val exportConfig = outputConfig.copy()
+        val destUri = safManager.imageDestinationUri
+        val destName = safManager.imageDestinationName
+        val ext = exportConfig.format.lowercase(Locale.US)
         val rawName = binding.etImgOutputFilename.text.toString().trim()
-        val safeBase = File(rawName).name.substringBeforeLast('.').ifBlank { "compressed_image" }
+        val safeBase = ImageStudioBatchArchive.safeBaseName(rawName)
 
         val generation = ++activeGeneration
         binding.layoutImgProgress.visibility = View.VISIBLE
@@ -972,44 +1032,39 @@ class ImageStudioController(
         floatingDockController.transitionTo(FloatingActionState.PROCESSING)
 
         compressionJob = scope.launch(Dispatchers.IO) {
+            var outDir: File? = null
+            var resultPreview: Bitmap? = null
+            var committed = false
+            val createdDocuments = mutableListOf<Uri>()
+            val encodedFiles = mutableListOf<File>()
+            fun rollback(): Int = ImageStudioBatchExportAcceptance.rollbackCreated(
+                createdDocuments, safManager::deleteCreatedDocument
+            )
             try {
+                val parent = File(activity.cacheDir, "studio_output")
+                check(parent.isDirectory || parent.mkdirs()) { "Cannot create export cache" }
+                val ownedDir = java.nio.file.Files.createTempDirectory(parent.toPath(), "batch_").toFile()
+                outDir = ownedDir
                 var successCount = 0
                 var exportedCount = 0
                 val total = itemsToProcess.size
                 var lastSavedFile: File? = null
                 var totalOriginalBytes = 0L
                 var totalCompressedBytes = 0L
-                val destUri = safManager.imageDestinationUri
-
-                // Save current edits into currently selected item
-                currentItem?.editState?.copyFrom(editState)
 
                 for ((idx, item) in itemsToProcess.withIndex()) {
-                    if (!isActive) break
+                    coroutineContext.ensureActive()
 
                     withContext(Dispatchers.Main) {
                         binding.tvImgProgressStatus.text = "Processing ${idx + 1} of $total: ${item.displayName}"
                     }
 
                     val outFilename = if (total == 1) "$safeBase.$ext" else "${safeBase}_${idx + 1}.$ext"
-                    val outFile = File(outDir, outFilename)
+                    val outFile = File(ownedDir, outFilename)
 
-                    val itemEditState = if (itemsToProcess.size > 1 && item != currentItem) {
-                        item.editState.copy(
-                            cropAspect = if (editState.cropAspect == "Free") "Free" else editState.cropAspect,
-                            filter = editState.filter,
-                            bgType = editState.bgType,
-                            watermarkText = editState.watermarkText,
-                            watermarkPosition = editState.watermarkPosition,
-                            watermarkSize = editState.watermarkSize,
-                            watermarkColor = editState.watermarkColor,
-                            watermarkOpacity = editState.watermarkOpacity,
-                            watermarkFont = editState.watermarkFont,
-                            stripExif = editState.stripExif
-                        )
-                    } else {
-                        editState.copy()
-                    }
+                    // Never copy preview-space PII boxes or source-specific brush
+                    // coordinates from another photograph during batch publication.
+                    val itemEditState = editsAtExport[idx]
 
                     var fullResBmp: Bitmap? = null
                     var transformedBmp: Bitmap? = null
@@ -1017,12 +1072,13 @@ class ImageStudioController(
                         // DEFERRED FULL RESOLUTION DECODE: ONLY WHEN EXPORTING!
                         fullResBmp = ImagePreviewEngine.decodeFullResolution(item.file)
                         if (fullResBmp == null) {
-                            fullResBmp = ImagePreviewEngine.decodePreviewBitmap(item.file, maxDim = 2560)
+                            throw IllegalStateException(
+                                "Cannot decode ${item.displayName}; refusing incomplete batch export"
+                            )
                         }
-                        if (fullResBmp == null) {
-                            Log.e("VeilFrame.ImageStudio", "Could not decode full-res for ${item.displayName}")
-                            continue
-                        }
+                        ImageStudioBatchExportAcceptance.requireOriginalDimensions(
+                            item.origWidth, item.origHeight, fullResBmp.width, fullResBmp.height
+                        )
 
                         // Apply non-destructive transforms to full-res bitmap
                         transformedBmp = ImageTransformEngine.transform(
@@ -1037,64 +1093,93 @@ class ImageStudioController(
                             srcFile = item.file,
                             outFile = outFile,
                             editState = itemEditState,
-                            outputConfig = outputConfig,
+                            outputConfig = exportConfig,
                             processedBitmap = transformedBmp ?: fullResBmp
                         )
 
-                        if (result.success && outFile.exists()) {
+                        if (result.success && outFile.isFile && outFile.length() > 0L) {
+                            encodedFiles.add(outFile)
                             successCount++
                             lastSavedFile = outFile
                             totalOriginalBytes += item.originalBytes
                             totalCompressedBytes += outFile.length()
-
-                            if (destUri != null) {
-                                val mime = when (outputConfig.format.uppercase(Locale.US)) {
-                                    "PNG" -> "image/png"
-                                    "WEBP" -> "image/webp"
-                                    "BMP" -> "image/bmp"
-                                    "TIFF" -> "image/tiff"
-                                    "GIF" -> "image/gif"
-                                    "HEIF" -> "image/heif"
-                                    "HEIC" -> "image/heic"
-                                    "AVIF" -> "image/avif"
-                                    else -> "image/jpeg"
-                                }
-                                val copied = safManager.copyFileToDocumentTree(outFile, destUri, mime)
-                                if (copied != null) exportedCount++
-                            }
                         } else {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(activity, "Failed for ${item.displayName}: ${result.error}", Toast.LENGTH_SHORT).show()
-                            }
+                            throw IllegalStateException(
+                                "Could not encode ${item.displayName}: ${result.error ?: "empty output"}"
+                            )
                         }
                     } finally {
-                        transformedBmp?.recycle()
+                        if (transformedBmp !== fullResBmp) transformedBmp?.recycle()
                         fullResBmp?.recycle()
                     }
                 }
 
+                // Finish all encoding before creating any external document. A
+                // later transfer failure rolls back only this batch's newly created URIs.
+                ImageStudioBatchExportAcceptance.requireComplete(total, successCount, 0, false)
+                // Save/Share accept a single artifact. For a multi-image job it
+                // must contain the entire batch, not merely its final image.
+                val resultArtifact = if (total == 1) encodedFiles.single() else {
+                    File(ownedDir, "$safeBase.zip").also { archive ->
+                        ImageStudioBatchArchive.writeVerified(encodedFiles, archive) {
+                            coroutineContext.ensureActive()
+                        }
+                    }
+                }
+                if (destUri != null) {
+                    val mime = com.veilframe.app.storage.SafStorageManager.getExportMimeType(encodedFiles.first())
+                    for (file in encodedFiles) {
+                        coroutineContext.ensureActive()
+                        val created = safManager.copyVerifiedFileToDocumentTree(file, destUri, mime) {
+                            coroutineContext.ensureActive()
+                        }
+                        createdDocuments.add(created)
+                        exportedCount++
+                    }
+                }
+                coroutineContext.ensureActive()
+                ImageStudioBatchExportAcceptance.requireComplete(
+                    requested = total,
+                    encoded = successCount,
+                    copiedToDestination = exportedCount,
+                    destinationSelected = destUri != null
+                )
+                resultPreview = lastSavedFile?.let {
+                    ImagePreviewEngine.decodePreviewBitmap(it, maxDim = 1280)
+                }
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress again"
 
-                    if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists()) {
-                        lastResultFile = lastSavedFile
-                        currentResultPreviewBitmap?.recycle()
-                        currentResultPreviewBitmap = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
+                    if (successCount > 0 && lastSavedFile != null && resultArtifact.isFile && resultArtifact.length() > 0L) {
+                        lastResultFile = resultArtifact
+                        committed = true
+                        val oldResult = currentResultPreviewBitmap
+                        val oldEditing = currentEditingPreviewBitmap
+                        currentResultPreviewBitmap = resultPreview
+                        resultPreview = null
+                        currentEditingPreviewBitmap = null
                         if (currentResultPreviewBitmap != null) {
                             binding.imgAfterPreview.setImageBitmap(currentResultPreviewBitmap)
+                        } else {
+                            binding.imgAfterPreview.setImageDrawable(null)
                         }
-                        binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${outputConfig.format})"
+                        oldResult?.recycle()
+                        if (oldEditing !== oldResult) oldEditing?.recycle()
+                        binding.tvImgAfterSize.text = if (total == 1)
+                            "${formatBytes(lastSavedFile.length())} (${exportConfig.format})"
+                        else "${formatBytes(resultArtifact.length())} (ZIP • $total images; last image preview)"
                         val ratio = if (totalOriginalBytes > 0) {
                             (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
                         binding.tvImgComparisonRatio.text = "Saved: ${formatBytes(totalOriginalBytes)} → ${formatBytes(totalCompressedBytes)} (-$ratio%)"
                         binding.tvImgActualStats.visibility = View.VISIBLE
-                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%"
+                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%" +
+                            if (total > 1) " • Save/Share: all images in ZIP" else ""
                         binding.layoutImgResultActions.visibility = View.VISIBLE
 
-                        val destMsg = if (safManager.imageDestinationUri != null) "\nSaved to: ${safManager.imageDestinationName}" else ""
+                        val destMsg = if (destUri != null) "\nSaved to: $destName" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount image(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                         ExpressiveMotion.playJellyBounce(binding.btnImgExecute)
                         ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
@@ -1112,14 +1197,32 @@ class ImageStudioController(
                         floatingDockController.transitionTo(FloatingActionState.READY, actionTitle = "Compress")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}", e)
+                val failedCleanup = if (!committed) rollback() else 0
+                val cleanupNotice = if (failedCleanup > 0) " Destination refused cleanup of $failedCleanup file(s)." else ""
+                Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}$cleanupNotice", e)
                 withContext(Dispatchers.Main) {
                     if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress"
-                    Toast.makeText(activity, "Image compression error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "Image compression error: ${e.message}$cleanupNotice", Toast.LENGTH_LONG).show()
                     syncFloatingDockState()
+                }
+            } finally {
+                resultPreview?.recycle()
+                if (!committed) {
+                    val failedCleanup = rollback()
+                    if (failedCleanup > 0) Log.e("VeilFrame.ImageStudioController",
+                        "Destination refused rollback of $failedCleanup newly created file(s)")
+                    outDir?.deleteRecursively()
+                }
+                // deepCopy() created separate owned mask bitmaps for export; do not
+                // recycle the live per-image edit models still used by preview.
+                editsAtExport.forEach { state ->
+                    state.blurBrushMask?.recycle()
+                    state.blurBgSubjectCutout?.recycle()
                 }
             }
         }
@@ -1128,6 +1231,9 @@ class ImageStudioController(
     fun clear() {
         activeGeneration++
         loadToken.incrementAndGet()
+        binding.imgAfterPreview.setImageDrawable(null)
+        currentEditingPreviewBitmap?.recycle()
+        currentEditingPreviewBitmap = null
         selectedMediaList.forEach { it.previewBitmap?.recycle() }
         selectedMediaList.clear()
         currentMediaIndex = 0

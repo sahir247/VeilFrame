@@ -24,27 +24,28 @@ internal object CoordinateGridCache {
         require(rows > 0 && cols > 0) { "grid dimensions must be positive" }
         if (rows.toLong() * cols.toLong() <= MAX_CACHED_PIXELS) {
             if (cachedRows != rows || cachedCols != cols || cachedX == null || cachedY == null) {
-                cachedX?.release()
-                cachedY?.release()
-                val x = Mat(rows, cols, CvType.CV_32F)
-                val y = Mat(rows, cols, CvType.CV_32F)
-                fill(x, y)
-                cachedRows = rows
-                cachedCols = cols
-                cachedX = x
-                cachedY = y
+                // Keep the old valid cache until both replacement grids are
+                // allocated and populated. Never retain a released cache entry.
+                withMotionMats {
+                    val x = own(Mat(rows,cols,CvType.CV_32F))
+                    val y = own(Mat(rows,cols,CvType.CV_32F))
+                    fill(x,y)
+                    cachedX?.release()
+                    cachedY?.release()
+                    cachedRows = rows
+                    cachedCols = cols
+                    cachedX = transfer(x)
+                    cachedY = transfer(y)
+                }
             }
             return block(cachedX!!, cachedY!!)
         }
 
-        val x = Mat(rows, cols, CvType.CV_32F)
-        val y = Mat(rows, cols, CvType.CV_32F)
-        try {
-            fill(x, y)
-            return block(x, y)
-        } finally {
-            x.release()
-            y.release()
+        return withMotionMats {
+            val x = own(Mat(rows,cols,CvType.CV_32F))
+            val y = own(Mat(rows,cols,CvType.CV_32F))
+            fill(x,y)
+            block(x,y)
         }
     }
 

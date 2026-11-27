@@ -513,10 +513,22 @@ class WorkspaceHost(
             it.translationZ = 0f
             it.elevation = 0f
             it.clipToOutline = false
+            it.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         if (activeWorkspace == workspace) {
             activeWorkspace = null
         }
+    }
+
+    /** The outgoing animation view may remain visible, but it is not the active workspace. */
+    @MainThread
+    fun hideInactive(activeView: View?, preserveView: View? = null) {
+        val active = SecondaryWorkspace.values().firstOrNull { activeView != null && getRoot(it) === activeView }
+        for (workspace in SecondaryWorkspace.values()) {
+            val root = getRoot(workspace) ?: continue
+            if (root !== activeView && root !== preserveView) deactivate(workspace)
+        }
+        activeWorkspace = active
     }
 
     @MainThread
@@ -582,6 +594,7 @@ class WorkspaceHost(
     }
 
     fun onDestroy() {
+        hideInactive(null)
         activeWorkspace = null
         imageUpscalerBinding = null
         docScannerBinding = null

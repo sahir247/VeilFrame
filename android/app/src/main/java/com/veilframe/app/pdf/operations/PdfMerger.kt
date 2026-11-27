@@ -2,7 +2,6 @@ package com.veilframe.app.pdf.operations
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
@@ -38,7 +37,8 @@ data class MergeItem(
     val size: Long = 0L,
     val formattedSize: String = "",
     val type: MergeItemType,
-    val pageCount: Int = 1
+    val pageCount: Int = 1,
+    val sourceSha256: String? = null
 )
 
 /**
@@ -142,15 +142,7 @@ class PdfMerger {
                         )
                     }
                     MergeItemType.IMAGE -> {
-                        val bitmap = loadBitmap(context, item.uri)
-                            ?: return@withContext Result.failure(
-                                IllegalStateException("Cannot load image: ${item.uri}")
-                            )
-                        try {
-                            addImagePageToDocument(destination, bitmap)
-                        } finally {
-                            bitmap.recycle()
-                        }
+                        appendMergeImage(context,destination,item)
                     }
                 }
 
@@ -175,35 +167,14 @@ class PdfMerger {
         }
     }
 
-    /**
-     * Helper to load bitmap cleanly from Uri with memory safety.
-     */
-    private fun loadBitmap(context: Context, uri: Uri): Bitmap? {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                BitmapFactory.decodeStream(inputStream, null, options)
-
-                val maxDimension = 3072
-                var sampleSize = 1
-                while (options.outWidth / sampleSize > maxDimension ||
-                    options.outHeight / sampleSize > maxDimension
-                ) {
-                    sampleSize *= 2
-                }
-
-                context.contentResolver.openInputStream(uri)?.use { stream2 ->
-                    val decodeOptions = BitmapFactory.Options().apply {
-                        inSampleSize = sampleSize
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }
-                    BitmapFactory.decodeStream(stream2, null, decodeOptions)
-                }
+    private suspend fun appendMergeImage(context: Context, destination: PDDocument, item: MergeItem) {
+        MergeImageSource.open(context,item.uri).use { source ->
+            check(item.sourceSha256 == null || item.sourceSha256 == source.sha256) {
+                "Selected image changed since page ordering: ${item.name}"
             }
-        } catch (e: Exception) {
-            null
+            val bitmap = source.decode()
+            try { addImagePageToDocument(destination,bitmap) }
+            finally { bitmap.recycle() }
         }
     }
 
@@ -216,7 +187,7 @@ class PdfMerger {
         document.addPage(page)
 
         val pixelCount = bitmap.width * bitmap.height
-        val pdImage = if (pixelCount > 1024 * 1024) {
+        val pdImage = if (pixelCount > 1024 * 1024 && !bitmap.hasAlpha()) {
             JPEGFactory.createFromImage(document, bitmap, 0.9f)
         } else {
             LosslessFactory.createFromImage(document, bitmap)
@@ -333,35 +304,39 @@ class PdfMerger {
         MemoryGuard.checkMemory("mergePageItems")
 
         var destinationDocument: PDDocument? = null
-        val openedDocs = mutableMapOf<Uri, PDDocument>()
+        val openedDocs = mutableMapOf<Uri, LoadedMergePdf>()
 
         try {
-            destinationDocument = PDDocument()
+            destinationDocument = PDDocument(MemoryUsageSetting.setupTempFileOnly())
             val destination = destinationDocument
 
             pageItems.forEachIndexed { index, pageItem ->
                 ensureActive()
                 if (pageItem.isImage) {
-                    val bitmap = loadBitmap(context, pageItem.sourceItem.uri)
-                    if (bitmap != null) {
-                        addImagePageToDocument(destination, bitmap)
+                    require(pageItem.sourcePageIndex == 0 && pageItem.sourceItem.pageCount == 1) {
+                        "Invalid image page plan"
                     }
+                    appendMergeImage(context,destination,pageItem.sourceItem)
                 } else {
                     val uri = pageItem.sourceItem.uri
-                    val srcDoc = openedDocs.getOrPut(uri) {
-                        val stream = context.contentResolver.openInputStream(uri)
-                            ?: throw IllegalStateException("Cannot open ${pageItem.sourceItem.name}")
-                        PDDocument.load(stream, MemoryUsageSetting.setupTempFileOnly())
+                    val loaded = openedDocs[uri] ?: loadMergePdf(context, uri).also { openedDocs[uri] = it }
+                    val expectedHash = pageItem.sourceItem.sourceSha256
+                    check(expectedHash == null || loaded.sha256 == expectedHash) {
+                        "Selected PDF changed since page ordering: ${pageItem.sourceItem.name}"
                     }
-                    if (pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
-                        val page = srcDoc.getPage(pageItem.sourcePageIndex)
-                        destination.importPage(page)
+                    val srcDoc = loaded.document
+                    check(srcDoc.numberOfPages == pageItem.sourceItem.pageCount &&
+                        pageItem.sourcePageIndex in 0 until srcDoc.numberOfPages) {
+                        "Selected PDF page plan no longer matches ${pageItem.sourceItem.name}"
                     }
+                    val page = srcDoc.getPage(pageItem.sourcePageIndex)
+                    destination.importPageWithResources(page)
                 }
                 onProgress((index + 1).toFloat() / pageItems.size)
             }
 
             ensureActive()
+            check(destination.numberOfPages == pageItems.size) { "Incomplete page-by-page merge" }
             destination.save(outputStream)
             outputStream.flush()
             onProgress(1.0f)

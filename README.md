@@ -12,7 +12,7 @@
   <a href="https://python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-green.svg" alt="Python 3.10+" /></a>
   <a href="https://github.com/Tencent/ncnn"><img src="https://img.shields.io/badge/inference-Tencent%20NCNN%20Native%20C%2B%2B-orange.svg" alt="Tencent NCNN C++" /></a>
   <a href="https://www.vulkan.org/"><img src="https://img.shields.io/badge/compute-Vulkan%20GPU%20Accelerated-red.svg" alt="Vulkan Compute" /></a>
-  <a href="https://ed25519.cr.yp.to/"><img src="https://img.shields.io/badge/provenance-Ed25519-purple.svg" alt="Ed25519 Signatures" /></a>
+  <a href="https://ed25519.cr.yp.to/"><img src="https://img.shields.io/badge/provenance-update--manifest%20verification-purple.svg" alt="Ed25519 Signatures" /></a>
   <a href="https://datatracker.ietf.org/doc/html/rfc8785"><img src="https://img.shields.io/badge/spec-RFC%208785%20JCS-blueviolet.svg" alt="RFC 8785" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 License" /></a>
 </p>
@@ -21,12 +21,12 @@
 
 ## <img src="docs/images/icons/overview.svg" width="22" height="22" alt="" /> Executive Overview
 
-**VeilFrame** is an offline-native multimedia engineering, signal transformation, and privacy compilation workstation. Built from the ground up for zero-trust environments, VeilFrame eliminates cloud dependence while preserving precise media fidelity and auditability.
+**VeilFrame** is an offline-native multimedia engineering, signal transformation, and privacy compilation workstation. Media processing is designed to run locally; optional model downloads and app-update checks require network access. Fidelity and privacy guarantees vary by individual operation and its verification coverage.
 
 Originally architected as a specialized bitstream privacy sanitizer, VeilFrame has grown into a comprehensive workstation organizing **14 dedicated creative, computer vision, document, and forensic workspaces** under a single independent verification pipeline.
 
-> <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> **Zero Cloud Guarantee**<br>
-> VeilFrame operates entirely offline. It does not transmit telemetry, analytics, user media, or diagnostic crash reports to any external server. Every neural model, optical flow pass, document transform, and forensic audit is executed and verified locally on-device.
+> <img src="docs/images/icons/security.svg" width="16" height="16" alt="" /> **Offline-first processing**<br>
+> Android media transformations and local analysis are designed to run on-device. Optional downloads of neural models and app-update metadata use the network; these are not uploads of the user's media. Not every processed artifact is independently verified, and an on-device diagnostic is not proof of anonymity or perfect content fidelity.
 
 ---
 
@@ -67,7 +67,7 @@ Precision document manipulation and cryptographic signing:
 
 ### 4. <img src="docs/images/icons/security.svg" width="18" height="18" alt="" /> Forensic Privacy & Sanitization
 Mathematical privacy compilation and bounded signal disruption:
-* **Video Privacy Sanitizer:** Bitstream SEI NAL scrubbing, physical Bayer CFA PRNU sensor dither, 2D DCT perceptual hash perturbation, and acoustic electrical network frequency (ENF) mains notch filtering.
+* **Video Privacy Sanitizer:** Metadata/bitstream sanitization and selectable FFmpeg temporal noise with optional scale/pad and audio handling. Noise injection is **not proven PRNU removal or camera unlinkability**; verify the selected mode's actual output.
 * **Image Privacy Compiler:** Deterministic 3-layer compilation with ConstantFill solid redaction, 8-bit sRGB quantization normalization, 7 Level-3 adversarial red-team probes, and a 5-contract QualityGate.
 * **Image Quality Forensics:** Independent computer vision evaluation analyzing Laplacian sharpness, Gaussian noise variance, dynamic range entropy, and exposure clipping without fabricated score fallbacks.
 
@@ -75,7 +75,7 @@ Mathematical privacy compilation and bounded signal disruption:
 Structured codebase compilation and zero-trust evidence validation:
 * **AI Context Bundler (`.aibundle` v1):** Zero-truncation codebase packaging compiler for LLMs and autonomous agents with priority knapsack token budgeting (32k–1M), explicit depth bounding, and structured repository summarization.
 * **Folder Forensics & Staged Duplicate Finder:** Selective `os.scandir()` traversal, SQLite3 indexing, and staged 3-tier duplicate detection (size $\to$ 16 KiB head/tail $\to$ full streaming SHA-256 verification).
-* **Cryptographic Provenance:** RFC 8785 Canonical JSON evidence manifests bound with Ed25519-SHA512 digital signatures and neutral initial verification dashboards.
+* **Cryptographic Provenance:** Android computes file SHA-256 and can verify an archive's signed update-style `manifest.json` against the embedded VeilFrame update public key. This does **not** sign media exports or authenticate archive members. Desktop/CLI evidence tools have separate contracts; do not infer their guarantees for Android.
 
 ---
 
@@ -191,7 +191,7 @@ Modernized Android shell aligning tactile physics with visual hierarchy:
 
 ### 9. <img src="docs/images/icons/security.svg" width="20" height="20" alt="" /> Video Privacy & Bounded Forensic Disruption
 Bounded orthogonal signal perturbations disrupting machine re-identification while preserving perceptual quality:
-* **Physical Bayer CFA PRNU Sensor Dither:** Neutralizes sensor-level silicon fingerprinting.
+* **Video sensor-pattern disruption (unverified):** Current Android video path uses FFmpeg temporal noise and optional scale/pad. It has **no independent camera-attribution resistance result**, and does not implement physical Bayer CFA PRNU subtraction.
 * **2D DCT Transform Perturbation:** Modifies frequency-domain perceptual hashes.
 * **Acoustic ENF Mains Filter:** High-Q multi-order IIR notch filters targeting 50 Hz, 60 Hz, 100 Hz, and 120 Hz power-grid hums.
 * **Three-Tier QualityGate:** Enforces Mean SSIM $\ge 0.95$, Tail P5 SSIM $\ge 0.90$, Worst-Case SSIM $\ge 0.85$, Mean PSNR $\ge 30.0\text{ dB}$, and strictly monotonic presentation timestamps.
@@ -318,7 +318,7 @@ VeilFrame provides three mathematically calibrated presets for forensic sanitiza
 
 ## <img src="docs/images/icons/manifest.svg" width="22" height="22" alt="" /> Cryptographic Evidence Manifest
 
-Every sanitized output generates an RFC 8785 canonical JSON manifest cryptographically signed with Ed25519:
+The following is an **illustrative evidence-manifest schema**, not a statement that every Android export produces it. The Android app currently hashes files and verifies certain signed update-style manifests against its app-pinned public key; **it does not generate Ed25519 signatures for exported photos/videos, sign arbitrary manifests, or verify the SHA-256 of every ZIP member against a manifest**. Android's platform Ed25519 JCA support is available from API 33; the existing verifier fails closed on API 26–32 when the algorithm is unavailable. Desktop/CLI signing and canonicalization must be validated independently from this mobile workflow:
 
 ```json
 {
@@ -368,7 +368,7 @@ mypy veilframe
 
 ## <img src="docs/images/icons/limitations.svg" width="22" height="22" alt="" /> Limitations & Non-Guarantees
 
-1. **Semantic Content:** VeilFrame neutralizes physical sensor fingerprints, acoustic power-grid hums, container metadata, and identified regions of interest. It cannot redact spoken dialogue or contextual visual cues that are not explicitly masked.
+1. **Privacy limits:** Metadata scrubbing, optional temporal noise, and selected PII masks do not prove camera anonymity or removal of every identifier. In particular, video FFmpeg noise is not a validated sensor-fingerprint removal method; missed detections, speech and contextual visual cues can remain.
 2. **Extreme Adversaries:** Against manual human analysts with out-of-band context, visual surroundings that are left unredacted may still provide contextual clues.
 3. **Lossless Bit-for-Bit Identity:** Bounded forensic signal perturbation intentionally modifies pixel values within strict perceptual budgets; for 100% bitstream identity preservation, select the privacy-preserving or identity-preserving mode.
 
@@ -378,3 +378,5 @@ mypy veilframe
 
 * **License:** [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
 * **Security Policy:** See [SECURITY.md](SECURITY.md) for vulnerability disclosure procedures and threat model documentation.
+
+**JPEG codec attribution:** This software is based in part on the work of the Independent JPEG Group. The original-resolution JPEG encoder uses the classic libjpeg API from [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/tree/7b4993786d856cbccabfc0ed2f923ba000e326cc), built from its pinned upstream source.

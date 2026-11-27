@@ -1,0 +1,266 @@
+package com.veilframe.app.pdf.operations
+
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import kotlin.math.abs
+
+/**
+ * Bounded print-only chart placement in the same approximate worksheet geometry.
+ * Two-cell zero-offset DrawingML anchors use half-open end markers.
+ * This is not Excel's original drawing engine or printer-exact rendering.
+ */
+internal object XlsxAnchoredChartRenderer {
+    data class Placement(val plan: Int, val tile: Int,
+        val left: Float, val top: Float, val width: Float, val height: Float)
+    private data class Marker(val row: Int, val col: Int)
+    private fun marker(s: String): Marker? {
+        if (!s.matches(Regex("[A-Za-z]{1,3}[1-9][0-9]{0,6}"))) return null
+        val col = runCatching { OpenXmlDocumentParser.colRefToIndex(s) }.getOrNull() ?: return null
+        val row = s.dropWhile { it.isLetter() }.toIntOrNull()?.minus(1) ?: return null
+        return if (row in 0 until 1_048_576 && col in 0 until 16_384) Marker(row,col) else null
+    }
+
+    /** Refuse clipped, hidden, repeated-title, multi-area and multi-page charts. */
+    fun locate(chart: XlsxCachedChart, layout: SheetLayout,
+        plans: List<XlsxSavedPrintLayout.Plan>): Placement? {
+        if (!chart.printsWithSheet || chart.drawingOffsets == null ||
+            chart.kind !in setOf("column","bar","line","combo","scatter","pie")) return null
+        val ends = chart.sourceAnchor?.split(':') ?: return null
+        if (ends.size != 2) return null
+        val from = marker(ends[0]) ?: return null
+        val to = marker(ends[1]) ?: return null
+        val rows = to.row-from.row
+        val cols = to.col-from.col
+        val offsets = chart.drawingOffsets ?: return null
+        val fromX = offsets.fromColEmu/12_700f
+        val fromY = offsets.fromRowEmu/12_700f
+        val toX = offsets.toColEmu/12_700f
+        val toY = offsets.toRowEmu/12_700f
+        if (rows !in 2..512 || cols !in 2..128 ||
+            to.row > layout.rowCount || to.col > layout.colCount ||
+            fromX >= layout.colWidths[from.col] || fromY >= layout.rowHeights[from.row] ||
+            (toX > 0f && (to.col >= layout.colCount || toX >= layout.colWidths[to.col])) ||
+            (toY > 0f && (to.row >= layout.rowCount || toY >= layout.rowHeights[to.row]))) return null
+        var found: Placement? = null
+        for ((pi,plan) in plans.withIndex()) for ((ti,tile) in plan.tiles.withIndex()) {
+            val rr = tile.first; val cc = tile.second
+            val r = rr.indexOf(from.row); val c = cc.indexOf(from.col)
+            val rowCount = rows + if (toY > 0f) 1 else 0
+            val colCount = cols + if (toX > 0f) 1 else 0
+            if (r < 0 || c < 0 || r+rowCount > rr.size || c+colCount > cc.size) continue
+            if ((0 until rowCount).any { rr[r+it] != from.row+it } ||
+                (0 until colCount).any { cc[c+it] != from.col+it }) continue
+            val x = cc.take(c).sumOf { layout.colWidths[it].toDouble() }.toFloat() + fromX
+            val y = -rr.take(r).sumOf { layout.rowHeights[it].toDouble() }.toFloat() - fromY
+            val w = (from.col until to.col).sumOf { layout.colWidths[it].toDouble() }.toFloat()+toX-fromX
+            val h = (from.row until to.row).sumOf { layout.rowHeights[it].toDouble() }.toFloat()+toY-fromY
+            if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite() ||
+                w < 120f || h < 80f || found != null) return null
+            found = Placement(pi,ti,x,y,w,h)
+        }
+        return found
+    }
+
+    fun draw(stream: PDPageContentStream, chart: XlsxCachedChart, p: Placement,
+        checkpoint: () -> Unit,
+        label: ((String,Float,Float,Float,Float)->Unit)? = null) {
+        require(chart.series.size in 1..6 && chart.categories.size in 1..240)
+        val font = PDType1Font.HELVETICA
+        require(chart.title.all { it >= ' ' && it != '\u007f' }) { "Unsupported saved chart title" }
+        if (label == null) try {
+            font.encode(chart.title)
+            require(font.getStringWidth(chart.title)*8f/1000f <= p.width-12f) {
+                "Saved chart title exceeds the verified drawing rectangle"
+            }
+        } catch (_: Exception) { throw IllegalArgumentException("Unsupported saved chart title or glyphs") }
+        val painter=PdfChartPaint(stream)
+        val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715,0x247D82)
+        fun color(rgb: Int) = stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+        fun stroke(rgb: Int) = stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
+        fun line(x: Float,y: Float,x2: Float,y2: Float) {
+            stream.moveTo(x,y); stream.lineTo(x2,y2); stream.stroke()
+        }
+        val bottom = p.top-p.height
+        stream.saveGraphicsState()
+        try {
+            stream.addRect(p.left,bottom,p.width,p.height); stream.clip()
+            color(0xFFFFFF); stream.addRect(p.left,bottom,p.width,p.height); stream.fill()
+            stroke(0x9BA4AC); stream.setLineWidth(0.6f)
+            stream.addRect(p.left+0.5f,bottom+0.5f,p.width-1f,p.height-1f); stream.stroke()
+            if (chart.title.isNotEmpty()) {
+                if (label != null) label(chart.title,p.left+6f,p.top-13f,8f,p.width-12f)
+                else {
+                    color(0x222222); stream.beginText(); stream.setFont(font,8f)
+                    stream.newLineAtOffset(p.left+6f,p.top-13f); stream.showText(chart.title); stream.endText()
+                }
+            }
+            if (chart.kind == "pie") {
+                drawPie(stream,chart,p,font,checkpoint,label)
+                return
+            }
+            val axes=SharedChartValueAxes.build(chart)
+            val xy=if(chart.kind=="scatter") XlsxScatterGeometry.build(chart) else null
+            val dates=SharedChartDates.build(chart)
+            val secondary=axes.values.singleOrNull { it.axis.position=="r" }
+            val primary=axes.values.singleOrNull { it.axis.position=="l" }
+            val x0=p.left+if(primary!=null || xy!=null) 40f else 22f
+            val y0=bottom+17f
+            val w=p.width-(x0-p.left)-(if(secondary!=null) 40f else 11f)
+            val h=p.height-42f
+            require(w > 0f && h > 0f)
+            stroke(0xD8DDE2); stream.setLineWidth(0.35f)
+            for (tick in 0..4) {
+                val ratio=tick/4f; val y=y0+ratio*h
+                line(x0,y,x0+w,y)
+                if(primary!=null || xy!=null) {
+                    fun axisLabel(value: String,x: Float,width: Float,baseline: Float=y-2f) {
+                        if(label!=null) label(value,x,baseline,6f,width)
+                        else {
+                            require(font.getStringWidth(value)*6f/1000f<=width) { "Saved axis label exceeds chart frame" }
+                            color(0x222222);stream.beginText();stream.setFont(font,6f)
+                            stream.newLineAtOffset(x,baseline);stream.showText(value);stream.endText()
+                        }
+                    }
+                    axisLabel(primary?.tick(ratio) ?: requireNotNull(xy).second.label(ratio),p.left+2f,36f)
+                    secondary?.let { axisLabel(it.tick(ratio),x0+w+3f,35f) }
+                    if(xy!=null && tick in setOf(0,4)) {
+                        val x=if(tick==0) x0 else maxOf(x0,x0+w-36f)
+                        axisLabel(xy.first.label(ratio),x,36f,y0-9f)
+                    }
+                }
+            }
+            if(dates!=null) {
+                val labelW=minOf(64f,w/dates.ticks.size)
+                for(day in dates.ticks) {
+                    val value=dates.label(day)
+                    val x=(x0+dates.fraction(day)*w-labelW/2).coerceIn(p.left,p.left+p.width-labelW)
+                    if(label!=null) label(value,x,y0-9f,6f,labelW)
+                    else {
+                        require(font.getStringWidth(value)*6f/1000f<=labelW) { "Date-axis label exceeds chart frame" }
+                        color(0x222222);stream.beginText();stream.setFont(font,6f)
+                        stream.newLineAtOffset(x,y0-9f);stream.showText(value);stream.endText()
+                    }
+                }
+            }
+            // Restrict explicitly scaled marks to the plot, not just the chart frame.
+            if(axes.isNotEmpty() || xy!=null || dates!=null) { stream.addRect(x0,y0,w,h);stream.clip() }
+
+            if (chart.kind == "scatter") {
+                require(chart.scatterStyle in setOf("marker","line","lineMarker"))
+                val (ax,ay)=requireNotNull(xy)
+                for ((i,s) in chart.series.withIndex()) {
+                    checkpoint()
+                    require(s.xValues.size == s.values.size)
+                    val rgb=s.rgb ?: palette[i]
+                    val points=mutableListOf<Pair<Float,Float>?>()
+                    for ((x,y) in s.xValues.zip(s.values)) {
+                        checkpoint()
+                        if(x == null || y == null){points.add(null);continue}
+                        val sx=x0+ax.fraction(x)*w; val sy=y0+ay.fraction(y)*h
+                        points.add(sx to sy)
+                    }
+                    if(chart.scatterStyle!="marker") painter.polyline(points,s,rgb,1.2f)
+                    if(chart.scatterStyle!="line") for(point in points.filterNotNull())
+                        XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,point.first,point.second,2.8f,
+                            s.markerFill,s.markerStroke,rgb,painter)
+                }
+            } else {
+                val stacked=chart.kind in setOf("bar","column") && chart.grouping in setOf("stacked","percentStacked")
+                val maxAbs=chart.series.flatMap { it.values }.filterNotNull()
+                    .maxOfOrNull { abs(it) }?.takeIf { it>0.0 } ?: 1.0
+                val stacks=if(stacked) XlsxStackedChart.segments(chart,maxAbs,chart.grouping=="percentStacked") else emptyList()
+                val bounds=if(stacked) stacks.flatten().filterNotNull().flatMap { listOf(it.start,it.end) }
+                    else chart.series.flatMap { it.values }.filterNotNull().map { it/maxAbs }
+                val min=minOf(0.0,bounds.minOrNull() ?: 0.0)
+                val max=maxOf(0.0,bounds.maxOrNull() ?: 0.0)
+                val span=(max-min).takeIf { it>0.0 } ?: 1.0
+                fun fraction(v:Double)=((v-min)/span).toFloat().coerceIn(0f,1f)
+                val horizontal=chart.kind=="bar"
+                val slot=(if(horizontal) h else w)/chart.categories.size
+                val bars=if(chart.kind=="combo") chart.series.count { it.chartKind=="column" }
+                    else chart.series.size
+                require(bars>0)
+                val thickness=slot*0.77f/(if(stacked) 1 else bars)
+                for ((i,s) in chart.series.withIndex()){
+                    checkpoint()
+                    val rgb=s.rgb ?: palette[i]
+                    val axis=axes[s.valueAxisId]
+                    val points=mutableListOf<Pair<Float,Float>?>()
+                    val isLine = chart.kind == "line" || (chart.kind == "combo" && s.chartKind == "line")
+                    for ((point,cached) in s.values.withIndex()){
+                        checkpoint()
+                        val raw = if (isLine) chart.blankDisplay.lineValue(cached) else cached
+                        if(raw == null){
+                            if (isLine && chart.blankDisplay.breakOnMissing()) points.add(null)
+                            continue
+                        }
+                        val position=if(horizontal) y0+h-slot*(point+0.5f) else x0+(dates?.let { it.fractionAt(point)*w } ?: (slot*(point+0.5f)))
+                        if(isLine){
+                            val sy=y0+(axis?.fraction(raw) ?: fraction(raw/maxAbs))*h
+                            points.add(position to sy)
+                        }else{
+                            val ordinal=if(chart.kind=="combo") chart.series.take(i).count { it.chartKind=="column" } else i
+                            val offset=position-slot*0.385f+(if(stacked) 0 else ordinal)*thickness
+                            val segment=if(stacked) stacks[i][point] ?: continue
+                                else XlsxStackedChart.Segment(0.0,raw/maxAbs)
+                            val a=axis?.zero() ?: fraction(segment.start)
+                            val b=axis?.fraction(raw) ?: fraction(segment.end)
+                            val ink=SharedChartInk.pointInk(s,point,rgb)
+                            val outline=SharedChartInk.pointStroke(s,point)
+                            if(abs(a-b)<1e-7f) continue
+                            if(horizontal){
+                                val ax=x0+a*w;val bx=x0+b*w
+                                painter.rect(minOf(ax,bx),offset,abs(bx-ax),thickness*0.9f,ink,outline,rgb)
+                            }else{
+                                val ay=y0+a*h;val by=y0+b*h
+                                painter.rect(offset,minOf(ay,by),thickness*0.9f,abs(by-ay),ink,outline,rgb)
+                            }
+                        }
+                    }
+                    painter.polyline(points,s,rgb,1.2f)
+                    for(point in points.filterNotNull()) XlsxChartMarker.draw(stream,s.markerSymbol,s.markerSizePt,
+                        point.first,point.second,2.6f,s.markerFill,s.markerStroke,rgb,painter)
+                }
+            }
+        } finally { stream.restoreGraphicsState() }
+    }
+
+    private fun drawPie(stream: PDPageContentStream,chart: XlsxCachedChart,p: Placement,
+        font: PDType1Font,checkpoint: ()->Unit,labelRenderer: ((String,Float,Float,Float,Float)->Unit)?) {
+        val values=chart.series.single().values
+        val shares=XlsxPieChartPainter.shares(values)
+        require(chart.categories.size==values.size)
+        val availableH=p.height-28f
+        val labelX=p.left+p.width*0.52f
+        val labelW=p.width*0.48f-17f
+        val labelSize=7f
+        require(availableH>=values.size*11f+4f) { "Saved pie legend exceeds chart height" }
+        val labels=values.indices.map { i ->
+            val category=chart.categories[i] ?: "(missing category)"
+            val percent=if(values[i]==null) "missing" else String.format(java.util.Locale.US,"%.1f%%",shares[i]*100)
+            "$category  $percent"
+        }
+        if (labelRenderer == null) for (label in labels) {
+            font.encode(label)
+            require(font.getStringWidth(label)*labelSize/1000f <= labelW) { "Saved pie legend exceeds chart width" }
+        }
+        val radius=minOf(p.width*0.24f-4f,availableH/2f-3f)
+        val series=chart.series.single()
+        val colors=values.indices.map { SharedChartInk.pointInk(series,it,XlsxPieChartPainter.palette[it]) }
+        val outlines=values.indices.map { SharedChartInk.pointStroke(series,it) }
+        val painter=PdfChartPaint(stream)
+        XlsxPieChartPainter.drawStyled(stream,shares,p.left+p.width*0.25f,p.top-19f-availableH/2f,radius,
+            checkpoint,colors,outlines,chart.firstSliceAngle)
+        for ((index,label) in labels.withIndex()) {
+            checkpoint()
+            val y=p.top-25f-index*11f
+            painter.rect(labelX,y-1f,7f,7f,colors[index],outlines[index],XlsxPieChartPainter.palette[index])
+            if (labelRenderer != null) labelRenderer(label,labelX+10f,y,labelSize,labelW)
+            else {
+                stream.setNonStrokingColor(0,0,0)
+                stream.beginText();stream.setFont(font,labelSize)
+                stream.newLineAtOffset(labelX+10f,y);stream.showText(label);stream.endText()
+            }
+        }
+    }
+}

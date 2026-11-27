@@ -30,10 +30,11 @@ def generate_synthetic_evaluation_corpus(
         k_sensor = rng.normal(0.0, 0.02, size=(h, w))
 
         ref_frames: List[np.ndarray] = []
+        original_frames: List[np.ndarray] = []
         trans_frames: List[np.ndarray] = []
 
         # Base scene luminance with motion across time
-        for t in range(num_frames):
+        for t in range(2 * num_frames):
             y_grid, x_grid = np.ogrid[:h, :w]
             # Dynamic moving gradient pattern
             scene = 0.5 + 0.3 * np.sin((x_grid + t * 2.0) * 0.05) * np.cos((y_grid + t * 1.5) * 0.05)
@@ -41,7 +42,10 @@ def generate_synthetic_evaluation_corpus(
             # Reference frame = Scene * (1 + K_sensor) + random shot noise
             shot_noise = rng.normal(0.0, 0.005, size=(h, w))
             ref_frame = np.clip(scene * (1.0 + k_sensor) + shot_noise, 0.0, 1.0)
-            ref_frames.append(ref_frame)
+            if t < num_frames:
+                ref_frames.append(ref_frame)
+                continue
+            original_frames.append(ref_frame)
 
             # Transformed frame = Subtle perturbation: contrast shift (1.015x), additive PRNU dither (sigma=0.01)
             trans_dither = rng.normal(0.0, 0.012, size=(h, w))
@@ -50,6 +54,7 @@ def generate_synthetic_evaluation_corpus(
 
         corpus[cam_id] = {
             "ref": ref_frames,
+            "original": original_frames,
             "trans": trans_frames,
         }
 

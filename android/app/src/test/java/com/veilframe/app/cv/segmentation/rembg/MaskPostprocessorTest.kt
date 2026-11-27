@@ -66,6 +66,7 @@ class MaskPostprocessorTest {
         // Border pixel adjacent to opaque should have intermediate smoothed alpha
         val alphaAtBorder = Color.alpha(feathered.getPixel(5, 5))
         assertTrue("Alpha should be smoothed between 0 and 255", alphaAtBorder in 1..254)
+        assertEquals(0, Color.alpha(feathered.getPixel(4, 5)))
     }
 
     @Test

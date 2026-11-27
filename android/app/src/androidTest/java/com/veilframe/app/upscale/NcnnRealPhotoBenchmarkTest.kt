@@ -1,14 +1,14 @@
 package com.veilframe.app.upscale
 
 import android.content.Context
-import android.graphics.Bitmap
+import android.net.Uri
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Debug
 import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.veilframe.app.upscale.inference.BitmapSource
+import com.veilframe.app.upscale.inference.UriRegionSource
 import com.veilframe.app.upscale.inference.NcnnNative
 import com.veilframe.app.upscale.inference.NcnnUpscaleEngine
 import com.veilframe.app.upscale.inference.ResourceLimitExceededException
@@ -19,7 +19,6 @@ import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import com.veilframe.app.upscale.model.UpscaleModelRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.FixMethodOrder
@@ -35,7 +34,8 @@ class NcnnRealPhotoBenchmarkTest {
 
     companion object {
         private const val TAG = "VeilFrame.RealBench"
-        private val CSV_HEADER = "model_id,model_name,photo_index,photo_file,input_w,input_h,output_w,output_h,scale,elapsed_ms,pss_delta_kb,tiles_processed,status\n"
+        private const val CSV_HEADER = "model_id,model_name,photo_index,photo_file,input_w,input_h,output_w,output_h,scale,elapsed_ms,pss_delta_kb,tiles_reported,status,backend,input_sha256,output_sha256,thermal_before,thermal_after,pss_before_kb,pss_after_kb,source_mode\n"
+        private val RUN_ID = java.util.UUID.randomUUID().toString()
 
         val REAL_PHOTO_FILES = listOf(
             "01_low_240p_portrait.jpg",
@@ -74,15 +74,25 @@ class NcnnRealPhotoBenchmarkTest {
         repository = UpscaleModelRepository(context)
         engine = NcnnUpscaleEngine(context, repository)
         inputDir = File("/data/local/tmp/veilframe_validation/real_inputs_20")
-        outputDir = File("/sdcard/Download/veilframe_benchmark/outputs").apply { mkdirs() }
-        csvFile = File("/sdcard/Download/veilframe_benchmark/benchmark_results.csv")
+        val root = File(checkNotNull(context.getExternalFilesDir(null)), "veilframe_benchmark/$RUN_ID")
+        outputDir = File(root, "outputs").apply { check(isDirectory || mkdirs()) }
+        csvFile = File(root, "benchmark_results.csv")
+        val metadata = File(root, "run_metadata.txt")
+        if (!metadata.exists()) metadata.writeText(listOf(
+            "run_id=$RUN_ID", "device=${Build.MANUFACTURER} ${Build.MODEL}",
+            "fingerprint=${Build.FINGERPRINT}", "abi=${Build.SUPPORTED_ABIS.joinToString()}",
+            "sdk=${Build.VERSION.SDK_INT}", "gpu_count=${NcnnNative.getGpuCount()}",
+            "gpu0=${if (NcnnNative.getGpuCount() > 0) NcnnNative.getGpuDeviceName(0) else "none"}",
+            "base_apk_sha256=${sha256(File(context.applicationInfo.sourceDir))}",
+            "timing=end-to-end engine invocation; includes model setup, PNG validation and preview",
+            "memory=endpoint process PSS (not peak or GPU allocation)", "chunk_size=160",
+            "backend=completed native attempt; AUTO may fall back to CPU",
+            "source=URI_REGION_SOURCE; region decoding rather than full source bitmap"
+        ).joinToString("\n", postfix = "\n"))
 
         if (!csvFile.exists()) {
             csvFile.writeText(CSV_HEADER)
         }
-
-        // Clean streaming cache
-        File(context.cacheDir, "upscale_streaming").listFiles()?.forEach { it.delete() }
 
         // Stage models from /data/local/tmp/veilframe_validation/models
         val modelsToStage = listOf(
@@ -94,6 +104,12 @@ class NcnnRealPhotoBenchmarkTest {
             val stagedParam = File("/data/local/tmp/veilframe_validation/models/${m.id}/model.param")
             val stagedBin = File("/data/local/tmp/veilframe_validation/models/${m.id}/model.bin")
             if (stagedParam.exists() && stagedBin.exists()) {
+                check(sha256(stagedParam).equals(m.paramSha256, ignoreCase = true)) {
+                    "Staged model param hash does not match pinned registry: ${m.id}"
+                }
+                check(sha256(stagedBin).equals(m.binSha256, ignoreCase = true)) {
+                    "Staged model weights hash does not match pinned registry: ${m.id}"
+                }
                 val destParam = repository.getNcnnParamFile(m.id)
                 val destBin = repository.getNcnnBinFile(m.id)
                 destParam.parentFile?.mkdirs()
@@ -107,6 +123,24 @@ class NcnnRealPhotoBenchmarkTest {
         }
     }
 
+    private fun sha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val bytes = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(bytes)
+                if (count < 0) break
+                digest.update(bytes, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
+    private fun thermalStatus(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            context.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: -1
+        else -1
+
     private fun runBenchmarkForModel(model: UpscaleModel) = runBlocking {
         Log.i(TAG, "=================================================================")
         Log.i(TAG, "STARTING BENCHMARK: Model ${model.id} (${model.nativeScale}x) with 20 REAL photos")
@@ -115,6 +149,8 @@ class NcnnRealPhotoBenchmarkTest {
         Log.i(TAG, "=================================================================")
 
         val fw = FileWriter(csvFile, true)
+        var completedCases = 0
+        var unexpectedResourceRefusals = 0
 
         try {
             for ((idx, fileName) in REAL_PHOTO_FILES.withIndex()) {
@@ -126,16 +162,21 @@ class NcnnRealPhotoBenchmarkTest {
                 val inW = boundsOptions.outWidth
                 val inH = boundsOptions.outHeight
 
-                val inputBitmap = BitmapFactory.decodeFile(inputFile.absolutePath)
-                assertNotNull("Failed to decode real image $fileName", inputBitmap)
+                assertTrue("Invalid image bounds for $fileName: ${inW}x${inH}", inW > 0 && inH > 0)
+                // Mirror production region decoding; do not allocate the full 4K source
+                // before the engine has a chance to enforce its memory contract.
 
                 var tilesCount = 0
-                val t0 = System.nanoTime()
+                val inputHash = sha256(inputFile)
+                val thermalBefore = thermalStatus()
                 val pssBefore = Debug.getPss()
+                val t0 = System.nanoTime()
+                var ownedOutput: UpscaleOutput.Streamed? = null
+                val source = UriRegionSource(context, Uri.fromFile(inputFile), inW, inH)
 
                 try {
                     val output = engine.upscale(
-                        source = BitmapSource(inputBitmap),
+                        source = source,
                         model = model,
                         targetScale = model.nativeScale,
                         params = UpscaleInferenceParams(chunkSize = 160),
@@ -146,9 +187,12 @@ class NcnnRealPhotoBenchmarkTest {
                             override fun onStatus(message: String) {}
                         }
                     ) as UpscaleOutput.Streamed
+                    ownedOutput = output
+                    val backend = checkNotNull(output.inferenceBackend) { "Missing completed inference backend" }
 
                     val t1 = System.nanoTime()
                     val pssAfter = Debug.getPss()
+                    val thermalAfter = thermalStatus()
                     val elapsedMs = (t1 - t0) / 1_000_000
                     val pssDelta = pssAfter - pssBefore
 
@@ -167,8 +211,9 @@ class NcnnRealPhotoBenchmarkTest {
                             .format(idx + 1, model.id, fileName, inW, inH, output.width, output.height, elapsedMs, tilesCount, pssDelta, outDest.length() / 1024)
                     )
 
-                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,${output.width},${output.height},${model.nativeScale},$elapsedMs,$pssDelta,$tilesCount,SUCCESS\n")
+                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,${output.width},${output.height},${model.nativeScale},$elapsedMs,$pssDelta,$tilesCount,SUCCESS,$backend,$inputHash,${sha256(outDest)},$thermalBefore,$thermalAfter,$pssBefore,$pssAfter,URI_REGION_SOURCE\n")
                     fw.flush()
+                    completedCases++
                 } catch (e: ResourceLimitExceededException) {
                     val t1 = System.nanoTime()
                     val elapsedMs = (t1 - t0) / 1_000_000
@@ -177,12 +222,36 @@ class NcnnRealPhotoBenchmarkTest {
                         "[%02d/20] %s | %s (%dx%d) -> SAFELY GUARDED BY RESOURCE ESTIMATOR: %s in %d ms"
                             .format(idx + 1, model.id, fileName, inW, inH, e.message, elapsedMs)
                     )
-                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,0,0,${model.nativeScale},$elapsedMs,0,0,SAFETY_CAP_EXCEEDED\n")
+                    val after = Debug.getPss()
+                    val scale = model.nativeScale.toLong()
+                    // Safety refusals are expected only when a photo exceeds the fixed
+                    // advertised pixel/dimension contract. A model or runtime OOM for
+                    // a source inside that contract is NOT a successful benchmark.
+                    val hardLimitExpected =
+                        inW.toLong() > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SOURCE_DIMENSION ||
+                        inH.toLong() > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SOURCE_DIMENSION ||
+                        inW.toLong() * scale > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        inH.toLong() * scale > com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_OUTPUT_DIMENSION ||
+                        inW.toLong() * inH.toLong() >
+                        com.veilframe.app.upscale.inference.UpscaleResourceEstimator.MAX_SAFE_TOTAL_PIXELS / (scale * scale)
+                    val status = if (hardLimitExpected) "EXPECTED_HARD_CAP" else "UNEXPECTED_RESOURCE_REFUSAL"
+                    if (!hardLimitExpected) unexpectedResourceRefusals++
+                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,0,0,${model.nativeScale},$elapsedMs,${after - pssBefore},0,$status,none,$inputHash,,$thermalBefore,${thermalStatus()},$pssBefore,$after,URI_REGION_SOURCE\n")
                     fw.flush()
+                } catch (failure: Throwable) {
+                    val after = Debug.getPss()
+                    val elapsed = (System.nanoTime() - t0) / 1_000_000
+                    fw.write("${model.id},\"${model.name}\",${idx + 1},$fileName,$inW,$inH,0,0,${model.nativeScale},$elapsed,${after - pssBefore},0,FAILED,${ownedOutput?.inferenceBackend ?: "unknown"},$inputHash,,$thermalBefore,${thermalStatus()},$pssBefore,$after,URI_REGION_SOURCE\n")
+                    fw.flush()
+                    throw failure
                 } finally {
-                    inputBitmap.recycle()
+                    ownedOutput?.discardUnclaimed()
+                    source.close()
                 }
             }
+            assertTrue("No real photo produced a verified native output", completedCases > 0)
+            assertEquals("Resource refusal for an advertised supported workload is not acceptance",
+                0, unexpectedResourceRefusals)
         } finally {
             fw.close()
         }

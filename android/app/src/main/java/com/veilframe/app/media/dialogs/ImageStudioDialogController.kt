@@ -24,6 +24,7 @@ import com.veilframe.app.databinding.DialogTextWatermarkBinding
 import com.veilframe.app.media.ImageBlurScope
 import com.veilframe.app.media.ImageBlurType
 import com.veilframe.app.media.ImageEditState
+import com.veilframe.app.media.transform.ImageTransformEngine
 import com.veilframe.app.media.blur.ImageBlurEngine
 import com.veilframe.app.ui.views.BlurBrushCanvasView
 import kotlinx.coroutines.CoroutineScope
@@ -149,15 +150,26 @@ class ImageStudioDialogController(
         var draftKeepAspect = editState.keepAspect
         var isUpdatingText = false
         var debounceJob: Job? = null
+        val resizeRenderer = getPreviewSourceBitmap()?.let { source ->
+            CoalescingImagePreviewRenderer(
+                ownerScope = scope,
+                input = source,
+                originalWidth = origW,
+                originalHeight = origH,
+                onRendered = { bitmap -> dialogBinding.imgResizePreview.setImageBitmap(bitmap) }
+            )
+        }
 
         fun updateResizePreview() {
-            val previewDraft = editState.deepCopy().apply {
-                resizeScale = draftScale
-                resizeWidth = draftW
-                resizeHeight = draftH
+            val previewDraft = editState.copy(
+                resizeScale = draftScale,
+                resizeWidth = draftW,
+                resizeHeight = draftH,
                 keepAspect = draftKeepAspect
-            }
-            dialogBinding.imgResizePreview.setImageBitmap(renderLivePreview(previewDraft))
+            )
+            // One worker per dialog. Repeated slider changes replace pending work,
+            // and no expensive image transformation executes in the UI callback.
+            resizeRenderer?.request(previewDraft)
             dialogBinding.tvResizeLiveBadge.text = "${draftW} × ${draftH} px (${draftScale}%)"
             val scaleFactor = (draftScale.toFloat() / 100f).coerceIn(0.15f, 2.0f)
             dialogBinding.imgResizePreview.scaleX = scaleFactor
@@ -326,6 +338,8 @@ class ImageStudioDialogController(
         }
         dialog.setOnDismissListener {
             debounceJob?.cancel()
+            resizeRenderer?.close()
+            dialogBinding.imgResizePreview.setImageDrawable(null)
         }
         morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
@@ -851,6 +865,21 @@ class ImageStudioDialogController(
 
         val originalBaseBmp = renderLivePreview(editState.deepCopy().apply { blurScope = ImageBlurScope.NONE })
         var currentPreviewBitmap: Bitmap? = null
+        val (blurOrigW, blurOrigH) = getOriginalDimensions()
+        val blurRenderer = getPreviewSourceBitmap()?.let { source ->
+            CoalescingImagePreviewRenderer(
+                ownerScope = scope,
+                input = source,
+                originalWidth = blurOrigW,
+                originalHeight = blurOrigH,
+                onRendered = { bitmap ->
+                    currentPreviewBitmap = bitmap
+                    if (dialogBinding.tvBlurBeforeBadge.visibility != View.VISIBLE) {
+                        dialogBinding.imgBlurPreview.setImageBitmap(bitmap)
+                    }
+                }
+            )
+        }
 
         fun updateBlurPreview() {
             if (draftScope == ImageBlurScope.BACKGROUND && draftSubjectCutout == null) {
@@ -858,16 +887,14 @@ class ImageStudioDialogController(
                     updateBlurPreview()
                 }
             }
-            val draft = editState.deepCopy().apply {
-                blurScope = draftScope
-                blurType = draftType
-                blurRadius = draftRadius
-                blurBrushMask = draftMask
+            val draft = editState.copy(
+                blurScope = draftScope,
+                blurType = draftType,
+                blurRadius = draftRadius,
+                blurBrushMask = draftMask,
                 blurBgSubjectCutout = draftSubjectCutout
-            }
-            val rendered = renderLivePreview(draft)
-            currentPreviewBitmap = rendered
-            dialogBinding.imgBlurPreview.setImageBitmap(rendered)
+            )
+            blurRenderer?.request(draft)
         }
 
         dialogBinding.imgBlurPreview.setOnTouchListener { v, event ->
@@ -1008,6 +1035,10 @@ class ImageStudioDialogController(
         }
         dialogBinding.btnBlurClose.setOnClickListener {
             morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialog.setOnDismissListener {
+            blurRenderer?.close()
+            dialogBinding.imgBlurPreview.setImageDrawable(null)
         }
 
         morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)

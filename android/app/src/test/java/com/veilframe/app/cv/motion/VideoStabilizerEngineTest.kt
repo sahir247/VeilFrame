@@ -28,6 +28,21 @@ import org.robolectric.RobolectricTestRunner
 class VideoStabilizerEngineTest {
 
     @Test
+    fun gifResamplingRunsAfterFrameIndexedTransformAndKeepsSpeed() {
+        val filters = listOf("vidstabtransform=input=/tmp/motion.trf", "setpts=0.5*PTS")
+        assertEquals(filters + "fps=15", com.veilframe.app.media.gifVideoFilters(filters, 15))
+    }
+
+    @Test
+    fun trackingConfidenceRequiresActualRansacSupport() {
+        assertEquals(0.0, motionSupportConfidence(200, 180, 3), 1e-9)
+        assertEquals(0.0, motionSupportConfidence(200, 180, 80), 1e-9)
+        assertEquals(0.5, motionSupportConfidence(100, 75, 50), 1e-9)
+        assertTrue(motionSupportConfidence(8, 8, 8) < 1.0)
+        assertEquals(1.0, motionSupportConfidence(100, 100, 100), 1e-9)
+    }
+
+    @Test
     fun testTrajectoryAccumulationFromMotions() {
         val motions = listOf(
             CameraMotion(10.0, 5.0, 0.05),

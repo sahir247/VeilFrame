@@ -144,6 +144,23 @@ class ExportValidationAndCacheContractTest {
     }
 
     @Test
+    fun `encoded artifact must match payload and strict approval`() = runBlocking {
+        val design = QrDesign(style = QrStyle.BASIC, outputSize = 512)
+        val result = QrGenerator.generateStrictWithResult(app, payload, design, mode = GenerationMode.PARITY_EF) as QrRenderResult.Success
+        val bitmap = requireNotNull(result.bitmap)
+        try {
+            val exporter = com.veilframe.app.qr.exporter.QrExporter
+            assertTrue(exporter.isVerified(result.report, payload))
+            assertFalse(exporter.isVerified(result.report, "wrong payload"))
+            assertFalse(exporter.isVerified(result.report.copy(validationSkipped = true), payload))
+            assertTrue(exporter.encodeVerifiedRaster(bitmap, payload, result.design, result.matrix, Bitmap.CompressFormat.PNG, 100).isSuccess)
+            assertFalse(exporter.encodeVerifiedRaster(bitmap, "wrong payload", result.design, result.matrix, Bitmap.CompressFormat.JPEG, 95).isSuccess)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @Test
     fun `Full-resolution export with positive explicit quiet zone passes strict validation`() = runBlocking {
         val exportDesign = QrDesign(
             style = QrStyle.BASIC,

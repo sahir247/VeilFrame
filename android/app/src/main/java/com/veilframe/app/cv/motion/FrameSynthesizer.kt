@@ -71,28 +71,24 @@ object FrameSynthesizer {
         pool: com.veilframe.app.cv.core.MatPool? = null,
     ): Mat {
         val poolInstance = pool ?: com.veilframe.app.cv.core.MatPool.default
-        val flowFull = scaleFlowTo(flow, src.size())
-        val channels = ArrayList<Mat>()
-        Core.split(flowFull, channels)
-        val mapXLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
-        val mapYLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
-        val mapX = mapXLease.mat
-        val mapY = mapYLease.mat
-        try {
+        return withMotionMats {
+            val flowFull = own(scaleFlowTo(flow, src.size()))
+            val channels = split(flowFull)
+            poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F).use { mapXLease ->
+            poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F).use { mapYLease ->
+            val mapX = mapXLease.mat
+            val mapY = mapYLease.mat
             Core.multiply(channels[0], Scalar(s), mapX)
             Core.multiply(channels[1], Scalar(s), mapY)
             CoordinateGridCache.withGrid(src.rows(), src.cols()) { gridX, gridY ->
                 Core.add(mapX, gridX, mapX)
                 Core.add(mapY, gridY, mapY)
             }
-            val out = Mat()
+            val out = own(Mat())
             Imgproc.remap(src, out, mapX, mapY, Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE)
-            return out
-        } finally {
-            flowFull.release()
-            channels.forEach { it.release() }
-            mapXLease.close()
-            mapYLease.close()
+            transfer(out)
+            }
+            }
         }
     }
 
@@ -105,6 +101,27 @@ object FrameSynthesizer {
         frameB: Mat,
         t: Double,
         options: Options = Options(),
+    ): SynthesisResult = synthesizeInternal(frameA, frameB, t, options, null)
+
+    /**
+     * Synthesize a frame using a previously computed bidirectional flow.
+     * The caller retains ownership of [flows]; we never release its native
+     * Mats. This is crucial for 3×/4× Motion Lab and partial RIFE fallbacks.
+     */
+    fun synthesizeWithFlows(
+        frameA: Mat,
+        frameB: Mat,
+        t: Double,
+        flows: FlowEstimator.BidirectionalFlow,
+        options: Options = Options(),
+    ): SynthesisResult = synthesizeInternal(frameA, frameB, t, options, flows)
+
+    private fun synthesizeInternal(
+        frameA: Mat,
+        frameB: Mat,
+        t: Double,
+        options: Options,
+        preparedFlows: FlowEstimator.BidirectionalFlow?,
     ): SynthesisResult {
         require(t in 0.0..1.0) { "t must be in [0, 1]" }
         require(frameA.size() == frameB.size()) { "frames must have identical size" }
@@ -112,22 +129,28 @@ object FrameSynthesizer {
         if (t == 0.0) return passthrough(frameA)
         if (t == 1.0) return passthrough(frameB)
 
-        val estimator = options.estimator ?: FlowEstimator()
-        val flows = estimator.estimate(frameA, frameB)
+        val flows = preparedFlows ?: (options.estimator ?: FlowEstimator()).estimate(frameA, frameB)
         try {
             val forward = if (options.refineFlow) refineField(flows.forward) else flows.forward
-            val backward = if (options.refineFlow) refineField(flows.backward) else flows.backward
-
-            val consistency = FlowConsistency.check(forward, backward)
             try {
-                val warpedA = warpToward(frameA, forward, -t, options.pool)
-                val warpedB = warpToward(frameB, backward, (1 - t), options.pool)
+                val backward = if (options.refineFlow) refineField(flows.backward) else flows.backward
+                try {
+                    val consistency = FlowConsistency.check(forward, backward)
+                    try {
+                        // Track every temporary Mat: the earlier success-only
+                        // release list leaked native allocations if any OpenCV
+                        // operation threw partway through synthesis.
+                        val temporaryMats = ArrayList<Mat>()
+                        fun own(mat: Mat): Mat = mat.also { temporaryMats.add(it) }
+                        try {
+                val warpedA = own(warpToward(frameA, forward, -t, options.pool))
+                val warpedB = own(warpToward(frameB, backward, (1 - t), options.pool))
 
                 // Artifact mask: disagreeing warps in supposedly consistent areas.
-                val residual = Mat()
+                val residual = own(Mat())
                 Core.absdiff(warpedA, warpedB, residual)
-                val residualGray = toGray(residual)
-                val artifactMask = Mat()
+                val residualGray = own(toGray(residual))
+                val artifactMask = own(Mat())
                 Imgproc.threshold(
                     residualGray,
                     artifactMask,
@@ -137,83 +160,80 @@ object FrameSynthesizer {
                 )
 
                 // Full-resolution confidence/occlusion.
-                val confidence = Mat()
+                val confidence = own(Mat())
                 Imgproc.resize(consistency.confidence, confidence, frameA.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
-                val occlusion = Mat()
+                val occlusion = own(Mat())
                 Imgproc.resize(consistency.occlusionMask, occlusion, frameA.size(), 0.0, 0.0, Imgproc.INTER_NEAREST)
 
                 // Fallback mask: occluded OR artifact OR low confidence.
-                val fallbackMask = Mat()
+                val fallbackMask = own(Mat())
                 Core.max(occlusion, artifactMask, fallbackMask)
-                val lowConfidence = Mat()
+                val lowConfidence = own(Mat())
                 Core.compare(confidence, ScalarOf(options.minConfidence), lowConfidence, Core.CMP_LT)
                 Core.max(fallbackMask, lowConfidence, fallbackMask)
 
                 // Weights: temporal proximity * confidence, zeroed at fallback.
-                val weightA = Mat()
-                val weightB = Mat()
+                val weightA = own(Mat())
+                val weightB = own(Mat())
                 val temporalA = ScalarOf((1 - t).coerceAtLeast(1e-3))
                 val temporalB = ScalarOf(t.coerceAtLeast(1e-3))
                 Core.multiply(confidence, temporalA, weightA)
                 Core.multiply(confidence, temporalB, weightB)
 
-                val validA = Mat()
-                val validB = Mat()
-                val zero = Mat.zeros(fallbackMask.size(), fallbackMask.type())
+                val validA = own(Mat())
+                val validB = own(Mat())
+                val zero = own(Mat.zeros(fallbackMask.size(), fallbackMask.type()))
                 Core.compare(fallbackMask, zero, validA, Core.CMP_EQ) // valid where mask == 0
                 validA.copyTo(validB)
-                zero.release()
 
-                val weightA32 = Mat()
-                val weightB32 = Mat()
+                val weightA32 = own(Mat())
+                val weightB32 = own(Mat())
                 validA.convertTo(weightA32, CvType.CV_32F, 1.0 / 255.0)
                 validB.convertTo(weightB32, CvType.CV_32F, 1.0 / 255.0)
                 Core.multiply(weightA, weightA32, weightA)
                 Core.multiply(weightB, weightB32, weightB)
 
-                val blended = blendWeighted(warpedA, warpedB, weightA, weightB)
+                val blended = own(blendWeighted(warpedA, warpedB, weightA, weightB))
 
                 // Fallback pixels take the temporally nearest source frame.
                 val nearest = if (t < 0.5) frameA else frameB
-                val out = Mat()
+                val out = own(Mat())
                 blended.copyTo(out)
                 nearest.copyTo(out, fallbackMask)
 
                 val fallbackRatio = Core.countNonZero(fallbackMask).toDouble() /
                     (fallbackMask.rows().toDouble() * fallbackMask.cols())
 
-                residual.release()
-                residualGray.release()
-                artifactMask.release()
-                occlusion.release()
-                lowConfidence.release()
-                validA.release()
-                validB.release()
-                weightA.release()
-                weightB.release()
-                weightA32.release()
-                weightB32.release()
-                blended.release()
-                warpedA.release()
-                warpedB.release()
-                if (forward !== flows.forward) forward.release()
-                if (backward !== flows.backward) backward.release()
-
+                // Transfer only these three matrices to the result owner.
+                // Every other intermediate (including the two warped images)
+                // is reclaimed even if an earlier native step fails.
+                temporaryMats.removeAll { it === out || it === confidence || it === fallbackMask }
                 return SynthesisResult(out, confidence, fallbackMask, fallbackRatio)
+                        } finally {
+                            temporaryMats.forEach { it.release() }
+                        }
+                    } finally {
+                        consistency.release()
+                    }
+                } finally {
+                    if (backward !== flows.backward) backward.release()
+                }
             } finally {
-                consistency.release()
+                if (forward !== flows.forward) forward.release()
             }
         } finally {
-            flows.release()
+            // Borrowed flow matrices remain owned by Motion Lab's pair scope.
+            if (preparedFlows == null) flows.release()
         }
     }
 
-    private fun passthrough(frame: Mat): SynthesisResult {
-        val confidence = Mat.ones(frame.rows(), frame.cols(), CvType.CV_32F)
-        val fallbackMask = Mat.zeros(frame.rows(), frame.cols(), CvType.CV_8U)
-        // No pixels fell back — the output IS the source frame. Reporting 1.0
-        // here made consumers believe every pixel was a fallback.
-        return SynthesisResult(frame.clone(), confidence, fallbackMask, 0.0)
+    private fun passthrough(frame: Mat): SynthesisResult = withMotionMats {
+        val confidence = own(Mat.ones(frame.rows(),frame.cols(),CvType.CV_32F))
+        val fallbackMask = own(Mat.zeros(frame.rows(),frame.cols(),CvType.CV_8U))
+        val result = own(frame.clone())
+        SynthesisResult(result,confidence,fallbackMask,0.0).also {
+            transfer(result); transfer(confidence); transfer(fallbackMask)
+        }
     }
 
     /** mean + factor·σ of the residual, never below the noise floor. */
@@ -241,41 +261,27 @@ object FrameSynthesizer {
      * depths (a CV_8U channel against a CV_32F weight throws), and 8-bit
      * accumulation would clamp the weighted sums regardless.
      */
-    private fun blendWeighted(a: Mat, b: Mat, wA: Mat, wB: Mat): Mat {
-        val a32 = Mat()
-        val b32 = Mat()
+    private fun blendWeighted(a: Mat, b: Mat, wA: Mat, wB: Mat): Mat = withMotionMats {
+        val a32 = own(Mat())
+        val b32 = own(Mat())
         a.convertTo(a32, CvType.CV_32F)
         b.convertTo(b32, CvType.CV_32F)
-        val wa3 = expandToChannels(wA, a.channels())
-        val wb3 = expandToChannels(wB, a.channels())
-        try {
-            val sum = Mat()
-            Core.add(wa3, wb3, sum)
-            // Tiny epsilon ONLY — a full 1.0 here halved the brightness of every
-            // blended pixel (denominator was (wA + wB + 1)).
-            Core.add(sum, EPS, sum)
-            val termA = Mat()
-            val termB = Mat()
-            Core.multiply(a32, wa3, termA)
-            Core.multiply(b32, wb3, termB)
-            val num = Mat()
-            Core.add(termA, termB, num)
-            val out32 = Mat()
-            Core.divide(num, sum, out32)
-            val out = Mat()
-            out32.convertTo(out, a.type())
-            sum.release()
-            termA.release()
-            termB.release()
-            num.release()
-            out32.release()
-            return out
-        } finally {
-            a32.release()
-            b32.release()
-            wa3.release()
-            wb3.release()
-        }
+        val wa3 = own(expandToChannels(wA, a.channels()))
+        val wb3 = own(expandToChannels(wB, a.channels()))
+        val sum = own(Mat())
+        Core.add(wa3, wb3, sum)
+        Core.add(sum, EPS, sum)
+        val termA = own(Mat())
+        val termB = own(Mat())
+        Core.multiply(a32, wa3, termA)
+        Core.multiply(b32, wb3, termB)
+        val num = own(Mat())
+        Core.add(termA, termB, num)
+        val out32 = own(Mat())
+        Core.divide(num, sum, out32)
+        val out = own(Mat())
+        out32.convertTo(out, a.type())
+        transfer(out)
     }
 
     /** Replicates a single-channel CV_32F weight map across [channels] channels. */
@@ -283,27 +289,29 @@ object FrameSynthesizer {
         if (channels == 1) return single.clone()
         val list = ArrayList<Mat>(channels)
         repeat(channels) { list += single }
-        val merged = Mat()
-        Core.merge(list, merged)
-        return merged
+        return withMotionMats {
+            val merged = own(Mat())
+            Core.merge(list, merged)
+            transfer(merged)
+        }
     }
 
     private fun scaleFlowTo(flow: FlowEstimator.FlowField, size: org.opencv.core.Size): Mat {
         if (flow.flow.size() == size) return flow.flow.clone()
-        val out = Mat()
+        return withMotionMats {
+        val out = own(Mat())
         Imgproc.resize(flow.flow, out, size, 0.0, 0.0, Imgproc.INTER_LINEAR)
         // Flow vectors are displacements: scale them to the target resolution independently along X and Y.
         if (flow.scale.isUniform) {
             Core.multiply(out, ScalarOf(1.0 / flow.scale.x), out)
         } else {
-            val channels = ArrayList<Mat>()
-            Core.split(out, channels)
+            val channels = split(out)
             Core.multiply(channels[0], ScalarOf(1.0 / flow.scale.x), channels[0])
             Core.multiply(channels[1], ScalarOf(1.0 / flow.scale.y), channels[1])
             Core.merge(channels, out)
-            channels.forEach { it.release() }
         }
-        return out
+        transfer(out)
+        }
     }
 
     private fun buildGrid(gridX: Mat, gridY: Mat) {

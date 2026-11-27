@@ -116,6 +116,13 @@ checkout_pinned_repo() {
 checkout_pinned_repo "opencv" "https://github.com/opencv/opencv.git" "${OPENCV_COMMIT_SHA}"
 checkout_pinned_repo "opencv_contrib" "https://github.com/opencv/opencv_contrib.git" "${OPENCV_CONTRIB_COMMIT_SHA}"
 
+# Use a locally verified Gradle 8.11.1 distribution for upstream OpenCV's
+# *generated* wrappers. The file is provisioned by CI before C++ compilation.
+if [ -n "${VEILFRAME_UPSTREAM_GRADLE_ZIP:-}" ]; then
+    python3 "${SCRIPT_DIR}/patch_opencv_gradle_wrapper.py" \
+        "${WORK_DIR}/opencv" "${VEILFRAME_UPSTREAM_GRADLE_ZIP}"
+fi
+
 # 3. Create build configuration
 # FIX: In OpenCV's CMake system, --modules_list sets -DBUILD_LIST.
 # If 'java' is omitted, CMake disables java and java_bindings_generator by whitelist!

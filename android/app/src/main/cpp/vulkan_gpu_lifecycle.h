@@ -32,7 +32,11 @@ inline bool acquire_gpu_instance() {
     }
     if (ref_count == 0) {
         try {
-            ncnn::create_gpu_instance();
+            const int result = ncnn::create_gpu_instance();
+            if (result != 0) {
+                __android_log_print(ANDROID_LOG_WARN, "VeilFrameGPU", "Vulkan initialization failed (%d); falling back to CPU", result);
+                return false;
+            }
             ref_count = 1;
             __android_log_print(ANDROID_LOG_INFO, "VeilFrameGPU", "Vulkan GPU instance created (ref_count = 1)");
             return true;

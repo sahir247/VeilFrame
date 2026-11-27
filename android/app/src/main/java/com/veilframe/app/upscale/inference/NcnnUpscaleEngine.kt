@@ -64,7 +64,10 @@ class NcnnUpscaleEngine(
          * 5. IEND verification: terminates with an intact IEND chunk and zero trailing garbage.
          * 6. Validates without loading uncompressed full-size pixel arrays into RAM.
          */
-        internal fun validatePngFile(file: File, expectedW: Int, expectedH: Int) {
+        internal fun validatePngFile(file: File, expectedW: Int, expectedH: Int,
+                                     expectedChannels: Int? = null, checkpoint: () -> Unit = {}) {
+            require(expectedChannels == null || expectedChannels == 3 || expectedChannels == 4)
+            checkpoint()
             if (!file.isFile || expectedW <= 0 || expectedH <= 0 || file.length() < 57L) {
                 throw ImageValidationException(
                     "Output PNG is missing, truncated, or has invalid expected dimensions (${expectedW}x${expectedH})"
@@ -81,6 +84,7 @@ class NcnnUpscaleEngine(
             val decodedBuffer = ByteArray(8192)
             val fileLength = file.length()
             var decodedBytes = 0L
+            var nextFilterOffset = 0L
             var scanlineLength = 0L
             var expectedDecodedBytes = 0L
             var idatPayloadBytes = 0L
@@ -102,15 +106,18 @@ class NcnnUpscaleEngine(
 
             fun acceptDecoded(count: Int) {
                 if (count <= 0) return
+                val start = decodedBytes
                 decodedBytes = Math.addExact(decodedBytes, count.toLong())
                 if (decodedBytes > expectedDecodedBytes) {
                     throw ImageValidationException("PNG zlib stream expands beyond the expected pixel data size")
                 }
-                for (i in 0 until count) {
-                    val rowOffset = (decodedBytes - count + i) % scanlineLength
-                    if (rowOffset == 0L && decodedBuffer[i].toInt() != 0) {
+                // Only the filter bytes have row semantics. Inspect exactly
+                // those offsets (including boundaries between inflater chunks).
+                while (nextFilterOffset < decodedBytes) {
+                    if (decodedBuffer[(nextFilterOffset - start).toInt()].toInt() != 0) {
                         throw ImageValidationException("Unsupported PNG scanline filter; expected filter type 0")
                     }
+                    nextFilterOffset += scanlineLength
                 }
             }
 
@@ -121,6 +128,7 @@ class NcnnUpscaleEngine(
                 }
                 inflater.setInput(compressedBuffer, 0, bytesRead)
                 while (true) {
+                    checkpoint()
                     val produced = try {
                         inflater.inflate(decodedBuffer)
                     } catch (e: java.util.zip.DataFormatException) {
@@ -152,6 +160,7 @@ class NcnnUpscaleEngine(
                     var consumed = 8L
 
                     while (!hasIend) {
+                        checkpoint()
                         if (consumed + 12L > fileLength) {
                             throw ImageValidationException("Truncated PNG: missing complete chunk header or CRC")
                         }
@@ -192,6 +201,9 @@ class NcnnUpscaleEngine(
                                     6 -> 4
                                     else -> throw ImageValidationException("Only RGB/RGBA PNG output is supported")
                                 }
+                                if (expectedChannels != null && channels != expectedChannels) {
+                                    throw ImageValidationException("PNG channel count mismatch")
+                                }
                                 if (ihdr[10].toInt() != 0 || ihdr[11].toInt() != 0 || ihdr[12].toInt() != 0) {
                                     throw ImageValidationException("Unsupported PNG compression, filter, or interlace method")
                                 }
@@ -200,7 +212,7 @@ class NcnnUpscaleEngine(
                                 hasIhdr = true
                             }
                             "IDAT" -> {
-                                if (!hasIhdr || idatClosed || inflater.finished()) {
+                                if (!hasIhdr || idatClosed || inflater.finished() || length == 0) {
                                     throw ImageValidationException("PNG IDAT chunks must be contiguous and follow IHDR")
                                 }
                                 hasIdat = true
@@ -318,7 +330,9 @@ class NcnnUpscaleEngine(
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: UpscaleInferenceEngine.InferenceProgressListener? = null
-    ): UpscaleOutput = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withOwnedResult(
+        Dispatchers.Default, UpscaleOutput::discardUnclaimed
+    ) {
         // 1. Model type check
         require(model.type == ModelType.AI_NCNN) {
             "NcnnUpscaleEngine only processes AI_NCNN models, received ${model.type} for ${model.name}."
@@ -406,6 +420,8 @@ class NcnnUpscaleEngine(
         val colorType = if (channels == 3) StreamingPngWriter.ColorType.RGB else StreamingPngWriter.ColorType.RGBA
         var writer: StreamingPngWriter? = null
         var isPublished = false
+        var preview: Bitmap? = null
+        var completed = false
 
         // Outer lifecycle guard: guarantees writer abortion and temporary file deletion on any error or cancellation (P0.4)
         try {
@@ -423,7 +439,7 @@ class NcnnUpscaleEngine(
             // Restrict threads to 2 on emulator/CPU to prevent OpenMP per-thread workspaces from exceeding 1024MB LMK limit
             val numThreads = if (isEmulator || preferredGpuid < 0) 2 else Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
             val backendAttempts = if (preferredGpuid >= 0) listOf(preferredGpuid, -1) else listOf(-1)
-            var inferenceSucceeded = false
+            var successfulBackend: String? = null
             var lastGpuFailure: DeviceInferenceException? = null
 
             for ((attemptIndex, attemptGpuid) in backendAttempts.withIndex()) {
@@ -454,7 +470,12 @@ class NcnnUpscaleEngine(
                             )
                         }
 
-                        val cancelHook = coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { cause ->
+                        // A normal completion handler runs only after the blocking native
+                        // body exits. Use the cancelling transition to signal promptly.
+                        @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
+                        val cancelHook = coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion(
+                            onCancelling = true, invokeImmediately = true
+                        ) { cause ->
                             if (cause is kotlinx.coroutines.CancellationException) {
                                 NcnnNative.cancel(handle)
                             }
@@ -469,6 +490,9 @@ class NcnnUpscaleEngine(
                                 tilesize = plan.tileSize,
                                 prepadding = plan.prepadding
                                 )
+                            }
+                            if (!coroutineContext.isActive || loadRet == NcnnNative.STATUS_CANCELLED) {
+                                throw UpscaleCancellationException("NCNN model loading cancelled")
                             }
                             when (loadRet) {
                                 0 -> Unit
@@ -618,7 +642,7 @@ class NcnnUpscaleEngine(
                             NcnnNative.destroyInstance(handle)
                         }
                     }
-                    inferenceSucceeded = true
+                    successfulBackend = if (attemptGpuid >= 0) "Vulkan" else "CPU"
                     break
                 } catch (e: DeviceInferenceException) {
                     val mayRetryOnCpu = attemptGpuid >= 0 &&
@@ -631,7 +655,7 @@ class NcnnUpscaleEngine(
                 }
             }
 
-            if (!inferenceSucceeded) {
+            if (successfulBackend == null) {
                 throw lastGpuFailure ?: DeviceInferenceException(-4, "NCNN inference did not complete on any backend", "CPU")
             }
 
@@ -640,22 +664,33 @@ class NcnnUpscaleEngine(
             if (!coroutineContext.isActive) {
                 throw UpscaleCancellationException("Upscaling cancelled before output validation")
             }
-            validatePngFile(tempFile, outW, outH)
+            val verificationContext = coroutineContext
+            validatePngFile(tempFile, outW, outH, channels) {
+                if (!verificationContext.isActive) throw UpscaleCancellationException("Upscaling cancelled during output verification")
+            }
             if (!coroutineContext.isActive) {
                 throw UpscaleCancellationException("Upscaling cancelled before output publication")
             }
             publishFileAtomically(tempFile, finalFile)
             isPublished = true
 
-            val preview = try {
+            preview = try {
                 MediaDecoder.decodeSampledFile(finalFile)
-            } catch (t: Throwable) {
-                Log.w(TAG, "Sampled preview generation failed for ${finalFile.name}: ${t.message}")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Sampled preview generation failed for ${finalFile.name}: ${failure.message}")
                 null
             }
-
-            UpscaleOutput.Streamed(file = finalFile, preview = preview, width = outW, height = outH)
+            if (!coroutineContext.isActive) throw UpscaleCancellationException("Upscaling cancelled before result delivery")
+            UpscaleOutput.Streamed(file = finalFile, preview = preview, width = outW, height = outH,
+                inferenceBackend = successfulBackend)
+                .also { completed = true }
         } finally {
+            if (!completed) {
+                preview?.let { if (!it.isRecycled) it.recycle() }
+                if (isPublished) finalFile.delete()
+            }
             if (!isPublished) {
                 try {
                     writer?.abort()

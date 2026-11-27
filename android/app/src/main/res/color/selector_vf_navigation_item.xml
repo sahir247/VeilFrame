@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Selected navigation item sits inside colorSecondaryContainer. -->
+    <item android:state_enabled="false" android:color="?attr/colorOutline" />
+    <item android:state_checked="true" android:color="?attr/colorOnSecondaryContainer" />
+    <item android:color="?attr/colorOnSurfaceVariant" />
+</selector>

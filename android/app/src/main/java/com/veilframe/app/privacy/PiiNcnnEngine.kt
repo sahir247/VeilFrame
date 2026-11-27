@@ -462,12 +462,14 @@ class PiiNcnnEngine(
     val inputName: String = DEFAULT_INPUT_NAME
     private val imageTensorBuffer = FloatArray(3 * MODEL_INPUT_SIZE * MODEL_INPUT_SIZE)
 
-    init {
-        if (context != null) {
-            runCatching {
-                PiiNcnnNative.nativeInit(context.assets)
-            }
-        }
+    private var nativeAcquired = context != null && runCatching {
+        PiiNcnnNative.nativeInit(context.assets)
+    }.getOrDefault(false)
+
+    private fun requireNativeResults(result: FloatArray?, detector: String): FloatArray {
+        checkNotNull(result) { "$detector inference failed or model unavailable" }
+        check(result.size % 6 == 0 && result.all { it.isFinite() }) { "$detector returned malformed detections" }
+        return result
     }
 
     constructor(modelFile: File) : this(null)
@@ -531,6 +533,7 @@ class PiiNcnnEngine(
         return detect(bitmap, bitmap.width, bitmap.height, confThreshold, iouThreshold)
     }
 
+    @Synchronized
     fun detect(
         bitmap: Bitmap,
         targetWidth: Int,
@@ -538,6 +541,30 @@ class PiiNcnnEngine(
         confThreshold: Float = 0.40f,
         iouThreshold: Float = 0.45f
     ): List<PiiDetection> {
+        val result = detectWithStatus(bitmap, targetWidth, targetHeight, confThreshold, iouThreshold)
+        check(result.failedEngines.isEmpty()) { "NCNN vision incomplete: ${result.failedEngines.keys.joinToString()}" }
+        return result.detections
+    }
+
+    @Synchronized
+    internal fun detectWithStatus(
+        bitmap: Bitmap, targetWidth: Int, targetHeight: Int,
+        confThreshold: Float, iouThreshold: Float
+    ): PiiScanSummary {
+        if (!nativeAcquired) return PiiScanSummary(emptyList(), emptySet(), mapOf("NCNN_VISION" to "Models unavailable or closed"))
+        val successes = mutableSetOf<String>()
+        val failures = mutableMapOf<String, String>()
+        fun detectPart(name: String, call: () -> FloatArray?): FloatArray {
+            return try {
+                requireNativeResults(call(), name).also { successes += name }
+            } catch (failure: Exception) {
+                failures[name] = failure.message ?: "Inference failure"
+                floatArrayOf()
+            } catch (failure: LinkageError) {
+                failures[name] = "Native library unavailable"
+                floatArrayOf()
+            }
+        }
         val candidates = mutableListOf<PiiDetection>()
 
         val rgbaBitmap = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
@@ -545,8 +572,8 @@ class PiiNcnnEngine(
 
         try {
             // 1. Detect faces via UltraFace RFB-320 NCNN
-            val faceResults = PiiNcnnNative.nativeDetectFaces(rgbaBitmap, confThreshold, iouThreshold)
-            if (faceResults != null && faceResults.isNotEmpty()) {
+            val faceResults = detectPart("NCNN_FACE") { PiiNcnnNative.nativeDetectFaces(rgbaBitmap, confThreshold, iouThreshold) }
+            if (faceResults.isNotEmpty()) {
                 val stride = 6
                 val numBoxes = faceResults.size / stride
                 for (i in 0 until numBoxes) {
@@ -566,8 +593,8 @@ class PiiNcnnEngine(
             }
 
             // 2. Detect PII objects via YOLOv8n NCNN
-            val piiResults = PiiNcnnNative.nativeDetectPii(rgbaBitmap, confThreshold, iouThreshold)
-            if (piiResults != null && piiResults.isNotEmpty()) {
+            val piiResults = detectPart("NCNN_OBJECT") { PiiNcnnNative.nativeDetectPii(rgbaBitmap, confThreshold, iouThreshold) }
+            if (piiResults.isNotEmpty()) {
                 val stride = 6
                 val numBoxes = piiResults.size / stride
                 for (i in 0 until numBoxes) {
@@ -591,8 +618,6 @@ class PiiNcnnEngine(
                     }
                 }
             }
-        } catch (_: UnsatisfiedLinkError) {
-            // Fallback for JVM host unit tests without native lib
         } finally {
             if (rgbaBitmap !== bitmap) {
                 rgbaBitmap.recycle()
@@ -600,11 +625,12 @@ class PiiNcnnEngine(
         }
 
         val filtered = applyNMS(candidates, iouThreshold)
-        return if (targetWidth != bitmap.width || targetHeight != bitmap.height) {
+        val scaled = if (targetWidth != bitmap.width || targetHeight != bitmap.height) {
             scaleDetections(filtered, bitmap.width, bitmap.height, targetWidth, targetHeight)
         } else {
             filtered
         }
+        return PiiScanSummary(scaled, successes, failures)
     }
 
     fun detect(
@@ -633,11 +659,13 @@ class PiiNcnnEngine(
      * Detects all salient subject entities (humans, faces, animals, vehicles, furniture, items)
      * using the full 80-class COCO classification of YOLOv8n combined with UltraFace RFB-320.
      */
+    @Synchronized
     fun detectSalientSubjects(
         bitmap: Bitmap,
         confThreshold: Float = 0.35f,
         iouThreshold: Float = 0.45f
     ): List<SalientSubject> {
+        check(nativeAcquired) { "NCNN vision models are unavailable or closed" }
         val candidates = mutableListOf<SalientSubject>()
 
         val rgbaBitmap = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
@@ -645,8 +673,8 @@ class PiiNcnnEngine(
 
         try {
             // 1. Detect faces via UltraFace RFB-320 NCNN
-            val faceResults = PiiNcnnNative.nativeDetectFaces(rgbaBitmap, confThreshold, iouThreshold)
-            if (faceResults != null && faceResults.isNotEmpty()) {
+            val faceResults = requireNativeResults(PiiNcnnNative.nativeDetectFaces(rgbaBitmap, confThreshold, iouThreshold), "UltraFace")
+            if (faceResults.isNotEmpty()) {
                 val stride = 6
                 val numBoxes = faceResults.size / stride
                 for (i in 0 until numBoxes) {
@@ -667,8 +695,8 @@ class PiiNcnnEngine(
             }
 
             // 2. Detect objects / animals / people via YOLOv8n NCNN across all 80 COCO classes
-            val piiResults = PiiNcnnNative.nativeDetectPii(rgbaBitmap, confThreshold, iouThreshold)
-            if (piiResults != null && piiResults.isNotEmpty()) {
+            val piiResults = requireNativeResults(PiiNcnnNative.nativeDetectPii(rgbaBitmap, confThreshold, iouThreshold), "YOLOv8n")
+            if (piiResults.isNotEmpty()) {
                 val stride = 6
                 val numBoxes = piiResults.size / stride
                 for (i in 0 until numBoxes) {
@@ -692,7 +720,6 @@ class PiiNcnnEngine(
                     )
                 }
             }
-        } catch (_: UnsatisfiedLinkError) {
         } finally {
             if (rgbaBitmap !== bitmap) {
                 rgbaBitmap.recycle()
@@ -715,8 +742,11 @@ class PiiNcnnEngine(
         return keep
     }
 
+    @Synchronized
     override fun close() {
-        runCatching { PiiNcnnNative.nativeRelease() }
+        if (!nativeAcquired) return
+        nativeAcquired = false
+        PiiNcnnNative.nativeRelease()
     }
 }
 

@@ -24,6 +24,12 @@ permissions:
   contents: write
   actions: read
 
+# Do not build every intermediate PR revision simultaneously. Keep releases,
+# tags, manual workflow dispatches and main pushes independent/non-cancellable.
+concurrency:
+  group: veilframe-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ------------------------------------------------------------------ #
   # 1. Multi-Platform Test Matrix: Linux, Windows, macOS x Python 3.10-12
@@ -78,75 +84,17 @@ jobs:
             libxcb-xfixes0 \
             libxcb-xkb1
 
-      - name: Install FFmpeg (Windows)
+      - name: Restore pinned FFmpeg archive (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v6.1.0
+        with:
+          path: .ci-cache/ffmpeg-9.1-essentials_build.zip
+          key: windows-ffmpeg-9.1-b9bbbb3acece000cbeec994f856649354e52c773807841e78908374b24d658fd
+
+      - name: Install pinned, verified FFmpeg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          # Try installing via Chocolatey with retries
-          $maxAttempts = 3
-          $attempt = 0
-          $installed = $false
-          while ($attempt -lt $maxAttempts -and -not $installed) {
-            $attempt++
-            try {
-              Write-Host "Attempt ${attempt}: choco install ffmpeg --no-progress -y"
-              choco install ffmpeg --no-progress -y
-              if ($LASTEXITCODE -eq 0) {
-                $installed = $true
-                Write-Host "choco install succeeded"
-              } else {
-                throw "choco exited with code $LASTEXITCODE"
-              }
-            } catch {
-              Write-Warning "choco install attempt ${attempt} failed: $($_.Exception.Message)"
-              if ($attempt -lt $maxAttempts) {
-                Start-Sleep -Seconds (5 * $attempt)
-              }
-            }
-          }
-
-          # If choco failed, fetch a static ffmpeg build and stage it
-          if (-not $installed) {
-            Write-Warning "choco failed to install ffmpeg; falling back to static build download"
-            $zipPath = Join-Path $env:TEMP "ffmpeg_ci.zip"
-            $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg_extracted"
-            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
-            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath -UseBasicParsing
-            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-
-            $ffmpegFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 4MB } | Select-Object -First 1
-            $ffprobeFile = Get-ChildItem -Path $extractPath -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1MB } | Select-Object -First 1
-
-            if (-not $ffmpegFile -or -not $ffprobeFile) {
-              Write-Error "Fallback download did not yield ffmpeg/ffprobe binaries"
-              exit 1
-            }
-
-            $destDir = "C:\ProgramData\ffmpeg"
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-            Copy-Item $ffmpegFile.FullName -Destination (Join-Path $destDir "ffmpeg.exe") -Force
-            Copy-Item $ffprobeFile.FullName -Destination (Join-Path $destDir "ffprobe.exe") -Force
-
-            # Also copy into chocolatey bin if it exists (which is already in default runner PATH)
-            if (Test-Path "C:\ProgramData\chocolatey\bin") {
-              Copy-Item $ffmpegFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffmpeg.exe" -Force
-              Copy-Item $ffprobeFile.FullName -Destination "C:\ProgramData\chocolatey\bin\ffprobe.exe" -Force
-            }
-
-            # Copy into repo resources so build/test steps can find them
-            New-Item -ItemType Directory -Force -Path resources/ffmpeg | Out-Null
-            New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg | Out-Null
-            Copy-Item (Join-Path $destDir "ffmpeg.exe") -Destination resources/ffmpeg/ffmpeg.exe -Force
-            Copy-Item (Join-Path $destDir "ffprobe.exe") -Destination resources/ffmpeg/ffprobe.exe -Force
-
-            # Ensure ffmpeg is discoverable in current and subsequent steps
-            $env:PATH = "$destDir;$env:PATH"
-            [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
-            "$destDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-            Write-Host "Copied ffmpeg to $destDir and updated PATH"
-          }
+        run: ./.github/scripts/install-windows-ffmpeg.ps1
 
       - name: Install FFmpeg (macOS)
         if: runner.os == 'macOS'
@@ -280,9 +228,10 @@ jobs:
           REQUIRED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
-          # Prefer an artifact built from this exact head or this feature branch.
-          # If neither exists, a successful main-branch SDK is safe only when every
-          # OpenCV SDK build input is identical between that artifact SHA and HEAD.
+          # Prefer a *successful* SDK artifact from this head, then this branch,
+          # then main. A queued exact-head build may fail or be cancelled; a
+          # successful source-identical artifact is stronger evidence.
+          # Never use stale SDK inputs or a failed/cancelled SDK run.
           RUNS=$(gh run list --repo "${{ github.repository }}" \
             --workflow "build-opencv-sdk.yml" \
             --branch "$REQUIRED_BRANCH" \
@@ -290,18 +239,21 @@ jobs:
             --json databaseId,headSha,status,conclusion)
 
           RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
-            '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))] | first | .databaseId // empty')
+            '[.[] | select(.headSha == $sha and .status == "completed" and .conclusion == "success")] | first | .databaseId // empty')
           ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
 
           if [ -z "$RUN_ID" ]; then
+            # Cross-commit queued SDK runs can be cancelled on rapid PR pushes.
+            # Only reuse completed-successful SDK artifacts from other commits.
             CANDIDATE=$(printf '%s' "$RUNS" | jq -c \
-              '[.[] | select(.status == "queued" or .status == "in_progress" or .conclusion == "success")] | first // {}')
+              '[.[] | select(.status == "completed" and .conclusion == "success")] | first // {}')
             RUN_ID=$(printf '%s' "$CANDIDATE" | jq -r '.databaseId // empty')
             ARTIFACT_SHA=$(printf '%s' "$CANDIDATE" | jq -r '.headSha // empty')
           fi
 
-          # Dependency-only and app-only PRs do not trigger an OpenCV SDK build.
-          # Reuse the latest successful main artifact only after checking its source
+          # App-only PRs may still trigger OpenCV through a changed CI workflow.
+          # Prefer an existing verified artifact over waiting for that build.
+          # Reuse a successful main artifact only after checking its source
           # tree against this exact PR head for all SDK-defining inputs below.
           if [ -z "$RUN_ID" ]; then
             MAIN_RUNS=$(gh run list --repo "${{ github.repository }}" \
@@ -324,9 +276,19 @@ jobs:
           CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
             grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
           if [ -n "$CHANGED_INPUTS" ]; then
-            echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+            # A recently changed SDK workflow invalidates the historical artifact.
+            # Do not fail immediately while a source-identical, exact-head SDK
+            # rebuild is still queued/running. Wait for that run to SUCCEED.
+            # This never authorizes using a stale or failed SDK artifact.
+            echo "::notice::OpenCV SDK inputs changed since $ARTIFACT_SHA; requiring an exact-head successful rebuild."
             echo "$CHANGED_INPUTS"
-            exit 1
+            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+              '[.[] | select(.headSha == $sha and (.status != "completed" or .conclusion == "success"))] | first | .databaseId // empty')
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No pending or successful exact-head OpenCV build available for $REQUIRED_HEAD_SHA."
+              exit 1
+            fi
+            ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
           fi
           echo "Verified OpenCV SDK build inputs are unchanged from artifact source $ARTIFACT_SHA."
           if [ "$ARTIFACT_SHA" != "$REQUIRED_HEAD_SHA" ]; then
@@ -421,6 +383,63 @@ jobs:
         run: |
           set -Eeuo pipefail
           ./gradlew :app:testDebugUnitTest --stacktrace
+
+      # Keep actionable JUnit assertions available after a failed test gate.
+      # This does not change Gradle's exit status or mark tests successful.
+      - name: Diagnose Android unit-test failures
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          reports = sorted(glob.glob('android/app/build/test-results/testDebugUnitTest/**/TEST-*.xml', recursive=True))
+          if not reports:
+              print('No JUnit XML produced (the failure may precede unit tests)')
+          shown = 0
+          for file in reports:
+              try:
+                  suite = ET.parse(file).getroot()
+              except ET.ParseError as exc:
+                  print(f'Unreadable JUnit XML {os.path.basename(file)}: {exc}')
+                  continue
+              for case in suite.iter('testcase'):
+                  for failure in list(case.findall('failure')) + list(case.findall('error')):
+                      label = f"{case.get('classname', '?')}.{case.get('name', '?')}"
+                      detail = (failure.get('message', '') + '\\n' + (failure.text or ''))[:2400]
+                      print(f'FAILED {label}\\n{detail}')
+                      shown += 1
+                      if shown >= 40:
+                          break
+                  if shown >= 40:
+                      break
+              if shown >= 40:
+                  break
+          print(f'Shown failing test cases: {shown}')
+          PY
+
+      - name: Upload Android unit-test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-evidence-${{ github.run_id }}
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Compile instrumented Office and native device regressions in PR CI.
+      # No emulator/hardware is available on this runner: this is compilation,
+      # never claim physical-device acceptance from this step.
+      - name: Compile Android device regression tests (no device execution)
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:compileDebugAndroidTestKotlin --stacktrace
 
       - name: Assemble ARM64 debug APK
         working-directory: android
@@ -550,42 +569,15 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install FFmpeg (Windows)
-        shell: bash
-        run: choco install ffmpeg --no-progress -y || true
+      - name: Restore pinned FFmpeg archive (Windows)
+        uses: actions/cache@v6.1.0
+        with:
+          path: .ci-cache/ffmpeg-9.1-essentials_build.zip
+          key: windows-ffmpeg-9.1-b9bbbb3acece000cbeec994f856649354e52c773807841e78908374b24d658fd
 
-      - name: Stage Windows FFmpeg Binaries
+      - name: Install and stage pinned Windows FFmpeg binaries
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path resources/ffmpeg
-          New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg
-          $realFfmpeg = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
-          $realFfprobe = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
-          if ($realFfmpeg) {
-            Copy-Item $realFfmpeg.FullName -Destination resources/ffmpeg/ffmpeg.exe -Force
-            Copy-Item $realFfmpeg.FullName -Destination veilframe/resources/ffmpeg/ffmpeg.exe -Force
-          }
-          if ($realFfprobe) {
-            Copy-Item $realFfprobe.FullName -Destination resources/ffmpeg/ffprobe.exe -Force
-            Copy-Item $realFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
-          }
-          $hasFfmpeg = (Test-Path resources/ffmpeg/ffmpeg.exe) -and ((Get-Item resources/ffmpeg/ffmpeg.exe).Length -gt 5MB)
-          $hasFfprobe = (Test-Path resources/ffmpeg/ffprobe.exe) -and ((Get-Item resources/ffmpeg/ffprobe.exe).Length -gt 5MB)
-          if (-not $hasFfmpeg -or -not $hasFfprobe) {
-            $zipPath = "$env:TEMP\ffmpeg_ci.zip"
-            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath
-            Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\ffmpeg_extracted" -Force
-            $extractedFfmpeg = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffmpeg.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
-            $extractedFfprobe = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffprobe.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
-            if ($extractedFfmpeg) {
-              Copy-Item $extractedFfmpeg.FullName -Destination resources/ffmpeg/ffmpeg.exe -Force
-              Copy-Item $extractedFfmpeg.FullName -Destination veilframe/resources/ffmpeg/ffmpeg.exe -Force
-            }
-            if ($extractedFfprobe) {
-              Copy-Item $extractedFfprobe.FullName -Destination resources/ffmpeg/ffprobe.exe -Force
-              Copy-Item $extractedFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
-            }
-          }
+        run: ./.github/scripts/install-windows-ffmpeg.ps1 -StageResources
 
       - name: Install Python Dependencies & PyInstaller
         run: |
@@ -1052,9 +1044,19 @@ jobs:
           CHANGED_INPUTS=$(git diff --name-only "$ARTIFACT_SHA" HEAD | \
             grep -E '^(android/scripts/build_opencv_contrib_sdk\.sh|\.github/workflows/build-opencv-sdk\.yml|android/opencv-sdk/)' || true)
           if [ -n "$CHANGED_INPUTS" ]; then
-            echo "::error::OpenCV SDK inputs changed after candidate artifact $ARTIFACT_SHA; refusing stale SDK."
+            # A recently changed SDK workflow invalidates the historical artifact.
+            # Do not fail immediately while a source-identical, exact-head SDK
+            # rebuild is still queued/running. Wait for that run to SUCCEED.
+            # This never authorizes using a stale or failed SDK artifact.
+            echo "::notice::OpenCV SDK inputs changed since $ARTIFACT_SHA; requiring an exact-head successful rebuild."
             echo "$CHANGED_INPUTS"
-            exit 1
+            RUN_ID=$(printf '%s' "$RUNS" | jq -r --arg sha "$REQUIRED_HEAD_SHA" \
+              '[.[] | select(.headSha == $sha and (.status != "completed" or .conclusion == "success"))] | first | .databaseId // empty')
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No pending or successful exact-head OpenCV build available for $REQUIRED_HEAD_SHA."
+              exit 1
+            fi
+            ARTIFACT_SHA="$REQUIRED_HEAD_SHA"
           fi
           echo "Verified OpenCV SDK build inputs are unchanged from artifact source $ARTIFACT_SHA."
           if [ "$ARTIFACT_SHA" != "$REQUIRED_HEAD_SHA" ]; then

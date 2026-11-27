@@ -1,6 +1,14 @@
+import java.util.jar.JarFile
+
 plugins {
     id("com.android.application")
 }
+
+// Explicit opt-in for the native x86_64 instrumentation build. The normal
+// debug and production release builds remain arm64-v8a.
+val cvEmulatorX86 = providers.gradleProperty("cvEmulatorX86")
+    .map { it.toBooleanStrict() }.orElse(false).get()
+val cvDebugAbi = if (cvEmulatorX86) "x86_64" else "arm64-v8a"
 
 android {
     namespace = "com.veilframe.app"
@@ -12,7 +20,7 @@ android {
         }
     }
 
-    val supportedAbis = setOf("arm64-v8a")
+    val supportedAbis = setOf(cvDebugAbi)
     val customAbis = (project.findProperty("targetAbi") as String?)
         ?.split(",")
         ?.map { it.trim() }
@@ -24,7 +32,7 @@ android {
         if (unsupported.isNotEmpty()) {
             throw org.gradle.api.GradleException(
                 "Unsupported targetAbi: ${unsupported.joinToString()}. " +
-                "VeilFrame NCNN upscaler subsystem strictly supports arm64-v8a."
+                "This build requires $cvDebugAbi; production releases support arm64-v8a only."
             )
         }
     }
@@ -47,7 +55,7 @@ android {
 
         ndk {
             abiFilters.clear()
-            abiFilters.add("arm64-v8a")
+            abiFilters.add(cvDebugAbi)
         }
     }
 
@@ -104,10 +112,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Debug targets arm64-v8a exclusively
+            // Normal debug is ARM64; only the explicit CV test build is x86_64.
             ndk {
                 abiFilters.clear()
-                abiFilters.add("arm64-v8a")
+                abiFilters.add(cvDebugAbi)
             }
         }
     }
@@ -115,6 +123,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // POI 6 uses JDK library APIs absent on older Android (e.g. Stream.toList).
+        // D8 must desugar dependency bytecode as well as application bytecode.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
@@ -156,6 +167,105 @@ android {
     }
 }
 
+// Robolectric fetches framework JARs from Maven independently of Gradle, *during*
+// JUnit class setup. On CI a transient HTTP failure at MavenArtifactFetcher.java:129
+// looks like a product test failure (PrnuSanitizerEngineTest > classMethod).
+//
+// Resolve only the SDK levels used by our tests via Gradle BEFORE starting JUnit,
+// so its normal dependency cache, mirror and checksum verification apply.
+// Version strings are from Robolectric 4.18's DefaultSdkProvider (i7).
+// @Config(sdk=33) QR tests, @Config(sdk=34) CV/Office tests, targetSdk=36 default.
+val robolectricSdkVersions = listOf(
+    "13-robolectric-9030017-i7",     // API 33
+    "14-robolectric-10818077-i7",    // API 34
+    "16-robolectric-13921718-2-i7"  // API 36
+)
+// Each framework is a different version of the SAME Maven module. Resolving
+// them together selects only the highest version through Gradle conflict
+// resolution. Isolate each SDK in its own non-transitive configuration.
+val robolectricSdkConfigurations = robolectricSdkVersions.associateWith { version ->
+    configurations.detachedConfiguration(
+        dependencies.create("org.robolectric:android-all-instrumented:$version")
+    ).apply {
+        isTransitive = false
+    }
+}
+val robolectricOfflineDir = layout.buildDirectory.dir("robolectric/preinstrumented")
+// Use the *resolved artifact metadata* to stage each JAR at Robolectric's
+// required filename. A bare Gradle Sync(from(configuration)) did not produce the
+// expected API 33 file in CI despite successful dependency resolution and gave
+// an unhelpful missing-or-truncated message. Never guess an artifact filename.
+val prepareRobolectricSdkJars = tasks.register("prepareRobolectricSdkJars") {
+    inputs.files(robolectricSdkConfigurations.values).withPropertyName("robolectricSdkJars")
+    inputs.property("robolectricSdkVersions", robolectricSdkVersions)
+    outputs.dir(robolectricOfflineDir).withPropertyName("preinstrumentedRobolectricJars")
+    doLast {
+        val destination = robolectricOfflineDir.get().asFile
+        destination.mkdirs()
+        val artifacts = robolectricSdkConfigurations.flatMap { (expectedVersion, configuration) ->
+            val resolved = configuration.resolvedConfiguration.resolvedArtifacts
+            check(resolved.size == 1 && resolved.single().moduleVersion.id.version == expectedVersion) {
+                "Unexpected Robolectric SDK resolution for $expectedVersion: " +
+                    resolved.map { it.moduleVersion.id.toString() }
+            }
+            resolved
+        }
+        val byVersion = artifacts.groupBy { it.moduleVersion.id.version }
+        logger.lifecycle(
+            "Robolectric prefetch: expected SDK versions={}, resolved artifacts={}",
+            robolectricSdkVersions,
+            artifacts.map { "${it.moduleVersion.id.version}: ${it.file.name} (${it.file.length()} bytes)" }
+        )
+        check(byVersion.keys == robolectricSdkVersions.toSet() &&
+            robolectricSdkVersions.all { byVersion[it]?.size == 1 }) {
+            "Unexpected Robolectric SDK artifacts: expected=$robolectricSdkVersions, " +
+                "resolved=${artifacts.map { "${it.moduleVersion.id.version}/${it.file.name}" }}"
+        }
+        robolectricSdkVersions.forEach { version ->
+            val source = byVersion.getValue(version).single().file
+            check(source.isFile && source.length() > 10_000_000L) {
+                "Resolved Robolectric SDK JAR missing/truncated: ${source.absolutePath}, " +
+                    "exists=${source.exists()}, size=${if (source.exists()) source.length() else -1}"
+            }
+            // Validate the ZIP central directory and an actual Android framework
+            // class rather than treating arbitrary nonempty files as SDK JARs.
+            JarFile(source).use { jar ->
+                check(jar.getJarEntry("android/os/Build.class") != null) {
+                    "Resolved artifact is not a Robolectric Android framework JAR: $source"
+                }
+            }
+            val expected = destination.resolve("android-all-instrumented-$version.jar")
+            // The task runs when its inputs or outputs change. Replace even a
+            // same-sized stale file instead of trusting its length as identity.
+            source.copyTo(expected, overwrite = true)
+            check(expected.isFile && expected.length() == source.length()) {
+                "Robolectric JAR staging failed: source=${source.absolutePath} " +
+                    "(${source.length()} bytes), staged=${expected.absolutePath} " +
+                    "(${if (expected.exists()) expected.length() else -1} bytes)"
+            }
+            logger.lifecycle(
+                "Robolectric SDK staged: {} -> {} ({} bytes)",
+                source.name, expected.absolutePath, expected.length()
+            )
+        }
+        // Fail closed if an old / removed SDK is still present. The output
+        // directory must contain exactly the current three named JARs.
+        val expectedNames = robolectricSdkVersions.map { "android-all-instrumented-$it.jar" }.toSet()
+        destination.listFiles()?.filter { it.isFile && it.extension == "jar" && it.name !in expectedNames }
+            ?.forEach { obsolete -> check(obsolete.delete()) { "Cannot remove stale SDK JAR: $obsolete" } }
+    }
+}
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (providers.environmentVariable("CI").orNull.equals("true", ignoreCase = true)) {
+        dependsOn(prepareRobolectricSdkJars)
+        systemProperty("robolectric.dependency.dir", robolectricOfflineDir.get().asFile.absolutePath)
+        systemProperty("robolectric.offline", "true")
+    } else {
+        // Local developer JVM tests continue to work without a prefetch task.
+        systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2/")
+    }
+}
+
 // AGP 9 built-in Kotlin: preserve the existing Java 17 bytecode target and compiler opt-ins.
 kotlin {
     compilerOptions {
@@ -165,13 +275,24 @@ kotlin {
 }
 
 androidComponents {
+    // An opt-in emulator configuration must never produce a release APK.
+    if (cvEmulatorX86) {
+        beforeVariants(selector().withBuildType("release")) { it.enable = false }
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
     }
 }
 
 dependencies {
+    // 2.1.5 explicitly adds Stream.toList() (Android API 34 / Java 16).
+    // Use the standard library, not the minimal flavor which excludes streams.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // Bundled, offline byte-pair tokenizer; exact named-encoding artifact counts.
+    implementation("com.knuddels:jtokkit:1.1.0")
     implementation("androidx.core:core-ktx:1.19.1")
+    // Mixed-orientation vertical shaping; beta03 includes the pre-36 compatibility path.
+    implementation("androidx.text:text-vertical:1.0.0-beta03")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
@@ -234,6 +355,11 @@ dependencies {
 
     // Google ML Kit Text Recognition (Offline/Bundled on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Explicit script selection; bundled models preserve offline-first OCR.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 
     // Apache POI (Offline DOC/DOCX/XLSX to PDF Converter)
     implementation("org.apache.poi:poi:6.0.0")
@@ -291,7 +417,14 @@ tasks.register("verifyDependencyResolution") {
                 .filterIsInstance<org.gradle.api.artifacts.result.UnresolvedDependencyResult>()
             if (failures.isNotEmpty()) {
                 val details = failures.joinToString("\n") { failure ->
-                    "${failure.requested.displayName}: ${failure.failure.message}"
+                    // Gradle's top-level ModuleVersionResolveException often says
+                    // only "Could not resolve X", hiding a nested HTTP 429. Keep
+                    // a bounded cause chain so CI retries transient throttling,
+                    // while missing modules/incompatibilities remain failures.
+                    val chain = generateSequence(failure.failure) { it.cause }
+                        .take(10).mapNotNull { it.message?.take(600) }
+                        .distinct().joinToString(" -> ")
+                    "${failure.requested.displayName}: $chain"
                 }
                 throw GradleException("Unresolved dependencies in $scope:\n$details")
             }

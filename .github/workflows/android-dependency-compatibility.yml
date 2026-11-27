@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: veilframe-dependencies-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   dependency-compatibility:
     name: Resolve Android dependency graphs
@@ -31,8 +35,37 @@ jobs:
         with:
           packages: 'platforms;android-37.0 build-tools;36.0.0'
 
+      - name: Restore validated Gradle dependency cache
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
       - name: Validate Gradle configuration and direct/transitive dependencies
         working-directory: android
+        shell: bash
         run: |
+          set -Eeuo pipefail
           chmod +x ./gradlew
-          ./gradlew :app:verifyDependencyResolution --no-daemon --stacktrace
+          for attempt in 1 2 3 4; do
+            logfile="$(mktemp)"
+            if ./gradlew :app:verifyDependencyResolution --no-daemon --max-workers=2 --stacktrace >"$logfile" 2>&1; then
+              cat "$logfile"
+              rm -f "$logfile"
+              exit 0
+            fi
+            # A 429 is a rate-limit response from a trusted repository,
+            # not a version or compatibility defect. All other errors fail.
+            if ! grep -Eiq 'HTTP.*429|status code 429|Too Many Requests' "$logfile"; then
+              cat "$logfile"
+              rm -f "$logfile"
+              exit 1
+            fi
+            echo "::warning::Maven rate limited dependency resolution (HTTP 429), attempt $attempt/4"
+            if [ "$attempt" -eq 4 ]; then
+              cat "$logfile"
+              rm -f "$logfile"
+              exit 1
+            fi
+            rm -f "$logfile"
+            sleep $((attempt * 30))
+          done

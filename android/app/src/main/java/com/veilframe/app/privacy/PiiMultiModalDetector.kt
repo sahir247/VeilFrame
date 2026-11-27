@@ -57,15 +57,17 @@ object PiiMultiModalDetector {
         if (includeNcnn) {
             if (ncnnEngine != null) {
                 runCatching {
-                    val ncnnDets = ncnnEngine.detect(
+                    val result = ncnnEngine.detectWithStatus(
                         bitmap = bitmap,
                         targetWidth = srcW,
                         targetHeight = srcH,
                         confThreshold = confThreshold,
                         iouThreshold = iouThreshold
                     )
-                    candidates += ncnnDets
-                    successfulEngines += "NCNN_VISION"
+                    candidates += result.detections
+                    successfulEngines += result.successfulEngines
+                    failedEngines.putAll(result.failedEngines)
+                    if (result.failedEngines.isEmpty()) successfulEngines += "NCNN_VISION"
                 }.onFailure {
                     Log.w(TAG, "NCNN PII pass failed: ${it.message}")
                     failedEngines["NCNN_VISION"] = it.message ?: "Inference failure"

@@ -9,6 +9,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.privacy.PiiClass
 import com.veilframe.app.privacy.PiiRedactionStyle
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -22,6 +23,53 @@ import kotlin.math.pow
  */
 @RunWith(AndroidJUnit4::class)
 class VideoPiiFfmpegRenderTest {
+
+    @Test
+    fun sequentialDecoderPreservesEveryVariableRateFrameWithoutSpool() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_seq_test").toFile()
+        val source = File(dir, "vfr.mp4")
+        try {
+            val creation = FFmpegKit.executeWithArguments(arrayOf("-y", "-f", "lavfi", "-i",
+                "testsrc2=size=320x240:rate=10:duration=1", "-vf",
+                "select='not(mod(n,3))+eq(n,1)'", "-vsync", "0", "-an", "-c:v", "mpeg4", source.absolutePath))
+            assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
+            val seen = mutableListOf<Long>()
+            val count = SequentialVideoFrameDecoder.decode(context, source, 320, 240, { false }) {
+                    bitmap, pts, _, _, _ ->
+                assertTrue(bitmap.width == 320 && bitmap.height == 240)
+                seen.add(pts)
+            }
+            org.junit.Assert.assertEquals(listOf(0L, 100_000L, 300_000L, 600_000L, 900_000L), seen)
+            org.junit.Assert.assertEquals(5, count)
+            assertTrue(dir.listFiles()!!.none { it.extension == "rgb" })
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test
+    fun continuousDecoderExceedsOldFrameCeilingAndCanCancelThenRetry() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "pii_continuous").toFile()
+        val source = File(dir, "long.mp4")
+        try {
+            val creation = FFmpegKit.executeWithArguments(arrayOf("-y", "-f", "lavfi", "-i",
+                "testsrc2=size=32x24:rate=60:duration=31", "-an", "-c:v", "mpeg4", source.absolutePath))
+            assertTrue(creation.allLogsAsString, ReturnCode.isSuccess(creation.returnCode))
+            var seen = 0
+            org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+                SequentialVideoFrameDecoder.decode(context, source, 32, 24, { seen >= 12 }) { _, _, _, _, _ ->
+                    seen++
+                }
+            }
+            var previous = -1L
+            val count = SequentialVideoFrameDecoder.decode(context, source, 32, 24, { false }) { _, pts, next, _, _ ->
+                assertTrue(pts > previous)
+                assertTrue(next == null || next > pts)
+                previous = pts
+            }
+            org.junit.Assert.assertEquals(1860, count)
+        } finally { dir.deleteRecursively() }
+    }
 
     @Test
     fun allRedactionStylesRenderAndModifyTheTargetRegion() {
@@ -103,6 +151,64 @@ class VideoPiiFfmpegRenderTest {
             original.recycle()
         } finally {
             dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testRealWorldVideoPiiScanningOnDevice() {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val sampleVideoCandidates = listOf(
+            File("/data/local/tmp/sample.mp4"),
+            File("/sdcard/Download/sample.mp4"),
+            File("/sdcard/Download/pixilart-1790940747498.mp4")
+        )
+        val sourceVideo = sampleVideoCandidates.firstOrNull { it.exists() && it.length() > 0L }
+        if (sourceVideo == null) {
+            android.util.Log.w("VideoPiiTest", "No real video found on device; skipping real video PII test")
+            return
+        }
+
+        val stagedVideo = File(context.cacheDir, "test_pii_source.mp4")
+        sourceVideo.copyTo(stagedVideo, overwrite = true)
+
+        val retriever = MediaMetadataRetriever()
+        val piiEngine = try {
+            com.veilframe.app.privacy.PiiNcnnEngine(context)
+        } catch (t: Throwable) {
+            android.util.Log.w("VideoPiiTest", "PiiNcnnEngine init failed: ${t.message}")
+            null
+        }
+
+        val fis = java.io.FileInputStream(stagedVideo)
+        try {
+            retriever.setDataSource(fis.fd)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 320
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 240
+            assertTrue("Source video duration must be positive", durationMs > 0L)
+
+            val scanLimitMs = minOf(durationMs, 5000L) // Scan up to 5 seconds
+            var progressCalls = 0
+            val scanResult = VideoPiiRedactionEngine.scanVideo(
+                context = context,
+                retriever = retriever,
+                piiEngine = piiEngine,
+                trimStartMs = 0L,
+                trimEndMs = scanLimitMs,
+                fallbackWidth = width,
+                fallbackHeight = height,
+                density = VideoPiiRedactionEngine.ScanDensity.STANDARD,
+                onProgress = { _, _ -> progressCalls++ }
+            )
+
+            assertNotNull("Scan result must not be null", scanResult)
+            assertTrue("Must sample at least 1 frame", scanResult.sampledFrames > 0)
+            android.util.Log.i("VideoPiiTest", "Scanned ${scanResult.sampledFrames} frames on real video (${sourceVideo.name}): detected ${scanResult.regions.size} regions, counts=${scanResult.detectedCounts}")
+        } finally {
+            try { fis.close() } catch (_: Throwable) {}
+            retriever.release()
+            piiEngine?.close()
+            stagedVideo.delete()
         }
     }
 

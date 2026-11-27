@@ -35,6 +35,21 @@ buildscript {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // CI resolves the observed rate-limited artifacts through Google's
+        // public Maven Central mirror first. Keep the filter narrow; unrelated
+        // app dependencies and local developer repository selection are unchanged.
+        if (System.getenv("CI").equals("true", ignoreCase = true)) {
+            maven {
+                url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                content {
+                    includeGroup("org.robolectric")
+                    // Robolectric imports this BOM while parsing its POM.
+                    // Route the whole Bouncy Castle family consistently, including BOMs.
+                    includeGroup("org.bouncycastle")
+                    includeModule("com.knuddels", "jtokkit")
+                }
+            }
+        }
         google()
         mavenCentral()
     }

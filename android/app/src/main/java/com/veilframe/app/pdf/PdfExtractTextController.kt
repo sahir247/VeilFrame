@@ -13,6 +13,8 @@ import com.tom_roush.pdfbox.rendering.PDFRenderer
 import com.veilframe.app.databinding.LayoutPdfExtractTextBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
 import com.veilframe.app.pdf.operations.OcrEngine
+import com.veilframe.app.pdf.operations.OcrLanguage
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.pdf.operations.TextExtractor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,13 +46,17 @@ class PdfExtractTextController(
     private var isSaved: Boolean = false
 
     private val textExtractor by lazy { TextExtractor() }
-    private val ocrEngine by lazy { OcrEngine(activity) }
+    private var generation = 0L
+    private var scriptDialog: androidx.appcompat.app.AlertDialog? = null
 
     override fun hasPickedMedia(): Boolean = activePdfUri != null
     override fun hasUnsavedWork(): Boolean = extractedTextContent.isNotEmpty() && !isSaved
     override val isProcessing: Boolean get() = isExtracting
 
     override fun discardAndReleaseAllResources() {
+        generation++
+        scriptDialog?.dismiss()
+        scriptDialog = null
         extractionJob?.cancel()
         activePdfUri = null
         activePdfName = "document.pdf"
@@ -93,7 +99,11 @@ class PdfExtractTextController(
     }
 
     fun handlePdfSelected(uri: Uri) {
+        scriptDialog?.dismiss()
+        scriptDialog = null
         activePdfUri = uri
+        extractedTextContent = ""
+        binding.tvExtractedContent.text = ""
         isSaved = false
         val docName = queryDocumentName(uri)
         activePdfName = docName
@@ -108,6 +118,7 @@ class PdfExtractTextController(
     }
 
     private fun runEmbeddedTextExtraction(uri: Uri) {
+        val owner = ++generation
         extractionJob?.cancel()
         isExtracting = true
         binding.containerExtractTextLoading.visibility = View.VISIBLE
@@ -118,6 +129,7 @@ class PdfExtractTextController(
         extractionJob = scope.launch(Dispatchers.IO) {
             val result = textExtractor.extractText(activity, uri)
             withContext(Dispatchers.Main) {
+                if (owner != generation || activePdfUri != uri) return@withContext
                 isExtracting = false
                 binding.containerExtractTextLoading.visibility = View.GONE
 
@@ -147,30 +159,57 @@ class PdfExtractTextController(
         }
     }
 
-    private fun runInPlaceMlKitOcr() {
+    private fun chooseOcrScript() {
         val uri = activePdfUri ?: return
+        if (isExtracting) return
+        val owner = generation
+        val scripts = OcrLanguage.entries
+        scriptDialog?.dismiss()
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle("Choose OCR script")
+            .setItems(scripts.map { it.displayName }.toTypedArray()) { _, index ->
+                if (owner == generation && activePdfUri == uri) runInPlaceMlKitOcr(scripts[index])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+        scriptDialog = dialog
+        dialog.setOnDismissListener { if (scriptDialog === dialog) scriptDialog = null }
+    }
+
+    private fun runInPlaceMlKitOcr(language: OcrLanguage) {
+        val uri = activePdfUri ?: return
+        val owner = ++generation
         extractionJob?.cancel()
+        extractedTextContent = ""
+        isSaved = false
+        binding.tvExtractedContent.text = ""
+        binding.containerExtractTextResults.visibility = View.GONE
         isExtracting = true
         binding.containerExtractTextLoading.visibility = View.VISIBLE
-        binding.tvExtractTextLoadingStatus.text = "Rendering pages & running Google ML Kit OCR..."
+        binding.tvExtractTextLoadingStatus.text = "Preparing ${language.displayName} OCR..."
         binding.cardOcrPromptBanner.visibility = View.GONE
 
         extractionJob = scope.launch(Dispatchers.IO) {
             val fullTextBuilder = StringBuilder()
+            // Each job owns its selected recognizer until native recognition finishes.
+            val ocrEngine = OcrEngine(activity, language)
             try {
                 val input = activity.contentResolver.openInputStream(uri)
                     ?: throw java.io.IOException("Cannot open PDF input stream")
                 input.use { inputStream ->
-                    PDDocument.load(inputStream).use { doc ->
+                    PDDocument.load(inputStream, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                         val renderer = PDFRenderer(doc)
                         val total = doc.numberOfPages
                         for (i in 0 until total) {
                             kotlinx.coroutines.currentCoroutineContext().ensureActive()
                             withContext(Dispatchers.Main) {
+                                if (owner != generation || activePdfUri != uri) return@withContext
                                 binding.tvExtractTextLoadingStatus.text =
-                                    "Google ML Kit OCR: Processing page ${i + 1} of $total..."
+                                    "${language.displayName}: page ${i + 1} of $total..."
                             }
-                            val pageBmp = renderer.renderImageWithDPI(i, 150f)
+                            val box = doc.getPage(i).cropBox
+                            val dpi = com.veilframe.app.pdf.operations.OcrDpiUtil.getSafeOcrDpi(box.width, box.height)
+                            val pageBmp = renderer.renderImageWithDPI(i, dpi)
                             val pageText = try {
                                 ocrEngine.recognizeFullText(pageBmp)
                             } finally {
@@ -178,6 +217,9 @@ class PdfExtractTextController(
                             }
 
                             if (pageText.isNotBlank()) {
+                                check(pageText.length.toLong() + fullTextBuilder.length + 64 <= 8L * 1024 * 1024) {
+                                    "OCR text exceeds 8 million character budget; extract a smaller PDF"
+                                }
                                 if (fullTextBuilder.isNotEmpty()) {
                                     fullTextBuilder.append("\n\n--- Page ${i + 1} ---\n\n")
                                 }
@@ -189,6 +231,7 @@ class PdfExtractTextController(
 
                 val finalOcrText = fullTextBuilder.toString().trim()
                 withContext(Dispatchers.Main) {
+                    if (owner != generation || activePdfUri != uri) return@withContext
                     isExtracting = false
                     binding.containerExtractTextLoading.visibility = View.GONE
 
@@ -205,10 +248,14 @@ class PdfExtractTextController(
                 throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (owner != generation || activePdfUri != uri) return@withContext
                     isExtracting = false
                     binding.containerExtractTextLoading.visibility = View.GONE
+                    binding.cardOcrPromptBanner.visibility = View.VISIBLE
                     Toast.makeText(activity, "OCR Scan failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                ocrEngine.close()
             }
         }
     }
@@ -222,11 +269,11 @@ class PdfExtractTextController(
 
     private fun setupActions() {
         binding.btnRunOcrFallback.setOnClickListener {
-            runInPlaceMlKitOcr()
+            chooseOcrScript()
         }
 
         binding.btnForceMlKitOcr.setOnClickListener {
-            runInPlaceMlKitOcr()
+            chooseOcrScript()
         }
 
         binding.btnExtractTextCopy.setOnClickListener {

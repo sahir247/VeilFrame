@@ -4,38 +4,19 @@ import android.annotation.SuppressLint
 import android.util.Log
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.RectF
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
-import android.os.Build
-import java.io.FileInputStream
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.content.res.ColorStateList
 import com.veilframe.app.qr.ui.QrColorPickerDialog
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import org.apache.poi.xwpf.usermodel.XWPFDocument
-import com.veilframe.app.pdf.operations.OpenXmlDocumentParser
-import org.apache.poi.xslf.usermodel.XMLSlideShow
-import org.apache.poi.xslf.usermodel.XSLFTextShape
-import com.veilframe.app.pdf.ui.SignaturePadView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -46,26 +27,13 @@ import com.veilframe.app.R
 import com.veilframe.app.databinding.ItemPdfMergeFileBinding
 import com.veilframe.app.databinding.LayoutPdfQuickToolBinding
 import com.veilframe.app.navigation.ToolWorkStateContract
-import com.veilframe.app.pdf.operations.HtmlToPdfConverter
-import com.veilframe.app.pdf.operations.ImageConverter
-import com.veilframe.app.pdf.operations.ImageFormat
-import com.veilframe.app.pdf.operations.MergeItem
-import com.veilframe.app.pdf.operations.MergeItemType
 import com.veilframe.app.pdf.operations.MergePageItem
-import com.veilframe.app.pdf.operations.OfficeConverter
-import com.veilframe.app.pdf.operations.PageRange
-import com.veilframe.app.pdf.operations.PdfCompressor
+import com.veilframe.app.pdf.operations.OfficeSourceFormat
 import com.veilframe.app.pdf.operations.PdfFormFiller
-import com.veilframe.app.pdf.operations.PdfMerger
 import com.veilframe.app.pdf.operations.PdfMetadataManager
-import com.veilframe.app.pdf.operations.PdfOrganizer
-import com.veilframe.app.pdf.operations.PdfRotator
-import com.veilframe.app.pdf.operations.PdfSecurityManager
 import com.veilframe.app.pdf.operations.PdfSecurityOptions
 import com.veilframe.app.pdf.operations.PdfSigner
-import com.veilframe.app.pdf.operations.PdfSplitter
 import com.veilframe.app.pdf.operations.RotationAngle
-import com.veilframe.app.pdf.operations.SignaturePlacement
 import com.veilframe.app.pdf.ui.PdfMergePageAdapter
 import com.veilframe.app.pdf.ui.PdfPageThumbnailAdapter
 import com.veilframe.app.pdf.ui.PdfThumbnailLoader
@@ -78,8 +46,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Collections
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 /**
  * Controller managing specialized single-action quick tools in the PDF Suite:
@@ -100,18 +66,18 @@ class PdfQuickToolController(
     enum class QuickMode(val title: String, val subtitle: String, val buttonText: String) {
         MERGE("Merge PDF", "Combine multiple documents into one", "Merge & Export PDF"),
         SPLIT("Split PDF", "Extract pages into separate documents", "Split & Export"),
-        COMPRESS("Compress PDF", "Dual-engine smart size reduction", "Compress & Export PDF"),
+        COMPRESS("Compress PDF", "Preserve document structure, or explicitly choose image-only output", "Compress & Export PDF"),
         ROTATE("Rotate Pages", "Modulo 90°, 180°, 270° orientation fix", "Rotate & Export PDF"),
         REORDER("Reorder Pages", "Rearrange page sequence order", "Reorder & Export PDF"),
         DELETE("Delete Pages", "Purge unwanted sheets from document", "Delete Pages & Export"),
         LOCK("Lock PDF", "256-bit AES encryption & permissions", "Encrypt & Save PDF"),
-        SIGN("Sign PDF", "Touch Bézier canvas signature stamping", "Stamp Signature & Export"),
+        SIGN("Add Visual Signature", "Drawn signature overlay; not cryptographically signed", "Stamp Signature & Export"),
         FILL_FORMS("Fill Forms", "Interactive AcroForm values editing", "Apply Form Values & Export"),
         HTML_TO_PDF("HTML to PDF", "Convert HTML code to PDF document", "Convert HTML to PDF"),
         DOC_TO_PDF("DOC to PDF", "Offline DOCX & XLSX conversion", "Convert Office to PDF"),
         PDF_TO_IMAGE("PDF to Image", "Batch export pages to WebP/PNG/JPG", "Export Page Images"),
         IMAGE_TO_PDF("Image to PDF", "Compile gallery photos into PDF", "Compile PDF"),
-        METADATA("PDF Metadata", "Audit & scrub hidden XMP/Info tags", "Sanitize & Save PDF")
+        METADATA("PDF Metadata", "Inspect Info; remove explicit PDF metadata and private application tags", "Save PDF Metadata")
     }
 
     private var activeMode: QuickMode = QuickMode.MERGE
@@ -124,6 +90,18 @@ class PdfQuickToolController(
     private var activeJob: Job? = null
     private var selectionGeneration: Long = 0L
     private var pendingSaveGeneration: Long? = null
+    private var officePreviewBitmap: Bitmap? = null
+    private var officePreviewIdentity: OfficeSourceSnapshot.Identity? = null
+    private var mergePageRequest = 0L
+    private var mergePageLoadJob: Job? = null
+    private var mergePageReadySources: List<Uri>? = null
+
+    private fun clearOfficePreview() {
+        binding.ivDocVisualPreview.setImageDrawable(null)
+        officePreviewBitmap?.recycle()
+        officePreviewBitmap = null
+        officePreviewIdentity = null
+    }
 
     /** The document picker is not a save: only a completed SAF copy may mark the output saved. */
     fun onSaveResult(success: Boolean) {
@@ -137,8 +115,16 @@ class PdfQuickToolController(
     }
     private val transientJobs = Collections.synchronizedSet(mutableSetOf<Job>())
 
-    private fun launchTransient(block: suspend CoroutineScope.() -> Unit): Job {
-        val job = scope.launch(Dispatchers.IO, block = block)
+    private class ExecutionGeneration(val value: Long) :
+        kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+        companion object Key : kotlin.coroutines.CoroutineContext.Key<ExecutionGeneration>
+    }
+
+    private fun launchTransient(
+        owner: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
+        block: suspend CoroutineScope.() -> Unit
+    ): Job {
+        val job = scope.launch(Dispatchers.IO + owner, block = block)
         transientJobs.add(job)
         job.invokeOnCompletion { transientJobs.remove(job) }
         return job
@@ -151,19 +137,14 @@ class PdfQuickToolController(
         }
     }
 
-    private val pdfMerger by lazy { PdfMerger() }
-    private val pdfSplitter by lazy { PdfSplitter() }
-    private val pdfCompressor by lazy { PdfCompressor() }
-    private val pdfRotator by lazy { PdfRotator() }
-    private val pdfOrganizer by lazy { PdfOrganizer() }
-    private val pdfSecurityManager by lazy { PdfSecurityManager() }
     private val pdfSigner by lazy { PdfSigner(activity) }
+    private val quickExecutor by lazy { PdfQuickOperationExecutor(activity.applicationContext, pdfSigner) }
     private val pdfFormFiller by lazy { PdfFormFiller() }
-    private val htmlConverter by lazy { HtmlToPdfConverter() }
-    private val officeConverter by lazy { OfficeConverter() }
-    private val imageConverter by lazy { ImageConverter() }
+    private val formEditor = PdfAcroFormEditor(activity)
     private val metadataManager by lazy { PdfMetadataManager() }
     private val thumbnailLoader by lazy { PdfThumbnailLoader(activity) }
+    private val pagePreviews by lazy { PdfQuickPagePreviews(activity,scope,thumbnailLoader) }
+    private val signatureDialogs by lazy { PdfQuickSignatureDialogs(activity,scope,pdfSigner) }
 
     private var splitThumbnailAdapter: PdfPageThumbnailAdapter? = null
     private var rotateThumbnailAdapter: PdfPageThumbnailAdapter? = null
@@ -183,11 +164,15 @@ class PdfQuickToolController(
     override val isProcessing: Boolean get() = isExecuting
 
     override fun discardAndReleaseAllResources() {
+        formEditor.dismiss()
+        pagePreviews.invalidate()
+        signatureDialogs.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         activeJob?.cancel()
         activeJob = null
         cancelTransientJobs()
+        invalidateMergePagePlan()
         selectedUris.clear()
         primaryDocName = "document.pdf"
         primaryDocPages = 1
@@ -206,12 +191,13 @@ class PdfQuickToolController(
         binding.ivSignMiniaturePreview.visibility = View.GONE
         binding.tvSignIndicatorPlaceholder.visibility = View.VISIBLE
         binding.ivSignPagePreview.setImageDrawable(null)
+        binding.pbSignPreviewLoading.visibility = View.GONE
         binding.containerQuickToolDocInfo.visibility = View.GONE
         binding.containerQuickToolEmptyState.visibility = View.VISIBLE
         binding.btnPdfQuickToolReset.visibility = View.GONE
         binding.panelParamDocPreview.visibility = View.GONE
         binding.cardDocVisualPreview.visibility = View.GONE
-        binding.ivDocVisualPreview.setImageDrawable(null)
+        clearOfficePreview()
         binding.pbDocVisualLoading.visibility = View.GONE
         binding.tvDocPreviewSummary.text = ""
         binding.tvDocPreviewContent.text = ""
@@ -282,6 +268,7 @@ class PdfQuickToolController(
             QuickMode.COMPRESS -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Compress"
                 binding.panelParamCompress.visibility = View.VISIBLE
+                binding.chipGroupCompressEngine.check(R.id.chipCompressImages)
             }
             QuickMode.LOCK -> {
                 binding.tvQuickToolPickPrompt.text = "Select PDF to Encrypt"
@@ -530,7 +517,7 @@ class PdfQuickToolController(
             if (order.isNotEmpty()) {
                 rotateThumbnailAdapter?.setPageOrder(order)
             } else {
-                Toast.makeText(activity, "Enter valid page sequence (e.g. 3>4>2>1>5 or 1-3, 5)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Use valid, unique page numbers or ranges (max 10,000 entries)", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -608,8 +595,14 @@ class PdfQuickToolController(
             thumbnailLoader = thumbnailLoader
         ).apply {
             onOrderChanged = { newOrder ->
+                val changed = selectedUris != newOrder
                 selectedUris.clear()
                 selectedUris.addAll(newOrder)
+                if (changed) {
+                    invalidateMergePagePlan()
+                    if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked)
+                        refreshMergePageItems()
+                }
                 binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
                 if (selectedUris.isEmpty()) {
                     binding.containerQuickToolEmptyState.visibility = View.VISIBLE
@@ -682,6 +675,7 @@ class PdfQuickToolController(
             mergeFileListAdapter?.sortByName()
         }
         binding.chipMergeClear.setOnClickListener {
+            invalidateMergePagePlan()
             selectedUris.clear()
             isSourceReady = false
             binding.btnQuickToolExecute.isEnabled = false
@@ -734,8 +728,13 @@ class PdfQuickToolController(
             binding.tvMergeDragTip.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.btnAddMoreFiles.visibility = if (isPages) View.GONE else View.VISIBLE
             binding.layoutMergePageInterleave.visibility = if (isPages) View.VISIBLE else View.GONE
-            if (isPages) {
-                refreshMergePageItems()
+            if (activeMode == QuickMode.MERGE) {
+                if (isPages) {
+                    refreshMergePageItems()
+                } else {
+                    invalidateMergePagePlan()
+                    binding.btnQuickToolExecute.isEnabled = !isExecuting && isSourceReady && selectedUris.isNotEmpty()
+                }
             }
         }
 
@@ -748,68 +747,65 @@ class PdfQuickToolController(
         }
     }
 
+    private fun invalidateMergePagePlan() {
+        mergePageRequest++
+        mergePageLoadJob?.cancel()
+        mergePageLoadJob = null
+        mergePageReadySources = null
+        mergePageAdapter?.setItems(emptyList())
+    }
+
     private fun refreshMergePageItems() {
-        if (selectedUris.isEmpty()) {
-            mergePageAdapter?.setItems(emptyList())
-            return
-        }
+        invalidateMergePagePlan()
+        if (activeMode != QuickMode.MERGE || !binding.chipMergeModePages.isChecked) return
+        binding.btnQuickToolExecute.isEnabled = false
+        if (selectedUris.isEmpty()) return
         val generation = selectionGeneration
+        val request = mergePageRequest
         val sourceUris = selectedUris.toList()
-        launchTransient {
-            val mergeItems = sourceUris.mapIndexed { idx, uri ->
-                val mime = activity.contentResolver.getType(uri) ?: ""
-                val isImg = mime.startsWith("image/") ||
-                    uri.toString().endsWith(".jpg", true) ||
-                    uri.toString().endsWith(".jpeg", true) ||
-                    uri.toString().endsWith(".png", true) ||
-                    uri.toString().endsWith(".webp", true)
-                val type = if (isImg) MergeItemType.IMAGE else MergeItemType.PDF
-                var pageCount = 1
-                if (!isImg) {
-                    try {
-                        activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc -> pageCount = doc.numberOfPages }
-                        }
-                    } catch (_: Exception) {}
+        fun isCurrent() = request == mergePageRequest && generation == selectionGeneration &&
+            activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            sourceUris == selectedUris.toList()
+        mergePageLoadJob = launchTransient {
+            try {
+                val pageItems = PdfMergePagePlanner.build(activity, sourceUris, ::queryDocumentName)
+                withContext(Dispatchers.Main) {
+                    if (isCurrent()) {
+                        mergePageAdapter?.setItems(pageItems)
+                        mergePageReadySources = sourceUris
+                        binding.btnQuickToolExecute.isEnabled = !isExecuting
+                    }
                 }
-                MergeItem(
-                    id = "doc_$idx",
-                    uri = uri,
-                    name = queryDocumentName(uri),
-                    type = type,
-                    pageCount = pageCount
-                )
-            }
-            val pageItems = pdfMerger.buildPageItems(mergeItems)
-            withContext(Dispatchers.Main) {
-                if (generation == selectionGeneration &&
-                    (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) &&
-                    sourceUris == selectedUris.toList()
-                ) {
-                    mergePageAdapter?.setItems(pageItems)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                withContext(Dispatchers.Main) {
+                    if (isCurrent()) {
+                        Toast.makeText(activity, "Cannot prepare complete page list: ${failure.message ?: "unreadable source"}",
+                            Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
     private fun applyCustomMergeOrderText() {
+        if (mergePageReadySources != selectedUris.toList()) {
+            Toast.makeText(activity, "Wait for the complete page list", Toast.LENGTH_SHORT).show()
+            return
+        }
         val input = binding.etCustomMergeOrder.text?.toString().orEmpty()
         val currentItems = mergePageAdapter?.getItems() ?: emptyList()
         val requestedOrder = parsePageSequence(input, currentItems.size)
         if (requestedOrder.isEmpty() || currentItems.isEmpty()) {
-            Toast.makeText(activity, "Enter page sequence (e.g. 1, 2, 7, 6, 3, 4, 5, 10, 8, 9)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Use valid, unique page numbers or ranges (max 10,000 entries)", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val itemMap = currentItems.associateBy { it.overallPageNumber }
-        val reordered = mutableListOf<MergePageItem>()
-        for (num in requestedOrder) {
-            itemMap[num]?.let { reordered.add(it) }
-        }
-        for (item in currentItems) {
-            if (!reordered.contains(item)) {
-                reordered.add(item)
-            }
+        val reordered = PdfPageSequenceParser.reorderPrefix(currentItems, requestedOrder) { it.overallPageNumber }
+        if (reordered.isEmpty()) {
+            Toast.makeText(activity, "Invalid page order; previous order retained", Toast.LENGTH_SHORT).show()
+            return
         }
         mergePageAdapter?.setItems(reordered)
     }
@@ -825,6 +821,9 @@ class PdfQuickToolController(
 
     fun handleFilesSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        formEditor.dismiss()
+        pagePreviews.invalidate()
+        signatureDialogs.invalidate()
         selectionGeneration++
         pendingSaveGeneration = null
         val generation = selectionGeneration
@@ -844,6 +843,7 @@ class PdfQuickToolController(
         isSaved = false
         splitThumbnailAdapter?.clear()
         rotateThumbnailAdapter?.clear()
+        thumbnailLoader.clearCache()
 
         if (activeMode == QuickMode.MERGE || activeMode == QuickMode.IMAGE_TO_PDF) {
             selectedUris.addAll(uris)
@@ -864,20 +864,22 @@ class PdfQuickToolController(
             binding.tvQuickToolDocName.text = primaryDocName
 
             if (activeMode == QuickMode.DOC_TO_PDF) {
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
+                isSourceReady = false
+                binding.btnQuickToolExecute.isEnabled = false
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 binding.panelParamDocPreview.visibility = View.VISIBLE
                 binding.cardDocVisualPreview.visibility = View.VISIBLE
                 binding.pbDocVisualLoading.visibility = View.VISIBLE
-                binding.ivDocVisualPreview.setImageDrawable(null)
+                clearOfficePreview()
                 inspectAndPreviewOfficeDoc(uri, generation)
             } else {
                 binding.tvQuickToolDocMeta.text = "Reading document..."
                 launchTransient {
                     try {
                         val pageCount = activity.contentResolver.openInputStream(uri)?.use { stream ->
-                            PDDocument.load(stream).use { doc -> doc.numberOfPages }
+                            PDDocument.load(stream,com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                                doc.numberOfPages.also { count -> require(count in 1..10_000) { "Unsupported PDF page count" } }
+                            }
                         } ?: throw IllegalStateException("Cannot open PDF")
                         withContext(Dispatchers.Main) {
                             if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
@@ -933,417 +935,67 @@ class PdfQuickToolController(
     private fun inspectAndPreviewOfficeDoc(uri: Uri, generation: Long) {
         val selectedName = primaryDocName
         launchTransient {
-            val lower = selectedName.lowercase()
-            var summary = "Office Document"
-            var previewText = ""
-            var metaText = "Ready to convert"
-            var previewBitmap: Bitmap? = null
-
+            var preview: OfficePreviewEngine.Preview? = null
+            var adopted = false
             try {
-                when {
-                    lower.endsWith(".docx") || lower.endsWith(".doc") -> {
-                        metaText = "Word Document (${lower.substringAfterLast('.')})"
-                        val paragraphs = mutableListOf<String>()
-                        var tablesCount = 0
-
-                        val tempDoc = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.docx")
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempDoc.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            if (tempDoc.exists() && tempDoc.length() > 0) {
-                                try {
-                                    FileInputStream(tempDoc).use { stream ->
-                                        val doc = XWPFDocument(stream)
-                                        for (p in doc.paragraphs) {
-                                            val t = p.text?.trim()
-                                            if (!t.isNullOrBlank()) {
-                                                paragraphs.add(t)
-                                            }
-                                        }
-                                        tablesCount = doc.tables.size
-                                    }
-                                } catch (t: Throwable) {
-                                    Log.w(TAG, "POI DOCX preview extraction failed: ${t.message}; using zip extractor", t)
-                                    val text = officeConverter.extractDocxTextViaZip(tempDoc)
-                                    if (text.isNotBlank()) {
-                                        paragraphs.addAll(text.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() })
-                                    }
-                                }
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "Failed to copy DOCX for preview: ${t.message}", t)
-                        } finally {
-                            tempDoc.delete()
-                        }
-
-                        if (paragraphs.isNotEmpty()) {
-                            summary = "Word Document • ${paragraphs.size} paragraphs" + (if (tablesCount > 0) ", $tablesCount tables" else "")
-                            previewText = paragraphs.take(15).joinToString("\n\n")
-                        } else {
-                            summary = "Word Document ($selectedName)"
-                            previewText = "Word document selected.\nConversion engine will translate document structures directly into PDF pages."
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("DOCX", selectedName, paragraphs, tablesCount, null, null)
-                    }
-                    lower.endsWith(".xlsx") || lower.endsWith(".xls") -> {
-                        metaText = "Excel Spreadsheet (${lower.substringAfterLast('.')})"
-                        val sheetGrid = mutableListOf<List<String>>()
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val tempFile = File(activity.cacheDir, "preview_temp_${System.currentTimeMillis()}.xlsx")
-                                val wb = try {
-                                    tempFile.outputStream().use { output -> stream.copyTo(output) }
-                                    OpenXmlDocumentParser.parseXlsx(tempFile)
-                                } finally {
-                                    tempFile.delete()
-                                }
-                                val sheetCount = wb.sheets.size
-                                val sheetNames = wb.sheets.joinToString(", ") { it.name }
-                                summary = "Excel Workbook • $sheetCount sheet(s) ($sheetNames)"
-                                val firstSheet = wb.sheets.firstOrNull()
-                                val previewSb = StringBuilder()
-                                if (firstSheet != null) {
-                                    previewSb.append("Sheet: ${firstSheet.name}\n")
-                                    val rowCount = minOf(firstSheet.rows.size, 15)
-                                    for (r in 0 until rowCount) {
-                                        val row = firstSheet.rows[r]
-                                        val cells = row.take(6).filter { it.isNotBlank() }
-                                        if (cells.isNotEmpty()) {
-                                            sheetGrid.add(cells)
-                                            previewSb.append("[ ").append(cells.joinToString(" | ")).append(" ]\n")
-                                        }
-                                    }
-                                }
-                                previewText = previewSb.toString().trim()
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "XLSX preview failed: ${t.message}", t)
-                            summary = "Excel Spreadsheet ($selectedName)"
-                            previewText = "Spreadsheet document selected.\nData cells and layout grid will be paginated into landscape PDF."
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("XLSX", selectedName, emptyList(), 1, sheetGrid, null)
-                    }
-                    lower.endsWith(".pptx") || lower.endsWith(".ppt") -> {
-                        metaText = "PowerPoint Presentation (${lower.substringAfterLast('.')})"
-                        val slideTexts = mutableListOf<String>()
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { stream ->
-                                val ppt = XMLSlideShow(stream)
-                                val slideCount = ppt.slides.size
-                                summary = "PowerPoint Presentation • $slideCount slide(s)"
-                                val previewSb = StringBuilder()
-                                for ((idx, slide) in ppt.slides.take(4).withIndex()) {
-                                    previewSb.append("Slide ${idx + 1}:\n")
-                                    for (shape in slide.shapes) {
-                                        if (shape is XSLFTextShape && shape.text.isNotBlank()) {
-                                            val t = shape.text.trim().replace("\n", " ")
-                                            slideTexts.add(t)
-                                            previewSb.append("  • ").append(t).append("\n")
-                                        }
-                                    }
-                                    previewSb.append("\n")
-                                }
-                                previewText = previewSb.toString().trim()
-                            }
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "POI PPTX preview failed: ${t.message}", t)
-                            summary = "PowerPoint Presentation ($selectedName)"
-                            previewText = "Presentation slides will be rendered as high-fidelity PDF pages."
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("PPTX", selectedName, emptyList(), 0, null, slideTexts)
-                    }
-                    lower.endsWith(".txt") || lower.endsWith(".rtf") -> {
-                        metaText = "Text Document (${lower.substringAfterLast('.')})"
-                        val lines = mutableListOf<String>()
-                        activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                            var count = 0
-                            reader.forEachLine { line ->
-                                count++
-                                if (lines.size < 40 && line.isNotBlank()) {
-                                    lines.add(line)
-                                }
-                            }
-                            summary = "Text Document • $count lines"
-                            previewText = lines.take(20).joinToString("\n")
-                        }
-                        previewBitmap = renderOfficePreviewBitmap("TXT", selectedName, lines, 0, null, null)
-                    }
-                    else -> {
-                        metaText = "Office Document"
-                        summary = "Document Selected • $selectedName"
-                        previewText = "Document loaded and ready for conversion to PDF."
-                        previewBitmap = renderOfficePreviewBitmap("DOC", selectedName, listOf("Office document loaded", selectedName), 0, null, null)
-                    }
+                val result = OfficePreviewEngine.inspect(activity, uri, selectedName)
+                preview = result
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri ||
+                        activeMode != QuickMode.DOC_TO_PDF) return@withContext
+                    isSourceReady = true
+                    binding.btnQuickToolExecute.isEnabled = true
+                    binding.tvQuickToolDocMeta.text = "${result.format.label} • content inspected"
+                    binding.panelParamDocPreview.visibility = View.VISIBLE
+                    binding.tvDocPreviewSummary.text = "${result.summary} — content sample, not PDF layout"
+                    binding.tvDocPreviewContent.text = result.text.ifBlank { "No text in this sample; conversion may contain graphical content." }
+                    clearOfficePreview()
+                    officePreviewBitmap = result.bitmap
+                    officePreviewIdentity = result.sourceIdentity
+                    adopted = true
+                    binding.ivDocVisualPreview.setImageBitmap(result.bitmap)
+                    binding.cardDocVisualPreview.visibility = if (result.bitmap != null) View.VISIBLE else View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
                 }
-            } catch (t: Throwable) {
-                Log.e(TAG, "inspectAndPreviewOfficeDoc failed: ${t.message}", t)
-                summary = "Document Selected"
-                previewText = "Ready to convert: $selectedName"
-            }
-
-            if (previewText.isBlank()) {
-                previewText = "Preview not available for this document structure. Ready to convert."
-            }
-
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    previewBitmap?.recycle()
-                    return@withContext
-                }
-                isSourceReady = true
-                binding.btnQuickToolExecute.isEnabled = true
-                binding.tvQuickToolDocMeta.text = metaText
-                binding.panelParamDocPreview.visibility = View.VISIBLE
-                binding.tvDocPreviewSummary.text = summary
-                binding.tvDocPreviewContent.text = previewText
-                if (previewBitmap != null) {
-                    binding.ivDocVisualPreview.setImageBitmap(previewBitmap)
-                    binding.cardDocVisualPreview.visibility = View.VISIBLE
-                } else {
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                if (failure !is Exception && failure !is LinkageError) throw failure
+                Log.w(TAG, "Office source inspection failed", failure)
+                withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration || selectedUris.firstOrNull() != uri ||
+                        activeMode != QuickMode.DOC_TO_PDF) return@withContext
+                    isSourceReady = false
+                    binding.btnQuickToolExecute.isEnabled = false
+                    binding.tvQuickToolDocMeta.text = "Document inspection failed"
+                    binding.tvDocPreviewSummary.text = "Cannot convert this selection"
+                    binding.tvDocPreviewContent.text = failure.message ?: "Unreadable or unsupported document."
+                    clearOfficePreview()
                     binding.cardDocVisualPreview.visibility = View.GONE
+                    binding.pbDocVisualLoading.visibility = View.GONE
                 }
-                binding.pbDocVisualLoading.visibility = View.GONE
+            } finally {
+                if (!adopted) preview?.bitmap?.recycle()
             }
-        }
-    }
-
-    private fun renderOfficePreviewBitmap(
-        docType: String,
-        docTitle: String,
-        paragraphs: List<String>,
-        tablesCount: Int,
-        sheetGrid: List<List<String>>?,
-        slideElements: List<String>?
-    ): Bitmap? {
-        return try {
-            val width = 720
-            val height = if (docType == "PPTX") 480 else 1018
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-
-            // Clean white paper
-            canvas.drawColor(Color.WHITE)
-
-            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.parseColor("#E5E7EB")
-                style = Paint.Style.STROKE
-                strokeWidth = 2f
-            }
-            canvas.drawRect(1f, 1f, width - 1f, height - 1f, borderPaint)
-
-            val marginX = 48f
-            val marginY = 48f
-            val printableWidth = (width - marginX * 2).toInt()
-            var currentY = marginY
-
-            // 1. Doc Type Badge (Top Right)
-            val badgeBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = when (docType) {
-                    "DOCX" -> Color.parseColor("#EFF6FF")
-                    "XLSX" -> Color.parseColor("#ECFDF5")
-                    "PPTX" -> Color.parseColor("#FFF7ED")
-                    else -> Color.parseColor("#F3F4F6")
-                }
-                style = Paint.Style.FILL
-            }
-            val badgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = when (docType) {
-                    "DOCX" -> Color.parseColor("#1D4ED8")
-                    "XLSX" -> Color.parseColor("#047857")
-                    "PPTX" -> Color.parseColor("#C2410C")
-                    else -> Color.parseColor("#4B5563")
-                }
-                textSize = 22f
-                isFakeBoldText = true
-            }
-
-            val badgeRect = RectF(width - marginX - 90f, marginY - 10f, width - marginX, marginY + 26f)
-            canvas.drawRoundRect(badgeRect, 8f, 8f, badgeBgPaint)
-            val badgeTextWidth = badgeTextPaint.measureText(docType)
-            canvas.drawText(docType, badgeRect.centerX() - badgeTextWidth / 2f, badgeRect.centerY() + 8f, badgeTextPaint)
-
-            // 2. Document Title
-            val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.parseColor("#111827")
-                textSize = 28f
-                isFakeBoldText = true
-            }
-            val cleanTitle = if (docTitle.length > 34) docTitle.take(32) + "…" else docTitle
-            canvas.drawText(cleanTitle, marginX, currentY + 18f, titlePaint)
-            currentY += 44f
-
-            // Divider
-            val dividerPaint = Paint().apply {
-                color = Color.parseColor("#F3F4F6")
-                strokeWidth = 2f
-            }
-            canvas.drawLine(marginX, currentY, width - marginX, currentY, dividerPaint)
-            currentY += 24f
-
-            // 3. Body Content
-            when (docType) {
-                "XLSX" -> {
-                    val grid = sheetGrid ?: emptyList()
-                    val cellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#1F2937")
-                        textSize = 18f
-                    }
-                    val headerCellPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#374151")
-                        textSize = 18f
-                        isFakeBoldText = true
-                    }
-                    val colWidth = printableWidth / 4f
-                    val rowHeight = 36f
-
-                    val colHeaders = listOf("A", "B", "C", "D")
-                    for (c in 0 until 4) {
-                        val x = marginX + c * colWidth
-                        val headerRect = RectF(x, currentY, x + colWidth, currentY + rowHeight)
-                        canvas.drawRect(headerRect, Paint().apply { color = Color.parseColor("#F9FAFB") })
-                        canvas.drawRect(headerRect, borderPaint)
-                        canvas.drawText(colHeaders[c], x + colWidth / 2f - 6f, currentY + 24f, headerCellPaint)
-                    }
-                    currentY += rowHeight
-
-                    for (r in 0 until minOf(grid.size, 18)) {
-                        val row = grid[r]
-                        for (c in 0 until 4) {
-                            val x = marginX + c * colWidth
-                            val cellRect = RectF(x, currentY, x + colWidth, currentY + rowHeight)
-                            canvas.drawRect(cellRect, borderPaint)
-                            val text = if (c < row.size) row[c] else ""
-                            val truncatedText = if (text.length > 12) text.take(11) + "…" else text
-                            if (truncatedText.isNotEmpty()) {
-                                canvas.drawText(truncatedText, x + 8f, currentY + 24f, cellPaint)
-                            }
-                        }
-                        currentY += rowHeight
-                        if (currentY > height - marginY - 40f) break
-                    }
-                }
-                "PPTX" -> {
-                    val slideTexts = slideElements ?: emptyList()
-                    val slideTitle = slideTexts.firstOrNull() ?: "Presentation Slide"
-                    val slideTitlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#0F172A")
-                        textSize = 32f
-                        isFakeBoldText = true
-                    }
-                    canvas.drawText(slideTitle.take(30), marginX + 16f, currentY + 36f, slideTitlePaint)
-                    currentY += 60f
-
-                    val bulletPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#2563EB")
-                        style = Paint.Style.FILL
-                    }
-                    val bulletTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#334155")
-                        textSize = 20f
-                    }
-
-                    for (bullet in slideTexts.drop(1).take(5)) {
-                        canvas.drawCircle(marginX + 20f, currentY + 12f, 4f, bulletPaint)
-                        val text = if (bullet.length > 55) bullet.take(53) + "…" else bullet
-                        canvas.drawText(text, marginX + 36f, currentY + 18f, bulletTextPaint)
-                        currentY += 36f
-                    }
-                }
-                else -> {
-                    val bodyTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#374151")
-                        textSize = 20f
-                        letterSpacing = 0.01f
-                    }
-                    val headingTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.parseColor("#111827")
-                        textSize = 24f
-                        isFakeBoldText = true
-                    }
-
-                    val maxBodyY = height - marginY - 50f
-                    for ((idx, para) in paragraphs.withIndex()) {
-                        if (currentY >= maxBodyY) break
-                        val isHeading = idx == 0 || (para.length in 4..45 && !para.endsWith(".") && !para.endsWith(","))
-                        val paint = if (isHeading) headingTextPaint else bodyTextPaint
-
-                        val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            StaticLayout.Builder.obtain(para, 0, para.length, paint, printableWidth)
-                                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                                .setLineSpacing(4f, 1.15f)
-                                .setIncludePad(false)
-                                .build()
-                        } else {
-                            @Suppress("DEPRECATION")
-                            StaticLayout(para, paint, printableWidth, Layout.Alignment.ALIGN_NORMAL, 1.15f, 4f, false)
-                        }
-
-                        if (currentY + layout.height > maxBodyY) {
-                            canvas.save()
-                            canvas.clipRect(marginX, currentY, marginX + printableWidth, maxBodyY)
-                            canvas.translate(marginX, currentY)
-                            layout.draw(canvas)
-                            canvas.restore()
-                            currentY = maxBodyY + 10f
-                            break
-                        } else {
-                            canvas.save()
-                            canvas.translate(marginX, currentY)
-                            layout.draw(canvas)
-                            canvas.restore()
-                            currentY += layout.height + if (isHeading) 16f else 12f
-                        }
-                    }
-
-                    if (tablesCount > 0 && currentY < maxBodyY - 60f) {
-                        val tableY = currentY + 8f
-                        val tableW = printableWidth.toFloat()
-                        val tableH = minOf(90f, maxBodyY - tableY)
-                        val tableRect = RectF(marginX, tableY, marginX + tableW, tableY + tableH)
-
-                        val tableFill = Paint().apply { color = Color.parseColor("#F9FAFB") }
-                        canvas.drawRect(tableRect, tableFill)
-                        canvas.drawRect(tableRect, borderPaint)
-
-                        canvas.drawLine(marginX, tableY + 30f, marginX + tableW, tableY + 30f, borderPaint)
-                        canvas.drawLine(marginX + tableW / 2f, tableY, marginX + tableW / 2f, tableY + tableH, borderPaint)
-
-                        val tableLabelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                            color = Color.parseColor("#6B7280")
-                            textSize = 16f
-                            isFakeBoldText = true
-                        }
-                        canvas.drawText("Table 1: Data Grid", marginX + 12f, tableY + 20f, tableLabelPaint)
-                    }
-                }
-            }
-
-            // 4. Subtle Page 1 Footer
-            val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.parseColor("#9CA3AF")
-                textSize = 16f
-            }
-            val footerText = "— Page 1 —"
-            val footerWidth = footerPaint.measureText(footerText)
-            canvas.drawText(footerText, (width - footerWidth) / 2f, height - marginY / 2f, footerPaint)
-
-            bitmap
-        } catch (t: Throwable) {
-            Log.e(TAG, "renderOfficePreviewBitmap failed: ${t.message}", t)
-            null
         }
     }
 
     private fun updateMultiFileList() {
         binding.tvMultiFileCount.text = "SELECTED FILES (${selectedUris.size})"
         mergeFileListAdapter?.setUris(selectedUris)
-        if (binding.chipMergeModePages.isChecked) {
+        if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked) {
             refreshMergePageItems()
         }
     }
 
     private fun setupCompressControls() {
+        binding.chipGroupCompressEngine.setOnCheckedStateChangeListener { _, checked ->
+            binding.tvCompressionScope.text = if (R.id.chipCompressFullRender in checked) {
+                "Image-only output: text, vectors, forms, links, attachments and other interactive content are lost. Confirmation required."
+            } else {
+                "Optimizes eligible images; retains page drawing commands and document structure. Size reduction is not guaranteed."
+            }
+        }
         binding.sliderCompressQuality.addOnChangeListener { _, value, _ ->
             val label = when {
                 value <= 35f -> "Maximum Compression (${value.toInt()}%)"
@@ -1585,32 +1237,19 @@ class PdfQuickToolController(
     private fun refreshSignPagePreview() {
         val uri = selectedUris.firstOrNull() ?: return
         if (primaryDocPages <= 0) return
-        val generation = selectionGeneration
         val targetPageIdx = when {
-            binding.chipSignPageFirst.isChecked -> 0
-            binding.chipSignPageAll.isChecked -> 0
+            binding.chipSignPageFirst.isChecked || binding.chipSignPageAll.isChecked -> 0
             binding.chipSignPageCustom.isChecked -> {
-                val p = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                (p - 1).coerceIn(0, primaryDocPages - 1)
-            }
-            else -> (primaryDocPages - 1).coerceAtLeast(0)
-        }
-
-        binding.pbSignPreviewLoading.visibility = View.VISIBLE
-        launchTransient {
-            val bmp = thumbnailLoader.loadPageThumbnail(uri, targetPageIdx, 600)
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    return@withContext
+                val p = binding.etSignCustomPage.text?.toString()?.toIntOrNull()
+                if (p == null || p !in 1..primaryDocPages) {
+                    pagePreviews.clearSignature(binding.ivSignPagePreview,binding.pbSignPreviewLoading)
+                    return
                 }
-                binding.pbSignPreviewLoading.visibility = View.GONE
-                if (bmp != null) {
-                    binding.ivSignPagePreview.setImageBitmap(bmp)
-                } else {
-                    binding.ivSignPagePreview.setImageResource(R.drawable.ic_pdf_file)
-                }
+                p - 1
             }
+            else -> primaryDocPages - 1
         }
+        pagePreviews.showSignature(uri,targetPageIdx,binding.ivSignPagePreview,binding.pbSignPreviewLoading)
     }
 
     private fun openPdfSignCanvas() {
@@ -1626,18 +1265,17 @@ class PdfQuickToolController(
             targetColor = selectedSignColor,
             opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
         ) ?: pdfSigner.getSavedSignatures().firstOrNull()?.bitmapPath?.let {
-            android.graphics.BitmapFactory.decodeFile(it)
+            pdfSigner.loadSavedSignatureBitmap(it)
         }
 
         binding.pdfSignCanvasView.setDocument(uri, initialSignature = currentSigBmp)
-        if (currentSigBmp != null) {
-            binding.pdfSignCanvasView.addSignature(currentSigBmp)
-        }
     }
 
     private fun setupSignCanvasOverlay() {
         binding.btnSignCanvasClose.setOnClickListener {
+            signatureDialogs.invalidate()
             binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
+            binding.pdfSignCanvasView.reset()
         }
 
         binding.btnSignCanvasPen.setOnClickListener {
@@ -1670,92 +1308,12 @@ class PdfQuickToolController(
 
     private fun showDrawSignatureDialog() {
         if (selectedUris.isEmpty()) {
-            Toast.makeText(activity, "Please select a PDF document first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity,"Please select a PDF document first",Toast.LENGTH_SHORT).show()
             return
         }
-        val padContainer = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 16)
-        }
-
-        val currentThickness = binding.sliderSignStrokeThickness.value
-        val pad = SignaturePadView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                (200 * activity.resources.displayMetrics.density).toInt()
-            )
-            setBackgroundColor(Color.parseColor("#18181C"))
-            setInkColor(selectedSignColor)
-            setStrokeThicknessDp(currentThickness)
-        }
-
-        val thicknessHeader = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(0, (10 * activity.resources.displayMetrics.density).toInt(), 0, 0)
-        }
-        val tvThicknessTitle = TextView(activity).apply {
-            text = "STROKE THICKNESS"
-            setTextColor(activity.getColor(R.color.vf_secondary))
-            textSize = 11f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            letterSpacing = 0.08f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val tvThicknessVal = TextView(activity).apply {
-            text = "${currentThickness} dp"
-            setTextColor(activity.getColor(R.color.vf_text_primary))
-            textSize = 12f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        }
-        thicknessHeader.addView(tvThicknessTitle)
-        thicknessHeader.addView(tvThicknessVal)
-
-        val dialogThicknessSlider = com.google.android.material.slider.Slider(activity).apply {
-            valueFrom = 1.0f
-            valueTo = 12.0f
-            value = currentThickness
-            stepSize = 0.5f
-            addOnChangeListener { _, value, _ ->
-                tvThicknessVal.text = "${value} dp"
-                pad.setStrokeThicknessDp(value)
-                binding.sliderSignStrokeThickness.value = value
-            }
-        }
-
-        val btnClear = com.google.android.material.button.MaterialButton(
-            activity,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
-            text = "Clear Ink"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = (4 * activity.resources.displayMetrics.density).toInt()
-            }
-            setOnClickListener { pad.clear() }
-        }
-
-        padContainer.addView(pad)
-        padContainer.addView(thicknessHeader)
-        padContainer.addView(dialogThicknessSlider)
-        padContainer.addView(btnClear)
-
-        MaterialAlertDialogBuilder(activity)
-            .setTitle("Draw New Signature")
-            .setView(padContainer)
-            .setPositiveButton("Add to PDF") { _, _ ->
-                val bmp = pad.getSignatureBitmap(targetColor = selectedSignColor)
-                if (bmp != null) {
-                    binding.pdfSignCanvasView.addSignature(bmp)
-                } else {
-                    Toast.makeText(activity, "Signature is empty", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        signatureDialogs.draw(selectedSignColor,binding.sliderSignStrokeThickness.value,
+            { binding.sliderSignStrokeThickness.value=it },
+            { binding.pdfSignCanvasView.addSignature(it) })
     }
 
     private fun addNewOrDuplicateSignature() {
@@ -1775,246 +1333,13 @@ class PdfQuickToolController(
         }
     }
 
-    private fun showSaveSignatureNameDialog(bitmap: Bitmap) {
-        val existingCount = pdfSigner.getSavedSignatures().size
-        val editText = com.google.android.material.textfield.TextInputEditText(activity).apply {
-            setText("Signature ${existingCount + 1}")
-            selectAll()
-        }
-        val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
-            hint = "Signature Name"
-            setPadding(48, 16, 48, 16)
-            addView(editText)
-        }
+    private fun showSaveSignatureNameDialog(bitmap: Bitmap) = signatureDialogs.save(bitmap)
 
-        MaterialAlertDialogBuilder(activity)
-            .setTitle("Save Signature to Library")
-            .setView(til)
-            .setPositiveButton("Save") { _, _ ->
-                val name = editText.text?.toString()?.trim().orEmpty()
-                launchTransient {
-                    pdfSigner.saveSignatureBitmap(bitmap, name)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(activity, "Signature saved to library", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun showReuseSavedSignaturesMenu() = signatureDialogs.reuse {
+        binding.pdfSignCanvasView.addSignature(it)
     }
 
-    private fun showReuseSavedSignaturesMenu() {
-        val signatures = pdfSigner.getSavedSignatures()
-        if (signatures.isEmpty()) {
-            Toast.makeText(activity, "No saved signatures. Draw and save one first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val container = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-        }
-        val scroll = ScrollView(activity).apply {
-            addView(container)
-        }
-
-        val dialog = MaterialAlertDialogBuilder(activity)
-            .setTitle("Reuse Saved Signature")
-            .setView(scroll)
-            .setNegativeButton("Cancel", null)
-            .create()
-
-        for (sig in signatures) {
-            val itemRow = LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(16, 16, 16, 16)
-                isClickable = true
-                isFocusable = true
-                setBackgroundResource(android.R.drawable.list_selector_background)
-            }
-
-            val thumb = ImageView(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    (72 * activity.resources.displayMetrics.density).toInt(),
-                    (40 * activity.resources.displayMetrics.density).toInt()
-                ).apply {
-                    marginEnd = (16 * activity.resources.displayMetrics.density).toInt()
-                }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(Color.parseColor("#26262B"))
-                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
-                if (bmp != null) setImageBitmap(bmp)
-            }
-
-            val textLayout = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val title = TextView(activity).apply {
-                text = sig.name
-                textSize = 14f
-                setTextColor(Color.WHITE)
-                setTypeface(null, android.graphics.Typeface.BOLD)
-            }
-            val date = TextView(activity).apply {
-                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-                text = sdf.format(java.util.Date(sig.createdAt))
-                textSize = 11f
-                setTextColor(Color.parseColor("#9E9E9E"))
-            }
-
-            textLayout.addView(title)
-            textLayout.addView(date)
-            itemRow.addView(thumb)
-            itemRow.addView(textLayout)
-
-            itemRow.setOnClickListener {
-                val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
-                if (bmp != null) {
-                    binding.pdfSignCanvasView.addSignature(bmp)
-                }
-                dialog.dismiss()
-            }
-
-            container.addView(itemRow)
-        }
-
-        dialog.show()
-    }
-
-    private fun showManageSignaturesDialog() {
-        fun buildDialog() {
-            val signatures = pdfSigner.getSavedSignatures()
-            val container = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(16, 16, 16, 16)
-            }
-
-            val scroll = ScrollView(activity).apply {
-                addView(container)
-            }
-
-            val dialog = MaterialAlertDialogBuilder(activity)
-                .setTitle("Manage Saved Signatures (${signatures.size})")
-                .setView(scroll)
-                .setPositiveButton("Done", null)
-                .create()
-
-            if (signatures.isEmpty()) {
-                val emptyTv = TextView(activity).apply {
-                    text = "No saved signatures yet. Sign a PDF and tap the save button beside any signature."
-                    setTextColor(Color.parseColor("#9E9E9E"))
-                    textSize = 13f
-                    setPadding(32, 32, 32, 32)
-                    gravity = android.view.Gravity.CENTER
-                }
-                container.addView(emptyTv)
-            } else {
-                for (sig in signatures) {
-                    val row = LinearLayout(activity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                        setPadding(12, 12, 12, 12)
-                    }
-
-                    val thumb = ImageView(activity).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            (64 * activity.resources.displayMetrics.density).toInt(),
-                            (36 * activity.resources.displayMetrics.density).toInt()
-                        ).apply {
-                            marginEnd = (12 * activity.resources.displayMetrics.density).toInt()
-                        }
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(Color.parseColor("#26262B"))
-                        val bmp = android.graphics.BitmapFactory.decodeFile(sig.bitmapPath)
-                        if (bmp != null) setImageBitmap(bmp)
-                    }
-
-                    val textLayout = LinearLayout(activity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    }
-
-                    val title = TextView(activity).apply {
-                        text = sig.name
-                        textSize = 13f
-                        setTextColor(Color.WHITE)
-                        setTypeface(null, android.graphics.Typeface.BOLD)
-                    }
-                    val date = TextView(activity).apply {
-                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                        text = sdf.format(java.util.Date(sig.createdAt))
-                        textSize = 10f
-                        setTextColor(Color.parseColor("#9E9E9E"))
-                    }
-
-                    textLayout.addView(title)
-                    textLayout.addView(date)
-
-                    val btnRename = com.google.android.material.button.MaterialButton(
-                        activity,
-                        null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle
-                    ).apply {
-                        text = "Rename"
-                        textSize = 11f
-                        setOnClickListener {
-                            val editName = com.google.android.material.textfield.TextInputEditText(activity).apply {
-                                setText(sig.name)
-                                selectAll()
-                            }
-                            val til = com.google.android.material.textfield.TextInputLayout(activity).apply {
-                                hint = "Rename Signature"
-                                setPadding(48, 16, 48, 16)
-                                addView(editName)
-                            }
-                            MaterialAlertDialogBuilder(activity)
-                                .setTitle("Rename Signature")
-                                .setView(til)
-                                .setPositiveButton("Save") { _, _ ->
-                                    val newName = editName.text?.toString()?.trim().orEmpty()
-                                    if (newName.isNotBlank()) {
-                                        pdfSigner.renameSignature(sig.id, newName)
-                                        dialog.dismiss()
-                                        buildDialog()
-                                    }
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .show()
-                        }
-                    }
-
-                    val btnDelete = com.google.android.material.button.MaterialButton(
-                        activity,
-                        null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle
-                    ).apply {
-                        text = "Delete"
-                        textSize = 11f
-                        setTextColor(Color.parseColor("#EF4444"))
-                        setStrokeColorResource(android.R.color.holo_red_dark)
-                        setOnClickListener {
-                            pdfSigner.deleteSignatureById(sig.id)
-                            dialog.dismiss()
-                            buildDialog()
-                        }
-                    }
-
-                    row.addView(thumb)
-                    row.addView(textLayout)
-                    row.addView(btnRename)
-                    row.addView(btnDelete)
-                    container.addView(row)
-                }
-            }
-
-            dialog.show()
-        }
-
-        buildDialog()
-    }
+    private fun showManageSignaturesDialog() = signatureDialogs.manage()
 
     private fun executeCanvasSignExport() {
         val uri = selectedUris.firstOrNull() ?: return
@@ -2029,9 +1354,10 @@ class PdfQuickToolController(
         binding.btnSignCanvasSave.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
 
-        activeJob = launchTransient {
+        val generation = selectionGeneration
+        val base = primaryDocName.removeSuffix(".pdf")
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
-                val base = primaryDocName.removeSuffix(".pdf")
                 finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
                     val result = pdfSigner.signPdfWithItems(
                         inputUri = uri,
@@ -2039,6 +1365,7 @@ class PdfQuickToolController(
                         items = placements
                     )
                     withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                         binding.btnSignCanvasSave.isEnabled = true
                         if (result.success) {
                             binding.layoutPdfSignCanvasOverlay.visibility = View.GONE
@@ -2048,8 +1375,11 @@ class PdfQuickToolController(
                     }
                     result.success
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                        if (generation != selectionGeneration) return@withContext
                     binding.btnSignCanvasSave.isEnabled = true
                     isExecuting = false
                     Toast.makeText(activity, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -2077,7 +1407,7 @@ class PdfQuickToolController(
                     }
                     kotlin.coroutines.coroutineContext.ensureActive()
                     val legacyBytes = if (res.isSuccess && file.length() > 0L &&
-                        onSaveFileFromDiskRequest == null) file.readBytes() else null
+                        onSaveFileFromDiskRequest == null) PdfQuickExportStage.legacyBytes(file) else null
                     withContext(Dispatchers.Main) {
                         if (generation == selectionGeneration && selectedUris.firstOrNull() == uri &&
                             activeMode == QuickMode.METADATA
@@ -2092,7 +1422,7 @@ class PdfQuickToolController(
                                 }
                                 markExportPending()
                             } else {
-                                Toast.makeText(activity, "Failed to sanitize metadata", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(activity, "Failed to remove PDF metadata", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -2112,7 +1442,7 @@ class PdfQuickToolController(
         }
     }
 
-    private fun executeActiveOperation() {
+    private fun executeActiveOperation(rasterConfirmed: Boolean = false, xlsxPrintLayout: Boolean? = null) {
         if (activeMode != QuickMode.HTML_TO_PDF && !isSourceReady) {
             Toast.makeText(activity, "Wait for the selected document to finish loading", Toast.LENGTH_SHORT).show()
             return
@@ -2127,6 +1457,51 @@ class PdfQuickToolController(
         }
 
         if (isExecuting) return
+        if (activeMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked &&
+            (mergePageReadySources != selectedUris.toList() || (mergePageAdapter?.itemCount ?: 0) == 0)) {
+            Toast.makeText(activity, "Complete page list required for page-by-page merge", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (activeMode == QuickMode.DOC_TO_PDF && OfficeSourceFormat.fromName(primaryDocName) == OfficeSourceFormat.XLSX && xlsxPrintLayout == null) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Spreadsheet PDF layout")
+                .setMessage("Full worksheet preserves wide columns and all stored cells. Saved print layout uses the workbook print area, paper, margins and scaling where supported; cells outside the saved print area are omitted. Excel-specific headers, hidden cells, titles, charts and other features may differ.")
+                .setPositiveButton("Full worksheet") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = false)
+                }
+                .setNeutralButton("Saved print layout") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.DOC_TO_PDF && selectedUris.firstOrNull() == source)
+                        executeActiveOperation(xlsxPrintLayout = true)
+                }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
+        val rasterSelected = activeMode == QuickMode.COMPRESS && binding.chipCompressFullRender.isChecked
+        if (rasterSelected && !rasterConfirmed) {
+            val generation = selectionGeneration
+            val source = selectedUris.firstOrNull()
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Create an image-only PDF?")
+                .setMessage("Every page will be rendered to a JPEG at the selected quality. Searchable and selectable text, vector graphics, editable forms, links, attachments, signatures and other PDF objects will not be preserved. Fine details can blur. The original file is unchanged. Signed or encrypted sources are refused.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create image-only PDF") { _, _ ->
+                    if (generation == selectionGeneration && activeMode == QuickMode.COMPRESS &&
+                        selectedUris.firstOrNull() == source && binding.chipCompressFullRender.isChecked) {
+                        executeActiveOperation(rasterConfirmed = true)
+                    }
+                }.show()
+            return
+        }
+        if (activeMode == QuickMode.SIGN && binding.pdfSignCanvasView.getAllPlacements().isEmpty() &&
+            binding.chipSignPageCustom.isChecked &&
+            (binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 0) !in 1..primaryDocPages) {
+            Toast.makeText(activity, "Enter a valid signature page number", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val quality = if (activeMode == QuickMode.COMPRESS) binding.sliderCompressQuality.value.toInt() else 65
         isExecuting = true
         binding.btnQuickToolExecute.isEnabled = false
         val origText = binding.btnQuickToolExecute.text.toString()
@@ -2136,455 +1511,129 @@ class PdfQuickToolController(
         val splitSelectedMode = binding.chipSplitSelected.isChecked
         val splitSelectedPages = splitThumbnailAdapter?.getSelectedPages()?.toList()?.sorted().orEmpty()
         val splitRangeText = binding.etSplitRanges.text?.toString().orEmpty()
+        val sourcePageCount = primaryDocPages
         val operationMode = activeMode
         val operationUris = selectedUris.toList()
         val operationFileName = primaryDocName
+        val officeIdentity = officePreviewIdentity
         val operationBase = primaryDocName.removeSuffix(".pdf")
+        val generation = selectionGeneration
+        val interleaved = operationMode == QuickMode.MERGE && binding.chipMergeModePages.isChecked
+        val mergePlan = if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty() else emptyList()
+        val deletePages = if (operationMode == QuickMode.DELETE) rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty() else emptySet()
+        val rotatePages = if (operationMode == QuickMode.ROTATE) rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty() else emptySet()
+        val rotateAngle = when (binding.chipGroupRotateAngle.checkedChipId) {
+            R.id.chipRotate180 -> RotationAngle.ROTATE_180
+            R.id.chipRotate270 -> RotationAngle.ROTATE_270
+            else -> RotationAngle.ROTATE_90
+        }
+        val reorderPages = if (operationMode == QuickMode.REORDER)
+            rotateThumbnailAdapter?.getPageOrder()?.toList() ?: (1..primaryDocPages).toList() else emptyList()
+        val lockOptions = if (operationMode == QuickMode.LOCK) PdfSecurityOptions(
+            password = binding.etLockPassword.text?.toString().orEmpty(),
+            allowPrinting = binding.cbLockAllowPrint.isChecked,
+            allowCopying = binding.cbLockAllowCopy.isChecked,
+            allowModifying = binding.cbLockAllowFillForms.isChecked,
+            allowAnnotations = binding.cbLockAllowAnnotate.isChecked
+        ) else null
+        val htmlInput = if (operationMode == QuickMode.HTML_TO_PDF) binding.etSourceInput.text?.toString()?.trim().orEmpty() else ""
+        val signatureItems = if (operationMode == QuickMode.SIGN) binding.pdfSignCanvasView.getAllPlacements().toList() else emptyList()
 
-        activeJob = launchTransient {
+        val signX = (signPosXPercent / 100f).coerceIn(0f, 1f)
+        val signY = (signPosYPercent / 100f).coerceIn(0f, 1f)
+        val signScale = signScaleFactor
+        val signatureInput = if (operationMode == QuickMode.SIGN && signatureItems.isEmpty()) {
+            val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
+            val bitmap = binding.viewSignaturePad.getSignatureBitmap(
+                targetColor = selectedSignColor, opacity = opacity
+            )
+            val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
+            val pages = when {
+                binding.chipSignPageFirst.isChecked -> listOf(0)
+                binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
+                binding.chipSignPageCustom.isChecked -> {
+                    val requested = requireNotNull(binding.etSignCustomPage.text?.toString()?.toIntOrNull())
+                    listOf(requested - 1)
+                }
+                else -> listOf(lastPage)
+            }
+            bitmap to pages
+        } else null
+
+        val request = try {
+            when (operationMode) {
+                QuickMode.MERGE -> QuickPdfRequest.Merge(operationUris, if (interleaved) mergePlan else null)
+                QuickMode.SPLIT -> {
+                    val uri = operationUris.first()
+                    when {
+                        splitAllPages -> QuickPdfRequest.SplitAll(uri, sourcePageCount)
+                        splitSelectedMode -> {
+                            require(splitSelectedPages.isNotEmpty()) { "Select at least one page to split" }
+                            QuickPdfRequest.SplitSelected(uri, splitSelectedPages)
+                        }
+                        else -> {
+                            val ranges = PdfSplitRangeParser.parse(splitRangeText, sourcePageCount)
+                            require(ranges.isNotEmpty()) { "Enter valid page ranges (e.g. 1-2, 3-5)" }
+                            QuickPdfRequest.SplitRanges(uri, ranges)
+                        }
+                    }
+                }
+                QuickMode.DELETE -> {
+                    require(deletePages.isNotEmpty()) { "Select at least one page to delete" }
+                    QuickPdfRequest.Delete(operationUris.first(), deletePages)
+                }
+                QuickMode.ROTATE -> QuickPdfRequest.Rotate(operationUris.first(), rotatePages, rotateAngle)
+                QuickMode.REORDER -> QuickPdfRequest.Reorder(operationUris.first(), reorderPages)
+                QuickMode.IMAGE_TO_PDF -> QuickPdfRequest.Images(operationUris)
+                QuickMode.COMPRESS -> QuickPdfRequest.Compress(operationUris.first(), quality, rasterSelected && rasterConfirmed)
+                QuickMode.LOCK -> {
+                    val options = requireNotNull(lockOptions)
+                    require(options.password.isNotEmpty()) { "Enter an encryption password" }
+                    QuickPdfRequest.Lock(operationUris.first(), options)
+                }
+                QuickMode.SIGN -> if (signatureItems.isNotEmpty()) {
+                    QuickPdfRequest.SignCanvas(operationUris.first(), signatureItems)
+                } else {
+                    val inputs = requireNotNull(signatureInput)
+                    QuickPdfRequest.SignRelative(operationUris.first(),
+                        requireNotNull(inputs.first) { "Draw a signature first" },
+                        inputs.second, signX, signY, signScale)
+                }
+                QuickMode.HTML_TO_PDF -> {
+                    require(htmlInput.isNotEmpty()) { "Enter HTML code" }
+                    QuickPdfRequest.Html(htmlInput)
+                }
+                QuickMode.DOC_TO_PDF -> QuickPdfRequest.Office(operationUris.first(), operationFileName,
+                    requireNotNull(officeIdentity) { "Inspect the Office document again before converting" },
+                    xlsxPrintLayout == true)
+                QuickMode.PDF_TO_IMAGE -> QuickPdfRequest.PdfImages(operationUris.first(), sourcePageCount)
+                else -> error("Unsupported quick export mode")
+            }
+        } catch (e: Exception) {
+            signatureInput?.first?.recycle()
+            isExecuting = false
+            binding.btnQuickToolExecute.isEnabled = true
+            binding.btnQuickToolExecute.text = origText
+            Toast.makeText(activity, e.message ?: "Invalid export request", Toast.LENGTH_SHORT).show()
+            return
+        }
+        activeJob = launchTransient(ExecutionGeneration(generation)) {
             try {
-                val base = operationBase
-
-                when (operationMode) {
-                    QuickMode.MERGE -> {
-                        val plan = withContext(Dispatchers.Main) {
-                            val interleaved = binding.chipMergeModePages.isChecked &&
-                                (mergePageAdapter?.itemCount ?: 0) > 0
-                            interleaved to if (interleaved) mergePageAdapter?.getItems()?.toList().orEmpty()
-                                else emptyList()
-                        }
-                        finishPdfOutputOnDisk("merged_document.pdf", origText) { output ->
-                            if (plan.first) {
-                                pdfMerger.mergePageItems(activity, plan.second, output).isSuccess
-                            } else {
-                                pdfMerger.mergePdfs(activity, operationUris, output).isSuccess
-                            }
-                        }
-                    }
-                    QuickMode.SPLIT -> {
-                        val uri = selectedUris.first()
-                        val workJob = coroutineContext[Job]
-                        if (splitAllPages) {
-                            // Stream each produced PDF directly into ZIP: no O(page count)
-                            // collection of page-sized ByteArrays or main-thread packaging.
-                            val zipFile = File.createTempFile("split_pages_", ".zip", activity.cacheDir)
-                            var handedOff = false
-                            try {
-                                var pagesWritten = 0
-                                val result = ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                                    pdfSplitter.splitAllPages(
-                                        context = activity,
-                                        inputUri = uri,
-                                        outputCallback = { pageNumber, pdfStream ->
-                                            workJob?.ensureActive()
-                                            zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.pdf"))
-                                            pdfStream.copyTo(zip)
-                                            zip.closeEntry()
-                                            pagesWritten++
-                                        }
-                                    )
-                                }
-                                workJob?.ensureActive()
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess && pagesWritten > 0,
-                                    zipFile, "${base}_split_pages.zip", origText
-                                )
-                            } finally {
-                                if (!handedOff) zipFile.delete()
-                            }
-                        } else if (splitSelectedMode) {
-                            if (splitSelectedPages.isEmpty()) {
-                                withContext(Dispatchers.Main) {
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(
-                                        activity, "Please select at least one page to split",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                return@launchTransient
-                            }
-                            val pdfFile = File.createTempFile("split_selected_", ".pdf", activity.cacheDir)
-                            var handedOff = false
-                            try {
-                                val result = pdfFile.outputStream().buffered().use { output ->
-                                    pdfOrganizer.extractPagesAsPdf(
-                                        context = activity,
-                                        inputUri = uri,
-                                        outputStream = output,
-                                        pagesToExtract = splitSelectedPages
-                                    )
-                                }
-                                workJob?.ensureActive()
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess, pdfFile, "${base}_split_selected.pdf", origText
-                                )
-                            } finally {
-                                if (!handedOff) pdfFile.delete()
-                            }
-                        } else {
-                            val ranges = parsePageRanges(splitRangeText)
-                            if (ranges.isEmpty()) {
-                                withContext(Dispatchers.Main) {
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(
-                                        activity, "Please enter valid page ranges (e.g. 1-2, 3-5)",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                return@launchTransient
-                            }
-                            val singlePart = ranges.size == 1
-                            val tempFile = File.createTempFile(
-                                "split_ranges_", if (singlePart) ".pdf" else ".zip", activity.cacheDir
-                            )
-                            var handedOff = false
-                            try {
-                                var partsWritten = 0
-                                val result = if (singlePart) {
-                                    tempFile.outputStream().buffered().use { output ->
-                                        pdfSplitter.splitByRanges(
-                                            context = activity,
-                                            inputUri = uri,
-                                            ranges = ranges,
-                                            outputCallback = { _, pdfStream ->
-                                                workJob?.ensureActive()
-                                                pdfStream.copyTo(output)
-                                                partsWritten++
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    ZipOutputStream(tempFile.outputStream().buffered()).use { zip ->
-                                        pdfSplitter.splitByRanges(
-                                            context = activity,
-                                            inputUri = uri,
-                                            ranges = ranges,
-                                            outputCallback = { partNumber, pdfStream ->
-                                                workJob?.ensureActive()
-                                                zip.putNextEntry(ZipEntry("${base}_part_$partNumber.pdf"))
-                                                pdfStream.copyTo(zip)
-                                                zip.closeEntry()
-                                                partsWritten++
-                                            }
-                                        )
-                                    }
-                                }
-                                workJob?.ensureActive()
-                                val name = if (singlePart) {
-                                    "${base}_split_part1.pdf"
-                                } else {
-                                    "${base}_split_ranges.zip"
-                                }
-                                handedOff = finishDiskExecution(
-                                    result.isSuccess && partsWritten == ranges.size,
-                                    tempFile, name, origText
-                                )
-                            } finally {
-                                if (!handedOff) tempFile.delete()
-                            }
-                        }
-                    }
-                    QuickMode.DELETE -> {
-                        val pagesToDelete = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getDeletedPages()?.toSet().orEmpty()
-                        }
-                        if (pagesToDelete.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please tap at least one page to delete", Toast.LENGTH_SHORT).show()
-                            }
-                            return@launchTransient
-                        }
-                        finishPdfOutputOnDisk("${base}_pruned.pdf", origText) { output ->
-                            pdfOrganizer.removePages(
-                                context = activity,
-                                inputUri = operationUris.first(),
-                                outputStream = output,
-                                pagesToRemove = pagesToDelete
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.ROTATE -> {
-                        val (angle, selectedPages) = withContext(Dispatchers.Main) {
-                            val rotation = when (binding.chipGroupRotateAngle.checkedChipId) {
-                                R.id.chipRotate180 -> RotationAngle.ROTATE_180
-                                R.id.chipRotate270 -> RotationAngle.ROTATE_270
-                                else -> RotationAngle.ROTATE_90
-                            }
-                            rotation to rotateThumbnailAdapter?.getSelectedPages()?.toSet().orEmpty()
-                        }
-                        finishPdfOutputOnDisk("${base}_rotated.pdf", origText) { output ->
-                            if (selectedPages.isNotEmpty()) {
-                                val rotations = selectedPages.associateWith { angle }
-                                pdfRotator.rotateSpecificPages(
-                                    activity, operationUris.first(), output, rotations
-                                ).isSuccess
-                            } else {
-                                pdfRotator.rotateAllPages(
-                                    activity, operationUris.first(), output, angle
-                                ).isSuccess
-                            }
-                        }
-                    }
-                    QuickMode.REORDER -> {
-                        val pageOrder = withContext(Dispatchers.Main) {
-                            rotateThumbnailAdapter?.getPageOrder()?.toList()
-                                ?: (1..primaryDocPages).toList()
-                        }
-                        finishPdfOutputOnDisk("${base}_reordered.pdf", origText) { output ->
-                            pdfOrganizer.reorderPages(
-                                activity, operationUris.first(), output, pageOrder
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.IMAGE_TO_PDF -> {
-                        finishPdfOutputOnDisk("compiled_images.pdf", origText) { output ->
-                            imageConverter.imagesToPdf(activity, operationUris, output).isSuccess
-                        }
-                    }
-                    QuickMode.COMPRESS -> {
-                        val quality = withContext(Dispatchers.Main) {
-                            binding.sliderCompressQuality.value.toInt()
-                        }
-                        finishPdfOutputOnDisk("${base}_compressed.pdf", origText) { output ->
-                            pdfCompressor.compressPdf(
-                                context = activity,
-                                inputUri = operationUris.first(),
-                                outputStream = output,
-                                qualityPercent = quality
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.LOCK -> {
-                        val options = withContext(Dispatchers.Main) {
-                            PdfSecurityOptions(
-                                password = binding.etLockPassword.text?.toString().orEmpty(),
-                                allowPrinting = binding.cbLockAllowPrint.isChecked,
-                                allowCopying = binding.cbLockAllowCopy.isChecked,
-                                allowModifying = binding.cbLockAllowFillForms.isChecked,
-                                allowAnnotations = binding.cbLockAllowAnnotate.isChecked
-                            )
-                        }
-                        if (options.password.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(
-                                    activity, "Please enter an encryption password", Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            return@launchTransient
-                        }
-                        finishPdfOutputOnDisk("${base}_locked.pdf", origText) { output ->
-                            pdfSecurityManager.encryptPdf(
-                                activity, operationUris.first(), output, options
-                            ).isSuccess
-                        }
-                    }
-                    QuickMode.SIGN -> {
-                        val uri = operationUris.first()
-                        val canvasPlacements = withContext(Dispatchers.Main) {
-                            binding.pdfSignCanvasView.getAllPlacements().toList()
-                        }
-                        if (canvasPlacements.isNotEmpty()) {
-                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
-                                pdfSigner.signPdfWithItems(
-                                    inputUri = uri, outputStream = output, items = canvasPlacements
-                                ).success
-                            }
-                        } else {
-                            // Read all view controls on Main before invoking PDFBox on IO.
-                            val inputs = withContext(Dispatchers.Main) {
-                                val opacity = (binding.sliderSignOpacity.value / 100f).coerceIn(0.1f, 1.0f)
-                                val bitmap = binding.viewSignaturePad.getSignatureBitmap(
-                                    targetColor = selectedSignColor, opacity = opacity
-                                )
-                                val lastPage = (primaryDocPages - 1).coerceAtLeast(0)
-                                val pages = when {
-                                    binding.chipSignPageFirst.isChecked -> listOf(0)
-                                    binding.chipSignPageAll.isChecked -> (0..lastPage).toList()
-                                    binding.chipSignPageCustom.isChecked -> {
-                                        val requested = binding.etSignCustomPage.text?.toString()?.toIntOrNull() ?: 1
-                                        listOf((requested - 1).coerceIn(0, lastPage))
-                                    }
-                                    else -> listOf(lastPage)
-                                }
-                                val width = 180f * signScaleFactor
-                                val height = 60f * signScaleFactor
-                                val x = ((595f - width) * (signPosXPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                val y = ((842f - height) * (signPosYPercent / 100f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                bitmap to pages.map { page ->
-                                    SignaturePlacement(pageIndex = page, x = x, y = y, width = width, height = height)
-                                }
-                            }
-                            val bitmap = inputs.first
-                            if (bitmap == null) {
-                                withContext(Dispatchers.Main) {
-                                    isExecuting = false
-                                    binding.btnQuickToolExecute.isEnabled = true
-                                    binding.btnQuickToolExecute.text = origText
-                                    Toast.makeText(activity, "Please draw a signature first", Toast.LENGTH_SHORT).show()
-                                }
-                                return@launchTransient
-                            }
-                            finishPdfOutputOnDisk("${base}_signed.pdf", origText) { output ->
-                                pdfSigner.addSignatureBitmaps(
-                                    inputUri = uri, outputStream = output,
-                                    signatureBitmap = bitmap, placements = inputs.second
-                                ).success
-                            }
-                        }
-                    }
-                    QuickMode.HTML_TO_PDF -> {
-                        val input = withContext(Dispatchers.Main) {
-                            binding.etSourceInput.text?.toString()?.trim().orEmpty()
-                        }
-                        if (input.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, "Please enter HTML code", Toast.LENGTH_SHORT).show()
-                            }
-                            return@launchTransient
-                        }
-
-                        val htmlContent = if (!input.contains("<html", ignoreCase = true) && !input.contains("<!doctype", ignoreCase = true)) {
-                            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>body{font-family:sans-serif;padding:24px;line-height:1.6;color:#222;}</style></head><body>$input</body></html>"
-                        } else {
-                            input
-                        }
-
-                        finishPdfOutputOnDisk("html_document.pdf", origText) { output ->
-                            htmlConverter.convertHtmlToPdf(activity, htmlContent, output).isSuccess
-                        }
-                    }
-                    QuickMode.DOC_TO_PDF -> {
-                        val uri = operationUris.first()
-                        val lowerName = operationFileName.lowercase()
-                        val ext = when {
-                            lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") -> ".xlsx"
-                            lowerName.endsWith(".pptx") || lowerName.endsWith(".ppt") -> ".pptx"
-                            lowerName.endsWith(".txt") || lowerName.endsWith(".rtf") || lowerName.endsWith(".log") -> ".txt"
-                            else -> ".docx"
-                        }
-
-                        val tempInput = File(activity.cacheDir, "temp_doc_${System.currentTimeMillis()}$ext")
-                        val tempPdf = File(activity.cacheDir, "temp_out_${System.currentTimeMillis()}.pdf")
-                        var conversionError: String? = null
-                        var success = false
-                        var handedOff = false
-                        try {
-                            activity.contentResolver.openInputStream(uri)?.use { input ->
-                                tempInput.outputStream().use { output -> input.copyTo(output) }
-                            }
-                            when (ext) {
-                                ".xlsx" -> officeConverter.convertXlsxToPdf(tempInput, tempPdf, activity)
-                                ".pptx" -> officeConverter.convertPptxToPdf(tempInput, tempPdf, renderMode = "BITMAP", context = activity)
-                                ".txt" -> officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                else -> {
-                                    try {
-                                        officeConverter.convertDocxToPdf(tempInput, tempPdf, activity)
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (t: Exception) {
-                                        Log.w(TAG, "DOCX conversion failed: ${t.message}; using fallback text extractor", t)
-                                        val extracted = officeConverter.extractDocxTextViaZip(tempInput)
-                                        if (extracted.isNotBlank()) {
-                                            val tempText = File(activity.cacheDir, "temp_docx_text_${System.currentTimeMillis()}.txt")
-                                            try {
-                                                tempText.writeText(extracted)
-                                                officeConverter.convertTextToPdf(tempText, tempPdf, activity)
-                                            } finally {
-                                                tempText.delete()
-                                            }
-                                        } else {
-                                            officeConverter.convertTextToPdf(tempInput, tempPdf, activity)
-                                        }
-                                    }
-                                }
-                            }
-                            success = tempPdf.exists() && tempPdf.length() > 0
-                            if (success) {
-                                handedOff = finishDiskExecution(true, tempPdf, "${base}.pdf", origText)
-                            }
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (t: Exception) {
-                            success = false
-                            conversionError = t.message ?: "Failed to convert document"
-                        } finally {
-                            tempInput.delete()
-                            if (!handedOff) tempPdf.delete()
-                        }
-                        if (!success) {
-                            withContext(Dispatchers.Main) {
-                                isExecuting = false
-                                binding.btnQuickToolExecute.isEnabled = true
-                                binding.btnQuickToolExecute.text = origText
-                                Toast.makeText(activity, conversionError ?: "Conversion failed. Please verify document format.", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                    QuickMode.PDF_TO_IMAGE -> {
-                        val uri = selectedUris.first()
-                        val workJob = coroutineContext[Job]
-                        val tempZip = File.createTempFile("quick_images_", ".zip", activity.cacheDir)
-                        var handedOff = false
-                        try {
-                            var imagesWritten = 0
-                            val zipOk = ZipOutputStream(tempZip.outputStream().buffered()).use { zip ->
-                                imageConverter.pdfToImages(
-                                    context = activity,
-                                    inputUri = uri,
-                                    format = ImageFormat.WEBP,
-                                    dpi = 150,
-                                    outputCallback = { pageNumber, bitmap ->
-                                        workJob?.ensureActive()
-                                        zip.putNextEntry(ZipEntry("${base}_page_$pageNumber.webp"))
-                                        check(bitmap.compress(Bitmap.CompressFormat.WEBP, 90, zip)) {
-                                            "Could not compress PDF page $pageNumber"
-                                        }
-                                        zip.closeEntry()
-                                        imagesWritten++
-                                    }
-                                ).isSuccess
-                            }
-                            workJob?.ensureActive()
-                            handedOff = finishDiskExecution(
-                                zipOk && imagesWritten > 0,
-                                tempZip, "${base}_images.zip", origText
-                            )
-                        } finally {
-                            if (!handedOff) tempZip.delete()
-                        }
-                    }
-                    else -> {
-                        withContext(Dispatchers.Main) {
-                            isExecuting = false
-                            binding.btnQuickToolExecute.isEnabled = true
-                            binding.btnQuickToolExecute.text = origText
-                        }
-                    }
+                quickExecutor.execute(request, operationBase) { success, file, name ->
+                    finishDiskExecution(success, file, name, origText)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (generation != selectionGeneration) return@withContext
                     isExecuting = false
                     binding.btnQuickToolExecute.isEnabled = true
                     binding.btnQuickToolExecute.text = origText
                     Toast.makeText(activity, "Operation failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
-        }
+        }.also { job -> job.invokeOnCompletion { signatureInput?.first?.recycle() } }
     }
 
     /**
@@ -2606,10 +1655,10 @@ class PdfQuickToolController(
         activeJob = launchTransient {
             val analysis = pdfFormFiller.analyzeForm(activity, uri)
             withContext(Dispatchers.Main) {
+                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 isExecuting = false
                 binding.btnQuickToolExecute.isEnabled = true
                 binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                 if (analysis.errorMessage != null) {
                     Toast.makeText(activity, analysis.errorMessage, Toast.LENGTH_LONG).show()
                     return@withContext
@@ -2632,211 +1681,17 @@ class PdfQuickToolController(
     }
 
     private fun showAcroFormEditor(
-        uri: Uri,
-        generation: Long,
+        uri: Uri, generation: Long,
         fields: List<com.veilframe.app.pdf.operations.FormField>
     ) {
-        val density = activity.resources.displayMetrics.density
-        val content = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((20 * density).toInt(), (12 * density).toInt(), (20 * density).toInt(), (12 * density).toInt())
-        }
-        val scroll = ScrollView(activity).apply {
-            addView(content)
-        }
-        val readers = linkedMapOf<String, () -> com.veilframe.app.pdf.operations.FieldValue>()
-        val requiredChecks = mutableListOf<Pair<String, () -> Boolean>>()
-
-        fun addLabel(text: String) {
-            content.addView(TextView(activity).apply {
-                this.text = text
-                textSize = 13f
-                setTextColor(activity.getColor(R.color.vf_text_primary))
-                setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
-            })
-        }
-
-        for (field in fields) {
-            if (field is com.veilframe.app.pdf.operations.FormField.UnknownField) {
-                addLabel("${field.name} — unsupported field (${field.fieldType})")
-                continue
-            }
-            addLabel(field.name + if (field.isRequired) " *" else "")
-            when (field) {
-                is com.veilframe.app.pdf.operations.FormField.TextField -> {
-                    val edit = com.google.android.material.textfield.TextInputEditText(activity).apply {
-                        setText(field.value)
-                        isEnabled = !field.isReadOnly
-                        isSingleLine = !field.isMultiline
-                        if (field.isMultiline) {
-                            minLines = 2
-                            maxLines = 5
-                            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                        }
-                        field.maxLength?.let {
-                            filters = arrayOf(android.text.InputFilter.LengthFilter(it))
-                        }
-                    }
-                    content.addView(edit, LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ))
-                    if (!field.isReadOnly) {
-                        readers[field.name] = { com.veilframe.app.pdf.operations.FieldValue.Text(edit.text?.toString().orEmpty()) }
-                        if (field.isRequired) requiredChecks.add(field.name to { !edit.text.isNullOrBlank() })
-                    }
-                }
-                is com.veilframe.app.pdf.operations.FormField.CheckBoxField -> {
-                    val check = android.widget.CheckBox(activity).apply {
-                        text = "Checked"
-                        isChecked = field.isChecked
-                        isEnabled = !field.isReadOnly
-                    }
-                    content.addView(check)
-                    if (!field.isReadOnly) {
-                        readers[field.name] = { com.veilframe.app.pdf.operations.FieldValue.CheckBox(check.isChecked) }
-                        if (field.isRequired) requiredChecks.add(field.name to { check.isChecked })
-                    }
-                }
-                is com.veilframe.app.pdf.operations.FormField.RadioButtonField -> {
-                    val spinner = android.widget.Spinner(activity)
-                    val options = field.options
-                    spinner.adapter = android.widget.ArrayAdapter(
-                        activity, android.R.layout.simple_spinner_item, options
-                    ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-                    val selected = field.selectedOption?.let { options.indexOf(it) } ?: -1
-                    if (selected >= 0) spinner.setSelection(selected)
-                    spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
-                    content.addView(spinner)
-                    if (!field.isReadOnly) {
-                        readers[field.name] = {
-                            com.veilframe.app.pdf.operations.FieldValue.Radio(
-                                options.getOrNull(spinner.selectedItemPosition).orEmpty()
-                            )
-                        }
-                        if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
-                    }
-                }
-                is com.veilframe.app.pdf.operations.FormField.ComboBoxField -> {
-                    if (field.isEditable) {
-                        val edit = com.google.android.material.textfield.TextInputEditText(activity).apply {
-                            setText(field.selectedValue.orEmpty())
-                            isEnabled = !field.isReadOnly
-                            isSingleLine = true
-                        }
-                        content.addView(edit, LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                        ))
-                        if (!field.isReadOnly) {
-                            readers[field.name] = {
-                                com.veilframe.app.pdf.operations.FieldValue.Combo(edit.text?.toString().orEmpty())
-                            }
-                            if (field.isRequired) requiredChecks.add(field.name to { !edit.text.isNullOrBlank() })
-                        }
-                    } else {
-                        val spinner = android.widget.Spinner(activity)
-                        val options = field.options
-                        spinner.adapter = android.widget.ArrayAdapter(
-                            activity, android.R.layout.simple_spinner_item, options
-                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-                        val selected = field.selectedValue?.let { options.indexOf(it) } ?: -1
-                        if (selected >= 0) spinner.setSelection(selected)
-                        spinner.isEnabled = !field.isReadOnly && options.isNotEmpty()
-                        content.addView(spinner)
-                        if (!field.isReadOnly) {
-                            readers[field.name] = {
-                                com.veilframe.app.pdf.operations.FieldValue.Combo(
-                                    options.getOrNull(spinner.selectedItemPosition) ?: field.selectedValue.orEmpty()
-                                )
-                            }
-                            if (field.isRequired) requiredChecks.add(field.name to { spinner.selectedItemPosition >= 0 && options.isNotEmpty() })
-                        }
-                    }
-                }
-                is com.veilframe.app.pdf.operations.FormField.ListBoxField -> {
-                    if (field.isMultiSelect) {
-                        val checks = field.options.map { option ->
-                            android.widget.CheckBox(activity).apply {
-                                text = option
-                                isChecked = option in field.selectedValues
-                                isEnabled = !field.isReadOnly
-                                content.addView(this)
-                            }
-                        }
-                        if (!field.isReadOnly) {
-                            readers[field.name] = {
-                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
-                                    checks.filter { it.isChecked }.map { it.text.toString() }
-                                )
-                            }
-                            if (field.isRequired) requiredChecks.add(field.name to { checks.any { it.isChecked } })
-                        }
-                    } else {
-                        val spinner = android.widget.Spinner(activity)
-                        spinner.adapter = android.widget.ArrayAdapter(
-                            activity, android.R.layout.simple_spinner_item, field.options
-                        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-                        val selected = field.selectedValues.firstOrNull()?.let { field.options.indexOf(it) } ?: -1
-                        if (selected >= 0) spinner.setSelection(selected)
-                        spinner.isEnabled = !field.isReadOnly && field.options.isNotEmpty()
-                        content.addView(spinner)
-                        if (!field.isReadOnly) {
-                            readers[field.name] = {
-                                com.veilframe.app.pdf.operations.FieldValue.ListValue(
-                                    listOfNotNull(field.options.getOrNull(spinner.selectedItemPosition))
-                                )
-                            }
-                            if (field.isRequired) requiredChecks.add(field.name to {
-                                spinner.selectedItemPosition >= 0 && field.options.isNotEmpty()
-                            })
-                        }
-                    }
-                }
-                is com.veilframe.app.pdf.operations.FormField.UnknownField -> Unit
-            }
-            if (field.isReadOnly) {
-                content.addView(TextView(activity).apply {
-                    text = "Read-only"
-                    textSize = 11f
-                    setTextColor(activity.getColor(R.color.vf_text_secondary))
-                })
-            }
-        }
-
-        val flatten = android.widget.CheckBox(activity).apply {
-            text = "Flatten form after filling (fields become non-editable)"
-            isChecked = false
-        }
-        content.addView(flatten)
-        val dialog = MaterialAlertDialogBuilder(activity)
-            .setTitle("Fill PDF Form")
-            .setMessage("${readers.size} editable field(s) • * required")
-            .setView(scroll)
-            .setPositiveButton("Apply & Export", null)
-            .setNegativeButton("Cancel", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.setLayout(
-                (activity.resources.displayMetrics.widthPixels * 0.92f).toInt(),
-                (activity.resources.displayMetrics.heightPixels * 0.78f).toInt()
-            )
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val missing = requiredChecks.firstOrNull { !it.second.invoke() }
-                if (missing != null) {
-                    Toast.makeText(activity, "Complete required field: ${missing.first}", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) {
-                    dialog.dismiss()
-                    return@setOnClickListener
-                }
-                val values = readers.mapValues { it.value.invoke() }
+        formEditor.show(fields,
+            isCurrent = { generation == selectionGeneration && selectedUris.firstOrNull() == uri }
+        ) { values, shouldFlatten, closeEditor ->
+            if (isExecuting) return@show
                 isExecuting = true
                 binding.btnQuickToolExecute.isEnabled = false
                 binding.btnQuickToolExecute.text = "Applying form values..."
                 val outputName = "${primaryDocName.substringBeforeLast('.', primaryDocName)}_filled.pdf"
-                val shouldFlatten = flatten.isChecked
                 activeJob = launchTransient {
                     val file = File.createTempFile("form_filled_", ".pdf", activity.cacheDir)
                     var handedOff = false
@@ -2852,8 +1707,9 @@ class PdfQuickToolController(
                         }
                         kotlin.coroutines.coroutineContext.ensureActive()
                         val legacyBytes = if (result.success && file.length() > 0L &&
-                            onSaveFileFromDiskRequest == null) file.readBytes() else null
+                            onSaveFileFromDiskRequest == null) PdfQuickExportStage.legacyBytes(file) else null
                         withContext(Dispatchers.Main) {
+                            if (generation != selectionGeneration || selectedUris.firstOrNull() != uri) return@withContext
                             isExecuting = false
                             binding.btnQuickToolExecute.isEnabled = true
                             binding.btnQuickToolExecute.text = QuickMode.FILL_FORMS.buttonText
@@ -2867,7 +1723,7 @@ class PdfQuickToolController(
                                         onSaveFileRequest(requireNotNull(legacyBytes), outputName)
                                     }
                                     markExportPending()
-                                    dialog.dismiss()
+                                    closeEditor()
                                     Toast.makeText(activity, "${result.fieldsUpdated} field(s) filled", Toast.LENGTH_SHORT).show()
                                 } else {
                                     Toast.makeText(activity, result.errorMessage ?: "Unable to fill this PDF form", Toast.LENGTH_LONG).show()
@@ -2889,36 +1745,7 @@ class PdfQuickToolController(
                         if (!handedOff) file.delete()
                     }
                 }
-            }
         }
-        dialog.show()
-    }
-
-    private fun parsePageRanges(rangeInput: String): List<PageRange> {
-        val result = mutableListOf<PageRange>()
-        if (rangeInput.isBlank()) return emptyList()
-
-        val parts = rangeInput.split(",", ";", " ")
-        for (part in parts) {
-            val clean = part.trim()
-            if (clean.isEmpty()) continue
-            if (clean.contains("-")) {
-                val rangeParts = clean.split("-")
-                if (rangeParts.size == 2) {
-                    val start = rangeParts[0].toIntOrNull() ?: continue
-                    val end = rangeParts[1].toIntOrNull() ?: continue
-                    if (start in 1..primaryDocPages && end in 1..primaryDocPages) {
-                        result.add(PageRange(minOf(start, end), maxOf(start, end)))
-                    }
-                }
-            } else {
-                val p = clean.toIntOrNull()
-                if (p != null && p in 1..primaryDocPages) {
-                    result.add(PageRange(p, p))
-                }
-            }
-        }
-        return result
     }
 
     /**
@@ -2935,25 +1762,19 @@ class PdfQuickToolController(
         originalButtonText: String,
         generate: suspend (java.io.OutputStream) -> Boolean
     ) {
-        val file = File.createTempFile("veilframe_pdf_", ".pdf", activity.cacheDir)
-        var handedOff = false
-        try {
-            val success = file.outputStream().buffered().use { output ->
-                generate(output)
-            }
-            kotlin.coroutines.coroutineContext.ensureActive()
-            handedOff = finishDiskExecution(success, file, fileName, originalButtonText)
-        } finally {
-            if (!handedOff) file.delete()
+        PdfQuickExportStage.generate(activity.cacheDir,generate) { success,file ->
+            finishDiskExecution(success,file,fileName,originalButtonText)
         }
     }
 
     private suspend fun finishDiskExecution(
         success: Boolean, file: File, fileName: String, origBtnText: String
     ): Boolean {
+        val owner = requireNotNull(kotlin.coroutines.coroutineContext[ExecutionGeneration])
         val complete = success && file.isFile && file.length() > 0L
-        val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) file.readBytes() else null
+        val legacyBytes = if (complete && onSaveFileFromDiskRequest == null) PdfQuickExportStage.legacyBytes(file) else null
         return withContext(Dispatchers.Main) {
+            if (owner.value != selectionGeneration) return@withContext false
             isExecuting = false
             binding.btnQuickToolExecute.isEnabled = true
             binding.btnQuickToolExecute.text = origBtnText
@@ -2993,113 +1814,19 @@ class PdfQuickToolController(
 
         val DOC_MIME_TYPES = arrayOf(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-powerpoint",
-            "text/plain",
-            "application/rtf",
-            "text/rtf"
+            "text/plain"
         )
 
-        /**
-         * Robust page sequence parser supporting:
-         * - Arbitrary delimiters: ',', ';', '>', '->', spaces, '|' (e.g. "3>4>2>1>5", "1, 2, 7, 6, 3, 4, 5, 10, 8, 9")
-         * - Ranges: "1-4" or "1..4" -> [1, 2, 3, 4]
-         * - Reverse ranges: "5-1" -> [5, 4, 3, 2, 1]
-         * - Keywords: "reverse", "rev", "odd", "even", "reset", "all"
-         */
-        fun parsePageSequence(input: String, totalPages: Int = 0): List<Int> {
-            if (input.isBlank()) return emptyList()
-            val clean = input.trim().lowercase()
+        /** Parse a bounded manual page-order prefix without silently ignoring errors. */
+        fun parsePageSequence(input: String, totalPages: Int = 0): List<Int> =
+            PdfPageSequenceParser.parse(input, totalPages)
 
-            if (totalPages > 0) {
-                if (clean == "reverse" || clean == "rev") {
-                    return (totalPages downTo 1).toList()
-                }
-                if (clean == "odd" || clean == "odds") {
-                    return (1..totalPages step 2).toList()
-                }
-                if (clean == "even" || clean == "evens") {
-                    return (2..totalPages step 2).toList()
-                }
-                if (clean == "reset" || clean == "all") {
-                    return (1..totalPages).toList()
-                }
-            }
-
-            val result = mutableListOf<Int>()
-            // Split on delimiters: >, ->, commas, semicolons, or pipes
-            val tokens = input.split(Regex("[,;>|]+|\\s*->\\s*"))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-
-            for (token in tokens) {
-                // Range check: 1-4 or 1..4 or 4-1
-                val rangeMatch = Regex("""^(\d+)\s*(?:-|–|\.\.)\s*(\d+)$""").matchEntire(token)
-                if (rangeMatch != null) {
-                    val start = rangeMatch.groupValues[1].toIntOrNull() ?: continue
-                    val end = rangeMatch.groupValues[2].toIntOrNull() ?: continue
-                    if (start > 0 && end > 0) {
-                        if (start <= end) {
-                            for (p in start..end) {
-                                if (totalPages <= 0 || p <= totalPages) result.add(p)
-                            }
-                        } else {
-                            for (p in start downTo end) {
-                                if (totalPages <= 0 || p <= totalPages) result.add(p)
-                            }
-                        }
-                    }
-                } else {
-                    // Single page or space-separated tokens
-                    val numbers = Regex("""\d+""").findAll(token).mapNotNull { it.value.toIntOrNull() }
-                    for (num in numbers) {
-                        if (num > 0 && (totalPages <= 0 || num <= totalPages)) {
-                            result.add(num)
-                        }
-                    }
-                }
-            }
-            return result
-        }
     }
 
     private fun showFullScreenPagePreview(uri: Uri, pageIndex: Int) {
-        val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_pdf_page_preview, null)
-        val dialog = AlertDialog.Builder(activity)
-            .setView(dialogView)
-            .create()
-
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-
-        val tvTitle = dialogView.findViewById<TextView>(R.id.tvPreviewPageTitle)
-        val btnClose = dialogView.findViewById<View>(R.id.btnPreviewClose)
-        val ivPreview = dialogView.findViewById<ImageView>(R.id.ivPreviewFullPage)
-        val pbLoading = dialogView.findViewById<ProgressBar>(R.id.pbPreviewLoading)
-
-        val generation = selectionGeneration
-        tvTitle.text = "Page ${pageIndex + 1} Preview"
-        btnClose.setOnClickListener { dialog.dismiss() }
-
-        pbLoading.visibility = View.VISIBLE
-        launchTransient {
-            val highResBitmap = thumbnailLoader.loadPageThumbnail(uri, pageIndex, 1080)
-            withContext(Dispatchers.Main) {
-                if (generation != selectionGeneration || !dialog.isShowing) {
-                    return@withContext
-                }
-                pbLoading.visibility = View.GONE
-                if (highResBitmap != null) {
-                    ivPreview.setImageBitmap(highResBitmap)
-                } else {
-                    ivPreview.setImageResource(R.drawable.ic_pdf_file)
-                }
-            }
-        }
-
-        dialog.show()
+        pagePreviews.showDialog(uri,pageIndex)
     }
 
     private fun resetWorkspace() {

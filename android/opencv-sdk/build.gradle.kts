@@ -67,6 +67,12 @@ val isMarkerValid = validateMarkerMetadata(markerFile)
 val isCustomSdkComplete = arm64So.exists() && arm64So.length() > 0L &&
     matJava.exists() && wechatJava.exists() && videoioJava.exists()
 
+// Explicit opt-in for the native x86_64 instrumentation build. The normal
+// debug and production release builds remain arm64-v8a.
+val cvEmulatorX86 = providers.gradleProperty("cvEmulatorX86")
+    .map { it.toBooleanStrict() }.orElse(false).get()
+val cvDebugAbi = if (cvEmulatorX86) "x86_64" else "arm64-v8a"
+
 android {
     // Namespace is org.opencv so AGP generates org.opencv.R and org.opencv.BuildConfig
     // expected by CameraBridgeViewBase, CameraGLSurfaceView, and custom CV native components.
@@ -93,7 +99,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         ndk {
             abiFilters.clear()
-            abiFilters.add("arm64-v8a")
+            abiFilters.add(cvDebugAbi)
         }
     }
 
@@ -110,6 +116,12 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+androidComponents {
+    if (cvEmulatorX86) {
+        beforeVariants(selector().withBuildType("release")) { it.enable = false }
     }
 }
 

@@ -9,7 +9,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.util.AttributeSet
 import android.util.LruCache
 import android.view.GestureDetector
@@ -22,10 +21,10 @@ import com.veilframe.app.pdf.operations.SignatureItemPlacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -63,12 +62,12 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
     private val viewScope = CoroutineScope(Dispatchers.Main + Job())
     private var renderJob: Job? = null
+    private var loadJob: Job? = null
+    private var documentGeneration = 0L
 
     // Document state
     private var sourceUri: Uri? = null
-    private var tempPdfFile: File? = null
-    private var pfd: ParcelFileDescriptor? = null
-    private var pdfRenderer: PdfRenderer? = null
+    private var previewDocument: SignatureCanvasDocument? = null
     private val pages = mutableListOf<PageInfo>()
     private var maxDocWidth = 0f
     private var totalDocHeight = 0f
@@ -76,16 +75,17 @@ class PdfSignCanvasView @JvmOverloads constructor(
 
     // Page render cache
     private val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
-    private val cacheSize = (maxMemory / 6).coerceAtLeast(1024 * 16)
+    private val cacheSize = (maxMemory / 16).coerceIn(8 * 1024, 32 * 1024)
     private val pageBitmapCache = object : LruCache<Int, Bitmap>(cacheSize) {
-        override fun sizeOf(key: Int, bitmap: Bitmap): Int = bitmap.byteCount / 1024
+        override fun sizeOf(key: Int, bitmap: Bitmap): Int = ((bitmap.allocationByteCount.toLong() + 1023) / 1024).toInt().coerceAtLeast(1)
     }
 
     // Signatures
     private val signatures = mutableListOf<SignatureBox>()
     var selectedBox: SignatureBox? = null
         private set
-    private var pendingSignature: Bitmap? = null
+    private data class PendingSignature(val bitmap: Bitmap, val pageIndex: Int?)
+    private val pendingSignatures = mutableListOf<PendingSignature>()
 
     // Callbacks
     var onSaveSignatureClicked: ((Bitmap) -> Unit)? = null
@@ -230,56 +230,62 @@ class PdfSignCanvasView @JvmOverloads constructor(
         pages.clear()
         signatures.clear()
         selectedBox = null
-        pendingSignature = initialSignature
+        pendingSignatures.clear()
+        if (initialSignature != null && admitSignature(initialSignature)) {
+            pendingSignatures.add(PendingSignature(initialSignature, null))
+        }
 
-        viewScope.launch(Dispatchers.IO) {
+        val generation = documentGeneration
+        maxDocWidth = 0f
+        totalDocHeight = 0f
+        onSignaturesCountChanged?.invoke(0)
+        invalidate()
+        loadJob = viewScope.launch(Dispatchers.IO) {
+            var candidate: SignatureCanvasDocument? = null
+            var adopted = false
             try {
-                // Ensure seekable parcel file descriptor
-                val tempFile = File(context.cacheDir, "canvas_view_${System.currentTimeMillis()}.pdf")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(tempFile).use { output -> input.copyTo(output) }
-                }
-
+                val opened = SignatureCanvasDocument.open(context, uri)
+                candidate = opened
                 val loadedPages = mutableListOf<PageInfo>()
                 var currentY = pageSpacing
                 var maxWidth = 0f
-
-                synchronized(rendererLock) {
-                    tempPdfFile = tempFile
-                    val filePfd = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
-                    pfd = filePfd
-                    val renderer = PdfRenderer(filePfd)
-                    pdfRenderer = renderer
-
-                    val count = renderer.pageCount
-                    for (i in 0 until count) {
-                        val page = renderer.openPage(i)
+                for (i in 0 until opened.renderer.pageCount) {
+                    ensureActive()
+                    opened.renderer.openPage(i).use { page ->
                         val pw = page.width.toFloat()
                         val ph = page.height.toFloat()
-                        page.close()
-
-                        loadedPages.add(PageInfo(i, pw, ph, currentY))
+                        require(pw > 0f && ph > 0f) { "Invalid preview page geometry" }
+                        loadedPages.add(PageInfo(i,pw,ph,currentY))
                         currentY += ph + pageSpacing
-                        if (pw > maxWidth) maxWidth = pw
+                        maxWidth = maxOf(maxWidth,pw)
                     }
                 }
-
                 withContext(Dispatchers.Main) {
+                    if (generation != documentGeneration || sourceUri != uri) return@withContext
+                    synchronized(rendererLock) { previewDocument = opened }
+                    adopted = true
                     pages.clear()
                     pages.addAll(loadedPages)
                     maxDocWidth = maxWidth
                     totalDocHeight = currentY
                     resetViewportToFit()
-                    pendingSignature?.let { bmp ->
-                        if (signatures.isEmpty()) {
-                            addSignature(bmp)
-                        }
-                        pendingSignature = null
-                    }
+                    val queued = pendingSignatures.toList()
+                    pendingSignatures.clear()
+                    queued.forEach { addSignature(it.bitmap, it.pageIndex) }
                     invalidate()
                 }
-            } catch (e: Exception) {
-                // Defensive
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                withContext(Dispatchers.Main) {
+                    if (generation == documentGeneration) {
+                        pendingSignatures.clear()
+                        android.widget.Toast.makeText(context,
+                            failure.message ?: "Cannot load signature preview", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            } finally {
+                if (!adopted) candidate?.close()
             }
         }
     }
@@ -321,19 +327,40 @@ class PdfSignCanvasView @JvmOverloads constructor(
     /**
      * Add a signature box onto the canvas.
      */
+    private fun refuseSignature(message: String): Boolean {
+        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+        return false
+    }
+
+    private fun admitSignature(bitmap: Bitmap): Boolean {
+        if (bitmap.isRecycled) return refuseSignature("Signature image is unavailable")
+        val existing = signatures.map { it.bitmap } + pendingSignatures.map { it.bitmap }
+        return SignatureCanvasPlacementBudget.admit(existing, bitmap) {
+            if (it.isRecycled) -1L else it.width.toLong() * it.height
+        } || refuseSignature("Signature placement or image memory limit reached")
+    }
+
     fun addSignature(bitmap: Bitmap, pageIndex: Int? = null) {
+        if (!admitSignature(bitmap)) return
         if (pages.isEmpty()) {
-            pendingSignature = bitmap
+            if (sourceUri != null && loadJob?.isActive == true) {
+                pendingSignatures.add(PendingSignature(bitmap, pageIndex))
+            } else {
+                refuseSignature("Load a PDF before placing signatures")
+            }
             return
         }
 
-        // Place on requested page or currently most visible page
+        // Never silently place a signature on a different page.
         val targetPageIndex = pageIndex ?: getCurrentlyVisiblePageIndex()
-        val targetPage = pages.getOrNull(targetPageIndex) ?: pages.first()
-
-        val sigW = 160f.coerceAtMost(targetPage.width * 0.6f)
-        val sigH = (sigW * (bitmap.height.toFloat() / bitmap.width.toFloat().coerceAtLeast(1f)))
-            .coerceIn(40f, 120f)
+        val targetPage = pages.getOrNull(targetPageIndex)
+        if (targetPage == null) {
+            refuseSignature("Signature page is unavailable")
+            return
+        }
+        val (sigW, sigH) = SignatureCanvasPlacementBudget.fit(
+            bitmap.width, bitmap.height, targetPage.width, targetPage.height
+        )
 
         // Center on the target page
         val posX = (targetPage.width - sigW) / 2f
@@ -378,7 +405,10 @@ class PdfSignCanvasView @JvmOverloads constructor(
                 width = box.width,
                 height = box.height,
                 rotationDegrees = box.rotationDegrees,
-                bitmap = box.bitmap
+                bitmap = box.bitmap,
+                previewWidth = pages.getOrNull(box.pageIndex)?.width,
+                previewHeight = pages.getOrNull(box.pageIndex)?.height,
+                sourceSha256 = previewDocument?.sha256
             )
         }
     }
@@ -496,33 +526,36 @@ class PdfSignCanvasView @JvmOverloads constructor(
     }
 
     private fun requestPageRender(pageIndex: Int) {
-        if (pdfRenderer == null) return
+        val owner = previewDocument ?: return
         if (renderJob?.isActive == true) return
-
+        val generation = documentGeneration
         renderJob = viewScope.launch(Dispatchers.IO) {
+            var bitmap: Bitmap? = null
+            var adopted = false
             try {
-                var bmp: Bitmap? = null
                 synchronized(rendererLock) {
-                    val r = pdfRenderer ?: return@launch
-                    if (pageIndex < 0 || pageIndex >= r.pageCount) return@launch
-                    val page = r.openPage(pageIndex)
-                    try {
-                        val renderScale = 1.6f
-                        val bw = (page.width * renderScale).toInt().coerceAtLeast(1)
-                        val bh = (page.height * renderScale).toInt().coerceAtLeast(1)
-                        bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-                        val c = Canvas(bmp!!)
-                        c.drawColor(Color.WHITE)
-                        page.render(bmp!!, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    } finally {
-                        page.close()
+                    if (previewDocument !== owner) return@launch
+                    val renderer = owner.renderer
+                    if (pageIndex !in 0 until renderer.pageCount) return@launch
+                    renderer.openPage(pageIndex).use { page ->
+                        val dimensions = SignatureCanvasRenderBudget.dimensions(page.width,page.height)
+                        val rendered = Bitmap.createBitmap(dimensions.first,dimensions.second,Bitmap.Config.ARGB_8888)
+                        bitmap = rendered
+                        rendered.eraseColor(Color.WHITE)
+                        page.render(rendered,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     }
                 }
-                bmp?.let { pageBitmapCache.put(pageIndex, it) }
                 withContext(Dispatchers.Main) {
+                    if (generation != documentGeneration || previewDocument !== owner) return@withContext
+                    bitmap?.let { pageBitmapCache.put(pageIndex,it); adopted = true }
                     invalidate()
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
+                // Keep the page placeholder; never attach a partial bitmap.
+            } finally {
+                if (!adopted) bitmap?.recycle()
             }
         }
     }
@@ -785,8 +818,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
     fun copySelectedBox(): Boolean {
         val current = selectedBox ?: signatures.lastOrNull() ?: return false
         selectedBox = current
-        duplicateSelectedBox()
-        return true
+        return duplicateSelectedBox()
     }
 
     fun reset() {
@@ -796,8 +828,11 @@ class PdfSignCanvasView @JvmOverloads constructor(
         pages.clear()
         signatures.clear()
         selectedBox = null
-        pendingSignature = null
+        pendingSignatures.clear()
         sourceUri = null
+        maxDocWidth = 0f
+        totalDocHeight = 0f
+        onSignaturesCountChanged?.invoke(0)
         panX = 0f
         panY = 0f
         scale = 1.0f
@@ -805,15 +840,16 @@ class PdfSignCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
-    private fun duplicateSelectedBox() {
-        val current = selectedBox ?: return
-        val targetPage = pages.getOrNull(current.pageIndex) ?: return
+    private fun duplicateSelectedBox(): Boolean {
+        val current = selectedBox ?: return false
+        val targetPage = pages.getOrNull(current.pageIndex) ?: return false
+        if (!admitSignature(current.bitmap)) return false
 
         val newBox = SignatureBox(
             id = UUID.randomUUID().toString(),
             pageIndex = current.pageIndex,
-            x = (current.x + 20f).coerceAtMost(targetPage.width - current.width),
-            y = (current.y + 20f).coerceAtMost(targetPage.height - current.height),
+            x = (current.x + 20f).coerceIn(0f, (targetPage.width - current.width).coerceAtLeast(0f)),
+            y = (current.y + 20f).coerceIn(0f, (targetPage.height - current.height).coerceAtLeast(0f)),
             width = current.width,
             height = current.height,
             rotationDegrees = current.rotationDegrees,
@@ -823,6 +859,7 @@ class PdfSignCanvasView @JvmOverloads constructor(
         selectedBox = newBox
         onSignaturesCountChanged?.invoke(signatures.size)
         invalidate()
+        return true
     }
 
     private fun isTouchInsideBox(box: SignatureBox, screenX: Float, screenY: Float): Boolean {
@@ -885,22 +922,19 @@ class PdfSignCanvasView @JvmOverloads constructor(
     private fun dpToPx(dp: Float): Float = dp * resources.displayMetrics.density
 
     private fun cleanupRenderer() {
+        documentGeneration++
+        loadJob?.cancel()
+        loadJob = null
         renderJob?.cancel()
         renderJob = null
         synchronized(rendererLock) {
-            try { pdfRenderer?.close() } catch (_: Throwable) {}
-            try { pfd?.close() } catch (_: Throwable) {}
-            try { tempPdfFile?.delete() } catch (_: Throwable) {}
-            pdfRenderer = null
-            pfd = null
-            tempPdfFile = null
+            try { previewDocument?.close() } catch (_: Exception) {}
+            previewDocument = null
         }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        stopAutoScroll()
-        cleanupRenderer()
-        pageBitmapCache.evictAll()
+        reset()
     }
 }

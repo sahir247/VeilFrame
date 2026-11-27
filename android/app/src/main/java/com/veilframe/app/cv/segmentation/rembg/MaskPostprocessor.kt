@@ -68,7 +68,7 @@ object MaskPostprocessor {
      * Crops empty space around the cutout to the non-zero alpha bounding box.
      * Uses striped memory buffering to avoid huge contiguous heap allocations on large images.
      */
-    fun trimTransparent(bitmap: Bitmap): Bitmap {
+    fun trimTransparent(bitmap: Bitmap, checkpoint: () -> Unit = {}): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
         val stripe = IntArray(width * STRIPE_ROWS)
@@ -80,6 +80,7 @@ object MaskPostprocessor {
 
         var y = 0
         while (y < height) {
+            checkpoint()
             val rows = min(STRIPE_ROWS, height - y)
             bitmap.getPixels(stripe, 0, width, 0, y, width, rows)
 
@@ -113,15 +114,17 @@ object MaskPostprocessor {
      * Shrinks the cutout inward with a 1px-radius erosion on the alpha channel.
      * Effectively strips color fringes/bleeding from background around edges/hair.
      */
-    fun tightenEdges(bitmap: Bitmap, radius: Int = 1): Bitmap {
+    fun tightenEdges(bitmap: Bitmap, radius: Int = 1, checkpoint: () -> Unit = {}): Bitmap {
         if (radius <= 0) return bitmap
         val w = bitmap.width
         val h = bitmap.height
         val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val stripeOut = IntArray(w * STRIPE_ROWS)
 
+        try {
         var y0 = 0
         while (y0 < h) {
+            checkpoint()
             val rows = min(STRIPE_ROWS, h - y0)
             val readTop = max(0, y0 - radius)
             val readBottom = min(h, y0 + rows + radius)
@@ -149,20 +152,26 @@ object MaskPostprocessor {
             y0 += rows
         }
         return output
+        } catch (failure: Throwable) {
+            output.recycle()
+            throw failure
+        }
     }
 
     /**
      * Softens cutout edges with a 1px-radius box blur on the alpha channel.
      */
-    fun featherEdges(bitmap: Bitmap, radius: Int = 1): Bitmap {
+    fun featherEdges(bitmap: Bitmap, radius: Int = 1, checkpoint: () -> Unit = {}): Bitmap {
         if (radius <= 0) return bitmap
         val w = bitmap.width
         val h = bitmap.height
         val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val stripeOut = IntArray(w * STRIPE_ROWS)
 
+        try {
         var y0 = 0
         while (y0 < h) {
+            checkpoint()
             val rows = min(STRIPE_ROWS, h - y0)
             val readTop = max(0, y0 - radius)
             val readBottom = min(h, y0 + rows + radius)
@@ -185,12 +194,19 @@ object MaskPostprocessor {
                         }
                     }
                     val origPixel = readPixels[(srcY - readTop) * w + x]
-                    stripeOut[row * w + x] = (origPixel and 0x00FFFFFF) or ((sum / count) shl 24)
+                    // Inward feather: never reveal pixels that were already fully
+                    // transparent or increase their alpha (black fringe/source holes).
+                    val featheredAlpha = min(origPixel ushr 24, sum / count)
+                    stripeOut[row * w + x] = (origPixel and 0x00FFFFFF) or (featheredAlpha shl 24)
                 }
             }
             output.setPixels(stripeOut, 0, w, 0, y0, w, rows)
             y0 += rows
         }
         return output
+        } catch (failure: Throwable) {
+            output.recycle()
+            throw failure
+        }
     }
 }
