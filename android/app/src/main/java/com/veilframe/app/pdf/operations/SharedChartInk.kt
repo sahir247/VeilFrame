@@ -42,13 +42,41 @@ internal object SharedChartInk {
             else -> null
         } ?: throw IOException("Unresolved chart ink")
         val rgb=doubleArrayOf(((base ushr 16) and 255).toDouble(),((base ushr 8) and 255).toDouble(),(base and 255).toDouble())
+        fun changeLightness(transform: (Double)->Double) {
+            // DrawingML luminance operations are HSL lightness operations,
+            // not per-channel multiplication. Preserve hue and saturation.
+            val red=rgb[0]/255; val green=rgb[1]/255; val blue=rgb[2]/255
+            val max=maxOf(red,green,blue); val min=minOf(red,green,blue)
+            val delta=max-min; val light=(max+min)/2
+            val saturation=if(delta==0.0) 0.0 else delta/(1-kotlin.math.abs(2*light-1))
+            val hue=if(delta==0.0) 0.0 else when(max) {
+                red -> ((green-blue)/delta+6)%6
+                green -> (blue-red)/delta+2
+                else -> (red-green)/delta+4
+            }
+            val next=transform(light).coerceIn(0.0,1.0)
+            val chroma=(1-kotlin.math.abs(2*next-1))*saturation
+            val x=chroma*(1-kotlin.math.abs(hue%2-1))
+            val m=next-chroma/2
+            val channels=when(hue.toInt()) {
+                0 -> doubleArrayOf(chroma,x,0.0)
+                1 -> doubleArrayOf(x,chroma,0.0)
+                2 -> doubleArrayOf(0.0,chroma,x)
+                3 -> doubleArrayOf(0.0,x,chroma)
+                4 -> doubleArrayOf(x,0.0,chroma)
+                else -> doubleArrayOf(chroma,0.0,x)
+            }
+            for(i in rgb.indices) rgb[i]=((channels[i]+m)*255).coerceIn(0.0,255.0)
+        }
         var alpha=1.0
         for(effect in children(c)) {
             val f=percent(effect.getAttribute("val"))
-            require(f in 0.0..1.0) { "Invalid chart color transform" }
+            require(f in 0.0..1.0 || (effect.name()=="lumMod" && f<=100.0)) { "Invalid chart color transform" }
             when(effect.name()) {
                 "tint" -> for(i in rgb.indices) rgb[i]=255-(255-rgb[i])*f
                 "shade" -> for(i in rgb.indices) rgb[i]*=f
+                "lumMod" -> changeLightness { it*f }
+                "lumOff" -> changeLightness { it+f }
                 "alpha" -> alpha=f
                 "alphaMod" -> alpha*=f
                 else -> throw IOException("Unsupported chart color transform: "+effect.name())
