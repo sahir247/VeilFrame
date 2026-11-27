@@ -218,6 +218,19 @@ internal object PptxCustomGeometry {
         require(bounds.width()>0 && bounds.height()>0)
         for(spec in paths) {
             if(paint.style==Paint.Style.FILL && !spec.fill || paint.style==Paint.Style.STROKE && !spec.stroke) continue
+            val path=materialize(spec,bounds)
+            val facePaint=if(paint.style==Paint.Style.FILL && spec.fillMode!="norm") {
+                if(paint.shader!=null) throw IOException("Non-solid shaded path fill unsupported")
+                Paint(paint).apply { color=shadeColor(paint.color,spec.fillMode) }
+            } else paint
+            if(stroke!=null && facePaint.style==Paint.Style.STROKE)
+                PptxClosedOutline.draw(canvas,path,stroke,facePaint.color)
+            else canvas.drawPath(path,facePaint)
+        }
+    }
+
+    internal fun materialize(spec: Subpath,bounds: RectF): Path {
+        require(bounds.width()>0 && bounds.height()>0)
             val sx=bounds.width()/spec.width
             val sy=bounds.height()/spec.height
             fun x(v: Double): Float = (bounds.left+v*sx).also {
@@ -260,13 +273,6 @@ internal object PptxCustomGeometry {
                     }
                 }
             }
-            val facePaint=if(paint.style==Paint.Style.FILL && spec.fillMode!="norm") {
-                if(paint.shader!=null) throw IOException("Non-solid shaded path fill unsupported")
-                Paint(paint).apply { color=shadeColor(paint.color,spec.fillMode) }
-            } else paint
-            if(stroke!=null && facePaint.style==Paint.Style.STROKE)
-                PptxClosedOutline.draw(canvas,path,stroke,facePaint.color)
-            else canvas.drawPath(path,facePaint)
-        }
+        return path
     }
 }

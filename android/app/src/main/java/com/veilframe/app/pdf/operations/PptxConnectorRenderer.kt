@@ -38,6 +38,11 @@ internal object PptxConnectorRenderer {
         val preset=one(props,"prstGeom",drawing) ?: return false
         return preset.attributes?.getNamedItem("prst")?.nodeValue in setOf("line","straightConnector1")
     }
+    fun isCurved(root: Node): Boolean {
+        val props=properties(root) ?: return false
+        return one(props,"prstGeom",drawing)?.attributes?.getNamedItem("prst")?.nodeValue in
+            setOf("curvedConnector2","curvedConnector3","curvedConnector4","curvedConnector5")
+    }
     data class Resolved(val spec: PptxStrokeStyle.Spec,val color: Int)
     private fun attr(node: Node,key: String)=node.attributes?.getNamedItem(key)?.nodeValue
     private fun fill(line: Node?): Node? {
@@ -163,7 +168,20 @@ internal object PptxConnectorRenderer {
             stroked(shaft,pen)
         }
         fun decoration(endSpec: PptxStrokeStyle.End,tip: Float,direction: Float,l: Float) {
-            if(endSpec.type=="none") return
+            union(decorationInk(endSpec,tip,direction,l,width,fit,spec,color))
+        }
+        decoration(spec.head,0f,1f,hl)
+        decoration(spec.tail,length,-1f,tl)
+        val save=canvas.save()
+        try {
+            canvas.translate(x1,y1)
+            canvas.rotate(Math.toDegrees(atan2(dy.toDouble(),dx.toDouble())).toFloat())
+            canvas.drawPath(ink,Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color=color; style=Paint.Style.FILL })
+        } finally { canvas.restoreToCount(save) }
+    }
+    private fun decorationInk(endSpec: PptxStrokeStyle.End,tip: Float,direction: Float,l: Float,
+        width: Float,fit: Float,spec: PptxStrokeStyle.Spec,color: Int): Path {
+            if(endSpec.type=="none") return Path()
             val w=width*multiplier(endSpec.width)*fit/2
             fun back(d: Float)=tip+direction*d
             val path=Path()
@@ -178,23 +196,97 @@ internal object PptxConnectorRenderer {
                     }
                     if(endSpec.type=="arrow") {
                         val pen=spec.paint(color).apply { strokeWidth=width; pathEffect=null }
-                        stroked(path,pen)
-                        return
+                        val out=Path()
+                        if(!pen.getFillPath(path,out)) throw IOException("Cannot expand arrowhead")
+                        return out
                     }
                     path.close()
                 }
                 "oval" -> path.addOval(minOf(tip,back(l)),-w,maxOf(tip,back(l)),w,Path.Direction.CW)
                 else -> throw IOException("Unsupported connector decoration")
             }
-            union(path)
+            return path
+    }
+
+    /** Arc-length synchronized bands on a single open curve. Exact source
+     * segment for single strokes; bounded sampled normal offsets for compounds. */
+    fun drawCurved(canvas: Canvas,path: Path,spec: PptxStrokeStyle.Spec,color: Int) {
+        val measure=android.graphics.PathMeasure(path,false)
+        val length=measure.length
+        require(length.isFinite() && length in 0.001f..20000f && !measure.isClosed)
+        require(!measure.nextContour()) { "Multiple curved connector contours unsupported" }
+        measure.setPath(path,false)
+        val width=spec.width.coerceAtLeast(1f)
+        val hl0=if(spec.head.type=="none") 0f else width*multiplier(spec.head.length)
+        val tl0=if(spec.tail.type=="none") 0f else width*multiplier(spec.tail.length)
+        val fit=if(hl0+tl0>length) length/(hl0+tl0) else 1f
+        val hl=hl0*fit;val tl=tl0*fit
+        val start=trim(spec.head.type,hl)
+        val end=length-trim(spec.tail.type,tl)
+        val ink=Path()
+        fun union(p: Path) {
+            if(p.isEmpty) return
+            if(ink.isEmpty) ink.set(p)
+            else if(!ink.op(p,Path.Op.UNION)) throw IOException("Cannot combine curved connector ink")
         }
-        decoration(spec.head,0f,1f,hl)
-        decoration(spec.tail,length,-1f,tl)
-        val save=canvas.save()
-        try {
-            canvas.translate(x1,y1)
-            canvas.rotate(Math.toDegrees(atan2(dy.toDouble(),dx.toDouble())).toFloat())
-            canvas.drawPath(ink,Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color=color; style=Paint.Style.FILL })
-        } finally { canvas.restoreToCount(save) }
+        fun stroke(p: Path,pen: Paint) {
+            val out=Path()
+            if(!pen.getFillPath(p,out)) throw IOException("Cannot expand curved connector")
+            union(out)
+        }
+        val pos=FloatArray(2);val tan=FloatArray(2)
+        fun sample(distance: Float) {
+            if(!measure.getPosTan(distance.coerceIn(0f,length),pos,tan) ||
+                (pos+tan).any { !it.isFinite() }) throw IOException("Invalid curved connector tangent")
+        }
+        if(end>start) {
+            if(spec.compound=="sng") {
+                val shaft=Path()
+                if(!measure.getSegment(start,end,shaft,true)) throw IOException("Cannot extract connector curve")
+                stroke(shaft,spec.paint(color).apply { strokeWidth=width })
+            } else {
+                // Dash positions are measured along the source curve and shared
+                // by every offset band. Avoid independent offset-length drift.
+                val intervals=mutableListOf<Pair<Float,Float>>()
+                if(spec.dash.isEmpty()) intervals.add(start to end)
+                else {
+                    var at=start;var n=0
+                    while(at<end) {
+                        require(n<8192) { "Curved connector dash budget exceeded" }
+                        val next=minOf(end,at+spec.dash[n%spec.dash.size])
+                        require(next>at)
+                        if(n%2==0) intervals.add(at to next)
+                        at=next;n++
+                    }
+                }
+                var samples=0
+                for(band in bands(spec.compound)) for((lo,hi) in intervals) {
+                    val count=kotlin.math.ceil((hi-lo)/0.5f).toInt().coerceAtLeast(1)
+                    samples+=count+1
+                    require(samples<=24000) { "Curved offset sample budget exceeded" }
+                    val offset=band.center*width
+                    val shaft=Path()
+                    for(j in 0..count) {
+                        sample(lo+(hi-lo)*j/count)
+                        val x=pos[0]-tan[1]*offset;val y=pos[1]+tan[0]*offset
+                        if(j==0) shaft.moveTo(x,y) else shaft.lineTo(x,y)
+                    }
+                    stroke(shaft,spec.paint(color).apply { strokeWidth=width*band.fraction;pathEffect=null })
+                }
+            }
+        }
+        fun endpoint(e: PptxStrokeStyle.End,distance: Float,direction: Float,size: Float) {
+            if(e.type=="none") return
+            sample(distance)
+            val p=decorationInk(e,0f,direction,size,width,fit,spec,color)
+            val transform=android.graphics.Matrix().apply {
+                setRotate(Math.toDegrees(atan2(tan[1].toDouble(),tan[0].toDouble())).toFloat())
+                postTranslate(pos[0],pos[1])
+            }
+            p.transform(transform);union(p)
+        }
+        endpoint(spec.head,0f,1f,hl)
+        endpoint(spec.tail,length,-1f,tl)
+        canvas.drawPath(ink,Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color=color;style=Paint.Style.FILL })
     }
 }

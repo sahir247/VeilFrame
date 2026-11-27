@@ -2434,15 +2434,25 @@ class OfficeConverter {
                         }
                         continue
                     }
-                    if(straightConnector) {
+                    val curvedConnector=PptxConnectorRenderer.isCurved(shape.xmlObject.domNode)
+                    if(straightConnector || curvedConnector) {
                         if(shape is XSLFTextShape && shape.text.isNotBlank())
-                            throw OfficeTextEncodingException("Text on a straight connector is unsupported")
+                            throw OfficeTextEncodingException("Text on a connector is unsupported")
                         val line=PptxConnectorRenderer.resolve(shape.xmlObject.domNode,fontScale,
                             2f*(targetWidth/960f),{ index ->
                                 val styles=shape.sheet.theme?.xmlObject?.themeElements?.fmtScheme?.lnStyleLst
                                 if(styles!=null && index<=styles.sizeOfLnArray()) styles.getLnArray(index-1).domNode else null
                             },{ key -> resolveSchemeColorName(key,themeColors)?.let { android.graphics.Color.parseColor(it) } })
-                        if(line!=null) PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line.spec,line.color)
+                        if(line!=null) {
+                            if(straightConnector) PptxConnectorRenderer.draw(canvas,px,py,px+pw,py+ph,line.spec,line.color)
+                            else {
+                                val paths=PptxCustomGeometry.parse(shape.xmlObject.domNode,pw/sx,ph/sy,includePresets=true)
+                                val curve=paths?.filter { it.stroke }?.singleOrNull()
+                                    ?: throw java.io.IOException("Unsupported curved connector path")
+                                PptxConnectorRenderer.drawCurved(canvas,
+                                    PptxCustomGeometry.materialize(curve,RectF(px,py,px+pw,py+ph)),line.spec,line.color)
+                            }
+                        }
                         continue
                     }
                     val diagramStyle=if(leaf.diagramPart!=null)
