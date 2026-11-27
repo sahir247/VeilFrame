@@ -94,7 +94,13 @@ internal object SharedChartInk {
             org.apache.poi.sl.usermodel.StrokeStyle.LineDash.valueOf(key).pattern?.map { it.toFloat() }.orEmpty()
         } else inherited?.dashRatios.orEmpty()
         require(ratios.all { it.isFinite() && it>0f })
-        return XlsxCachedChart.Stroke(fill(ln,theme) ?: inherited?.ink,width ?: inherited?.widthPt,ratios,cap)
+        val joins=children(ln).filter { it.name() in setOf("round","bevel","miter") }
+        require(joins.size<=1) { "Ambiguous chart line join" }
+        val join=joins.singleOrNull()?.name() ?: inherited?.join ?: "miter"
+        val limit=if(joins.isEmpty()) inherited?.miterLimit ?: 4f else joins.single().getAttribute("lim")
+            .takeIf { it.isNotBlank() }?.let { percent(it).toFloat() } ?: 4f
+        require(limit.isFinite() && limit in 1f..100f) { "Invalid chart miter limit" }
+        return XlsxCachedChart.Stroke(fill(ln,theme) ?: inherited?.ink,width ?: inherited?.widthPt,ratios,cap,join,limit)
     }
 
     fun resolveInk(ink: XlsxCachedChart.Ink?,fallback: Int): XlsxCachedChart.Ink? =

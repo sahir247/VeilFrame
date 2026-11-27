@@ -28,7 +28,8 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     /** Null Ink means unspecified; Ink(null) means explicitly no paint. */
     data class Ink(val rgb: Int?,val alpha: Int=255) { init { require(alpha in 0..255) } }
     data class Stroke(val ink: Ink?=null,val widthPt: Float?=null,
-        val dashRatios: List<Float> = emptyList(),val cap: String="flat")
+        val dashRatios: List<Float> = emptyList(),val cap: String="flat",
+        val join: String="miter",val miterLimit: Float=4f)
     data class Series(val name: String, val values: List<Double?>,
         val xValues: List<Double?> = emptyList(), val chartKind: String? = null,
         val rgb: Int? = null, val strokeWidthPt: Float? = null,

@@ -64,7 +64,7 @@ class PptxChartCacheTest {
     @Test fun translucentClosedChartInkAndPartialPointOutlineInheritance() {
         val series="""<c:ser xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
             <c:spPr><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="80000"/><a:alphaMod val="50000"/><a:alphaOff val="10000"/></a:srgbClr></a:solidFill>
-            <a:ln w="25400" cap="rnd"><a:solidFill><a:srgbClr val="0000FF"><a:alpha val="25000"/></a:srgbClr></a:solidFill><a:custDash><a:ds d="200000" sp="100000"/></a:custDash></a:ln></c:spPr>
+            <a:ln w="25400" cap="rnd"><a:solidFill><a:srgbClr val="0000FF"><a:alpha val="25000"/></a:srgbClr></a:solidFill><a:custDash><a:ds d="200000" sp="100000"/></a:custDash><a:bevel/></a:ln></c:spPr>
             <c:dPt><c:idx val="0"/><c:spPr><a:noFill/><a:ln w="38100"/></c:spPr></c:dPt>
             <c:dPt><c:idx val="1"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr></c:dPt>
             <c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strLit></c:cat>
@@ -77,11 +77,12 @@ class PptxChartCacheTest {
         assertEquals(XlsxCachedChart.Ink(0x0000ff,64),outline.ink)
         assertEquals(3f,outline.widthPt!!,0f)
         assertEquals("rnd",outline.cap)
+        assertEquals("bevel",outline.join)
         assertArrayEquals(floatArrayOf(6f,3f),SharedChartInk.dashes(outline,3f),0.001f)
         assertNull(SharedChartInk.outlineInk(SharedChartInk.pointStroke(s,1),0))
         assertEquals(XlsxCachedChart.Ink(0xff0000,128),SharedChartInk.pointInk(s,1,0))
         val negative=series.replace("val=\"10000\"","val=\"-40000\"")
-        val invisible=OpenXmlDocumentParser.readPresentationChart(xml("<c:barChart><c:barDir val=\"col\"/>$negative</c:barChart>").byteInputStream(),emptyMap())
+        val invisible=OpenXmlDocumentParser.readPresentationChart(xml("<c:barChart><c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>$negative</c:barChart>").byteInputStream(),emptyMap())
         assertNull(SharedChartInk.pointInk(invisible.series.single(),1,0))
     }
 }

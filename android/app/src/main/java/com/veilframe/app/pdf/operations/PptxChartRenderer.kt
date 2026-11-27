@@ -49,6 +49,8 @@ internal object PptxChartRenderer {
         fun pen(ink: XlsxCachedChart.Ink,spec: XlsxCachedChart.Stroke?,width: Float)=Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color=SharedChartInk.argb(ink); style=Paint.Style.STROKE; strokeWidth=width
             strokeCap=when(spec?.cap) { "rnd" -> Paint.Cap.ROUND; "sq" -> Paint.Cap.SQUARE; else -> Paint.Cap.BUTT }
+            strokeJoin=when(spec?.join) { "round" -> Paint.Join.ROUND; "bevel" -> Paint.Join.BEVEL; else -> Paint.Join.MITER }
+            strokeMiter=spec?.miterLimit ?: 4f
             val dash=SharedChartInk.dashes(spec,width)
             if(dash.isNotEmpty()) pathEffect=android.graphics.DashPathEffect(dash,0f)
         }
@@ -141,7 +143,10 @@ internal object PptxChartRenderer {
             val legendWidth=(w-2*pad)/chart.series.size
             for((i,s) in chart.series.withIndex()) {
                 val x=box.left+pad+legendWidth*i
-                rect(x,legendTop+pad,x+font,legendTop+pad+font,color(s,i))
+                val fallback=color(s,i)
+                val isLine=chart.kind in setOf("line","scatter") || chart.kind=="combo" && s.chartKind=="line"
+                val ink=SharedChartInk.resolveInk(if(isLine) s.stroke?.ink else s.fill,fallback)
+                closedRect(x,legendTop+pad,x+font,legendTop+pad+font,ink,if(isLine) null else s.stroke,fallback)
                 label(s.name+(dual[s.valueAxisId]?.let { if(it.axis.position=="r") " (R)" else " (L)" } ?: ""),x+font+pad,legendTop,legendWidth-font-2*pad)
             }
             val horizontal=chart.kind=="bar"

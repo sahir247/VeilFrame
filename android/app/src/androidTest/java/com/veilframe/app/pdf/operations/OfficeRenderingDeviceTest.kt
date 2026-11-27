@@ -506,7 +506,7 @@ class OfficeRenderingDeviceTest {
             // A continuous path across its center vertex must not accumulate
             // opacity as separate overlapping round-capped segments would.
             var redPixels=0
-            for(y in 44 until 60) for(x in 300 until 430) {
+            for(y in 30 until 44) for(x in 300 until 430) {
                 val c=bitmap.getPixel(x,y)
                 if(Color.red(c)>245 && Color.green(c)<180 && Color.blue(c)<180) {
                     redPixels++

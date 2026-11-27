@@ -26,6 +26,8 @@ internal class PdfChartPaint(private val stream: PDPageContentStream) {
         stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
         stream.setLineWidth(width)
         stream.setLineCapStyle(when(spec?.cap) { "rnd" -> 1; "sq" -> 2; else -> 0 })
+        stream.setLineJoinStyle(when(spec?.join) { "round" -> 1; "bevel" -> 2; else -> 0 })
+        stream.setMiterLimit(spec?.miterLimit ?: 4f)
         stream.setLineDashPattern(SharedChartInk.dashes(spec,width),0f)
     }
     fun closed(fill: XlsxCachedChart.Ink?,outline: XlsxCachedChart.Stroke?,fallback: Int,path: ()->Unit) {
