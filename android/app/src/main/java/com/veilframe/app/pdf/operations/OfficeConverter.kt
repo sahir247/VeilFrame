@@ -1439,15 +1439,7 @@ class OfficeConverter {
         checkpoint: () -> Unit,shapedCells: SpreadsheetShapedCells) {
         val palette = intArrayOf(0x2463A0,0xD15A36,0x36845B,0x8354AA,0xA47715)
         require(chart.series.size in 1..6 && chart.scatterStyle in setOf("marker","line","lineMarker"))
-        val pairs = chart.series.flatMap { series ->
-            series.xValues.zip(series.values).mapNotNull { (x, y) ->
-                if (x == null || y == null) null else x to y
-            }
-        }
-        // Only drawable complete (x,y) pairs determine axes. An unmatched
-        // large value must not flatten the actually plotted data.
-        val xAxis = XlsxScatterGeometry.axis(pairs.map { it.first })
-        val yAxis = XlsxScatterGeometry.axis(pairs.map { it.second })
+        val (xAxis,yAxis)=XlsxScatterGeometry.build(chart)
         val segments = chart.categories.indices.chunked(12)
         for ((panel, indices) in segments.withIndex()) {
             checkpoint()
@@ -1480,6 +1472,9 @@ class OfficeConverter {
                     stream.setStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setNonStrokingColor(rgb ushr 16 and 255,rgb ushr 8 and 255,rgb and 255)
                     stream.setLineWidth(series.strokeWidthPt ?: 1.3f)
+                    stream.saveGraphicsState()
+                    try {
+                    stream.addRect(left,bottom,width,height);stream.clip()
                     val points=mutableListOf<Pair<Float,Float>?>()
                     for (index in indices) {
                         checkpoint()
@@ -1494,6 +1489,7 @@ class OfficeConverter {
                     if(chart.scatterStyle!="line") for(point in points.filterNotNull())
                         XlsxChartMarker.draw(stream,series.markerSymbol,series.markerSizePt,point.first,point.second,4f,
                             series.markerFill,series.markerStroke,rgb,painter)
+                    } finally { stream.restoreGraphicsState() }
                     textAt(series.name.take(15),30f+seriesIndex*125f,238f,8f)
                 }
                 for ((local,index) in indices.withIndex()) {

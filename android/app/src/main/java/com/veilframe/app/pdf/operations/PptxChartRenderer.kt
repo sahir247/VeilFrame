@@ -167,11 +167,9 @@ internal object PptxChartRenderer {
             val high=maxOf(0.0,values.maxOrNull() ?: 0.0)
             val span=(high-low).takeIf { it>0 } ?: 1.0
             fun f(value: Double)=((value-low)/span).toFloat().coerceIn(0f,1f)
-            val pairs=if(scatter) chart.series.flatMap { s ->
-                s.xValues.zip(s.values).mapNotNull { (x,y) -> if(x==null || y==null) null else x to y }
-            } else emptyList()
-            val xAxis=if(scatter) XlsxScatterGeometry.axis(pairs.map { it.first }) else null
-            val yAxis=if(scatter) XlsxScatterGeometry.axis(pairs.map { it.second }) else null
+            val xy=if(scatter) XlsxScatterGeometry.build(chart) else null
+            val xAxis=xy?.first
+            val yAxis=xy?.second
             if(!scatter) {
                 for(i in 0..4) {
                     val ratio=i/4f
@@ -214,7 +212,7 @@ internal object PptxChartRenderer {
             var barIndex=0
             val plotSave=canvas.save()
             try {
-            if(dual.isNotEmpty()) canvas.clipRect(left,top,right,bottom)
+            if(dual.isNotEmpty() || scatter) canvas.clipRect(left,top,right,bottom)
             for((i,s) in chart.series.withIndex()) {
                 val axis=dual[s.valueAxisId]
                 fun seriesFraction(v: Double)=axis?.fraction(v) ?: f(v/maxAbs)

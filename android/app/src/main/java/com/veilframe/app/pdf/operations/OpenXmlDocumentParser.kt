@@ -878,10 +878,10 @@ object OpenXmlDocumentParser {
         if(plot.childElements("dateAx").isNotEmpty()) return null
         fun ids(t: Element)=t.childElements("axId").map { it.getAttribute("val") }
         fun axisId(e: Element)=e.childElements("axId").singleOrNull()?.getAttribute("val")
-        fun parseValueAxis(v: Element): XlsxCachedChart.ValueAxis? {
+        fun parseValueAxis(v: Element,positions: Set<String> = setOf("l","r")): XlsxCachedChart.ValueAxis? {
             val id=axisId(v)?.takeIf { it.matches(Regex("[0-9]{1,10}")) } ?: return null
             val pos=v.childElements("axPos").singleOrNull()?.getAttribute("val") ?: return null
-            if(pos !in setOf("l","r")) return null
+            if(pos !in positions) return null
             val scaling=v.childElements("scaling").singleOrNull() ?: return null
             val logNodes=scaling.childElements("logBase")
             val minNodes=scaling.childElements("min")
@@ -929,7 +929,7 @@ object OpenXmlDocumentParser {
                 if(valueAxes.map { it.position }.toSet()!=setOf("l","r")) return null
             }
         }
-        if(valueAxes.isEmpty()) {
+        if(valueAxes.isEmpty() && kind!="scatter") {
             val explicit=plot.childElements("valAx").filter { v ->
                 val scaling=v.childElements("scaling").singleOrNull()
                 listOf("logBase","min","max").any { scaling?.childElements(it)?.isNotEmpty()==true } ||
@@ -979,9 +979,20 @@ object OpenXmlDocumentParser {
             // An all-empty cache is an unsupported drawing, not a chart that
             // can be assigned invented axes and subsequently abort the PDF.
             if (parsedScatter.none { series -> series.xValues.zip(series.values).any { (x,y) -> x != null && y != null } }) return null
-            return XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
+            val declared=plot.childElements("valAx")
+            val scatterAxes=if(declared.isEmpty()) null else {
+                if(declared.size!=2 || ids(type).size!=2 || ids(type).toSet()!=declared.mapNotNull(::axisId).toSet()) return null
+                val x=declared.singleOrNull { it.childElements("axPos").singleOrNull()?.getAttribute("val")=="b" } ?: return null
+                val y=declared.singleOrNull { it.childElements("axPos").singleOrNull()?.getAttribute("val")=="l" } ?: return null
+                if(x.childElements("crossAx").singleOrNull()?.getAttribute("val")!=axisId(y) ||
+                    y.childElements("crossAx").singleOrNull()?.getAttribute("val")!=axisId(x)) return null
+                XlsxCachedChart.ScatterAxes(parseValueAxis(x,setOf("b")) ?: return null,parseValueAxis(y) ?: return null)
+            }
+            val result=XlsxCachedChart(text(chart.childElements("title").singleOrNull()) ?: "Chart",
                 "scatter", List(longest) { (it + 1).toString() }, parsedScatter, scatterStyle = style,
-                blankDisplay = blankDisplay)
+                blankDisplay = blankDisplay,scatterAxes=scatterAxes)
+            try { XlsxScatterGeometry.build(result) } catch (_: IllegalArgumentException) { return null }
+            return result
         }
         var labels: List<String?>? = null
         val parsed = mutableListOf<XlsxCachedChart.Series>()

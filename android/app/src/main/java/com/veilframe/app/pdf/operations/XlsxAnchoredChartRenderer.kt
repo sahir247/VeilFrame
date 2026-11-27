@@ -99,9 +99,10 @@ internal object XlsxAnchoredChartRenderer {
                 return
             }
             val axes=SharedChartValueAxes.build(chart)
+            val xy=if(chart.kind=="scatter") XlsxScatterGeometry.build(chart) else null
             val secondary=axes.values.singleOrNull { it.axis.position=="r" }
             val primary=axes.values.singleOrNull { it.axis.position=="l" }
-            val x0=p.left+if(primary!=null) 40f else 22f
+            val x0=p.left+if(primary!=null || xy!=null) 40f else 22f
             val y0=bottom+17f
             val w=p.width-(x0-p.left)-(if(secondary!=null) 40f else 11f)
             val h=p.height-42f
@@ -110,30 +111,29 @@ internal object XlsxAnchoredChartRenderer {
             for (tick in 0..4) {
                 val ratio=tick/4f; val y=y0+ratio*h
                 line(x0,y,x0+w,y)
-                if(primary!=null) {
-                    fun axisLabel(value: String,x: Float,width: Float) {
-                        if(label!=null) label(value,x,y-2f,6f,width)
+                if(primary!=null || xy!=null) {
+                    fun axisLabel(value: String,x: Float,width: Float,baseline: Float=y-2f) {
+                        if(label!=null) label(value,x,baseline,6f,width)
                         else {
                             require(font.getStringWidth(value)*6f/1000f<=width) { "Saved axis label exceeds chart frame" }
                             color(0x222222);stream.beginText();stream.setFont(font,6f)
-                            stream.newLineAtOffset(x,y-2f);stream.showText(value);stream.endText()
+                            stream.newLineAtOffset(x,baseline);stream.showText(value);stream.endText()
                         }
                     }
-                    axisLabel(primary.tick(ratio),p.left+2f,36f)
+                    axisLabel(primary?.tick(ratio) ?: requireNotNull(xy).second.label(ratio),p.left+2f,36f)
                     secondary?.let { axisLabel(it.tick(ratio),x0+w+3f,35f) }
+                    if(xy!=null && tick in setOf(0,4)) {
+                        val x=if(tick==0) x0 else maxOf(x0,x0+w-36f)
+                        axisLabel(xy.first.label(ratio),x,36f,y0-9f)
+                    }
                 }
             }
             // Restrict explicitly scaled marks to the plot, not just the chart frame.
-            if(axes.isNotEmpty()) { stream.addRect(x0,y0,w,h);stream.clip() }
+            if(axes.isNotEmpty() || xy!=null) { stream.addRect(x0,y0,w,h);stream.clip() }
 
             if (chart.kind == "scatter") {
                 require(chart.scatterStyle in setOf("marker","line","lineMarker"))
-                val pairs=chart.series.flatMap { series ->
-                    series.xValues.zip(series.values).mapNotNull { (x,y) -> if(x == null || y == null) null else x to y }
-                }
-                require(pairs.isNotEmpty()) { "Saved scatter has no numeric pairs" }
-                val ax=XlsxScatterGeometry.axis(pairs.map { it.first })
-                val ay=XlsxScatterGeometry.axis(pairs.map { it.second })
+                val (ax,ay)=requireNotNull(xy)
                 for ((i,s) in chart.series.withIndex()) {
                     checkpoint()
                     require(s.xValues.size == s.values.size)

@@ -9,7 +9,8 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     val drawingOffsets: DrawingOffsets? = null,
     val blankDisplay: BlankDisplay = BlankDisplay.GAP,
     val valueAxes: List<ValueAxis> = emptyList(),
-    val firstSliceAngle: Int = 0) {
+    val firstSliceAngle: Int = 0,
+    val scatterAxes: ScatterAxes? = null) {
     /** Applies to drawing categorical lines only; cached worksheet values remain unchanged. */
     enum class BlankDisplay {
         GAP, ZERO, SPAN;
@@ -20,6 +21,9 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
     /** Saved value-axis identity and linear scaling, shared by both renderers. */
     data class ValueAxis(val id: String,val position: String,val minimum: Double?=null,
         val maximum: Double?=null,val reversed: Boolean=false,val numberFormat: String?=null,val logBase: Double?=null)
+
+    /** Numeric XY axes are distinct from categorical value-axis assignments. */
+    data class ScatterAxes(val x: ValueAxis,val y: ValueAxis)
 
     /** Source DrawingML coordinates, not worksheet or PDF point units. */
     data class DrawingOffsets(val fromColEmu: Long, val fromRowEmu: Long,
