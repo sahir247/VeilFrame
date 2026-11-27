@@ -481,6 +481,42 @@ class OfficeRenderingDeviceTest {
         PDDocument.load(saved).use { assertTrue(it.getPage(0).annotations.isEmpty()) }
     }
 
+    @Test fun translucentChartClosedShapesAndContinuousLineRenderWithSavedOpacity() {
+        val bitmap=Bitmap.createBitmap(640,420,Bitmap.Config.ARGB_8888)
+        try {
+            val chart=XlsxCachedChart("Styled","column",listOf("A","B"),listOf(
+                XlsxCachedChart.Series("Series",listOf(2.0,2.0),fill=XlsxCachedChart.Ink(0xff0000,128),
+                    stroke=XlsxCachedChart.Stroke(XlsxCachedChart.Ink(0x0000ff),4f),
+                    pointFills=mapOf(1 to XlsxCachedChart.Ink(null)))))
+            val canvas=android.graphics.Canvas(bitmap)
+            PptxChartRenderer.draw(canvas,chart,android.graphics.RectF(0f,0f,640f,420f),1f) {}
+            val filled=bitmap.getPixel(220,210); val hollow=bitmap.getPixel(480,210)
+            assertTrue("Expected translucent red over white",Color.red(filled)>245 &&
+                Color.green(filled) in 115..140 && Color.blue(filled) in 115..140)
+            assertEquals("Explicit noFill preserves hollow column",Color.WHITE,hollow)
+            var blueLeft=0;var blueRight=0
+            for(y in 100 until 380) for(x in 100 until 625)
+                if(bitmap.getPixel(x,y)==Color.BLUE) { if(x<365) blueLeft++ else blueRight++ }
+            assertTrue("Both closed outlines visible",blueLeft>100 && blueRight>100)
+
+            val line=XlsxCachedChart("Stroke","line",listOf("A","B","C"),listOf(
+                XlsxCachedChart.Series("Series",listOf(1.0,1.0,1.0),markerSymbol="none",
+                    stroke=XlsxCachedChart.Stroke(XlsxCachedChart.Ink(0xff0000,128),8f,cap="rnd"))))
+            PptxChartRenderer.draw(canvas,line,android.graphics.RectF(0f,0f,640f,420f),1f) {}
+            // A continuous path across its center vertex must not accumulate
+            // opacity as separate overlapping round-capped segments would.
+            var redPixels=0
+            for(y in 44 until 60) for(x in 300 until 430) {
+                val c=bitmap.getPixel(x,y)
+                if(Color.red(c)>245 && Color.green(c)<180 && Color.blue(c)<180) {
+                    redPixels++
+                    assertTrue("Stroke opacity accumulated at join",Color.green(c)>=115)
+                }
+            }
+            assertTrue("Expected translucent line pixels",redPixels>20)
+        } finally { bitmap.recycle() }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {

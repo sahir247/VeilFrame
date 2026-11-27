@@ -2477,6 +2477,26 @@ class OfficeConverterFidelityTest {
             assertTrue(Regex("""(?m)\bc\s*$""").containsMatchIn(raw) ||
                 Regex("""(?m)\bl\s*$""").containsMatchIn(raw))
         }
+        // The same cache must produce real PDF alpha and closed outline
+        // operations in both the saved-print and appendix export paths.
+        val styled=chart.replace("lineChart","barChart")
+            .replace("<c:grouping val=\"standard\"/>","""<c:barDir val="col"/><c:grouping val="clustered"/>""")
+            .replace("<c:ser>","""<c:ser><c:spPr><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill>
+                <a:ln w="25400"><a:solidFill><a:srgbClr val="0000FF"><a:alpha val="25000"/></a:srgbClr></a:solidFill></a:ln></c:spPr>""")
+        for(savedPrint in listOf(false,true)) {
+            val styledOut=File(tempFolder.root,"styled-chart-$savedPrint.pdf")
+            OfficeConverter().convertXlsxToPdf(input(sheet,styled),styledOut,context,savedPrintLayout=savedPrint)
+            PDDocument.load(styledOut).use { pdf ->
+                val page=pdf.getPage(pdf.numberOfPages-1)
+                val states=page.resources.extGStateNames.map { page.resources.getExtGState(it) }
+                assertTrue("Independent fill/stroke alpha in $savedPrint",states.any {
+                    kotlin.math.abs((it.nonStrokingAlphaConstant ?: 0f)-128f/255f)<0.001f &&
+                    kotlin.math.abs((it.strokingAlphaConstant ?: 0f)-64f/255f)<0.001f
+                })
+                val raw=page.contents.use { it.readBytes().toString(Charsets.US_ASCII) }
+                assertTrue("Closed fill+stroke in $savedPrint",Regex("""(?m)\bB\s*$""").containsMatchIn(raw))
+            }
+        }
         val pie = chart.replace("lineChart","pieChart").replace("<c:grouping val=\"standard\"/>","")
         val pieOut = File(tempFolder.root,"anchored-pie.pdf")
         OfficeConverter().convertXlsxToPdf(input(sheet,pie),pieOut,context,savedPrintLayout=true)
