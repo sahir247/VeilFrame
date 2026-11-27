@@ -2473,8 +2473,8 @@ class OfficeConverter {
                             val line=diagramStyle?.stroke ?: PptxStrokeStyle.fromShape(shape.xmlObject.domNode,fontScale,
                                 2f*(targetWidth/960f))
                             val strokePaint=line.paint(lineColor)
-                            if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),strokePaint)
-                            else drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
+                            if(custom!=null) PptxCustomGeometry.draw(canvas,custom,RectF(px,py,px+pw,py+ph),strokePaint,line)
+                            else drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint,line)
                         } else if (diagramStyle==null && geomType == ShapeGeom.ELLIPSE) {
                             val strokePaint = Paint().apply { color = android.graphics.Color.rgb(30, 41, 59); style = Paint.Style.STROKE; strokeWidth = 1.5f * (targetWidth / 960f); isAntiAlias = true }
                             drawShapeGeometry(canvas, geomType, px, py, pw, ph, strokePaint)
@@ -2843,55 +2843,27 @@ class OfficeConverter {
     }
 
     private fun drawShapeGeometry(
-        canvas: android.graphics.Canvas,
-        geom: ShapeGeom,
-        px: Float, py: Float, pw: Float, ph: Float,
-        paint: Paint
+        canvas: android.graphics.Canvas, geom: ShapeGeom,
+        px: Float, py: Float, pw: Float, ph: Float, paint: Paint,
+        stroke: PptxStrokeStyle.Spec?=null
     ) {
-        when (geom) {
-            ShapeGeom.ELLIPSE -> {
-                canvas.drawOval(px, py, px + pw, py + ph, paint)
-            }
-            ShapeGeom.ROUNDED_RECTANGLE -> {
-                val rx = pw * 0.15f
-                val ry = ph * 0.15f
-                canvas.drawRoundRect(px, py, px + pw, py + ph, rx, ry, paint)
-            }
-            ShapeGeom.HEXAGON -> {
-                val path = android.graphics.Path().apply {
-                    val insetW = pw * 0.25f
-                    moveTo(px + insetW, py)
-                    lineTo(px + pw - insetW, py)
-                    lineTo(px + pw, py + ph * 0.5f)
-                    lineTo(px + pw - insetW, py + ph)
-                    lineTo(px + insetW, py + ph)
-                    lineTo(px, py + ph * 0.5f)
-                    close()
+        val path=android.graphics.Path().apply {
+            when(geom) {
+                ShapeGeom.ELLIPSE -> addOval(px,py,px+pw,py+ph,android.graphics.Path.Direction.CW)
+                ShapeGeom.ROUNDED_RECTANGLE -> addRoundRect(px,py,px+pw,py+ph,pw*0.15f,ph*0.15f,android.graphics.Path.Direction.CW)
+                ShapeGeom.HEXAGON -> {
+                    val inset=pw*0.25f
+                    moveTo(px+inset,py);lineTo(px+pw-inset,py);lineTo(px+pw,py+ph*0.5f)
+                    lineTo(px+pw-inset,py+ph);lineTo(px+inset,py+ph);lineTo(px,py+ph*0.5f);close()
                 }
-                canvas.drawPath(path, paint)
+                ShapeGeom.TRIANGLE -> { moveTo(px+pw*0.5f,py);lineTo(px+pw,py+ph);lineTo(px,py+ph);close() }
+                ShapeGeom.DIAMOND -> { moveTo(px+pw*0.5f,py);lineTo(px+pw,py+ph*0.5f);lineTo(px+pw*0.5f,py+ph);lineTo(px,py+ph*0.5f);close() }
+                ShapeGeom.RECTANGLE -> addRect(px,py,px+pw,py+ph,android.graphics.Path.Direction.CW)
+                ShapeGeom.FREEFORM -> throw java.io.IOException("Custom shape geometry could not be resolved")
             }
-            ShapeGeom.TRIANGLE -> {
-                val path = android.graphics.Path().apply {
-                    moveTo(px + pw * 0.5f, py)
-                    lineTo(px + pw, py + ph)
-                    lineTo(px, py + ph)
-                    close()
-                }
-                canvas.drawPath(path, paint)
-            }
-            ShapeGeom.DIAMOND -> {
-                val path = android.graphics.Path().apply {
-                    moveTo(px + pw * 0.5f, py)
-                    lineTo(px + pw, py + ph * 0.5f)
-                    lineTo(px + pw * 0.5f, py + ph)
-                    lineTo(px, py + ph * 0.5f)
-                    close()
-                }
-                canvas.drawPath(path, paint)
-            }
-            ShapeGeom.FREEFORM -> throw java.io.IOException("Custom shape geometry could not be resolved")
-            ShapeGeom.RECTANGLE -> canvas.drawRect(px, py, px + pw, py + ph, paint)
         }
+        if(stroke!=null) PptxClosedOutline.draw(canvas,path,stroke,paint.color)
+        else canvas.drawPath(path,paint)
     }
 
     private fun extractAlphaFromColorObj(colorObj: Any?): Long? {

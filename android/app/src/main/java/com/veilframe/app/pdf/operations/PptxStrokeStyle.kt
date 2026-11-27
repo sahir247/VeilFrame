@@ -12,7 +12,7 @@ internal object PptxStrokeStyle {
     data class End(val type: String="none",val width: String="med",val length: String="med")
     data class Spec(val width: Float,val cap: String="flat",val join: String="miter",
         val miter: Float=4f,val dash: List<Float> = emptyList(),val compound: String="sng",
-        val head: End=End(),val tail: End=End()) {
+        val head: End=End(),val tail: End=End(),val alignment: String="ctr") {
         fun paint(rgb: Int)=Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color=rgb; style=Paint.Style.STROKE; strokeWidth=width
             strokeCap=when(cap) { "rnd" -> Paint.Cap.ROUND; "sq" -> Paint.Cap.SQUARE; else -> Paint.Cap.BUTT }
@@ -51,9 +51,9 @@ internal object PptxStrokeStyle {
     fun fromShape(root: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false): Spec {
         val element=if(root.nodeType==Node.DOCUMENT_NODE) children(root).singleOrNull() ?: return Spec(defaultWidth) else root
         val line=one(element,"spPr",p)?.let { one(it,"ln") } ?: return Spec(defaultWidth)
-        return parse(line,scale,defaultWidth,straightConnector)
+        return parse(line,scale,defaultWidth,straightConnector,closedOutline=!straightConnector)
     }
-    fun parse(line: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false,inherited: Node?=null): Spec {
+    fun parse(line: Node,scale: Float,defaultWidth: Float,straightConnector: Boolean=false,inherited: Node?=null,closedOutline: Boolean=false): Spec {
         fun attribute(key: String): String? = attr(line,key) ?: inherited?.let { attr(it,key) }
         require(scale.isFinite() && scale>0f && defaultWidth.isFinite() && defaultWidth>=0f)
         val width=attribute("w")?.let {
@@ -66,7 +66,8 @@ internal object PptxStrokeStyle {
         require(cap in setOf("flat","rnd","sq")) { "Unsupported outline cap" }
         val compound=attribute("cmpd") ?: "sng"
         require(compound in setOf("sng","dbl","thickThin","thinThick","tri")) { "Unknown compound outline" }
-        require(attribute("algn") in setOf(null,"ctr")) { "Inset outline unsupported" }
+        val alignment=attribute("algn") ?: "ctr"
+        require(alignment in setOf("ctr","in") && (alignment=="ctr" || closedOutline)) { "Inset open outline unsupported" }
         fun endpoint(name: String): End {
             val local=one(line,name)
             val base=inherited?.let { one(it,name) }
@@ -81,7 +82,7 @@ internal object PptxStrokeStyle {
         }
         val head=endpoint("headEnd")
         val tail=endpoint("tailEnd")
-        if(!straightConnector && (compound!="sng" || head.type!="none" || tail.type!="none"))
+        if(!straightConnector && ((!closedOutline && compound!="sng") || head.type!="none" || tail.type!="none"))
             throw IOException("Decorated/compound non-straight outline unsupported")
         fun joinsOf(n: Node)=children(n).filter { it.namespaceURI in a && it.localName in setOf("miter","round","bevel") }
         val joins=joinsOf(line).ifEmpty { inherited?.let(::joinsOf).orEmpty() }
@@ -111,6 +112,7 @@ internal object PptxStrokeStyle {
         } else emptyList()
         val dash=ratios.map { it*width.coerceAtLeast(1f) }
         require(dash.all { it.isFinite() && it in 0.001f..819200f }) { "Outline dash exceeds budget" }
-        return Spec(width,cap,join,miter,dash,compound,head,tail)
+        if(closedOutline && compound!="sng" && dash.isNotEmpty()) throw IOException("Dashed compound closed outline unsupported")
+        return Spec(width,cap,join,miter,dash,compound,head,tail,alignment)
     }
 }

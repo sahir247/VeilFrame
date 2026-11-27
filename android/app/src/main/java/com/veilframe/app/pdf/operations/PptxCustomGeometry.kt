@@ -214,7 +214,7 @@ internal object PptxCustomGeometry {
             (channel(8) shl 8) or channel(0)
     }
 
-    fun draw(canvas: Canvas,paths: List<Subpath>,bounds: RectF,paint: Paint) {
+    fun draw(canvas: Canvas,paths: List<Subpath>,bounds: RectF,paint: Paint,stroke: PptxStrokeStyle.Spec?=null) {
         require(bounds.width()>0 && bounds.height()>0)
         for(spec in paths) {
             if(paint.style==Paint.Style.FILL && !spec.fill || paint.style==Paint.Style.STROKE && !spec.stroke) continue
@@ -264,7 +264,9 @@ internal object PptxCustomGeometry {
                 if(paint.shader!=null) throw IOException("Non-solid shaded path fill unsupported")
                 Paint(paint).apply { color=shadeColor(paint.color,spec.fillMode) }
             } else paint
-            canvas.drawPath(path,facePaint)
+            if(stroke!=null && facePaint.style==Paint.Style.STROKE)
+                PptxClosedOutline.draw(canvas,path,stroke,facePaint.color)
+            else canvas.drawPath(path,facePaint)
         }
     }
 }
