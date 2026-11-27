@@ -2376,7 +2376,8 @@ class OfficeConverterFidelityTest {
         OfficeConverter().convertXlsxToPdf(styled,styledPdf,context)
         PDDocument.load(styledPdf).use { doc ->
             val stream=doc.getPage(1).contents.use { it.readBytes().toString(Charsets.US_ASCII) }
-            assertTrue(Regex("""\[4(?:\.0+)?\s+2(?:\.0+)?\]\s+0(?:\.0+)?\s+d""").containsMatchIn(stream))
+            assertTrue("Expected 4pt dash and 2pt gap in PDF: "+stream,
+                Regex("""\[\s*4(?:\.0+)?\s+2(?:\.0+)?\s*\]\s*0(?:\.0+)?\s+d\b""").containsMatchIn(stream))
             assertTrue(Regex("""(?m)^1(?:\.0+)? 0(?:\.0+)? 0(?:\.0+)? RG\s*$""").containsMatchIn(stream))
         }
         // Standard DrawingML vector symbols must parse and survive PDF conversion.
@@ -2434,8 +2435,11 @@ class OfficeConverterFidelityTest {
         assertEquals(2.5f, parsed.strokeWidthPt!!, 0.0001f)
         val modified = chart.replace("<a:schemeClr val=" + '"' + "accent1" + '"' + "/>",
             "<a:schemeClr val=" + '"' + "accent1" + '"' + "><a:lumMod val=" + '"' + "50000" + '"' + "/></a:schemeClr>")
-        assertEquals(null,OpenXmlDocumentParser.parseXlsx(input(modified)).sheets.single()
-            .charts.single().series.single().rgb) // transformed color uses disclosed fallback
+        val transformed=OpenXmlDocumentParser.parseXlsx(input(modified)).sheets.single().charts.single().series.single()
+        assertEquals(0x0B5522,transformed.stroke?.ink?.rgb) // half HSL lightness
+        val transformedOutput=File(tempFolder.root,"chart-theme-luminance.pdf")
+        OfficeConverter().convertXlsxToPdf(input(modified),transformedOutput,context)
+        PDDocument.load(transformedOutput).use { assertEquals(2,it.numberOfPages) }
         val output = File(tempFolder.root,"chart-theme-line.pdf")
         OfficeConverter().convertXlsxToPdf(input(chart),output,context)
         PDDocument.load(output).use { pdf ->
