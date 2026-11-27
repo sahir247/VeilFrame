@@ -52,6 +52,10 @@ internal object PptxTableRenderer {
         }
         return out
     }
+    internal fun physicalColumn(logical: Int,span: Int,cols: Int,rtl: Boolean): Int {
+        require(logical>=0 && span>0 && logical+span<=cols)
+        return if(rtl) cols-logical-span else logical
+    }
     private data class Border(val color: Int?,val style: PptxStrokeStyle.Spec?,val priority: Int)
     private fun one(n: Node?,name: String)=PptxTableStyle.one(n,name)
     private fun prefer(a: Border?,b: Border?,aAnchor: Boolean,bAnchor: Boolean): Border? {
@@ -93,11 +97,13 @@ internal object PptxTableRenderer {
             checkpoint()
             table.getCell(r,c)?.let { Span(it.rowSpan,it.gridSpan,it.isMerged) }
         }
-        val xs=edges(List(cols) { table.getColumnWidth(it) },bounds.left,bounds.width())
+        val widths=List(cols) { table.getColumnWidth(it) }
+        val xs=edges(if(flags.rtl) widths.asReversed() else widths,bounds.left,bounds.width())
         val ys=edges(List(rows) { table.getRowHeight(it) },bounds.top,bounds.height())
         val visuals=plan.map { entry ->
             checkpoint()
             val cell=requireNotNull(table.getCell(entry.row,entry.col))
+            val physical=entry.copy(col=physicalColumn(entry.col,entry.cols,cols,flags.rtl))
             val properties=one(cell.xmlObject.domNode,"tcPr")
             val layers=PptxTableStyle.layers(style,entry.row,entry.col,rows,cols,flags)
             val localFill=PptxTableStyle.directFill(properties)
@@ -115,7 +121,7 @@ internal object PptxTableRenderer {
                 val inherited=layers.asReversed().firstNotNullOfOrNull { region ->
                     val role=PptxTableStyle.borderRole(region.name,edge,
                         if(edge=="lnB") entry.row+entry.rows-1 else entry.row,
-                        if(edge=="lnR") entry.col+entry.cols-1 else entry.col,rows,cols,flags)
+                        if(edge=="lnR") physical.col+physical.cols-1 else physical.col,rows,cols,flags)
                     val wrapper=one(one(region.cell,"tcBdr"),role)
                     wrapper?.let { PptxTableStyle.inheritedBorder(it,::lineLookup,theme) }
                         ?.let { it to PptxTableStyle.priority(region.name) }
@@ -134,7 +140,7 @@ internal object PptxTableRenderer {
                     throw IOException("Unresolved explicit table border")
                 }
             }
-            Visual(entry,cell,RectF(xs[entry.col],ys[entry.row],xs[entry.col+entry.cols],ys[entry.row+entry.rows]),color,borders,PptxTableStyle.textStyle(layers,theme))
+            Visual(physical,cell,RectF(xs[physical.col],ys[physical.row],xs[physical.col+physical.cols],ys[physical.row+physical.rows]),color,borders,PptxTableStyle.textStyle(layers,theme))
         }
         val paint=Paint(Paint.ANTI_ALIAS_FLAG)
         tableBackground?.let { paint.color=it; canvas.drawRect(bounds,paint) }

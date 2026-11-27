@@ -41,15 +41,14 @@ internal object PptxTableStyle {
     }
     data class Flags(val firstRow: Boolean=false,val lastRow: Boolean=false,
         val firstCol: Boolean=false,val lastCol: Boolean=false,
-        val bandRow: Boolean=false,val bandCol: Boolean=false)
+        val bandRow: Boolean=false,val bandCol: Boolean=false,val rtl: Boolean=false)
     fun flags(props: Node?): Flags {
         fun flag(name: String)=when(attr(props,name)) {
-            null,"0","false" -> false
-            "1","true" -> true
+            null,"0","false","off" -> false
+            "1","true","on" -> true
             else -> throw IOException("Invalid table style toggle: "+name)
         }
-        if(flag("rtl")) throw IOException("Right-to-left table style geometry unsupported")
-        return Flags(flag("firstRow"),flag("lastRow"),flag("firstCol"),flag("lastCol"),flag("bandRow"),flag("bandCol"))
+        return Flags(flag("firstRow"),flag("lastRow"),flag("firstCol"),flag("lastCol"),flag("bandRow"),flag("bandCol"),flag("rtl"))
     }
     internal fun regions(row: Int,col: Int,rows: Int,cols: Int,f: Flags): List<String> {
         require(row in 0 until rows && col in 0 until cols)
@@ -62,11 +61,11 @@ internal object PptxTableStyle {
             if(right) add("lastCol")
             if(left) add("firstCol")
             if(bottom) add("lastRow")
-            if(bottom && right) add("seCell")
-            if(bottom && left) add("swCell")
+            if(bottom && right) add(if(f.rtl) "swCell" else "seCell")
+            if(bottom && left) add(if(f.rtl) "seCell" else "swCell")
             if(top) add("firstRow")
-            if(top && right) add("neCell")
-            if(top && left) add("nwCell")
+            if(top && right) add(if(f.rtl) "nwCell" else "neCell")
+            if(top && left) add(if(f.rtl) "neCell" else "nwCell")
         }
     }
 
@@ -265,12 +264,16 @@ internal object PptxTableStyle {
             "lastRow","seCell","swCell" -> rows-1
             "band1H","band2H" -> row
             else -> rows-1 }
-        val c0=when(region) { "firstCol","nwCell","swCell" -> 0
-            "lastCol","neCell","seCell" -> cols-1
+        val c0=when(region) { "firstCol" -> if(f.rtl) cols-1 else 0
+            "lastCol" -> if(f.rtl) 0 else cols-1
+            "nwCell","swCell" -> 0
+            "neCell","seCell" -> cols-1
             "band1V","band2V" -> col
             else -> 0 }
-        val c1=when(region) { "firstCol","nwCell","swCell" -> 0
-            "lastCol","neCell","seCell" -> cols-1
+        val c1=when(region) { "firstCol" -> if(f.rtl) cols-1 else 0
+            "lastCol" -> if(f.rtl) 0 else cols-1
+            "nwCell","swCell" -> 0
+            "neCell","seCell" -> cols-1
             "band1V","band2V" -> col
             else -> cols-1 }
         return when(edge) {
