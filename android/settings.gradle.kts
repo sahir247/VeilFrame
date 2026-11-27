@@ -43,6 +43,9 @@ dependencyResolutionManagement {
                 url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
                 content {
                     includeGroup("org.robolectric")
+                    // Robolectric imports this BOM while parsing its POM.
+                    // Route the whole Bouncy Castle family consistently, including BOMs.
+                    includeGroup("org.bouncycastle")
                     includeModule("com.knuddels", "jtokkit")
                 }
             }
