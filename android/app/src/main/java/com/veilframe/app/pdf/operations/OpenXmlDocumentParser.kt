@@ -874,8 +874,33 @@ object OpenXmlDocumentParser {
         // one common axis pair and no declarations retain the old behavior.
         val valueAxes=mutableListOf<XlsxCachedChart.ValueAxis>()
         val axisByType=mutableMapOf<Element,String>()
+        // Explicit date-axis semantics are not equivalent to equally spaced labels.
+        if(plot.childElements("dateAx").isNotEmpty()) return null
+        fun ids(t: Element)=t.childElements("axId").map { it.getAttribute("val") }
+        fun axisId(e: Element)=e.childElements("axId").singleOrNull()?.getAttribute("val")
+        fun parseValueAxis(v: Element): XlsxCachedChart.ValueAxis? {
+            val id=axisId(v)?.takeIf { it.matches(Regex("[0-9]{1,10}")) } ?: return null
+            val pos=v.childElements("axPos").singleOrNull()?.getAttribute("val") ?: return null
+            if(pos !in setOf("l","r")) return null
+            val scaling=v.childElements("scaling").singleOrNull() ?: return null
+            val logNodes=scaling.childElements("logBase")
+            val minNodes=scaling.childElements("min")
+            val maxNodes=scaling.childElements("max")
+            if(listOf(logNodes,minNodes,maxNodes).any { it.size>1 }) return null
+            val log=logNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
+            val min=minNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
+            val max=maxNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
+            if(logNodes.isNotEmpty() && (log==null || !log.isFinite() || log !in 2.0..1000.0) ||
+                minNodes.isNotEmpty() && (min==null || !min.isFinite()) ||
+                maxNodes.isNotEmpty() && (max==null || !max.isFinite()) ||
+                min!=null && max!=null && min>=max || log!=null && listOfNotNull(min,max).any { it<=0.0 }) return null
+            val orientation=scaling.childElements("orientation").singleOrNull()?.getAttribute("val") ?: "minMax"
+            if(orientation !in setOf("minMax","maxMin")) return null
+            val format=v.childElements("numFmt").singleOrNull()?.getAttribute("formatCode")?.takeIf { it.isNotBlank() }
+            if(!SharedChartValueAxes.supportedFormat(format)) return null
+            return XlsxCachedChart.ValueAxis(id,pos,min,max,orientation=="maxMin",format,log)
+        }
         if(combo) {
-            fun ids(t: Element)=t.childElements("axId").map { it.getAttribute("val") }
             val different=ids(seriesTypes[0]).toSet()!=ids(seriesTypes[1]).toSet()
             if(different) {
                 val cat=plot.childElements("catAx")
@@ -900,26 +925,23 @@ object OpenXmlDocumentParser {
                     axisByType[t]=requireNotNull(id(v))
                 }
                 if(axisByType.values.distinct().size!=2) return null
-                for(v in value) {
-                    val pos=v.childElements("axPos").singleOrNull()?.getAttribute("val") ?: return null
-                    if(pos !in setOf("l","r")) return null
-                    val scaling=v.childElements("scaling").singleOrNull() ?: return null
-                    if(scaling.childElements("logBase").isNotEmpty()) return null
-                    val orientation=scaling.childElements("orientation").singleOrNull()?.getAttribute("val") ?: "minMax"
-                    if(orientation !in setOf("minMax","maxMin")) return null
-                    val minNodes=scaling.childElements("min")
-                    val maxNodes=scaling.childElements("max")
-                    if(minNodes.size>1 || maxNodes.size>1) return null
-                    val min=minNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
-                    val max=maxNodes.singleOrNull()?.getAttribute("val")?.toDoubleOrNull()
-                    if(minNodes.isNotEmpty() && (min==null || !min.isFinite()) ||
-                        maxNodes.isNotEmpty() && (max==null || !max.isFinite()) ||
-                        min!=null && max!=null && min>=max) return null
-                    val format=v.childElements("numFmt").singleOrNull()?.getAttribute("formatCode")?.takeIf { it.isNotBlank() }
-                    if(!SharedChartValueAxes.supportedFormat(format)) return null
-                    valueAxes.add(XlsxCachedChart.ValueAxis(requireNotNull(id(v)),pos,min,max,orientation=="maxMin",format))
-                }
+                for(v in value) valueAxes.add(parseValueAxis(v) ?: return null)
                 if(valueAxes.map { it.position }.toSet()!=setOf("l","r")) return null
+            }
+        }
+        if(valueAxes.isEmpty()) {
+            val explicit=plot.childElements("valAx").filter { v ->
+                val scaling=v.childElements("scaling").singleOrNull()
+                listOf("logBase","min","max").any { scaling?.childElements(it)?.isNotEmpty()==true } ||
+                    scaling?.childElements("orientation")?.singleOrNull()?.getAttribute("val")=="maxMin"
+            }
+            if(explicit.isNotEmpty()) {
+                if(kind !in setOf("line","column","combo") || grouping in setOf("stacked","percentStacked") ||
+                    explicit.size!=1 || plot.childElements("valAx").size!=1) return null
+                val axis=parseValueAxis(explicit.single()) ?: return null
+                if(axis.position!="l" || seriesTypes.any { axis.id !in ids(it) }) return null
+                valueAxes.add(axis)
+                seriesTypes.forEach { axisByType[it]=axis.id }
             }
         }
         val series = seriesTypes.flatMap { it.childElements("ser") }

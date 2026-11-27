@@ -19,7 +19,7 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
 
     /** Saved value-axis identity and linear scaling, shared by both renderers. */
     data class ValueAxis(val id: String,val position: String,val minimum: Double?=null,
-        val maximum: Double?=null,val reversed: Boolean=false,val numberFormat: String?=null)
+        val maximum: Double?=null,val reversed: Boolean=false,val numberFormat: String?=null,val logBase: Double?=null)
 
     /** Source DrawingML coordinates, not worksheet or PDF point units. */
     data class DrawingOffsets(val fromColEmu: Long, val fromRowEmu: Long,

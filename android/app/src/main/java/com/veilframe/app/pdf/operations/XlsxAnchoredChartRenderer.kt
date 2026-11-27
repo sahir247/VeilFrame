@@ -110,7 +110,7 @@ internal object XlsxAnchoredChartRenderer {
             for (tick in 0..4) {
                 val ratio=tick/4f; val y=y0+ratio*h
                 line(x0,y,x0+w,y)
-                if(primary!=null && secondary!=null) {
+                if(primary!=null) {
                     fun axisLabel(value: String,x: Float,width: Float) {
                         if(label!=null) label(value,x,y-2f,6f,width)
                         else {
@@ -120,7 +120,7 @@ internal object XlsxAnchoredChartRenderer {
                         }
                     }
                     axisLabel(primary.tick(ratio),p.left+2f,36f)
-                    axisLabel(secondary.tick(ratio),x0+w+3f,35f)
+                    secondary?.let { axisLabel(it.tick(ratio),x0+w+3f,35f) }
                 }
             }
             // Restrict explicitly scaled marks to the plot, not just the chart frame.
