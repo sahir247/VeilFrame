@@ -814,21 +814,25 @@ object OpenXmlDocumentParser {
                 val props=ser.childElements("spPr").singleOrNull()
                 val marker=ser.childElements("marker").singleOrNull()?.childElements("spPr")?.singleOrNull()
                 val pointFills=linkedMapOf<Int,XlsxCachedChart.Ink>()
+                val pointStrokes=linkedMapOf<Int,XlsxCachedChart.Stroke>()
+                val seen=mutableSetOf<Int>()
+                val stroke=SharedChartInk.stroke(props,theme)
                 for(point in ser.childElements("dPt")) {
                     val index=point.childElements("idx").singleOrNull()?.getAttribute("val")?.toIntOrNull() ?: return null
-                    if(index !in base.values.indices || pointFills.containsKey(index) || kind !in setOf("pie","bar","column")) return null
+                    if(index !in base.values.indices || !seen.add(index) || kind !in setOf("pie","bar","column")) return null
                     val style=point.childElements("spPr").singleOrNull() ?: return null
-                    if(point.childElements("explosion").isNotEmpty() || SharedChartInk.stroke(style,theme)!=null) return null
-                    pointFills[index]=SharedChartInk.fill(style,theme) ?: return null
+                    if(point.childElements("explosion").isNotEmpty()) return null
+                    val pointFill=SharedChartInk.fill(style,theme)
+                    val pointStroke=SharedChartInk.stroke(style,theme,stroke)
+                    if(pointFill==null && pointStroke==null) return null
+                    pointFill?.let { pointFills[index]=it }
+                    pointStroke?.let { pointStrokes[index]=it }
                 }
                 val fill=SharedChartInk.fill(props,theme)
-                val stroke=SharedChartInk.stroke(props,theme)
                 val markerFill=SharedChartInk.fill(marker,theme)
                 val markerStroke=SharedChartInk.stroke(marker,theme)
-                // Bars and pie use fills; explicit outlines need a separate
-                // closed-path painter, not the line-series stroke renderer.
-                if(kind in setOf("bar","column","pie") && stroke!=null && stroke.ink!=XlsxCachedChart.Ink(null)) return null
-                return base.copy(fill=fill,stroke=stroke,markerFill=markerFill,markerStroke=markerStroke,pointFills=pointFills)
+                return base.copy(fill=fill,stroke=stroke,markerFill=markerFill,markerStroke=markerStroke,
+                    pointFills=pointFills,pointStrokes=pointStrokes)
             } catch (_: IOException) { return null }
               catch (_: IllegalArgumentException) { return null }
         }

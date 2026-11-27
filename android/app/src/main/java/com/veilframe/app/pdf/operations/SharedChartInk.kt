@@ -5,9 +5,7 @@ import org.w3c.dom.Node
 import java.io.IOException
 import kotlin.math.roundToInt
 
-/** Supported saved chart ink. Distinguish absence, noFill and an opaque solid.
- * Non-opaque paint is refused until the two backends share alpha compositing.
- */
+/** Supported saved solid chart ink, with independent fill and stroke opacity. */
 internal object SharedChartInk {
     private fun children(n: Node?): List<Element> = buildList {
         var c=n?.firstChild
@@ -22,10 +20,10 @@ internal object SharedChartInk {
         require(list.size<=1) { "Ambiguous chart ink: "+name }
         return list.singleOrNull()
     }
-    private fun percent(value: String): Double {
+    private fun percent(value: String, signed: Boolean=false): Double {
         val v=if(value.endsWith("%")) value.dropLast(1).toDoubleOrNull()?.div(100)
             else value.toLongOrNull()?.toDouble()?.div(100000)
-        require(v!=null && v.isFinite() && v in 0.0..100.0) { "Invalid chart ink percentage" }
+        require(v!=null && v.isFinite() && v in (if(signed) -100.0 else 0.0)..100.0) { "Invalid chart ink percentage" }
         return v
     }
     fun fill(n: Node?,theme: Map<String,Int>): XlsxCachedChart.Ink? {
@@ -44,8 +42,13 @@ internal object SharedChartInk {
         var rgb=doubleArrayOf(((base ushr 16) and 255)/255.0,((base ushr 8) and 255)/255.0,(base and 255)/255.0)
         var alpha=1.0
         for(effect in children(c)) {
-            val f=percent(effect.getAttribute("val"))
-            require(f in 0.0..1.0 || (effect.name()=="lumMod" && f<=100.0)) { "Invalid chart color transform" }
+            val kind=effect.name()
+            val f=percent(effect.getAttribute("val"),kind=="alphaOff")
+            require(when(kind) {
+                "alphaOff" -> f in -1.0..1.0
+                "lumMod","alphaMod" -> f in 0.0..100.0
+                else -> f in 0.0..1.0
+            }) { "Invalid chart color transform" }
             when(effect.name()) {
                 "tint" -> for(i in rgb.indices) rgb[i]=1-(1-rgb[i])*f
                 "shade" -> for(i in rgb.indices) rgb[i]*=f
@@ -53,19 +56,21 @@ internal object SharedChartInk {
                 "lumOff" -> rgb=DrawingMlColorMath.lightness(rgb) { it+f }
                 "alpha" -> alpha=f
                 "alphaMod" -> alpha*=f
+                "alphaOff" -> alpha+=f
                 else -> throw IOException("Unsupported chart color transform: "+effect.name())
             }
+            alpha=alpha.coerceIn(0.0,1.0)
         }
         if(alpha==0.0) return XlsxCachedChart.Ink(null)
-        if(alpha!=1.0) throw IOException("Translucent chart ink unsupported")
-        return XlsxCachedChart.Ink(((rgb[0]*255).roundToInt() shl 16) or ((rgb[1]*255).roundToInt() shl 8) or (rgb[2]*255).roundToInt())
+        return XlsxCachedChart.Ink(((rgb[0]*255).roundToInt() shl 16) or ((rgb[1]*255).roundToInt() shl 8) or (rgb[2]*255).roundToInt(),
+            (alpha*255).roundToInt())
     }
 
-    fun stroke(n: Node?,theme: Map<String,Int>): XlsxCachedChart.Stroke? {
+    fun stroke(n: Node?,theme: Map<String,Int>,inherited: XlsxCachedChart.Stroke?=null): XlsxCachedChart.Stroke? {
         val ln=one(n,"ln") ?: return null
         require(ln.getAttribute("cmpd") in setOf("","sng") && ln.getAttribute("algn") in setOf("","ctr"))
         require(listOf("headEnd","tailEnd").all { one(ln,it)?.getAttribute("type") in setOf(null,"","none") })
-        val cap=ln.getAttribute("cap").ifBlank { "flat" }
+        val cap=ln.getAttribute("cap").ifBlank { inherited?.cap ?: "flat" }
         require(cap in setOf("flat","rnd","sq"))
         val width=ln.getAttribute("w").takeIf { it.isNotEmpty() }?.let {
             val v=it.toLongOrNull() ?: throw IOException("Invalid chart stroke width")
@@ -87,16 +92,26 @@ internal object SharedChartInk {
                 else -> throw IOException("Unsupported chart stroke dash")
             }
             org.apache.poi.sl.usermodel.StrokeStyle.LineDash.valueOf(key).pattern?.map { it.toFloat() }.orEmpty()
-        } else emptyList()
+        } else inherited?.dashRatios.orEmpty()
         require(ratios.all { it.isFinite() && it>0f })
-        return XlsxCachedChart.Stroke(fill(ln,theme),width,ratios,cap)
+        return XlsxCachedChart.Stroke(fill(ln,theme) ?: inherited?.ink,width ?: inherited?.widthPt,ratios,cap)
     }
 
-    fun resolved(ink: XlsxCachedChart.Ink?,fallback: Int): Int? =
-        if(ink==null) fallback and 0xffffff else ink.rgb
+    fun resolveInk(ink: XlsxCachedChart.Ink?,fallback: Int): XlsxCachedChart.Ink? =
+        (ink ?: XlsxCachedChart.Ink(fallback and 0xffffff)).takeIf { it.rgb!=null && it.alpha>0 }
 
+    // RGB compatibility accessor for cache tests and legacy callers.
+    fun resolved(ink: XlsxCachedChart.Ink?,fallback: Int): Int? = resolveInk(ink,fallback)?.rgb
+    fun argb(ink: XlsxCachedChart.Ink): Int = (ink.alpha shl 24) or requireNotNull(ink.rgb)
+
+    fun pointInk(series: XlsxCachedChart.Series,index: Int,fallback: Int): XlsxCachedChart.Ink? =
+        resolveInk(series.pointFills[index] ?: series.fill,fallback)
     fun pointFill(series: XlsxCachedChart.Series,index: Int,fallback: Int): Int? =
-        resolved(series.pointFills[index] ?: series.fill,fallback)
+        pointInk(series,index,fallback)?.rgb
+    fun pointStroke(series: XlsxCachedChart.Series,index: Int): XlsxCachedChart.Stroke? =
+        series.pointStrokes[index] ?: series.stroke
+    fun outlineInk(stroke: XlsxCachedChart.Stroke?,fallback: Int): XlsxCachedChart.Ink? =
+        stroke?.let { resolveInk(it.ink,fallback) }
 
     fun dashes(stroke: XlsxCachedChart.Stroke?,width: Float): FloatArray =
         stroke?.dashRatios.orEmpty().map { (it*width).coerceAtLeast(0.01f) }.toFloatArray()

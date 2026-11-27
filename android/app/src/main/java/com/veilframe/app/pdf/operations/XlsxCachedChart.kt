@@ -26,7 +26,7 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
         val toColEmu: Long, val toRowEmu: Long) {
     }
     /** Null Ink means unspecified; Ink(null) means explicitly no paint. */
-    data class Ink(val rgb: Int?)
+    data class Ink(val rgb: Int?,val alpha: Int=255) { init { require(alpha in 0..255) } }
     data class Stroke(val ink: Ink?=null,val widthPt: Float?=null,
         val dashRatios: List<Float> = emptyList(),val cap: String="flat")
     data class Series(val name: String, val values: List<Double?>,
@@ -35,5 +35,6 @@ data class XlsxCachedChart(val title: String, val kind: String, val categories: 
         val markerSymbol: String? = null, val markerSizePt: Float? = null,
         val valueAxisId: String? = null,
         val fill: Ink? = null,val stroke: Stroke? = null,val markerFill: Ink? = null,
-        val markerStroke: Stroke? = null,val pointFills: Map<Int,Ink> = emptyMap())
+        val markerStroke: Stroke? = null,val pointFills: Map<Int,Ink> = emptyMap(),
+        val pointStrokes: Map<Int,Stroke> = emptyMap())
 }
