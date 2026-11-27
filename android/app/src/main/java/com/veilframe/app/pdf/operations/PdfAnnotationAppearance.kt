@@ -95,10 +95,20 @@ internal object PdfAnnotationAppearance {
             array(bs,"D")?.let { if(numbers(it,1,64).any { n -> n<=0 || n>1000 }) reject("Invalid annotation dash") }
         }
         if(subtype=="FreeText") {
-            if(listOf("RC","DS","CL","RD","DR","Rotate","LE").any { d.containsKey(key(it)) } ||
-                d.getNameAsString(key("IT")) !in setOf(null,"FreeText") ||
+            val intent=d.getNameAsString(key("IT"))
+            if(listOf("RC","DS","DR","Rotate").any { d.containsKey(key(it)) } ||
+                intent !in setOf(null,"FreeText","FreeTextCallout") ||
                 bs?.getNameAsString(key("S"),"S")=="D" || border?.size()==4)
-                reject("Unsupported rich, rotated, callout or dashed FreeText annotation")
+                reject("Unsupported rich, rotated or dashed FreeText annotation")
+            val rd=array(d,"RD")?.let { numbers(it,4,4) }
+            if(rd!=null && (rd.any { it<0 } || rd[0]+rd[2]+4*width>=rect.width || rd[1]+rd[3]+4*width>=rect.height))
+                reject("Invalid FreeText rectangle differences")
+            if(intent=="FreeTextCallout") {
+                val points=numbers(array(d,"CL") ?: reject("Missing FreeText callout"),4,6,2)
+                if(rd==null || width<=0 || points.chunked(2).zipWithNext().any { (a,b)->a==b } ||
+                    d.getNameAsString(key("LE"),"None") !in setOf("None","OpenArrow","ClosedArrow"))
+                    reject("Unsupported FreeText callout geometry")
+            } else if(d.containsKey(key("CL")) || d.containsKey(key("LE"))) reject("Unexpected FreeText callout")
             if(width*4>=rect.width || width*4>=rect.height) reject("FreeText border exceeds rectangle")
         } else if(subtype=="Text") {
             if(!d.containsKey(key("F")) || d.getBoolean(key("Open"),false))

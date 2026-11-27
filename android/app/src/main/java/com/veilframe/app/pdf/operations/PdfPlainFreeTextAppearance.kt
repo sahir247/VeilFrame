@@ -81,6 +81,31 @@ internal object PdfPlainFreeTextAppearance {
         val bs=d.getDictionaryObject(key("BS")) as? COSDictionary
         val border=d.getDictionaryObject(key("Border")) as? COSArray
         val width=if(bs!=null) bs.getFloat(key("W"),1f) else border?.let { num(it.getObject(2)) } ?: 1f
+        val differences=(d.getDictionaryObject(key("RD")) as? COSArray)?.let { a ->
+            (0..3).map { num(a.getObject(it)) }
+        } ?: listOf(0f,0f,0f,0f)
+        val boxX=differences[0];val boxY=differences[1]
+        val boxW=rect.width-boxX-differences[2];val boxH=rect.height-boxY-differences[3]
+        val callout=(d.getDictionaryObject(key("CL")) as? COSArray)?.let { a ->
+            (0 until a.size()).map { num(a.getObject(it)) }.chunked(2).map { p ->
+                (p[0]-rect.lowerLeftX) to (p[1]-rect.lowerLeftY)
+            }
+        }.orEmpty()
+        fun admitted(p: Pair<Float,Float>)=p.first in width/2..rect.width-width/2 &&
+            p.second in width/2..rect.height-width/2
+        if(callout.any { !admitted(it) }) fail("Callout extends beyond annotation appearance")
+        val ending=d.getNameAsString(key("LE"),"None")
+        val arrow=if(callout.isNotEmpty() && ending!="None") {
+            val tip=callout[0]; val back=callout[1]
+            val dx=back.first-tip.first;val dy=back.second-tip.second
+            val len=kotlin.math.hypot(dx,dy)
+            val size=width*6
+            if(len<size) fail("FreeText callout arrow is longer than its segment")
+            val ux=dx/len;val uy=dy/len
+            listOf((tip.first+ux*size-uy*size/2) to (tip.second+uy*size+ux*size/2),
+                tip,(tip.first+ux*size+uy*size/2) to (tip.second+uy*size-ux*size/2))
+                .also { if(it.any { p -> !admitted(p) }) fail("Callout arrow exceeds annotation appearance") }
+        } else emptyList()
         val padding=maxOf(2f,width*2)
         val align=d.getInt(key("Q"),0)
         if(align !in 0..2) fail("Unsupported FreeText alignment")
@@ -92,7 +117,7 @@ internal object PdfPlainFreeTextAppearance {
         val ascent=maxOf(0.8f,typeface.fontDescriptor.ascent/1000f)*size
         val descent=maxOf(0.25f,-typeface.fontDescriptor.descent/1000f)*size
         val step=maxOf(1.2f*size,ascent+descent)
-        if(widths.any { it>rect.width-2*padding } || ascent+descent+(lines.size-1)*step>rect.height-2*padding)
+        if(widths.any { it>boxW-2*padding } || ascent+descent+(lines.size-1)*step>boxH-2*padding)
             fail("FreeText contents exceed the visible box; refusing to clip")
         val appearance=PDAppearanceStream(document).apply {
             resources=PDResources()
@@ -113,21 +138,37 @@ internal object PdfPlainFreeTextAppearance {
                     else -> fail("Invalid FreeText ink")
                 }
             }
+            if(callout.isNotEmpty()) {
+                ink(color,true);cs.setLineWidth(width)
+                val start=if(ending=="ClosedArrow") {
+                    val a=arrow.first();val b=arrow.last()
+                    (a.first+b.first)/2 to (a.second+b.second)/2
+                } else callout.first()
+                cs.moveTo(start.first,start.second)
+                for(p in callout.drop(1)) cs.lineTo(p.first,p.second)
+                cs.stroke()
+                if(arrow.isNotEmpty()) {
+                    cs.moveTo(arrow[0].first,arrow[0].second)
+                    cs.lineTo(arrow[1].first,arrow[1].second);cs.lineTo(arrow[2].first,arrow[2].second)
+                    if(ending=="ClosedArrow") { ink(color,false);cs.closePath();cs.fillAndStroke() }
+                    else cs.stroke()
+                }
+            }
             val background=d.getDictionaryObject(key("C")) as? COSArray
             if(background!=null && background.size()>0) {
                 ink((0 until background.size()).map { num(background.getObject(it)) },false)
-                cs.addRect(0f,0f,rect.width,rect.height);cs.fill()
+                cs.addRect(boxX,boxY,boxW,boxH);cs.fill()
             }
             if(width>0f) {
                 ink(color,true);cs.setLineWidth(width)
-                cs.addRect(width/2,width/2,rect.width-width,rect.height-width);cs.stroke()
+                cs.addRect(boxX+width/2,boxY+width/2,boxW-width,boxH-width);cs.stroke()
             }
             ink(color,false)
             for((i,line) in lines.withIndex()) {
                 if(line.isEmpty()) continue
-                val x=when(align) { 1 -> (rect.width-widths[i])/2;2 -> rect.width-padding-widths[i];else -> padding }
+                val x=boxX+when(align) { 1 -> (boxW-widths[i])/2;2 -> boxW-padding-widths[i];else -> padding }
                 cs.beginText();cs.setFont(typeface,size)
-                cs.newLineAtOffset(x,rect.height-padding-ascent-i*step);cs.showText(line);cs.endText()
+                cs.newLineAtOffset(x,boxY+boxH-padding-ascent-i*step);cs.showText(line);cs.endText()
             }
         }
         annotation.appearance=PDAppearanceDictionary().apply { setNormalAppearance(appearance) }
