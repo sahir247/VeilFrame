@@ -116,6 +116,36 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun verticalBlankColumnsAndFirstIndentPreserveVisibleGeometry() {
+        val bitmap=Bitmap.createBitmap(300,300,Bitmap.Config.ARGB_8888)
+        try {
+            for(native in listOf(false,true)) {
+                bitmap.eraseColor(Color.WHITE)
+                val paragraph=PptxTextLayout.Paragraph(listOf(
+                    PptxTextLayout.Run(if(native) "日\n\n" else "A\n\n",26f,Color.RED),
+                    PptxTextLayout.Run(if(native) "本" else "B",26f,Color.BLUE)),
+                    marginLeft=8f,marginRight=6f,before=5f,after=7f,
+                    lineMultiplier=0.85f,firstIndent=40f)
+                val canvas=android.graphics.Canvas(bitmap)
+                if(native) PptxVerticalText.draw(canvas,listOf(paragraph),10f,10f,270f,270f,"TOP",false)
+                else PptxTextLayout.drawStacked(canvas,listOf(paragraph),10f,10f,270f,270f,"TOP",false)
+                var minRedY=300; var minBlueY=300; var maxRedX=-1; var minBlueX=300
+                for(y in 0 until 300) for(x in 0 until 300) {
+                    val c=bitmap.getPixel(x,y)
+                    if(Color.red(c)>150 && Color.green(c)<100 && Color.blue(c)<100) {
+                        minRedY=minOf(minRedY,y); maxRedX=maxOf(maxRedX,x)
+                    }
+                    if(Color.blue(c)>150 && Color.green(c)<100 && Color.red(c)<100) {
+                        minBlueY=minOf(minBlueY,y); minBlueX=minOf(minBlueX,x)
+                    }
+                }
+                assertTrue("Missing red/blue vertical glyphs, native="+native,maxRedX>=0 && minBlueX<300)
+                assertTrue("Only first column receives first indent",minRedY>minBlueY+25)
+                assertTrue("Blank column reserves an actual visible gap",minBlueX>maxRedX+5)
+            }
+        } finally { bitmap.recycle() }
+    }
+
     @Test fun nativeVerticalCjkMixedOrientationPaintsAndRejectsOverflow() {
         val bitmap=Bitmap.createBitmap(320,320,Bitmap.Config.ARGB_8888)
         try {
