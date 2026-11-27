@@ -422,6 +422,65 @@ class OfficeRenderingDeviceTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun generatedPdfMarkupRemainsVisibleAfterSerializedFlatten() {
+        PDFBoxResourceLoader.init(context)
+        val dir=runDirectory("pdf_annotation_appearance")
+        val saved=File(dir,"flattened.pdf")
+        val reference=File(dir,"reference.pdf")
+        val box=com.tom_roush.pdfbox.pdmodel.common.PDRectangle(200f,200f)
+        fun create(file: File,flatten: Boolean) {
+            PDDocument().use { doc ->
+                val page=com.tom_roush.pdfbox.pdmodel.PDPage(box)
+                doc.addPage(page)
+                val square=com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationSquareCircle("Square").apply {
+                    rectangle=com.tom_roush.pdfbox.pdmodel.common.PDRectangle(20f,110f,60f,60f)
+                    color=com.tom_roush.pdfbox.pdmodel.graphics.color.PDColor(floatArrayOf(1f,0f,0f),
+                        com.tom_roush.pdfbox.pdmodel.graphics.color.PDDeviceRGB.INSTANCE)
+                    interiorColor=color
+                    isPrinted=true
+                }
+                val highlight=com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationTextMarkup("Highlight").apply {
+                    rectangle=com.tom_roush.pdfbox.pdmodel.common.PDRectangle(100f,40f,80f,35f)
+                    quadPoints=floatArrayOf(110f,65f,170f,65f,110f,50f,170f,50f)
+                    color=com.tom_roush.pdfbox.pdmodel.graphics.color.PDColor(floatArrayOf(1f,1f,0f),
+                        com.tom_roush.pdfbox.pdmodel.graphics.color.PDDeviceRGB.INSTANCE)
+                    constantOpacity=0.5f
+                    isPrinted=true
+                }
+                page.annotations.add(square); page.annotations.add(highlight)
+                if(flatten) {
+                    assertEquals(2,PdfFlattener().flattenPageAnnotations(doc,page))
+                    assertTrue(page.annotations.isEmpty())
+                } else {
+                    square.constructAppearances(doc); highlight.constructAppearances(doc)
+                    assertEquals(2,page.annotations.size)
+                }
+                doc.save(file)
+            }
+        }
+        create(reference,false); create(saved,true)
+        fun render(file: File): Bitmap=PDDocument.load(file).use { doc ->
+            com.tom_roush.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(0,72f)
+        }
+        val before=render(reference); val after=render(saved)
+        try {
+            assertEquals(200,after.width); assertEquals(200,after.height)
+            assertEquals("Filled square survives flatten",Color.RED,after.getPixel(50,60))
+            val yellow=after.getPixel(140,142)
+            assertTrue("Translucent highlight survives flatten",Color.red(yellow)>240 &&
+                Color.green(yellow)>240 && Color.blue(yellow) in 80..210)
+            var differences=0
+            for(y in 0 until 200) for(x in 0 until 200) {
+                val a=before.getPixel(x,y); val b=after.getPixel(x,y)
+                if(kotlin.math.abs(Color.red(a)-Color.red(b))>8 ||
+                    kotlin.math.abs(Color.green(a)-Color.green(b))>8 ||
+                    kotlin.math.abs(Color.blue(a)-Color.blue(b))>8) differences++
+            }
+            assertTrue("Reference vs flattened raster differences: "+differences,differences<200)
+        } finally { before.recycle(); after.recycle() }
+        PDDocument.load(saved).use { assertTrue(it.getPage(0).annotations.isEmpty()) }
+    }
+
     private fun runDirectory(name: String): File {
         val base = context.getExternalFilesDir(null) ?: context.filesDir
         return File(base, "office_device_validation/${name}_${System.currentTimeMillis()}").apply {
