@@ -112,4 +112,25 @@ class PptxRemainingGeometryTest {
         assertEquals(0f,PptxConnectorRenderer.trim("arrow",20f),0f)
         assertEquals(13f,PptxConnectorRenderer.trim("stealth",20f),0.001f)
     }
+
+    @Test fun compressedColumnFlowKeepsInkEnvelopeAndParagraphSpacing() {
+        val flow=PptxVerticalText.ColumnFlow(100f)
+        assertEquals(5f,flow.admit(20f,5f,-10f),0f)
+        assertEquals(15f,flow.cursor,0f)
+        assertEquals(25f,flow.extent,0f)
+        assertEquals(15f,flow.admit(30f,0f,6f),0f)
+        assertEquals(51f,flow.extent,0f)
+        assertThrows(OfficeTextEncodingException::class.java) { flow.admit(60f,0f,-30f) }
+        assertEquals(51f,flow.cursor,0f)
+        assertEquals(51f,flow.extent,0f)
+    }
+
+    @Test fun sharedLuminancePreservesHueAndSaturationAndClamps() {
+        val rgb=doubleArrayOf(22/255.0,170/255.0,68/255.0)
+        val dark=DrawingMlColorMath.lightness(rgb) { it/2 }
+        assertArrayEquals(doubleArrayOf(11/255.0,85/255.0,34/255.0),dark,1e-9)
+        assertArrayEquals(doubleArrayOf(1.0,1.0,1.0),DrawingMlColorMath.lightness(rgb) { it+1 },1e-9)
+        assertArrayEquals(doubleArrayOf(0.0,0.0,0.0),DrawingMlColorMath.lightness(rgb) { 0.0 },1e-9)
+        assertArrayEquals(doubleArrayOf(0.6,0.6,0.6),DrawingMlColorMath.lightness(doubleArrayOf(0.4,0.4,0.4)) { it+0.2 },1e-9)
+    }
 }
