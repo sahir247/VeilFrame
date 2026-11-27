@@ -100,4 +100,23 @@ class PptxChartCacheTest {
         assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("<c:v>1</c:v>","<c:v>0</c:v>").byteInputStream(),emptyMap()) }.isFailure)
         assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("catAx","dateAx").byteInputStream(),emptyMap()) }.isFailure)
     }
+
+    @Test fun explicitScatterAxesRespectLogarithmicBoundsAndReversal() {
+        val source=xml("""<c:scatterChart><c:scatterStyle val="lineMarker"/><c:ser>
+            <c:xVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>10</c:v></c:pt><c:pt idx="2"><c:v>100</c:v></c:pt></c:numLit></c:xVal>
+            <c:yVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>0</c:v></c:pt><c:pt idx="1"><c:v>5</c:v></c:pt><c:pt idx="2"><c:v>10</c:v></c:pt></c:numLit></c:yVal>
+            </c:ser><c:axId val="21"/><c:axId val="22"/></c:scatterChart>
+            <c:valAx><c:axId val="21"/><c:scaling><c:logBase val="10"/><c:min val="1"/><c:max val="100"/></c:scaling><c:axPos val="b"/><c:crossAx val="22"/><c:numFmt formatCode="0"/></c:valAx>
+            <c:valAx><c:axId val="22"/><c:scaling><c:orientation val="maxMin"/><c:min val="0"/><c:max val="10"/></c:scaling><c:axPos val="l"/><c:crossAx val="21"/></c:valAx>""")
+        val chart=OpenXmlDocumentParser.readPresentationChart(source.byteInputStream(),emptyMap())
+        val (x,y)=XlsxScatterGeometry.build(chart)
+        assertEquals(0.5f,x.fraction(10.0),0.001f)
+        assertEquals("10",x.label(0.5f))
+        assertEquals(1.5f,x.fraction(1000.0),0.001f)
+        assertEquals(1f,y.fraction(0.0),0.001f)
+        assertEquals(0f,y.fraction(10.0),0.001f)
+        assertEquals(-0.5f,y.fraction(15.0),0.001f)
+        assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("<c:v>1</c:v>","<c:v>0</c:v>").byteInputStream(),emptyMap()) }.isFailure)
+        assertTrue(runCatching { OpenXmlDocumentParser.readPresentationChart(source.replace("crossAx val=\"21\"","crossAx val=\"999\"").byteInputStream(),emptyMap()) }.isFailure)
+    }
 }
