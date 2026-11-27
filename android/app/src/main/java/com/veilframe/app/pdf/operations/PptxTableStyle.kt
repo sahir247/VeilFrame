@@ -134,6 +134,8 @@ internal object PptxTableStyle {
                 "alphaOff" -> alpha+=fraction
                 "tint" -> { require(fraction in 0.0..1.0); rgb=rgb.map { 1-(1-it)*fraction }.toDoubleArray() }
                 "shade" -> { require(fraction in 0.0..1.0); rgb=rgb.map { it*fraction }.toDoubleArray() }
+                "lumMod" -> { require(fraction>=0.0); rgb=DrawingMlColorMath.lightness(rgb) { it*fraction } }
+                "lumOff" -> { require(fraction in 0.0..1.0); rgb=DrawingMlColorMath.lightness(rgb) { it+fraction } }
                 else -> throw IOException("Unsupported table color transform: "+effect.localName)
             }
             alpha=alpha.coerceIn(0.0,1.0)
