@@ -78,8 +78,9 @@ internal object PptxTableStyle {
         require(id.matches(Regex("\\{[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\\}"))) { "Invalid table style ID" }
         val styles=styleList?.let { children(it).filter { child -> child.localName=="tblStyle" &&
             attr(child,"styleId").equals(id,ignoreCase=true) } }.orEmpty()
-        if(styles.size!=1) throw IOException("Missing or ambiguous PowerPoint table style: "+id)
-        return styles.single()
+        if(styles.size>1) throw IOException("Ambiguous PowerPoint table style: "+id)
+        return styles.singleOrNull() ?: PptxBuiltInTableStyles.find(id)
+            ?: throw IOException("Missing PowerPoint table style: "+id)
     }
 
     internal fun priority(name: String): Int = listOf("wholeTbl","band1H","band2H","band1V","band2V",
@@ -116,6 +117,7 @@ internal object PptxTableStyle {
                 }
                 0xff000000.toInt() or (channel("r") shl 16) or (channel("g") shl 8) or channel("b")
             }
+            "prstClr" -> if(raw=="black") 0xff000000.toInt() else throw IOException("Unsupported preset table color: "+raw)
             "schemeClr" -> (if(raw=="phClr") placeholder else theme(raw))
                 ?: throw IOException("Unresolved table theme color: "+raw)
             else -> throw IOException("Unsupported table style color: "+n.localName)

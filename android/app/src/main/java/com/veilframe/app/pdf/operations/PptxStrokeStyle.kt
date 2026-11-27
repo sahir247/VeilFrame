@@ -112,7 +112,8 @@ internal object PptxStrokeStyle {
         } else emptyList()
         val dash=ratios.map { it*width.coerceAtLeast(1f) }
         require(dash.all { it.isFinite() && it in 0.001f..819200f }) { "Outline dash exceeds budget" }
-        if(closedOutline && compound!="sng" && dash.isNotEmpty()) throw IOException("Dashed compound closed outline unsupported")
+        if(closedOutline && compound!="sng" && dash.isNotEmpty() && cap!="flat")
+            throw IOException("Non-flat dashed compound closed outline unsupported")
         return Spec(width,cap,join,miter,dash,compound,head,tail,alignment)
     }
 }

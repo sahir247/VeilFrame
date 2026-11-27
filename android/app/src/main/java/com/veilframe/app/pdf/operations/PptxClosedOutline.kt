@@ -26,8 +26,8 @@ internal object PptxClosedOutline {
         val measure=PathMeasure(path,false)
         if(!measure.isClosed || measure.length<=0f || measure.nextContour())
             throw IOException("Inset/compound outline requires a single closed contour")
-        if(spec.compound!="sng" && spec.dash.isNotEmpty())
-            throw IOException("Dashed compound closed outline unsupported")
+        if(spec.compound!="sng" && spec.dash.isNotEmpty() && spec.cap!="flat")
+            throw IOException("Non-flat dashed compound closed outline unsupported")
         fun combine(a: Path,b: Path,op: Path.Op): Path {
             val result=Path()
             if(!result.op(a,b,op)) throw IOException("Cannot resolve closed outline ink")

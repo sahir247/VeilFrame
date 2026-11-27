@@ -90,7 +90,12 @@ internal object PptxTableRenderer {
             val lines=format?.lnStyleLst
             return if(lines!=null && index in 1..lines.sizeOfLnArray()) lines.getLnArray(index-1).domNode else null
         }
-        val tableBackground=PptxTableStyle.inheritedFill(one(style,"tblBg"),::fillLookup,theme)?.let {
+        val background=one(style,"tblBg")
+        // Themed gallery styles can refer to effects that require a distinct
+        // table backdrop renderer. Refuse them rather than drop the effects.
+        if(one(background,"effectRef")!=null || one(background,"effectLst")!=null || one(background,"effectDag")!=null)
+            throw IOException("Unsupported table background effect")
+        val tableBackground=PptxTableStyle.inheritedFill(background,::fillLookup,theme)?.let {
             PptxTableStyle.solid(it.node,theme,it.placeholder)
         }
         val plan=grid(rows,cols) { r,c ->
@@ -134,7 +139,9 @@ internal object PptxTableRenderer {
                     val priority=if(direct!=null) 100 else inherited?.second ?: 0
                     val stroke=if(ink==null) null else PptxStrokeStyle.parse(
                         direct ?: requireNotNull(inherited).first.node,fontScale,fontScale,
-                        inherited=inherited?.first?.node)
+                        straightConnector=true,inherited=inherited?.first?.node).also {
+                            require(it.head.type=="none" && it.tail.type=="none") { "Decorated table border unsupported" }
+                        }
                     borders[edge]=Border(ink,stroke,priority)
                 } else if(direct!=null) {
                     throw IOException("Unresolved explicit table border")
@@ -161,7 +168,10 @@ internal object PptxTableRenderer {
         fun line(b: Border?,x1: Float,y1: Float,x2: Float,y2: Float) {
             val color=b?.color ?: return
             val style=b.style ?: return
-            if(style.width>0f) canvas.drawLine(x1,y1,x2,y2,style.paint(color))
+            if(style.width>0f && (x1!=x2 || y1!=y2)) {
+                if(style.compound=="sng") canvas.drawLine(x1,y1,x2,y2,style.paint(color))
+                else PptxConnectorRenderer.draw(canvas,x1,y1,x2,y2,style,color)
+            }
         }
         // Coalesce identical adjacent segments so merged edges/dashes stay continuous.
         for(r in 0..rows) {
